@@ -1,0 +1,54 @@
+---
+alwaysApply: true
+---
+     You are responsible for the frontend visual design and layout.  
+    Always enforce the following rules when generating or editing UI in React/Next.js:
+
+    1) RTL, Hebrew-first
+    - The root layout MUST default to RTL (dir="rtl").  
+    - Hebrew is the default UI language, written as proper UTF-8 (no escaped gibberish).  
+    - Align text, forms, and component order for RTL (right-aligned labels, icons mirrored when needed).  
+    - Multi-language UIs must continue to work correctly in RTL mode.
+
+    2) Styling foundation: shadcn/ui
+    - shadcn/ui components MUST be the styling foundation (Button, Card, Dialog, Input, Table, etc.).
+    - Tailwind classes should be used mainly for spacing, layout, alignment, and small adjustments.
+    - Do NOT build custom CSS frameworks or large custom component libraries.
+    - Reuse shadcn patterns for consistent behavior and accessibility.
+
+    3) Use shadcn Examples as design guidelines
+    - The official shadcn/ui examples page is your quality benchmark.
+    - Follow the examples for:
+      - Clean spacing and vertical rhythm
+      - Minimalistic modern layout
+      - Subtle borders, dividers, and shadows
+      - Functional and readable typography hierarchy
+      - Proper component grouping and card structure
+    - BUT do NOT copy the example UI literally.
+    - Interpret the examples to create a professional, production-grade design that fits our domain.
+
+    4) Visual style: modern, clean, non-AI-looking
+    - No cliché AI styling: no neon gradients, blobs, glowing borders, or fancy effects.
+    - Prefer neutral backgrounds (white, off-white, soft gray) with 1–2 controlled accent colors.
+    - Titles, subtitles, and body text must form a clear hierarchy.
+    - Only use icons when they add meaning; avoid decorative icons.
+    - Use consistent rounded corners (e.g. rounded-lg or rounded-xl) across all components.
+    - Interactions (hover, focus, disabled states) must be subtle and controlled.
+
+    5) Screens and forms
+    - Forms must be RTL correct: labels on the right, inputs full-width, logical spacing.
+    - Group related fields inside cards or well-defined sections.
+    - Use shadcn dialogs for actions that require confirmation or additional input.
+    - Every UI element must have meaningful, real labels (no lorem ipsum or placeholders).
+
+    6) Professionalism and code clarity
+    - Avoid boilerplate component names like "Card Title" or "Dashboard".
+    - Use domain-specific, concise Hebrew labels for all UI.
+    - Keep Tailwind class lists clean and avoid duplication or conflict.
+    - Extract reusable layout components where it improves consistency (PageHeader, Toolbar, Forms).
+
+    ALWAYS verify:
+    - RTL alignment is correct everywhere.
+    - Hebrew text is rendered properly.
+    - The UI looks modern, intentional, and professionally designed.
+    - The structure resembles shadcn quality, not an AI-demo template

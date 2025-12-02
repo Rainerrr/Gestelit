@@ -1,0 +1,28 @@
+---
+alwaysApply: true
+---
+Rule name: Hebrew text and UTF-8 integrity
+
+Rule text:
+
+When writing or editing any Hebrew text in this project (including UI labels, strings, comments, JSON, HTML, CSV, and configuration files), always follow these requirements:
+
+Treat all files as UTF-8 encoded without BOM. Assume the entire project uses UTF-8.
+
+Output Hebrew characters literally (א–ת) with no nikud. Never add or generate vowel marks.
+
+Do not convert Hebrew text into HTML entities or Unicode escape sequences such as \u05E9 unless the file format explicitly requires it. Prefer plain, readable Hebrew.
+
+When copying Hebrew from the specification or existing code, copy the text exactly as written without altering characters, spacing, or direction.
+
+After generating or modifying any file, check for any strings containing question marks in place of Hebrew text. If such artifacts appear, regenerate the text with correct Hebrew characters.
+
+Maintain the exact visible order of right-to-left text as provided by the user. Do not reorder or automatically "correct" RTL sequences.
+
+Correct example:
+label: "סמן את האימונים שעברת"
+
+Incorrect examples:
+label: "???? ?????? ??????"
+label: "\u05e1\u05de\u05df \u05d0\u05ea \u05d4\u05d0\u05d9\u05de\u05d5\u05e0\u05d9\u05dd \u05e9\u05e2\u05d1\u05e8\u05ea"
+label: "סְמַן אֶת" (contains nikud, not allowed)
