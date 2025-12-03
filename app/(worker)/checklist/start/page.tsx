@@ -26,6 +26,7 @@ export default function OpeningChecklistPage() {
     sessionId,
     completeChecklist,
     setCurrentStatus,
+    setSessionStartedAt,
   } = useWorkerSession();
 
   const [responses, setResponses] = useState<Record<string, boolean>>({});
@@ -124,18 +125,21 @@ export default function OpeningChecklistPage() {
           value_bool,
         }),
       );
-      await submitChecklistResponsesApi(
+      const { session } = await submitChecklistResponsesApi(
         sessionId,
         station.id,
         "start",
         payload,
       );
+      if (session?.started_at) {
+        setSessionStartedAt(session.started_at);
+      }
       await startStatusEventApi({
         sessionId,
-        status: "setup",
+        status: "stopped",
       });
       completeChecklist("start");
-      setCurrentStatus("setup");
+      setCurrentStatus("stopped");
       router.push("/work");
     } catch {
       setSubmitError(t("checklist.error.submit"));

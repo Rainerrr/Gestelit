@@ -11,13 +11,17 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useWorkerSession } from "@/contexts/WorkerSessionContext";
-import { loginWorkerApi } from "@/lib/api/client";
+import { fetchWorkerActiveSessionApi, loginWorkerApi } from "@/lib/api/client";
 import type { SupportedLanguage } from "@/lib/i18n/translations";
 
 export default function LoginPage() {
   const router = useRouter();
   const { t, setLanguage } = useTranslation();
-  const { setWorker, reset } = useWorkerSession();
+  const {
+    setWorker,
+    reset,
+    setPendingRecovery,
+  } = useWorkerSession();
   const [workerId, setWorkerId] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -38,6 +42,17 @@ export default function LoginPage() {
         setLanguage(worker.language as SupportedLanguage);
       }
       setError(null);
+      let activeSession = null;
+      try {
+        activeSession = await fetchWorkerActiveSessionApi(worker.id);
+      } catch (sessionError) {
+        console.error("[login] Failed to fetch active session", sessionError);
+      }
+      if (activeSession) {
+        setPendingRecovery(activeSession);
+        router.push("/station");
+        return;
+      }
       router.push("/station");
     } catch {
       setError(t("login.error.notFound"));
@@ -94,6 +109,7 @@ export default function LoginPage() {
           ) : null}
         </FormSection>
       </form>
+
     </>
   );
 }

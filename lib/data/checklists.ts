@@ -41,35 +41,3 @@ export async function fetchChecklist(
     items,
   };
 }
-
-type ChecklistResponseInput = {
-  item_id: string;
-  value_bool?: boolean | null;
-  value_text?: string | null;
-};
-
-export async function saveChecklistResponses(
-  sessionId: string,
-  stationId: string,
-  kind: ChecklistKind,
-  responses: ChecklistResponseInput[],
-): Promise<void> {
-  if (!responses.length) {
-    return;
-  }
-
-  const supabase = createServiceSupabase();
-  const rows = responses.map((response) => ({
-    session_id: sessionId,
-    station_id: stationId,
-    kind,
-    ...response,
-  }));
-
-  const { error } = await supabase.from("checklist_responses").insert(rows);
-
-  if (error) {
-    throw new Error(`Failed to save checklist responses: ${error.message}`);
-  }
-}
-

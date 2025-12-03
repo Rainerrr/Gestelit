@@ -16,7 +16,8 @@ import { cn } from "@/lib/utils";
 export default function JobPage() {
   const router = useRouter();
   const { t } = useTranslation();
-  const { worker, station, setJob, setSessionId } = useWorkerSession();
+  const { worker, station, setJob, setSessionId, setSessionStartedAt, setCurrentStatus } =
+    useWorkerSession();
   const [jobNumber, setJobNumber] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -52,6 +53,8 @@ export default function JobPage() {
       );
       setJob(job);
       setSessionId(session.id);
+      setSessionStartedAt(session.started_at ?? null);
+      setCurrentStatus(undefined);
       setError(null);
       router.push("/checklist/start");
     } catch {

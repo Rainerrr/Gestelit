@@ -22,6 +22,15 @@ export function createBrowserSupabase(): SupabaseClient {
   });
 }
 
+let browserClient: SupabaseClient | null = null;
+
+export function getBrowserSupabaseClient(): SupabaseClient {
+  if (!browserClient) {
+    browserClient = createBrowserSupabase();
+  }
+  return browserClient;
+}
+
 export function createServiceSupabase(): SupabaseClient {
   const url = assertEnv(supabaseUrl, "NEXT_PUBLIC_SUPABASE_URL");
   const serviceKey = assertEnv(

@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
-import { saveChecklistResponses } from "@/lib/data/checklists";
+import {
+  markEndChecklistCompleted,
+  markSessionStarted,
+} from "@/lib/data/sessions";
 import type { ChecklistKind } from "@/lib/types";
 
 type ChecklistResponsePayload = {
@@ -31,13 +34,13 @@ export async function POST(request: Request) {
   }
 
   try {
-    await saveChecklistResponses(
-      body.sessionId,
-      body.stationId,
-      body.kind,
-      body.responses,
-    );
-    return NextResponse.json({ ok: true });
+    let session = null;
+    if (body.kind === "start") {
+      session = await markSessionStarted(body.sessionId);
+    } else if (body.kind === "end") {
+      session = await markEndChecklistCompleted(body.sessionId);
+    }
+    return NextResponse.json({ ok: true, session });
   } catch (error) {
     return NextResponse.json(
       { error: "CHECKLIST_RESPONSE_FAILED", details: String(error) },

@@ -48,7 +48,8 @@ Deno.serve(async () => {
     .from("sessions")
     .select("id")
     .eq("status", "active")
-    .lt("last_seen_at", idleSince);
+    .lt("last_seen_at", idleSince)
+    .is("forced_closed_at", null);
 
   if (error) {
     console.error("[close-idle-sessions] Failed to fetch sessions", error);

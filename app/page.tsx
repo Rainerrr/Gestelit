@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { AdminAccessDialog } from "@/components/landing/admin-access-dialog";
 import {
   DEFAULT_LANGUAGE,
   getTranslation,
@@ -23,10 +24,11 @@ export default function Home() {
           {t("home.hero.title")}
         </h1>
 
-        <div className="mt-10 flex justify-end">
+        <div className="mt-10 flex flex-col items-end gap-3">
           <Button asChild size="lg" className="min-w-44 justify-center">
             <Link href="/login">{t("home.cta.login")}</Link>
           </Button>
+          <AdminAccessDialog />
         </div>
       </article>
     </section>

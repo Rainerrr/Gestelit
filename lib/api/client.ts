@@ -5,7 +5,10 @@ import type {
   Station,
   StationChecklist,
   StatusEventState,
+  Session,
+  SessionAbandonReason,
   Worker,
+  WorkerResumeSession,
 } from "@/lib/types";
 
 async function handleResponse<T>(response: Response): Promise<T> {
@@ -26,6 +29,29 @@ export async function loginWorkerApi(workerCode: string) {
   return data.worker;
 }
 
+export async function fetchWorkerActiveSessionApi(workerId: string) {
+  try {
+    const response = await fetch(
+      `/api/workers/active-session?workerId=${encodeURIComponent(workerId)}`,
+    );
+    const payload = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      console.warn(
+        "[api] Failed to fetch active session for worker",
+        payload?.error ?? response.statusText,
+      );
+      return null;
+    }
+
+    return (payload as { session: WorkerResumeSession | null } | null)
+      ?.session ?? null;
+  } catch (error) {
+    console.error("[api] Active session request failed", error);
+    return null;
+  }
+}
+
 export async function fetchStationsApi(workerId: string) {
   const response = await fetch(
     `/api/stations?workerId=${encodeURIComponent(workerId)}`,
@@ -44,9 +70,7 @@ export async function createJobSessionApi(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ workerId, stationId, jobNumber }),
   });
-  const data = await handleResponse<{ job: Job; session: { id: string } }>(
-    response,
-  );
+  const data = await handleResponse<{ job: Job; session: Session }>(response);
   return data;
 }
 
@@ -80,7 +104,10 @@ export async function submitChecklistResponsesApi(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ sessionId, stationId, kind, responses }),
   });
-  await handleResponse<{ ok: boolean }>(response);
+  const data = await handleResponse<{ ok: boolean; session?: Session }>(
+    response,
+  );
+  return data;
 }
 
 export async function startStatusEventApi(options: {
@@ -121,6 +148,18 @@ export async function completeSessionApi(sessionId: string) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ sessionId }),
+  });
+  await handleResponse(response);
+}
+
+export async function abandonSessionApi(
+  sessionId: string,
+  reason: SessionAbandonReason = "worker_choice",
+) {
+  const response = await fetch("/api/sessions/abandon", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sessionId, reason }),
   });
   await handleResponse(response);
 }

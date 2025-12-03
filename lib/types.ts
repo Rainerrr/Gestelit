@@ -21,6 +21,7 @@ export type StatusEventState =
   | "waiting_client"
   | "plate_change";
 export type ReasonType = "stop" | "scrap";
+export type SessionAbandonReason = "worker_choice" | "expired";
 
 export interface Worker {
   id: string;
@@ -67,12 +68,23 @@ export interface Session {
   station_id: string;
   job_id: string;
   status: SessionStatus;
+  current_status?: StatusEventState | null;
   started_at: string;
   ended_at?: string | null;
   total_good: number;
   total_scrap: number;
+  last_seen_at?: string | null;
+  forced_closed_at?: string | null;
+  last_status_change_at?: string | null;
   created_at?: string;
   updated_at?: string;
+}
+
+export interface WorkerResumeSession {
+  session: Session;
+  station: Station | null;
+  job: Job | null;
+  graceExpiresAt: string;
 }
 
 export interface StatusEvent {

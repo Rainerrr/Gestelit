@@ -39,6 +39,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { TranslationKey } from "@/lib/i18n/translations";
 import type { Reason, StatusEventState } from "@/lib/types";
+import { useSessionHeartbeat } from "@/hooks/useSessionHeartbeat";
 
 const statusButtons = [
   { id: "setup", labelKey: "work.status.setup" },
@@ -156,6 +157,7 @@ export default function WorkPage() {
     station,
     job,
     sessionId,
+    sessionStartedAt,
     currentStatus,
     setCurrentStatus,
     totals,
@@ -189,6 +191,8 @@ export default function WorkPage() {
     }
   }, [worker, station, job, sessionId, router]);
 
+  useSessionHeartbeat(sessionId);
+
   const formatReason = (reason: Reason) =>
     language === "he" ? reason.label_he : reason.label_ru;
 
@@ -203,10 +207,11 @@ export default function WorkPage() {
     return null;
   }
 
+  const currentStatusSafe = currentStatus ?? "stopped";
   const statusLabel =
-    statusButtons.find((entry) => entry.id === currentStatus)?.labelKey ?? "work.status.setup";
-  const activeVisual =
-    statusVisuals[currentStatus ?? "setup"] ?? neutralVisual;
+    statusButtons.find((entry) => entry.id === currentStatusSafe)?.labelKey ??
+    "work.status.stopped";
+  const activeVisual = statusVisuals[currentStatusSafe] ?? neutralVisual;
 
   const handleStatusChange = async (status: StatusEventState) => {
     if (!sessionId || currentStatus === status) {
@@ -290,6 +295,7 @@ export default function WorkPage() {
             badgeLabel={t("work.section.status")}
             statusLabel={t(statusLabel)}
             visual={activeVisual}
+            startedAt={sessionStartedAt}
           />
 
           <Card>
@@ -640,6 +646,7 @@ type WorkTimerProps = {
   badgeLabel: string;
   statusLabel: string;
   visual: StatusVisual;
+  startedAt?: string | null;
 };
 
 function WorkTimer({
@@ -648,15 +655,20 @@ function WorkTimer({
   badgeLabel,
   statusLabel,
   visual,
+  startedAt,
 }: WorkTimerProps) {
-  const [elapsed, setElapsed] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setElapsed((value) => value + 1);
+      setNow(Date.now());
     }, 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [sessionId, startedAt]);
+
+  const elapsed = startedAt
+    ? Math.max(0, Math.floor((now - new Date(startedAt).getTime()) / 1000))
+    : 0;
 
   return (
     <Card
