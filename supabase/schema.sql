@@ -81,6 +81,8 @@ create table if not exists sessions (
   ended_at timestamptz,
   total_good integer not null default 0,
   total_scrap integer not null default 0,
+  start_checklist_completed boolean not null default false,
+  end_checklist_completed boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -88,51 +90,4 @@ create table if not exists sessions (
 create index if not exists sessions_worker_idx on sessions(worker_id);
 create index if not exists sessions_station_idx on sessions(station_id);
 create index if not exists sessions_status_idx on sessions(status);
-
--- Reasons
-create table if not exists reasons (
-  id uuid primary key default gen_random_uuid(),
-  type reason_type not null,
-  label_he text not null,
-  label_ru text not null,
-  is_active boolean not null default true,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create index if not exists reasons_type_idx on reasons(type);
-
--- Status events
-create table if not exists status_events (
-  id uuid primary key default gen_random_uuid(),
-  session_id uuid not null references sessions(id) on delete cascade,
-  status status_event_state not null,
-  reason_id uuid references reasons(id),
-  note text,
-  image_url text,
-  started_at timestamptz not null default now(),
-  ended_at timestamptz,
-  created_at timestamptz not null default now()
-);
-
-create index if not exists status_events_session_idx on status_events(session_id);
-create index if not exists status_events_status_idx on status_events(status);
-
--- Checklist responses
-create table if not exists checklist_responses (
-  id uuid primary key default gen_random_uuid(),
-  session_id uuid not null references sessions(id) on delete cascade,
-  station_id uuid not null references stations(id) on delete cascade,
-  kind checklist_kind not null,
-  item_id text not null,
-  value_bool boolean,
-  value_text text,
-  created_at timestamptz not null default now()
-);
-
-create index if not exists checklist_responses_session_idx
-  on checklist_responses(session_id);
-
-create index if not exists checklist_responses_station_kind_idx
-  on checklist_responses(station_id, kind);
 
