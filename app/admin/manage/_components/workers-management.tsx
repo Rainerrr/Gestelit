@@ -1,7 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -39,6 +47,7 @@ export const WorkersManagement = ({
 }: WorkersManagementProps) => {
   const [editingWorker, setEditingWorker] = useState<Worker | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [deleteWorkerId, setDeleteWorkerId] = useState<string | null>(null);
   const sortedWorkers = useMemo(
     () =>
       [...workers].sort((a, b) =>
@@ -164,8 +173,8 @@ export const WorkersManagement = ({
                         onOpenChange={(open) => setEditingWorker(open ? worker : null)}
                         loading={isSubmitting}
                       />
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
+                      <Dialog open={deleteWorkerId === worker.id} onOpenChange={(open) => setDeleteWorkerId(open ? worker.id : null)}>
+                        <DialogTrigger asChild>
                           <Button
                             variant="destructive"
                             size="sm"
@@ -174,25 +183,28 @@ export const WorkersManagement = ({
                           >
                             מחק
                           </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent dir="rtl">
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>האם למחוק את העובד?</AlertDialogTitle>
-                            <AlertDialogDescription>
+                        </DialogTrigger>
+                        <DialogContent dir="rtl">
+                          <DialogHeader>
+                            <DialogTitle>האם למחוק את העובד?</DialogTitle>
+                            <DialogDescription>
                               הפעולה תמחק את העובד לחלוטין ותשמור היסטוריה בסשנים קיימים. לא ניתן לבטל.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter className="justify-start">
-                            <AlertDialogAction
+                            </DialogDescription>
+                          </DialogHeader>
+                          <DialogFooter className="justify-start">
+                            <Button
+                              variant="destructive"
                               onClick={() => void handleDelete(worker.id)}
                               disabled={isSubmitting}
                             >
                               מחיקה סופית
-                            </AlertDialogAction>
-                            <AlertDialogCancel disabled={isSubmitting}>ביטול</AlertDialogCancel>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
+                            </Button>
+                            <Button variant="outline" onClick={() => setDeleteWorkerId(null)} disabled={isSubmitting}>
+                              ביטול
+                            </Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
                     </div>
                   </TableCell>
                 </TableRow>
