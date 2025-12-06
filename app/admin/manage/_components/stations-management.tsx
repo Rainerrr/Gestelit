@@ -1,7 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -28,6 +36,7 @@ export const StationsManagement = ({
 }: StationsManagementProps) => {
   const [editingStation, setEditingStation] = useState<Station | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [deleteStationId, setDeleteStationId] = useState<string | null>(null);
 
   const sortedStations = useMemo(
     () =>
@@ -135,8 +144,8 @@ export const StationsManagement = ({
                       }
                       loading={isSubmitting}
                     />
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
+                    <Dialog open={deleteStationId === station.id} onOpenChange={(open) => setDeleteStationId(open ? station.id : null)}>
+                      <DialogTrigger asChild>
                         <Button
                           variant="destructive"
                           size="sm"
@@ -145,25 +154,28 @@ export const StationsManagement = ({
                         >
                           מחק
                         </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent dir="rtl">
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>האם למחוק את התחנה?</AlertDialogTitle>
-                          <AlertDialogDescription>
+                      </DialogTrigger>
+                      <DialogContent dir="rtl">
+                        <DialogHeader>
+                          <DialogTitle>האם למחוק את התחנה?</DialogTitle>
+                          <DialogDescription>
                             הפעולה תמחק את התחנה לחלוטין ותשמור היסטוריה בסשנים קיימים. לא ניתן לבטל.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter className="justify-start">
-                          <AlertDialogAction
+                          </DialogDescription>
+                        </DialogHeader>
+                        <DialogFooter className="justify-start">
+                          <Button
+                            variant="destructive"
                             onClick={() => void handleDelete(station.id)}
                             disabled={isSubmitting}
                           >
                             מחיקה סופית
-                          </AlertDialogAction>
-                          <AlertDialogCancel disabled={isSubmitting}>ביטול</AlertDialogCancel>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
+                          </Button>
+                          <Button variant="outline" onClick={() => setDeleteStationId(null)} disabled={isSubmitting}>
+                            ביטול
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
                   </TableCell>
                 </TableRow>
               ))}

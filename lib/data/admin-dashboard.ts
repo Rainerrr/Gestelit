@@ -9,7 +9,7 @@ export type ActiveSession = {
   id: string;
   jobId: string;
   jobNumber: string;
-  stationId: string;
+  stationId: string | null;
   stationName: string;
   stationType: StationType | null;
   workerId: string;
@@ -83,7 +83,7 @@ const mapActiveSession = (
   id: row.id,
   jobId: row.job_id,
   jobNumber: row.jobs?.job_number ?? "לא ידוע",
-  stationId: row.station_id,
+  stationId: row.station_id ?? null,
   stationName: row.stations?.name ?? row.station_name_snapshot ?? "לא משויך",
   stationType: row.stations?.station_type ?? null,
   workerId: row.worker_id ?? "",
