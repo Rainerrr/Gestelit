@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -134,15 +135,35 @@ export const StationsManagement = ({
                       }
                       loading={isSubmitting}
                     />
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => void handleDelete(station.id)}
-                      disabled={isSubmitting}
-                      aria-label="מחיקת תחנה"
-                    >
-                      מחק
-                    </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          disabled={isSubmitting}
+                          aria-label="מחיקת תחנה"
+                        >
+                          מחק
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent dir="rtl">
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>האם למחוק את התחנה?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            הפעולה תמחק את התחנה לחלוטין ותשמור היסטוריה בסשנים קיימים. לא ניתן לבטל.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter className="justify-start">
+                          <AlertDialogAction
+                            onClick={() => void handleDelete(station.id)}
+                            disabled={isSubmitting}
+                          >
+                            מחיקה סופית
+                          </AlertDialogAction>
+                          <AlertDialogCancel disabled={isSubmitting}>ביטול</AlertDialogCancel>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </TableCell>
                 </TableRow>
               ))}

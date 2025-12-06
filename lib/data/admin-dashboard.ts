@@ -31,8 +31,8 @@ export type CompletedSession = ActiveSession & {
 
 type SessionRow = {
   id: string;
-  worker_id: string;
-  station_id: string;
+  worker_id: string | null;
+  station_id: string | null;
   job_id: string;
   status: SessionStatus;
   started_at: string;
@@ -48,6 +48,10 @@ type RawActiveSession = SessionRow & {
   jobs: { job_number: string | null } | null;
   stations: { name: string | null; station_type: StationType | null } | null;
   workers: { full_name: string | null } | null;
+  worker_full_name_snapshot: string | null;
+  worker_code_snapshot: string | null;
+  station_name_snapshot: string | null;
+  station_code_snapshot: string | null;
 };
 
 const ACTIVE_SESSIONS_SELECT = `
@@ -63,6 +67,10 @@ const ACTIVE_SESSIONS_SELECT = `
   current_status,
   last_status_change_at,
   forced_closed_at,
+  worker_full_name_snapshot,
+  worker_code_snapshot,
+  station_name_snapshot,
+  station_code_snapshot,
   jobs:jobs(job_number),
   stations:stations(name, station_type),
   workers:workers(full_name)
@@ -76,10 +84,10 @@ const mapActiveSession = (
   jobId: row.job_id,
   jobNumber: row.jobs?.job_number ?? "לא ידוע",
   stationId: row.station_id,
-  stationName: row.stations?.name ?? "לא משויך",
+  stationName: row.stations?.name ?? row.station_name_snapshot ?? "לא משויך",
   stationType: row.stations?.station_type ?? null,
-  workerId: row.worker_id,
-  workerName: row.workers?.full_name ?? "לא משויך",
+  workerId: row.worker_id ?? "",
+  workerName: row.workers?.full_name ?? row.worker_full_name_snapshot ?? "לא משויך",
   status: row.status,
   currentStatus: row.current_status ?? null,
   lastStatusChangeAt: row.last_status_change_at ?? row.started_at,

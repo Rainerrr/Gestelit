@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -163,15 +164,35 @@ export const WorkersManagement = ({
                         onOpenChange={(open) => setEditingWorker(open ? worker : null)}
                         loading={isSubmitting}
                       />
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => void handleDelete(worker.id)}
-                        disabled={isSubmitting}
-                        aria-label="מחיקת עובד"
-                      >
-                        מחק
-                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            disabled={isSubmitting}
+                            aria-label="מחיקת עובד"
+                          >
+                            מחק
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent dir="rtl">
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>האם למחוק את העובד?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              הפעולה תמחק את העובד לחלוטין ותשמור היסטוריה בסשנים קיימים. לא ניתן לבטל.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter className="justify-start">
+                            <AlertDialogAction
+                              onClick={() => void handleDelete(worker.id)}
+                              disabled={isSubmitting}
+                            >
+                              מחיקה סופית
+                            </AlertDialogAction>
+                            <AlertDialogCancel disabled={isSubmitting}>ביטול</AlertDialogCancel>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </div>
                   </TableCell>
                 </TableRow>
