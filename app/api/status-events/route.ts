@@ -5,7 +5,7 @@ import type { StatusEventState } from "@/lib/types";
 type StatusPayload = {
   sessionId: string;
   status: StatusEventState;
-  reasonId?: string | null;
+  stationReasonId?: string | null;
   note?: string | null;
   imageUrl?: string | null;
 };
@@ -23,7 +23,7 @@ export async function POST(request: Request) {
     const event = await startStatusEvent({
       session_id: body.sessionId,
       status: body.status,
-      reason_id: body.reasonId,
+      station_reason_id: body.stationReasonId,
       note: body.note,
       image_url: body.imageUrl,
     });

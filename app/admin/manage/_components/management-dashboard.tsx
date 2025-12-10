@@ -11,12 +11,14 @@ import { useAdminGuard } from "@/hooks/useAdminGuard";
 import {
   assignWorkerStationAdminApi,
   clearDepartmentAdminApi,
+  clearStationTypeAdminApi,
   createStationAdminApi,
   createWorkerAdminApi,
   deleteStationAdminApi,
   deleteWorkerAdminApi,
   fetchDepartmentsAdminApi,
   fetchStationsAdminApi,
+  fetchStationTypesAdminApi,
   fetchWorkerAssignmentsAdminApi,
   fetchWorkersAdminApi,
   removeWorkerStationAdminApi,
@@ -28,6 +30,7 @@ import type { StationWithStats, WorkerWithStats } from "@/lib/data/admin-managem
 import { WorkersManagement } from "./workers-management";
 import { StationsManagement } from "./stations-management";
 import { DepartmentManager } from "./department-manager";
+import { StationTypeManager } from "./station-type-manager";
 import { AdminLayout } from "../../_components/admin-layout";
 
 type ActiveTab = "workers" | "stations";
@@ -49,8 +52,10 @@ export const ManagementDashboard = () => {
   const [workers, setWorkers] = useState<WorkerWithStats[]>([]);
   const [stations, setStations] = useState<StationWithStats[]>([]);
   const [departments, setDepartments] = useState<string[]>([]);
+  const [stationTypes, setStationTypes] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState<string | null>(null);
+  const [stationTypeFilter, setStationTypeFilter] = useState<string | null>(null);
   const [startsWith, setStartsWith] = useState<string | null>(null);
   const [isLoadingWorkers, setIsLoadingWorkers] = useState<boolean>(true);
   const [isLoadingStations, setIsLoadingStations] = useState<boolean>(true);
@@ -60,16 +65,6 @@ export const ManagementDashboard = () => {
     () => ["א", "ב", "ג", "ד", "ה", "ו", "ז", "ח", "ט", "י", "כ", "ל", "מ", "נ", "ס", "ע", "פ", "צ", "ק", "ר", "ש", "ת"],
     [],
   );
-  const filteredStations = useMemo(() => {
-    if (!search.trim()) return stations;
-    const term = search.trim().toLowerCase();
-    return stations.filter(
-      ({ station }) =>
-        station.name.toLowerCase().includes(term) ||
-        station.code.toLowerCase().includes(term),
-    );
-  }, [stations, search]);
-
   const friendlyError = useCallback((error: unknown) => {
     const message = error instanceof Error ? error.message : typeof error === "string" ? error : "UNKNOWN_ERROR";
     setBannerError(errorCopy[message] ?? "משהו השתבש, נסה שוב.");
@@ -79,6 +74,15 @@ export const ManagementDashboard = () => {
     try {
       const response = await fetchDepartmentsAdminApi();
       setDepartments(response.departments);
+    } catch (error) {
+      friendlyError(error);
+    }
+  }, [friendlyError]);
+
+  const loadStationTypes = useCallback(async () => {
+    try {
+      const response = await fetchStationTypesAdminApi();
+      setStationTypes(response.stationTypes);
     } catch (error) {
       friendlyError(error);
     }
@@ -105,25 +109,35 @@ export const ManagementDashboard = () => {
     setIsLoadingStations(true);
     setBannerError(null);
     try {
-      const { stations: data } = await fetchStationsAdminApi();
+      const { stations: data } = await fetchStationsAdminApi({
+        search: search.trim() || undefined,
+        stationType: stationTypeFilter ?? undefined,
+        startsWith: startsWith ?? undefined,
+      });
       setStations(data);
     } catch (error) {
       friendlyError(error);
     } finally {
       setIsLoadingStations(false);
     }
-  }, [friendlyError]);
+  }, [friendlyError, search, stationTypeFilter, startsWith]);
 
   useEffect(() => {
     if (hasAccess !== true) return;
     void loadDepartments();
+    void loadStationTypes();
     void loadStations();
-  }, [hasAccess, loadDepartments, loadStations]);
+  }, [hasAccess, loadDepartments, loadStationTypes, loadStations]);
 
   useEffect(() => {
     if (hasAccess !== true || activeTab !== "workers") return;
     void loadWorkers();
   }, [hasAccess, activeTab, loadWorkers]);
+
+  useEffect(() => {
+    if (hasAccess !== true || activeTab !== "stations") return;
+    void loadStations();
+  }, [hasAccess, activeTab, loadStations]);
 
   const handleAddWorker = async (payload: Partial<Worker>) => {
     setBannerError(null);
@@ -204,7 +218,7 @@ export const ManagementDashboard = () => {
         is_active: payload.is_active ?? true,
         station_reasons: payload.station_reasons,
       });
-      await loadStations();
+      await Promise.all([loadStations(), loadStationTypes()]);
     } catch (error) {
       friendlyError(error);
     }
@@ -220,7 +234,7 @@ export const ManagementDashboard = () => {
         is_active: payload.is_active,
         station_reasons: payload.station_reasons,
       });
-      await loadStations();
+      await Promise.all([loadStations(), loadStationTypes()]);
     } catch (error) {
       friendlyError(error);
     }
@@ -250,7 +264,7 @@ export const ManagementDashboard = () => {
     setBannerError(null);
     try {
       await deleteStationAdminApi(id);
-      await loadStations();
+      await Promise.all([loadStations(), loadStationTypes()]);
     } catch (error) {
       friendlyError(error);
     }
@@ -260,6 +274,16 @@ export const ManagementDashboard = () => {
     try {
       await clearDepartmentAdminApi(department);
       await Promise.all([loadWorkers(), loadDepartments()]);
+    } catch (error) {
+      friendlyError(error);
+    }
+  };
+
+  const handleClearStationType = async (stationType: string) => {
+    try {
+      await clearStationTypeAdminApi(stationType);
+      setStationTypeFilter((current) => (current === stationType ? null : current));
+      await Promise.all([loadStations(), loadStationTypes()]);
     } catch (error) {
       friendlyError(error);
     }
@@ -309,7 +333,7 @@ export const ManagementDashboard = () => {
             </div>
           </div>
 
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-3">
             <div className="flex flex-wrap items-center gap-2">
               <Input
                 aria-label="חיפוש"
@@ -320,51 +344,71 @@ export const ManagementDashboard = () => {
                 }
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                className="w-64"
+                className="w-72 max-w-full"
               />
-              {activeTab === "workers" ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge
-                    variant={departmentFilter === null ? "default" : "outline"}
-                    className="cursor-pointer"
-                    onClick={() => setDepartmentFilter(null)}
-                  >
-                    כל המחלקות
-                  </Badge>
-                  {departments.map((dept) => (
+              <div className="flex flex-wrap items-center gap-2">
+                {activeTab === "workers" ? (
+                  <>
                     <Badge
-                      key={dept}
-                      variant={departmentFilter === dept ? "default" : "outline"}
+                      variant={departmentFilter === null ? "default" : "outline"}
                       className="cursor-pointer"
-                      onClick={() => setDepartmentFilter(dept)}
+                      onClick={() => setDepartmentFilter(null)}
                     >
-                      {dept}
+                      כל המחלקות
                     </Badge>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-            {activeTab === "workers" ? (
-              <div className="flex flex-wrap gap-1">
-                <Button
-                  size="sm"
-                  variant={startsWith === null ? "default" : "outline"}
-                  onClick={() => setStartsWith(null)}
-                >
-                  כל האותיות
-                </Button>
-                {hebrewLetters.map((letter) => (
-                  <Button
-                    key={letter}
-                    size="sm"
-                    variant={startsWith === letter ? "default" : "outline"}
-                    onClick={() => setStartsWith(letter)}
-                  >
-                    {letter}
-                  </Button>
-                ))}
+                    {departments.map((dept) => (
+                      <Badge
+                        key={dept}
+                        variant={departmentFilter === dept ? "default" : "outline"}
+                        className="cursor-pointer"
+                        onClick={() => setDepartmentFilter(dept)}
+                      >
+                        {dept}
+                      </Badge>
+                    ))}
+                  </>
+                ) : (
+                  <>
+                    <Badge
+                      variant={stationTypeFilter === null ? "default" : "outline"}
+                      className="cursor-pointer"
+                      onClick={() => setStationTypeFilter(null)}
+                    >
+                      כל הסוגים
+                    </Badge>
+                    {stationTypes.map((type) => (
+                      <Badge
+                        key={type}
+                        variant={stationTypeFilter === type ? "default" : "outline"}
+                        className="cursor-pointer"
+                        onClick={() => setStationTypeFilter(type)}
+                      >
+                        {type}
+                      </Badge>
+                    ))}
+                  </>
+                )}
               </div>
-            ) : null}
+            </div>
+            <div className="flex flex-wrap gap-1">
+              <Button
+                size="sm"
+                variant={startsWith === null ? "default" : "outline"}
+                onClick={() => setStartsWith(null)}
+              >
+                כל האותיות
+              </Button>
+              {hebrewLetters.map((letter) => (
+                <Button
+                  key={letter}
+                  size="sm"
+                  variant={startsWith === letter ? "default" : "outline"}
+                  onClick={() => setStartsWith(letter)}
+                >
+                  {letter}
+                </Button>
+              ))}
+            </div>
           </div>
           {bannerError ? (
             <Alert
@@ -401,14 +445,21 @@ export const ManagementDashboard = () => {
           </>
         ) : (
           <StationsManagement
-            stations={filteredStations}
+            stations={stations}
             isLoading={isLoadingStations}
             onAdd={handleAddStation}
             onEdit={handleUpdateStation}
             onDelete={handleDeleteStation}
             onEditChecklists={handleUpdateStationChecklists}
+            stationTypes={stationTypes}
           />
         )}
+        {activeTab === "stations" ? (
+          <>
+            <Separator />
+            <StationTypeManager stationTypes={stationTypes} onClear={handleClearStationType} />
+          </>
+        ) : null}
       </div>
     </AdminLayout>
   );

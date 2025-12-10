@@ -12,18 +12,6 @@ type StationPayload = {
   end_checklist?: StationChecklistItem[] | null;
 };
 
-const stationTypes: StationType[] = [
-  "prepress",
-  "digital_press",
-  "offset",
-  "folding",
-  "cutting",
-  "binding",
-  "shrink",
-  "lamination",
-  "other",
-];
-
 const respondWithError = (error: unknown) => {
   if (error instanceof AdminActionError) {
     return NextResponse.json(
@@ -43,10 +31,6 @@ export async function PUT(
   const body = (await request.json().catch(() => null)) as StationPayload | null;
   if (!body) {
     return NextResponse.json({ error: "INVALID_PAYLOAD" }, { status: 400 });
-  }
-
-  if (body.station_type && !stationTypes.includes(body.station_type)) {
-    return NextResponse.json({ error: "INVALID_STATION_TYPE" }, { status: 400 });
   }
 
   if (body.start_checklist !== undefined && Array.isArray(body.start_checklist) && body.start_checklist.length === 0) {

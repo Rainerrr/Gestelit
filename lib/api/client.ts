@@ -1,7 +1,7 @@
 import type {
   ChecklistKind,
   Job,
-  Reason,
+  Malfunction,
   Station,
   StationChecklist,
   StatusEventState,
@@ -113,7 +113,7 @@ export async function submitChecklistResponsesApi(
 export async function startStatusEventApi(options: {
   sessionId: string;
   status: StatusEventState;
-  reasonId?: string | null;
+  stationReasonId?: string | null;
   note?: string | null;
   imageUrl?: string | null;
 }) {
@@ -123,7 +123,7 @@ export async function startStatusEventApi(options: {
     body: JSON.stringify({
       sessionId: options.sessionId,
       status: options.status,
-      reasonId: options.reasonId,
+      stationReasonId: options.stationReasonId,
       note: options.note,
       imageUrl: options.imageUrl,
     }),
@@ -164,9 +164,29 @@ export async function abandonSessionApi(
   await handleResponse(response);
 }
 
-export async function fetchReasonsApi(type: string) {
-  const response = await fetch(`/api/reasons?type=${type}`);
-  const data = await handleResponse<{ reasons: Reason[] }>(response);
-  return data.reasons;
+export async function createMalfunctionApi(input: {
+  stationId: string;
+  stationReasonId?: string;
+  description?: string;
+  image?: File | null;
+}): Promise<Malfunction> {
+  const formData = new FormData();
+  formData.append("stationId", input.stationId);
+  if (input.stationReasonId) {
+    formData.append("stationReasonId", input.stationReasonId);
+  }
+  if (input.description) {
+    formData.append("description", input.description);
+  }
+  if (input.image) {
+    formData.append("image", input.image);
+  }
+
+  const response = await fetch("/api/malfunctions", {
+    method: "POST",
+    body: formData,
+  });
+  const data = await handleResponse<{ malfunction: Malfunction }>(response);
+  return data.malfunction;
 }
 

@@ -1,6 +1,6 @@
 # Gestelit Work Monitor – Architecture Overview
 
-> Updated: 2025‑12‑03  
+> Updated: 2025‑12‑10  
 > Context: Next.js 16 + React 19 (App Router), Tailwind, shadcn/ui, Supabase
 
 ## 1. High-Level Structure
@@ -8,7 +8,7 @@
 - **UI System**: TailwindCSS + shadcn/ui components (see `components/ui/`).
 - **State & Context**: `contexts/WorkerSessionContext.tsx` stores worker/station/job/session state plus production totals and checklist completion flags. Language context lives in `contexts/LanguageContext.tsx`.
 - **Data Layer**: Supabase (Postgres + Realtime). Browser client (`lib/supabase/client.ts`) for frontend; service client for API routes.
-- **API Routes**: Located under `app/api/**` and act as the backend layer (session management, checklists, reasons, etc.).
+- **API Routes**: Located under `app/api/**` and act as the backend layer (session management, checklists, station-level reasons, etc.).
 - **i18n**: Minimal translation helper in `lib/i18n/translations.ts` with Hebrew-first copy.
 
 ## 2. Worker Flow (App Router under `app/(worker)/`)
@@ -52,38 +52,43 @@
 
 ## 4. Supabase Schema (key tables)
 - `workers` – worker metadata (`worker_code`, `full_name`, `language`, `role`).
-- `stations` – station definitions + JSON checklists.
+- `stations` – station definitions + JSON checklists + `station_reasons` (per-station reasons list, always includes the built-in general malfunction reason).
 - `jobs` – job metadata (`job_number`, customer info).
 - `sessions` – active work sessions (links worker/station/job). Fields used today: `status`, `started_at`, `ended_at`, totals, and checklist flags (`start_checklist_completed`, `end_checklist_completed`).
-- `status_events` – timeline of state changes (`setup`, `production`, `stopped`, `fault`, `waiting_client`, `plate_change`).
+- `status_events` – timeline of state changes (`setup`, `production`, `stopped`, `fault`, `waiting_client`, `plate_change`) with optional `station_reason_id` (lookup inside the owning station’s `station_reasons` JSON).
 
-## 5. Recent Architecture Changes (Dec 3, 2025)
-1. **Admin Dashboard MVP**  
+## 5. Recent Architecture Changes (Dec 10, 2025)
+1. **Station-scoped malfunction reasons**
+   - `reasons` table removed; each station owns `station_reasons` JSON with the built-in default `{ id: "general-malfunction", label_he: "תקלת כללית", label_ru: "Общая неисправность", is_active: true }`.
+   - `malfunctions` and `status_events` now reference `station_reason_id` (string) instead of FK `reason_id`.
+   - `/api/reasons` is station-scoped (`?stationId=`) and returns active station reasons (default included).
+   - Admin “סוגי תקלות” list edits station-level reasons; default reason is hidden but injected on save with server-side validation.
+2. **Admin Dashboard MVP (Dec 3, 2025)**  
    - Added `/admin` route, RTL layout, KPIs, realtime active sessions table, charts, and recent sessions panel.  
    - Hooked to Supabase Realtime for `sessions` and `status_events`.
-2. **Mock Admin Access**  
+3. **Mock Admin Access**  
    - Landing page “כניסת מנהל” dialog with password `1234` storing `localStorage.isAdmin`.
-3. **Timer Synchronization**  
+4. **Timer Synchronization**  
    - Worker timer now uses persisted `sessionStartedAt`.  
    - Admin timer uses server-side `started_at` with 1-second updates.
-4. **Checklist & Session Start Flow**  
+5. **Checklist & Session Start Flow**  
    - Start checklist submission now:  
      1. Validates client-side that all required checklist items are checked.  
      2. Server marks session officially started via `markSessionStarted` and sets `start_checklist_completed = true` on the `sessions` row.  
      3. Client sets start timestamp and sends default `"stopped"` status event.  
    - No individual checklist answers are persisted; only the fact that the start checklist was completed.
-5. **Realtime Status Reliability**  
+6. **Realtime Status Reliability**  
    - Restored `status_events` subscription to avoid missing state changes; admin now responds instantly when workers switch statuses without needing production count updates.
-6. **Force-Close Utility**  
+7. **Force-Close Utility**  
    - `/api/admin/sessions/close-all` to terminate stuck sessions during demos/tests.
-7. **Session Lifecycle Guard**  
+8. **Session Lifecycle Guard**  
    - Workers ping `/api/sessions/heartbeat` every 15 שניות ושולחים `navigator.sendBeacon` בזמן סגירת הטאב כך ש־`last_seen_at` נשאר מעודכן.  
    - Supabase cron (`close-idle-sessions`) מסיים עבודות שלא נראו במשך יותר מ־5 דקות, מסמן `forced_closed_at`, ומעדכן סטטוס ל־`stopped`.  
    - מסך הכניסה של העובד מציע דיאלוג “חזרה לעבודה פעילה” עם טיימר של 5 דקות שמאפשר להמשיך עבודה פתוחה לפני שהיא תיסגר אוטומטית.  
    - כל שינוי סטטוס מעדכן את שדות `current_status` ו־`last_status_change_at` בטבלת `sessions`, כדי שמסך המנהלים יקבל נתוני Realtime דרך ערוץ אחד.
 
 ## 6. Known Issues / Follow-ups
-- **Lint noise**: Several legacy `.cjs` scripts still use `require`, triggering ESLint errors. Worker `work/page.tsx` still imports `Separator`/`Input` that aren’t used.
+- **Lint noise**: Several legacy `.cjs` scripts still use `require`, triggering ESLint errors.
 - **Security**: Admin auth remains mock-only (localStorage flag). Real RBAC/auth still needed.
 - **Schema drift**: Recent attempts to add `current_status` column were reverted; status derivation still relies on `status_events`. If you reintroduce a column, ensure Supabase migrations run in all environments.
 - **Realtime load**: `subscribeToActiveSessions` triggers full refetches on every insert/update. Consider differential updates or edge functions if scaling becomes an issue.

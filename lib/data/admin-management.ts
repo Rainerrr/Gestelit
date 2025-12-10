@@ -237,14 +237,35 @@ export async function fetchAllWorkers(options?: {
   }));
 }
 
-export async function fetchAllStations(): Promise<StationWithStats[]> {
+export async function fetchAllStations(options?: {
+  stationType?: string | null;
+  search?: string;
+  startsWith?: string;
+}): Promise<StationWithStats[]> {
   const supabase = createServiceSupabase();
-  const { data, error } = await supabase
+  let query = supabase
     .from("stations")
     .select(
       "id, name, code, station_type, is_active, start_checklist, end_checklist, station_reasons, created_at, updated_at, worker_stations(count), sessions(count)",
     )
     .order("name", { ascending: true });
+
+  if (options?.stationType) {
+    query = query.eq("station_type", options.stationType);
+  }
+
+  if (options?.search) {
+    const term = options.search.trim();
+    if (term.length > 0) {
+      query = query.or(`name.ilike.%${term}%,code.ilike.%${term}%`);
+    }
+  }
+
+  if (options?.startsWith) {
+    query = query.ilike("name", `${options.startsWith}%`);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     throwAdminError("UNKNOWN_ERROR", 500, error.message);
@@ -400,6 +421,7 @@ export async function deleteWorker(id: string): Promise<void> {
 export async function createStation(payload: StationInput): Promise<Station> {
   const supabase = createServiceSupabase();
   const code = payload.code.trim();
+  const stationType = (payload.station_type ?? "other").trim() || "other";
   let stationReasons: StationReason[];
   try {
     stationReasons = prepareStationReasons(payload.station_reasons);
@@ -436,7 +458,7 @@ export async function createStation(payload: StationInput): Promise<Station> {
     .insert({
       name: payload.name.trim(),
       code,
-      station_type: payload.station_type,
+      station_type: stationType,
       is_active: payload.is_active ?? true,
       station_reasons: stationReasons,
       start_checklist: startChecklist ?? null,
@@ -455,6 +477,10 @@ export async function createStation(payload: StationInput): Promise<Station> {
 export async function updateStation(id: string, payload: StationUpdateInput): Promise<Station> {
   const supabase = createServiceSupabase();
   const current = await ensureStationExists(id);
+  const stationType =
+    payload.station_type !== undefined
+      ? (payload.station_type ?? "").trim() || "other"
+      : current.station_type;
   let stationReasons =
     payload.station_reasons !== undefined
       ? payload.station_reasons
@@ -505,7 +531,7 @@ export async function updateStation(id: string, payload: StationUpdateInput): Pr
     .update({
       name: payload.name?.trim() ?? current.name,
       code: payload.code?.trim() ?? current.code,
-      station_type: payload.station_type ?? current.station_type,
+      station_type: stationType,
       is_active: payload.is_active ?? current.is_active,
       station_reasons: stationReasons ?? [],
       start_checklist: startChecklist ?? null,
@@ -683,6 +709,45 @@ export async function fetchDepartmentList(): Promise<string[]> {
 export async function clearDepartment(department: string): Promise<void> {
   const supabase = createServiceSupabase();
   const { error } = await supabase.from("workers").update({ department: null }).eq("department", department);
+  if (error) {
+    throwAdminError("UNKNOWN_ERROR", 500, error.message);
+  }
+}
+
+export async function fetchStationTypeList(): Promise<string[]> {
+  const supabase = createServiceSupabase();
+  const { data, error } = await supabase
+    .from("stations")
+    .select("station_type")
+    .not("station_type", "is", null)
+    .order("station_type", { ascending: true });
+
+  if (error) {
+    throwAdminError("UNKNOWN_ERROR", 500, error.message);
+  }
+
+  const rows = (data as { station_type: string | null }[]) ?? [];
+  const unique = Array.from(
+    new Set(
+      rows
+        .map((row) => (row.station_type ? row.station_type.trim() : null))
+        .filter((value): value is string => Boolean(value)),
+    ),
+  );
+  return unique;
+}
+
+export async function clearStationType(stationType: string): Promise<void> {
+  const supabase = createServiceSupabase();
+  const trimmed = stationType.trim();
+  if (!trimmed) {
+    throwAdminError("INVALID_PAYLOAD", 400, "INVALID_STATION_TYPE");
+  }
+  const { error } = await supabase
+    .from("stations")
+    .update({ station_type: "other" })
+    .eq("station_type", trimmed);
+
   if (error) {
     throwAdminError("UNKNOWN_ERROR", 500, error.message);
   }

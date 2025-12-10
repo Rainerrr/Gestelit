@@ -14,24 +14,24 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { STATUS_ORDER, getStatusHex } from "./status-dictionary";
+import { STATUS_ORDER, STATUS_LABELS, getStatusHex } from "./status-dictionary";
 
-type StatusDataPoint = {
+export type StatusSummary = {
   key: string;
   label: string;
   value: number;
 };
 
-type ThroughputDataPoint = {
+export type ThroughputSummary = {
   name: string;
   label: string;
   good: number;
   scrap: number;
 };
 
-type StatusChartsProps = {
-  statusData: StatusDataPoint[];
-  throughputData: ThroughputDataPoint[];
+type HistoryChartsProps = {
+  statusData: StatusSummary[];
+  throughputData: ThroughputSummary[];
   isLoading: boolean;
 };
 
@@ -44,53 +44,54 @@ const tooltipStyle = {
 };
 
 const getStatusColor = (statusKey: string): string => getStatusHex(statusKey);
+
+const formatDuration = (valueMs: number): string => {
+  const totalMinutes = Math.max(0, Math.round(valueMs / 60000));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours > 0) {
+    return `${hours}ש ${minutes}דק`;
+  }
+  return `${minutes}דק`;
+};
+
 const throughputColors = {
   good: "#10b981",
   scrap: "#ef4444",
 };
 
-export const StatusCharts = ({
+export const HistoryCharts = ({
   statusData,
   throughputData,
   isLoading,
-}: StatusChartsProps) => {
+}: HistoryChartsProps) => {
   const [activeIndex, setActiveIndex] = useState<number | undefined>(undefined);
 
   const renderStatusPie = () => {
-
     if (isLoading) {
       return <p className="text-sm text-slate-500">טוען תרשים...</p>;
-    }
-
-    if (statusData.length === 0) {
-      return <p className="text-sm text-slate-500">אין עבודות פעילות להצגה.</p>;
     }
 
     const normalized = statusData
       .map((item) => ({
         ...item,
-        label: item.label ?? item.key,
+        label:
+          item.label ??
+          STATUS_LABELS[item.key as keyof typeof STATUS_LABELS] ??
+          item.key,
       }))
       .filter((item) => item.value > 0);
 
     if (normalized.length === 0) {
-      return <p className="text-sm text-slate-500">אין עבודות פעילות להצגה.</p>;
+      return <p className="text-sm text-slate-500">אין נתונים להצגה.</p>;
     }
-
-    const onPieEnter = (_: unknown, index: number) => {
-      setActiveIndex(index);
-    };
-
-    const onPieLeave = () => {
-      setActiveIndex(undefined);
-    };
 
     const total = normalized.reduce((sum, item) => sum + item.value, 0);
 
     return (
       <div className="w-full">
         <div dir="ltr" className="w-full [direction:ltr]">
-          <ResponsiveContainer width="100%" height={240} className="sm:h-[280px]">
+          <ResponsiveContainer width="100%" height={280}>
             <PieChart>
               <Pie
                 data={normalized}
@@ -101,8 +102,8 @@ export const StatusCharts = ({
                 innerRadius={60}
                 outerRadius={90}
                 paddingAngle={2}
-                onMouseEnter={onPieEnter}
-                onMouseLeave={onPieLeave}
+                onMouseEnter={(_, index) => setActiveIndex(index)}
+                onMouseLeave={() => setActiveIndex(undefined)}
                 animationBegin={0}
                 animationDuration={600}
                 animationEasing="ease-out"
@@ -112,7 +113,12 @@ export const StatusCharts = ({
                     key={entry.key ?? entry.label ?? index}
                     fill={getStatusColor(entry.key)}
                     style={{
-                      filter: activeIndex === index ? "brightness(1.1)" : activeIndex !== undefined ? "opacity(0.5)" : "none",
+                      filter:
+                        activeIndex === index
+                          ? "brightness(1.1)"
+                          : activeIndex !== undefined
+                            ? "opacity(0.5)"
+                            : "none",
                       transition: "filter 0.2s ease",
                       cursor: "pointer",
                     }}
@@ -123,7 +129,7 @@ export const StatusCharts = ({
                 contentStyle={tooltipStyle}
                 formatter={(value: number) => {
                   const percent = total > 0 ? Math.round((value / total) * 100) : 0;
-                  return [`${value} (${percent}%)`, ""];
+                  return [`${formatDuration(value)} (${percent}%)`, ""];
                 }}
                 labelFormatter={(label) => label}
               />
@@ -131,7 +137,10 @@ export const StatusCharts = ({
           </ResponsiveContainer>
         </div>
 
-        <div className="mt-4 flex flex-wrap justify-center gap-x-4 gap-y-2 text-xs text-slate-600" dir="rtl">
+        <div
+          className="mt-4 flex flex-wrap justify-center gap-x-4 gap-y-2 text-xs text-slate-600"
+          dir="rtl"
+        >
           {normalized.map((entry, index) => (
             <div
               key={entry.key ?? entry.label ?? index}
@@ -160,7 +169,7 @@ export const StatusCharts = ({
     }
 
     if (throughputData.length === 0) {
-      return <p className="text-sm text-slate-500">אין נתוני תפוקה מהעבודות הפעילות.</p>;
+      return <p className="text-sm text-slate-500">אין נתוני תפוקה להצגה.</p>;
     }
 
     const normalized = throughputData.map((item) => ({
@@ -173,7 +182,7 @@ export const StatusCharts = ({
     return (
       <div dir="ltr" className="w-full overflow-visible [direction:ltr]">
         <div className="flex justify-center">
-          <ResponsiveContainer width="100%" height={280} className="sm:h-[320px]">
+          <ResponsiveContainer width="100%" height={320}>
             <BarChart
               data={normalized}
               margin={{ top: 12, right: 12, bottom: 24, left: 12 }}
@@ -214,7 +223,10 @@ export const StatusCharts = ({
           </ResponsiveContainer>
         </div>
 
-        <div className="mt-3 flex justify-center gap-4 text-xs text-slate-600" dir="rtl">
+        <div
+          className="mt-3 flex justify-center gap-4 text-xs text-slate-600"
+          dir="rtl"
+        >
           <div className="flex items-center gap-2">
             <span
               className="h-2.5 w-2.5 rounded-full shrink-0"
@@ -236,25 +248,26 @@ export const StatusCharts = ({
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 gap-4 lg:gap-6 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <Card className="overflow-hidden">
-          <CardHeader className="px-4 pb-3 pt-4 sm:px-6 sm:pt-6">
-            <CardTitle className="text-base sm:text-lg">התפלגות סטטוסים</CardTitle>
+          <CardHeader className="px-4 pb-3">
+            <CardTitle className="text-lg">התפלגות סטטוסים</CardTitle>
           </CardHeader>
-          <CardContent className="px-4 pb-4 sm:px-6 sm:pb-6">
-            {renderStatusPie()}
-          </CardContent>
+          <CardContent className="px-4 pb-4">{renderStatusPie()}</CardContent>
         </Card>
 
         <Card className="overflow-hidden">
-          <CardHeader className="px-4 pb-3 pt-4 sm:px-6 sm:pt-6">
-            <CardTitle className="text-base sm:text-lg">תפוקה לפי תחנה</CardTitle>
+          <CardHeader className="px-4 pb-3">
+            <CardTitle className="text-lg">תפוקה לפי תחנה</CardTitle>
           </CardHeader>
-          <CardContent className="px-4 pb-4 sm:px-6 sm:pb-6">
-            {renderThroughputBars()}
-          </CardContent>
+          <CardContent className="px-4 pb-4">{renderThroughputBars()}</CardContent>
         </Card>
       </div>
     </div>
   );
 };
+
+
+
+
+

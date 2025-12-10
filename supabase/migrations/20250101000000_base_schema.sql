@@ -42,13 +42,6 @@ end $$;
 
 do $$
 begin
-  if not exists (select 1 from pg_type where typname = 'reason_type') then
-    create type reason_type as enum ('stop', 'scrap');
-  end if;
-end $$;
-
-do $$
-begin
   if not exists (select 1 from pg_type where typname = 'status_event_state') then
     create type status_event_state as enum (
       'setup',
@@ -82,6 +75,7 @@ create table if not exists stations (
   is_active boolean not null default true,
   start_checklist jsonb not null default '[]'::jsonb,
   end_checklist jsonb not null default '[]'::jsonb,
+  station_reasons jsonb not null default '[{"id":"general-malfunction","label_he":"תקלת כללית","label_ru":"Общая неисправность","is_active":true}]'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -125,25 +119,25 @@ create index if not exists sessions_worker_idx on sessions(worker_id);
 create index if not exists sessions_station_idx on sessions(station_id);
 create index if not exists sessions_status_idx on sessions(status);
 
--- Reasons
-create table if not exists reasons (
+-- Malfunctions
+create table if not exists malfunctions (
   id uuid primary key default gen_random_uuid(),
-  type reason_type not null,
-  label_he text not null,
-  label_ru text not null,
-  is_active boolean not null default true,
+  station_id uuid not null references stations(id),
+  station_reason_id text,
+  description text,
+  image_url text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
-create index if not exists reasons_type_idx on reasons(type);
+create index if not exists malfunctions_station_idx on malfunctions(station_id);
 
 -- Status events
 create table if not exists status_events (
   id uuid primary key default gen_random_uuid(),
   session_id uuid not null references sessions(id) on delete cascade,
   status status_event_state not null,
-  reason_id uuid references reasons(id),
+  station_reason_id text,
   note text,
   image_url text,
   started_at timestamptz not null default now(),

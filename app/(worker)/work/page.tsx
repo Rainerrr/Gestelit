@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -26,19 +26,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useWorkerSession } from "@/contexts/WorkerSessionContext";
 import {
-  fetchReasonsApi,
+  createMalfunctionApi,
   startStatusEventApi,
   updateSessionTotalsApi,
 } from "@/lib/api/client";
+import { getActiveStationReasons } from "@/lib/data/station-reasons";
+import { STATUS_COLORS } from "@/lib/status";
 import { cn } from "@/lib/utils";
 import type { TranslationKey } from "@/lib/i18n/translations";
-import type { Reason, StatusEventState } from "@/lib/types";
+import type { StationReason, StatusEventState } from "@/lib/types";
 import { useSessionHeartbeat } from "@/hooks/useSessionHeartbeat";
 
 const statusButtons = [
@@ -72,67 +73,27 @@ const neutralVisual: StatusVisual = {
   timerShadow: "shadow-sm",
 };
 
+const buildStatusVisual = (status: StatusEventState): StatusVisual => {
+  const color = STATUS_COLORS[status];
+  return {
+    dot: color.dot,
+    selectedBorder: color.border,
+    selectedBg: color.softBg,
+    selectedText: color.softText,
+    selectedShadow: color.shadow,
+    selectedRing: color.ring,
+    timerBorder: color.timerBorder,
+    timerShadow: color.timerShadow,
+  };
+};
+
 const statusVisuals: Record<StatusEventState, StatusVisual> = {
-  production: {
-    dot: "bg-emerald-500",
-    selectedBorder: "border-emerald-500",
-    selectedBg: "bg-emerald-50",
-    selectedText: "text-emerald-900",
-    selectedShadow: "shadow-[0_10px_25px_rgba(16,185,129,0.25)]",
-    selectedRing: "ring-emerald-200",
-    timerBorder: "border-emerald-200",
-    timerShadow: "shadow-[0_0_35px_rgba(16,185,129,0.25)]",
-  },
-  setup: {
-    dot: "bg-amber-400",
-    selectedBorder: "border-amber-400",
-    selectedBg: "bg-amber-50",
-    selectedText: "text-amber-900",
-    selectedShadow: "shadow-[0_10px_25px_rgba(251,191,36,0.3)]",
-    selectedRing: "ring-amber-200",
-    timerBorder: "border-amber-200",
-    timerShadow: "shadow-[0_0_35px_rgba(251,191,36,0.3)]",
-  },
-  waiting_client: {
-    dot: "bg-amber-400",
-    selectedBorder: "border-amber-400",
-    selectedBg: "bg-amber-50",
-    selectedText: "text-amber-900",
-    selectedShadow: "shadow-[0_10px_25px_rgba(251,191,36,0.3)]",
-    selectedRing: "ring-amber-200",
-    timerBorder: "border-amber-200",
-    timerShadow: "shadow-[0_0_35px_rgba(251,191,36,0.3)]",
-  },
-  plate_change: {
-    dot: "bg-amber-400",
-    selectedBorder: "border-amber-400",
-    selectedBg: "bg-amber-50",
-    selectedText: "text-amber-900",
-    selectedShadow: "shadow-[0_10px_25px_rgba(251,191,36,0.3)]",
-    selectedRing: "ring-amber-200",
-    timerBorder: "border-amber-200",
-    timerShadow: "shadow-[0_0_35px_rgba(251,191,36,0.3)]",
-  },
-  stopped: {
-    dot: "bg-rose-500",
-    selectedBorder: "border-rose-500",
-    selectedBg: "bg-rose-50",
-    selectedText: "text-rose-900",
-    selectedShadow: "shadow-[0_10px_25px_rgba(244,63,94,0.25)]",
-    selectedRing: "ring-rose-200",
-    timerBorder: "border-rose-200",
-    timerShadow: "shadow-[0_0_35px_rgba(244,63,94,0.25)]",
-  },
-  fault: {
-    dot: "bg-rose-500",
-    selectedBorder: "border-rose-500",
-    selectedBg: "bg-rose-50",
-    selectedText: "text-rose-900",
-    selectedShadow: "shadow-[0_10px_25px_rgba(244,63,94,0.25)]",
-    selectedRing: "ring-rose-200",
-    timerBorder: "border-rose-200",
-    timerShadow: "shadow-[0_0_35px_rgba(244,63,94,0.25)]",
-  },
+  production: buildStatusVisual("production"),
+  setup: buildStatusVisual("setup"),
+  stopped: buildStatusVisual("stopped"),
+  fault: buildStatusVisual("fault"),
+  waiting_client: buildStatusVisual("waiting_client"),
+  plate_change: buildStatusVisual("plate_change"),
 };
 
 function formatDuration(elapsedSeconds: number) {
@@ -165,13 +126,23 @@ export default function WorkPage() {
   } = useWorkerSession();
   const [faultReason, setFaultReason] = useState<string>();
   const [faultNote, setFaultNote] = useState("");
+  const [faultImage, setFaultImage] = useState<File | null>(null);
+  const [faultImagePreview, setFaultImagePreview] = useState<string | null>(null);
+  const [isFaultSubmitting, setIsFaultSubmitting] = useState(false);
   const [isFaultDialogOpen, setFaultDialogOpen] = useState(false);
   const [isEndSessionDialogOpen, setEndSessionDialogOpen] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [productionError, setProductionError] = useState<string | null>(null);
   const [faultError, setFaultError] = useState<string | null>(null);
-  const [reasons, setReasons] = useState<Reason[]>([]);
-  const [reasonsLoading, setReasonsLoading] = useState(true);
+  const reasons = useMemo<StationReason[]>(
+    () => getActiveStationReasons(station?.station_reasons ?? []),
+    [station?.station_reasons],
+  );
+  useEffect(() => {
+    if (!faultReason && reasons.length > 0) {
+      setFaultReason(reasons[0].id);
+    }
+  }, [faultReason, reasons]);
 
   useEffect(() => {
     if (!worker) {
@@ -193,15 +164,8 @@ export default function WorkPage() {
 
   useSessionHeartbeat(sessionId);
 
-  const formatReason = (reason: Reason) =>
+  const formatReason = (reason: StationReason) =>
     language === "he" ? reason.label_he : reason.label_ru;
-
-  useEffect(() => {
-    fetchReasonsApi("stop")
-      .then((items) => setReasons(items))
-      .catch(() => setReasons([]))
-      .finally(() => setReasonsLoading(false));
-  }, []);
 
   if (!worker || !station || !job || !sessionId) {
     return null;
@@ -271,6 +235,18 @@ export default function WorkPage() {
     }
     setLocalTotal(key, next);
     syncTotals(key, next);
+  };
+
+  const handleFaultImageChange = (file: File | null) => {
+    setFaultImage(file);
+    if (faultImagePreview) {
+      URL.revokeObjectURL(faultImagePreview);
+    }
+    if (file) {
+      setFaultImagePreview(URL.createObjectURL(file));
+    } else {
+      setFaultImagePreview(null);
+    }
   };
 
   return (
@@ -532,8 +508,8 @@ export default function WorkPage() {
                   <SelectValue placeholder={t("work.dialog.fault.reason")} />
                 </SelectTrigger>
                 <SelectContent align="end">
-                  {reasonsLoading ? (
-                    <SelectItem value="loading" disabled>
+                  {reasons.length === 0 ? (
+                    <SelectItem value="empty" disabled>
                       {t("checklist.loading")}
                     </SelectItem>
                   ) : (
@@ -564,8 +540,28 @@ export default function WorkPage() {
               <label className="text-sm font-medium text-slate-700">
                 {t("work.dialog.fault.image")}
               </label>
-              <div className="rounded-xl border border-dashed border-slate-300 p-4 text-right text-sm text-slate-500">
-                {t("work.dialog.fault.imagePlaceholder")}
+              <div className="space-y-3">
+                <Input
+                  type="file"
+                  accept="image/*"
+                  aria-label={t("work.dialog.fault.image")}
+                  onChange={(event) =>
+                    handleFaultImageChange(event.target.files?.[0] ?? null)
+                  }
+                />
+                {faultImagePreview ? (
+                  <div className="overflow-hidden rounded-xl border border-slate-200">
+                    <img
+                      src={faultImagePreview}
+                      alt={t("work.dialog.fault.image")}
+                      className="h-48 w-full object-cover"
+                    />
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-slate-300 p-4 text-right text-sm text-slate-500">
+                    {t("work.dialog.fault.imagePlaceholder")}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -584,26 +580,32 @@ export default function WorkPage() {
             </Button>
             <Button
               type="button"
+              disabled={isFaultSubmitting}
               onClick={async () => {
-                if (!sessionId) return;
+                if (!station) return;
+                setFaultError(null);
+                setIsFaultSubmitting(true);
                 try {
-                  setFaultError(null);
-                  await startStatusEventApi({
-                    sessionId,
-                    status: "fault",
-                    reasonId: faultReason,
-                    note: faultNote,
+                  await createMalfunctionApi({
+                    stationId: station.id,
+                    stationReasonId: faultReason,
+                    description: faultNote,
+                    image: faultImage,
                   });
-                  setCurrentStatus("fault");
                   setFaultDialogOpen(false);
                   setFaultReason(undefined);
                   setFaultNote("");
+                  handleFaultImageChange(null);
                 } catch {
                   setFaultError(t("work.error.fault"));
+                } finally {
+                  setIsFaultSubmitting(false);
                 }
               }}
             >
-              {t("work.dialog.fault.submit")}
+              {isFaultSubmitting
+                ? `${t("work.dialog.fault.submit")}...`
+                : t("work.dialog.fault.submit")}
             </Button>
           </DialogFooter>
         </DialogContent>

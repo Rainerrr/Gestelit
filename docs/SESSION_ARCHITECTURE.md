@@ -1,6 +1,6 @@
 # Session Architecture
 
-> Updated: 2025‑12‑03  
+> Updated: 2025‑12‑10  
 > Scope: Session persistence, lifecycle APIs, client state, monitoring, and automated enforcement
 
 ## 1. End-to-End Flow (Worker Perspective)
@@ -30,11 +30,10 @@ The worker UI keeps only lightweight, optimistic state in `contexts/WorkerSessio
 | Table | Purpose | Key Columns |
 | ----- | ------- | ----------- |
 | `workers` | Operator directory (`worker_code`, `full_name`, `language`, `role`). | `id`, `worker_code`, `language` |
-| `stations` | Machine metadata + embedded checklists. | `start_checklist jsonb`, `end_checklist jsonb`, `station_type` |
+| `stations` | Machine metadata + embedded checklists + station-level reasons. | `start_checklist jsonb`, `end_checklist jsonb`, `station_type`, `station_reasons` (JSON array, always includes built-in general malfunction) |
 | `jobs` | Production job records (created on demand). | `job_number`, `customer_name`, `planned_quantity` |
 | `sessions` | Core session record linking worker, station, job. | `worker_id`, `station_id`, `job_id`, `status`, `started_at`, `ended_at`, `total_good`, `total_scrap`, `start_checklist_completed`, `end_checklist_completed`, `last_seen_at`, `forced_closed_at`, `current_status`, `last_status_change_at` |
-| `status_events` | Timeline of operating states for each session. | `session_id`, `status` (`setup`, `production`, `stopped`, etc.), `reason_id`, `note`, `started_at`, `ended_at` |
-| `reasons` | Categorized stop/scrap reasons used when logging status events. | `type` (`stop`/`scrap`), `label_he`, `label_ru` |
+| `status_events` | Timeline of operating states for each session. | `session_id`, `status` (`setup`, `production`, `stopped`, etc.), `station_reason_id`, `note`, `started_at`, `ended_at` |
 
 ### Session Columns in Detail
 

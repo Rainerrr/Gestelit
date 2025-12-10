@@ -5,26 +5,15 @@ import {
   fetchAllStations,
   type StationWithStats,
 } from "@/lib/data/admin-management";
-import type { StationType } from "@/lib/types";
+import type { StationReason, StationType } from "@/lib/types";
 
 type StationPayload = {
   name?: string;
   code?: string;
   station_type?: StationType;
   is_active?: boolean;
+  station_reasons?: StationReason[] | null;
 };
-
-const stationTypes: StationType[] = [
-  "prepress",
-  "digital_press",
-  "offset",
-  "folding",
-  "cutting",
-  "binding",
-  "shrink",
-  "lamination",
-  "other",
-];
 
 const respondWithError = (error: unknown) => {
   if (error instanceof AdminActionError) {
@@ -38,9 +27,18 @@ const respondWithError = (error: unknown) => {
   return NextResponse.json({ error: "UNKNOWN_ERROR" }, { status: 500 });
 };
 
-export async function GET() {
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const search = searchParams.get("search") ?? undefined;
+  const stationType = searchParams.get("stationType") ?? undefined;
+  const startsWith = searchParams.get("startsWith") ?? undefined;
+
   try {
-    const stations = await fetchAllStations();
+    const stations = await fetchAllStations({
+      search,
+      stationType: stationType ?? null,
+      startsWith,
+    });
     return NextResponse.json<{ stations: StationWithStats[] }>({ stations });
   } catch (error) {
     return respondWithError(error);
@@ -54,16 +52,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "INVALID_PAYLOAD" }, { status: 400 });
   }
 
-  if (!stationTypes.includes(body.station_type)) {
-    return NextResponse.json({ error: "INVALID_STATION_TYPE" }, { status: 400 });
-  }
-
   try {
     const station = await createStation({
       name: body.name,
       code: body.code,
       station_type: body.station_type,
       is_active: body.is_active ?? true,
+      station_reasons: body.station_reasons ?? [],
     });
 
     return NextResponse.json({ station });

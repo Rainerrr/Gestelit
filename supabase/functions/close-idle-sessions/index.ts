@@ -25,6 +25,7 @@ const closeSession = async (sessionId: string, timestamp: string) => {
   await supabase.from("status_events").insert({
     session_id: sessionId,
     status: "stopped",
+    station_reason_id: "general-malfunction",
     note: "auto-abandon",
     started_at: timestamp,
   });

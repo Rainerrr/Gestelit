@@ -26,16 +26,16 @@ export const KpiCards = ({
   ];
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:gap-4">
       {items.map((item) => (
         <Card key={item.label}>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-slate-500">
+            <CardTitle className="text-xs text-slate-500 sm:text-sm">
               {item.label}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-semibold">
+            <p className="text-2xl font-semibold sm:text-3xl">
               {isLoading ? "—" : formatNumber(item.value)}
             </p>
           </CardContent>

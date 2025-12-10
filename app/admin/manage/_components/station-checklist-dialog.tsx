@@ -67,21 +67,23 @@ const SortableRow = ({
     <div
       ref={setNodeRef}
       style={style}
-      className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm"
+      className="flex items-start gap-2 rounded-md border border-slate-200 bg-white px-2 py-2 shadow-sm sm:gap-3 sm:rounded-lg sm:px-3 sm:py-2"
     >
-      <span className="w-10 text-center text-lg font-semibold text-slate-900">
-        {item.order_index + 1}
-      </span>
-      <button
-        type="button"
-        className="flex h-10 w-10 items-center justify-center rounded-md border border-dashed border-slate-300 text-slate-500 transition hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-primary"
-        aria-label="גרירה לשינוי סדר"
-        {...attributes}
-        {...listeners}
-      >
-        <GripVertical className="h-4 w-4" />
-      </button>
-      <div className="grid flex-1 grid-cols-1 gap-3 md:grid-cols-2">
+      <div className="flex w-12 flex-col items-center gap-1 pt-1 sm:w-14 sm:gap-2">
+        <span className="text-base font-semibold text-slate-900 sm:text-lg">
+          {item.order_index + 1}
+        </span>
+        <button
+          type="button"
+          className="flex h-8 w-8 items-center justify-center rounded-md border border-dashed border-slate-300 text-slate-500 transition hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-primary sm:h-9 sm:w-9"
+          aria-label="גרירה לשינוי סדר"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="grid flex-1 grid-cols-1 gap-2 md:grid-cols-2 md:gap-3">
         <div className="space-y-1">
           <label className="text-xs text-slate-600" htmlFor={`he-${item.id}`}>
             תווית בעברית
@@ -122,7 +124,7 @@ const SortableRow = ({
         onClick={() => onRemove(kind, item.id)}
         disabled={loading || listLength <= 1}
         aria-label="מחיקת פריט"
-        className="h-9 px-2 text-rose-600 hover:text-rose-700 disabled:opacity-60"
+        className="self-start h-8 px-2 text-rose-600 hover:text-rose-700 disabled:opacity-60 sm:h-9"
       >
         <Trash2 className="h-4 w-4" />
       </Button>
@@ -379,7 +381,7 @@ export const StationChecklistDialog = ({
             {items.length} פריטים
           </Badge>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-2 sm:space-y-3">
           {items.length === 0 ? (
             <p className="rounded-md border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500">
               לא הוגדרו פריטים. הוסיפו פריט חדש כדי להתחיל.
@@ -395,7 +397,7 @@ export const StationChecklistDialog = ({
                 items={items.map((item) => item.id)}
                 strategy={verticalListSortingStrategy}
               >
-                <div className="max-h-[380px] space-y-3 overflow-y-auto pr-1">
+                <div className="max-h-[52vh] space-y-2 overflow-y-auto pr-1 sm:max-h-[360px] sm:space-y-3">
                   {items.map((item) => (
                     <SortableRow
                       key={item.id}
@@ -429,72 +431,77 @@ export const StationChecklistDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent dir="rtl" className="max-w-4xl text-right">
-        <DialogHeader>
-          <DialogTitle className="flex items-center justify-between gap-2">
-            <span>צ׳קליסטים לתחנה {station.name}</span>
-            <Badge variant="outline" className="flex items-center gap-1">
-              <ListChecks className="h-4 w-4" />
-              {station.code}
-            </Badge>
-          </DialogTitle>
-        </DialogHeader>
+      <DialogContent
+        dir="rtl"
+        className="max-w-4xl text-right max-h-[90vh] overflow-hidden p-0 sm:max-h-[80vh] sm:p-6"
+      >
+        <div className="space-y-3 px-4 pt-4 sm:px-0 sm:pt-0">
+          <DialogHeader>
+            <DialogTitle className="flex items-center justify-between gap-2">
+              <span>צ׳קליסטים לתחנה {station.name}</span>
+              <Badge variant="outline" className="flex items-center gap-1">
+                <ListChecks className="h-4 w-4" />
+                {station.code}
+              </Badge>
+            </DialogTitle>
+          </DialogHeader>
 
-        <div className="space-y-3">
-          {error ? (
-            <Alert
-              variant="destructive"
-              className="border-red-200 bg-red-50 text-right text-sm text-red-700"
-            >
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          ) : null}
-          {success ? (
-            <Alert className="border-emerald-200 bg-emerald-50 text-right text-sm text-emerald-800">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="h-4 w-4" />
-                <AlertDescription>{success}</AlertDescription>
-              </div>
-            </Alert>
-          ) : null}
-
-          <div className="flex items-center gap-2">
-            {tabMeta.map((tab) => (
-              <Button
-                key={tab.key}
-                type="button"
-                variant={activeTab === tab.key ? "default" : "outline"}
-                size="sm"
-                onClick={() => setActiveTab(tab.key)}
-                aria-label={tab.label}
-                className="flex items-center gap-2"
+          <div className="space-y-3 max-h-[70vh] overflow-y-auto sm:max-h-[65vh]">
+            {error ? (
+              <Alert
+                variant="destructive"
+                className="border-red-200 bg-red-50 text-right text-sm text-red-700"
               >
-                {tab.label}
-                <Badge
-                  variant={activeTab === tab.key ? "secondary" : "outline"}
-                  className="text-xs"
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            ) : null}
+            {success ? (
+              <Alert className="border-emerald-200 bg-emerald-50 text-right text-sm text-emerald-800">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4" />
+                  <AlertDescription>{success}</AlertDescription>
+                </div>
+              </Alert>
+            ) : null}
+
+            <div className="flex items-center gap-2">
+              {tabMeta.map((tab) => (
+                <Button
+                  key={tab.key}
+                  type="button"
+                  variant={activeTab === tab.key ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setActiveTab(tab.key)}
+                  aria-label={tab.label}
+                  className="flex items-center gap-2"
                 >
-                  {tab.count}
-                </Badge>
-              </Button>
-            ))}
+                  {tab.label}
+                  <Badge
+                    variant={activeTab === tab.key ? "secondary" : "outline"}
+                    className="text-xs"
+                  >
+                    {tab.count}
+                  </Badge>
+                </Button>
+              ))}
+            </div>
+
+            {activeTab === "start" ? renderTab("start", startItems) : renderTab("end", endItems)}
           </div>
 
-          {activeTab === "start" ? renderTab("start", startItems) : renderTab("end", endItems)}
+          <DialogFooter className="justify-start pt-2">
+            <Button onClick={() => void handleSubmit()} disabled={loading}>
+              {loading ? "שומר..." : "שמור צ'קליסטים"}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={loading}
+            >
+              ביטול
+            </Button>
+          </DialogFooter>
         </div>
-
-        <DialogFooter className="justify-start">
-          <Button onClick={() => void handleSubmit()} disabled={loading}>
-            {loading ? "שומר..." : "שמור צ'קליסטים"}
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={loading}
-          >
-            ביטול
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

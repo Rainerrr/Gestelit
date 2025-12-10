@@ -174,16 +174,38 @@ const fetchLastEventNote = async (sessionId: string): Promise<string | null> => 
   return data.note;
 };
 
+type FetchRecentSessionsArgs = {
+  workerId?: string;
+  stationId?: string;
+  jobNumber?: string;
+  limit?: number;
+};
+
 export const fetchRecentSessions = async (
-  limit = 8,
+  args: FetchRecentSessionsArgs = {},
 ): Promise<CompletedSession[]> => {
+  const { workerId, stationId, jobNumber, limit = 8 } = args;
   const supabase = getBrowserSupabaseClient();
-  const { data, error } = await supabase
+  let query = supabase
     .from("sessions")
     .select(ACTIVE_SESSIONS_SELECT)
     .not("ended_at", "is", null)
     .order("ended_at", { ascending: false })
     .limit(limit);
+
+  if (workerId) {
+    query = query.eq("worker_id", workerId);
+  }
+
+  if (stationId) {
+    query = query.eq("station_id", stationId);
+  }
+
+  if (jobNumber) {
+    query = query.eq("jobs.job_number", jobNumber);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     console.error("[admin-dashboard] Failed to fetch recent sessions", error);
@@ -214,6 +236,49 @@ export const fetchRecentSessions = async (
   );
 
   return sessionsWithNotes;
+};
+
+type StatusEventRow = {
+  session_id: string;
+  status: StatusEventState;
+  started_at: string;
+  ended_at: string | null;
+};
+
+export type SessionStatusEvent = {
+  sessionId: string;
+  status: StatusEventState;
+  startedAt: string;
+  endedAt: string | null;
+};
+
+export const fetchStatusEventsBySessionIds = async (
+  sessionIds: string[],
+): Promise<SessionStatusEvent[]> => {
+  if (sessionIds.length === 0) {
+    return [];
+  }
+
+  const supabase = getBrowserSupabaseClient();
+  const { data, error } = await supabase
+    .from("status_events")
+    .select("session_id, status, started_at, ended_at")
+    .in("session_id", sessionIds)
+    .order("started_at", { ascending: true });
+
+  if (error) {
+    console.error("[admin-dashboard] Failed to fetch status events", error);
+    return [];
+  }
+
+  const rows = (data as StatusEventRow[]) ?? [];
+
+  return rows.map((row) => ({
+    sessionId: row.session_id,
+    status: row.status,
+    startedAt: row.started_at,
+    endedAt: row.ended_at,
+  }));
 };
 
 

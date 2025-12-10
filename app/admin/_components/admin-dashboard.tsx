@@ -3,16 +3,20 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useAdminGuard } from "@/hooks/useAdminGuard";
 import { useIdleSessionCleanup } from "@/hooks/useIdleSessionCleanup";
 import {
   fetchActiveSessions,
-  fetchRecentSessions,
   subscribeToActiveSessions,
   type ActiveSession,
-  type CompletedSession,
 } from "@/lib/data/admin-dashboard";
 import { KpiCards } from "./kpi-cards";
 import { ActiveSessionsTable } from "./active-sessions-table";
@@ -22,18 +26,11 @@ import {
   STATUS_ORDER,
   STOPPAGE_STATUSES,
 } from "./status-dictionary";
-import { RecentSessionsTable } from "./recent-sessions-table";
-
-const NAV_ITEMS = [
-  { label: "דשבורד", href: "/admin", isActive: true },
-  { label: "דוחות", href: "#", disabled: true },
-  { label: "ניהול", href: "#", disabled: true },
-];
+import { AdminLayout } from "./admin-layout";
 
 export const AdminDashboard = () => {
   const { hasAccess } = useAdminGuard();
   const [sessions, setSessions] = useState<ActiveSession[]>([]);
-  const [recentSessions, setRecentSessions] = useState<CompletedSession[]>([]);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [now, setNow] = useState(() => Date.now());
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
@@ -41,12 +38,8 @@ export const AdminDashboard = () => {
   const [resetResult, setResetResult] = useState<string | null>(null);
 
   const refreshDashboardData = useCallback(async () => {
-    const [active, recent] = await Promise.all([
-      fetchActiveSessions(),
-      fetchRecentSessions(),
-    ]);
+    const [active] = await Promise.all([fetchActiveSessions()]);
     setSessions(active);
-    setRecentSessions(recent);
     setIsInitialLoading(false);
   }, []);
 
@@ -123,12 +116,17 @@ export const AdminDashboard = () => {
   );
 
   const throughputData = useMemo(() => {
-    const map = new Map<string, { name: string; label: string; value: number }>();
+    const map = new Map<
+      string,
+      { name: string; label: string; good: number; scrap: number }
+    >();
 
     sessions.forEach((session) => {
       const key = session.stationName || "לא משויך";
-      const current = map.get(key) ?? { name: key, label: key, value: 0 };
-      current.value += session.totalGood ?? 0;
+      const current =
+        map.get(key) ?? { name: key, label: key, good: 0, scrap: 0 };
+      current.good += session.totalGood ?? 0;
+      current.scrap += session.totalScrap ?? 0;
       map.set(key, current);
     });
 
@@ -168,81 +166,44 @@ export const AdminDashboard = () => {
   }
 
   return (
-    <section className="w-full space-y-6" dir="rtl">
-      <div className="flex min-h-[70vh] overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-        <aside className="hidden w-64 border-l border-slate-200 bg-white p-6 lg:block">
-          <div className="flex flex-col gap-1">
-            <span className="text-sm font-semibold text-slate-900">
-              Gestelit
-            </span>
-            <span className="text-xs text-slate-500">
-              ניהול רצפת ייצור בזמן אמת
-            </span>
-          </div>
-          <nav className="mt-10 space-y-1">
-            {NAV_ITEMS.map((item) =>
-              item.isActive ? (
-                <Link
-                  key={item.label}
-                  href={item.href}
-                  className="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-900"
-                  aria-current="page"
-                >
-                  {item.label}
-                  <Badge variant="secondary" className="text-[0.65rem]">
-                    חי
-                  </Badge>
-                </Link>
-              ) : (
-                <button
-                  key={item.label}
-                  type="button"
-                  disabled
-                  className="flex w-full items-center justify-between rounded-xl px-4 py-2 text-sm text-slate-400"
-                >
-                  {item.label}
-                  <Badge variant="outline" className="text-[0.65rem]">
-                    בקרוב
-                  </Badge>
-                </button>
-              ),
-            )}
-          </nav>
-        </aside>
-
-        <div className="flex flex-1 flex-col bg-slate-50">
-          <header className="flex flex-col gap-4 border-b border-slate-200 bg-white px-6 py-5">
-            <div className="flex flex-wrap items-center justify-between gap-4">
+    <>
+      <AdminLayout
+        header={
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="space-y-1 text-right">
                 <div className="flex items-center gap-2 text-xs text-slate-500">
                   <span>גרסת הדגמה</span>
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                 </div>
-                <h1 className="text-2xl font-semibold text-slate-900">
+                <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">
                   דשבורד מנהלים - רצפת ייצור
                 </h1>
-                <p className="text-sm text-slate-500">
+                <p className="text-xs text-slate-500 sm:text-sm">
                   מבט מרוכז על עבודות פעילות ומצב המכונות.
                 </p>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
                 <Button
                   variant="destructive"
                   onClick={() => setResetDialogOpen(true)}
+                  className="w-full sm:w-auto"
+                  size="sm"
                 >
                   סגירת כל העבודות הפעילות
                 </Button>
-                <Button variant="outline" asChild className="min-w-32">
+                <Button variant="outline" asChild className="w-full sm:min-w-32 sm:w-auto" size="sm">
                   <Link href="/">מסך עובד</Link>
                 </Button>
               </div>
             </div>
             {resetResult ? (
-              <p className="text-sm text-slate-500">{resetResult}</p>
+              <p className="text-xs text-slate-500 sm:text-sm">{resetResult}</p>
             ) : null}
-          </header>
-
-          <div className="flex-1 space-y-6 p-6">
+          </div>
+        }
+      >
+        <div className="space-y-6">
             <KpiCards
               activeCount={kpis.activeCount}
               productionCount={kpis.productionCount}
@@ -251,36 +212,29 @@ export const AdminDashboard = () => {
               isLoading={isInitialLoading}
             />
 
-            <div className="grid gap-6 lg:grid-cols-[2fr,1fr]">
-              <ActiveSessionsTable
-                sessions={sessions}
-                now={now}
-                isLoading={isInitialLoading}
-              />
-              <StatusCharts
-                statusData={statusData}
-                throughputData={throughputData}
-                isLoading={isInitialLoading}
-              />
-            </div>
-
-            <RecentSessionsTable
-              sessions={recentSessions}
+            <ActiveSessionsTable
+              sessions={sessions}
+              now={now}
               isLoading={isInitialLoading}
             />
-          </div>
+
+            <StatusCharts
+              statusData={statusData}
+              throughputData={throughputData}
+              isLoading={isInitialLoading}
+            />
         </div>
-      </div>
+      </AdminLayout>
 
       <Dialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
         <DialogContent className="text-right">
-          <h2 className="text-lg font-semibold text-slate-900">
-            לאפס את העבודות הפעילות?
-          </h2>
-          <p className="text-sm text-slate-500">
-            פעולה זו תסגור את כל העבודות הפעילות ותעביר אותן למעקב העבודות
-            שהושלמו. השתמש בזה לצרכי בדיקות בלבד.
-          </p>
+          <DialogHeader>
+            <DialogTitle>לאפס את העבודות הפעילות?</DialogTitle>
+            <DialogDescription>
+              פעולה זו תסגור את כל העבודות הפעילות ותעביר אותן למעקב העבודות
+              שהושלמו. השתמש בזה לצרכי בדיקות בלבד.
+            </DialogDescription>
+          </DialogHeader>
           <DialogFooter className="justify-start gap-2">
             <Button
               variant="destructive"
@@ -295,7 +249,7 @@ export const AdminDashboard = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </section>
+    </>
   );
 };
 

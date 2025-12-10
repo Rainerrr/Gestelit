@@ -75,36 +75,38 @@ export const ActiveSessionsTable = ({
         ) : sessions.length === 0 ? (
           <p className="text-sm text-slate-500">אין עבודות פעילות כרגע.</p>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{"פק\"ע"}</TableHead>
-                <TableHead>תחנה</TableHead>
-                <TableHead>עובד</TableHead>
-                <TableHead>סטטוס נוכחי</TableHead>
-                <TableHead>זמן ריצה (שעות:דקות:שניות)</TableHead>
-                <TableHead>כמות טובה</TableHead>
-                <TableHead>כמות פסולה</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {sessions.map((session) => (
-                <TableRow key={session.id}>
-                  <TableCell className="font-medium">
-                    {session.jobNumber}
-                  </TableCell>
-                  <TableCell>{session.stationName}</TableCell>
-                  <TableCell>{session.workerName}</TableCell>
-                  <TableCell>{renderStatusBadge(session.currentStatus)}</TableCell>
-                  <TableCell className="font-mono text-sm text-slate-800">
-                    {getDurationLabel(session.startedAt, now)}
-                  </TableCell>
-                  <TableCell>{session.totalGood}</TableCell>
-                  <TableCell>{session.totalScrap}</TableCell>
+          <div className="overflow-x-auto -mx-6 px-6">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{"פק\"ע"}</TableHead>
+                  <TableHead>תחנה</TableHead>
+                  <TableHead>עובד</TableHead>
+                  <TableHead>סטטוס נוכחי</TableHead>
+                  <TableHead>זמן ריצה (שעות:דקות:שניות)</TableHead>
+                  <TableHead>כמות טובה</TableHead>
+                  <TableHead>כמות פסולה</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {sessions.map((session) => (
+                  <TableRow key={session.id}>
+                    <TableCell className="font-medium">
+                      {session.jobNumber}
+                    </TableCell>
+                    <TableCell>{session.stationName}</TableCell>
+                    <TableCell>{session.workerName}</TableCell>
+                    <TableCell>{renderStatusBadge(session.currentStatus)}</TableCell>
+                    <TableCell className="font-mono text-sm text-slate-800">
+                      {getDurationLabel(session.startedAt, now)}
+                    </TableCell>
+                    <TableCell>{session.totalGood}</TableCell>
+                    <TableCell>{session.totalScrap}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         )}
       </CardContent>
     </Card>

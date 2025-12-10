@@ -147,7 +147,7 @@ async function closeOpenStatusEvents(sessionId: string) {
 type StatusEventPayload = {
   session_id: string;
   status: StatusEventState;
-  reason_id?: string | null;
+  station_reason_id?: string | null;
   note?: string | null;
   image_url?: string | null;
   started_at?: string;

@@ -83,10 +83,20 @@ export async function deleteWorkerAdminApi(
   return handleResponse(response);
 }
 
-export async function fetchStationsAdminApi(): Promise<{
+export async function fetchStationsAdminApi(params?: {
+  search?: string;
+  stationType?: string | null;
+  startsWith?: string;
+}): Promise<{
   stations: StationWithStats[];
 }> {
-  const response = await fetch("/api/admin/stations");
+  const query = new URLSearchParams();
+  if (params?.search) query.set("search", params.search);
+  if (params?.stationType) query.set("stationType", params.stationType);
+  if (params?.startsWith) query.set("startsWith", params.startsWith);
+
+  const queryString = query.toString();
+  const response = await fetch(`/api/admin/stations${queryString ? `?${queryString}` : ""}`);
   return handleResponse(response);
 }
 
@@ -165,6 +175,22 @@ export async function clearDepartmentAdminApi(department: string): Promise<{ ok:
     method: "DELETE",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ department }),
+  });
+  return handleResponse(response);
+}
+
+export async function fetchStationTypesAdminApi(): Promise<{
+  stationTypes: string[];
+}> {
+  const response = await fetch("/api/admin/station-types");
+  return handleResponse(response);
+}
+
+export async function clearStationTypeAdminApi(stationType: string): Promise<{ ok: boolean }> {
+  const response = await fetch("/api/admin/station-types", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ station_type: stationType }),
   });
   return handleResponse(response);
 }

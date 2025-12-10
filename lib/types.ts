@@ -1,16 +1,7 @@
 import type { SupportedLanguage } from "@/lib/i18n/translations";
 
 export type WorkerRole = "worker" | "admin";
-export type StationType =
-  | "prepress"
-  | "digital_press"
-  | "offset"
-  | "folding"
-  | "cutting"
-  | "binding"
-  | "shrink"
-  | "lamination"
-  | "other";
+export type StationType = string;
 export type SessionStatus = "active" | "completed" | "aborted";
 export type ChecklistKind = "start" | "end";
 export type StatusEventState =
@@ -20,7 +11,6 @@ export type StatusEventState =
   | "fault"
   | "waiting_client"
   | "plate_change";
-export type ReasonType = "stop" | "scrap";
 export type SessionAbandonReason = "worker_choice" | "expired";
 
 export interface Worker {
@@ -42,6 +32,7 @@ export interface Station {
   is_active: boolean;
   start_checklist?: StationChecklistItem[] | null;
   end_checklist?: StationChecklistItem[] | null;
+  station_reasons?: StationReason[] | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -91,19 +82,28 @@ export interface StatusEvent {
   id: string;
   session_id: string;
   status: StatusEventState;
-  reason_id?: string | null;
+  station_reason_id?: string | null;
   note?: string | null;
   image_url?: string | null;
   started_at: string;
   ended_at?: string | null;
 }
 
-export interface Reason {
+export interface StationReason {
   id: string;
-  type: ReasonType;
   label_he: string;
   label_ru: string;
   is_active: boolean;
+}
+
+export interface Malfunction {
+  id: string;
+  station_id: string;
+  station_reason_id?: string | null;
+  description?: string | null;
+  image_url?: string | null;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface StationChecklistItem {
