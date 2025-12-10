@@ -37,6 +37,99 @@ import {
   Trash2,
 } from "lucide-react";
 
+type SortableRowProps = {
+  kind: ChecklistKind;
+  item: StationChecklistItem;
+  listLength: number;
+  loading: boolean;
+  onChangeLabel: (kind: ChecklistKind, id: string, key: "label_he" | "label_ru", value: string) => void;
+  onRemove: (kind: ChecklistKind, id: string) => void;
+};
+
+const SortableRow = ({
+  kind,
+  item,
+  listLength,
+  loading,
+  onChangeLabel,
+  onRemove,
+}: SortableRowProps) => {
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
+    id: item.id,
+    data: { kind },
+  });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm"
+    >
+      <span className="w-10 text-center text-lg font-semibold text-slate-900">
+        {item.order_index + 1}
+      </span>
+      <button
+        type="button"
+        className="flex h-10 w-10 items-center justify-center rounded-md border border-dashed border-slate-300 text-slate-500 transition hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-primary"
+        aria-label="גרירה לשינוי סדר"
+        {...attributes}
+        {...listeners}
+      >
+        <GripVertical className="h-4 w-4" />
+      </button>
+      <div className="grid flex-1 grid-cols-1 gap-3 md:grid-cols-2">
+        <div className="space-y-1">
+          <label className="text-xs text-slate-600" htmlFor={`he-${item.id}`}>
+            תווית בעברית
+          </label>
+          <Input
+            id={`he-${item.id}`}
+            aria-label="תווית בעברית"
+            value={item.label_he}
+            onChange={(event) =>
+              onChangeLabel(kind, item.id, "label_he", event.target.value)
+            }
+            disabled={loading}
+            placeholder="לדוגמה: בדיקת ניקיון"
+            className="h-10 text-sm"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs text-slate-600" htmlFor={`ru-${item.id}`}>
+            תווית ברוסית
+          </label>
+          <Input
+            id={`ru-${item.id}`}
+            aria-label="תווית ברוסית"
+            value={item.label_ru}
+            onChange={(event) =>
+              onChangeLabel(kind, item.id, "label_ru", event.target.value)
+            }
+            disabled={loading}
+            placeholder="Например: проверка чистоты"
+            className="h-10 text-sm"
+          />
+        </div>
+      </div>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        onClick={() => onRemove(kind, item.id)}
+        disabled={loading || listLength <= 1}
+        aria-label="מחיקת פריט"
+        className="h-9 px-2 text-rose-600 hover:text-rose-700 disabled:opacity-60"
+      >
+        <Trash2 className="h-4 w-4" />
+      </Button>
+    </div>
+  );
+};
+
 type ChecklistKind = "start" | "end";
 
 type StationChecklistDialogProps = {
@@ -270,91 +363,6 @@ export const StationChecklistDialog = ({
     }
   };
 
-  const SortableRow = ({
-    kind,
-    item,
-    listLength,
-  }: {
-    kind: ChecklistKind;
-    item: StationChecklistItem;
-    listLength: number;
-  }) => {
-    const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
-      id: item.id,
-      data: { kind },
-    });
-    const style = {
-      transform: CSS.Transform.toString(transform),
-      transition,
-    };
-
-    return (
-      <div
-        ref={setNodeRef}
-        style={style}
-        className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm"
-      >
-        <span className="w-10 text-center text-lg font-semibold text-slate-900">
-          {item.order_index + 1}
-        </span>
-        <button
-          type="button"
-          className="flex h-10 w-10 items-center justify-center rounded-md border border-dashed border-slate-300 text-slate-500 transition hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-primary"
-          aria-label="גרירה לשינוי סדר"
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical className="h-4 w-4" />
-        </button>
-        <div className="grid flex-1 grid-cols-1 gap-3 md:grid-cols-2">
-          <div className="space-y-1">
-            <label className="text-xs text-slate-600" htmlFor={`he-${item.id}`}>
-              תווית בעברית
-            </label>
-            <Input
-              id={`he-${item.id}`}
-              aria-label="תווית בעברית"
-              value={item.label_he}
-              onChange={(event) =>
-                handleUpdateItem(kind, item.id, "label_he", event.target.value)
-              }
-              disabled={loading}
-              placeholder="לדוגמה: בדיקת ניקיון"
-              className="h-10 text-sm"
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs text-slate-600" htmlFor={`ru-${item.id}`}>
-              תווית ברוסית
-            </label>
-            <Input
-              id={`ru-${item.id}`}
-              aria-label="תווית ברוסית"
-              value={item.label_ru}
-              onChange={(event) =>
-                handleUpdateItem(kind, item.id, "label_ru", event.target.value)
-              }
-              disabled={loading}
-              placeholder="Например: проверка чистоты"
-              className="h-10 text-sm"
-            />
-          </div>
-        </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={() => handleRemoveItem(kind, item.id)}
-          disabled={loading || listLength <= 1}
-          aria-label="מחיקת פריט"
-          className="h-9 px-2 text-rose-600 hover:text-rose-700 disabled:opacity-60"
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
-      </div>
-    );
-  };
-
   const renderTab = (kind: ChecklistKind, items: StationChecklistItem[]) => (
     <div className="space-y-3">
       <Card>
@@ -394,6 +402,9 @@ export const StationChecklistDialog = ({
                       kind={kind}
                       item={item}
                       listLength={items.length}
+                      loading={loading}
+                      onChangeLabel={handleUpdateItem}
+                      onRemove={handleRemoveItem}
                     />
                   ))}
                 </div>
@@ -421,7 +432,7 @@ export const StationChecklistDialog = ({
       <DialogContent dir="rtl" className="max-w-4xl text-right">
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between gap-2">
-            <span>צ'קליסטים לתחנה {station.name}</span>
+            <span>צ׳קליסטים לתחנה {station.name}</span>
             <Badge variant="outline" className="flex items-center gap-1">
               <ListChecks className="h-4 w-4" />
               {station.code}
