@@ -28,6 +28,7 @@ import type { StationWithStats, WorkerWithStats } from "@/lib/data/admin-managem
 import { WorkersManagement } from "./workers-management";
 import { StationsManagement } from "./stations-management";
 import { DepartmentManager } from "./department-manager";
+import { AdminLayout } from "../../_components/admin-layout";
 
 type ActiveTab = "workers" | "stations";
 
@@ -201,6 +202,7 @@ export const ManagementDashboard = () => {
         code: payload.code ?? "",
         station_type: payload.station_type ?? "other",
         is_active: payload.is_active ?? true,
+        station_reasons: payload.station_reasons,
       });
       await loadStations();
     } catch (error) {
@@ -216,10 +218,31 @@ export const ManagementDashboard = () => {
         code: payload.code,
         station_type: payload.station_type ?? "other",
         is_active: payload.is_active,
+        station_reasons: payload.station_reasons,
       });
       await loadStations();
     } catch (error) {
       friendlyError(error);
+    }
+  };
+
+  const handleUpdateStationChecklists = async (
+    id: string,
+    payload: {
+      start_checklist: Station["start_checklist"];
+      end_checklist: Station["end_checklist"];
+    },
+  ) => {
+    setBannerError(null);
+    try {
+      await updateStationAdminApi(id, {
+        start_checklist: payload.start_checklist ?? [],
+        end_checklist: payload.end_checklist ?? [],
+      });
+      await loadStations();
+    } catch (error) {
+      friendlyError(error);
+      throw error;
     }
   };
 
@@ -255,14 +278,18 @@ export const ManagementDashboard = () => {
   }
 
   return (
-    <section className="w-full space-y-4" dir="rtl">
-      <Card className="border border-slate-200 bg-white">
-        <div className="flex flex-col gap-4 border-b border-slate-200 px-6 py-5">
+    <AdminLayout
+      header={
+        <div className="flex flex-col gap-4 text-right">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="space-y-1 text-right">
               <p className="text-xs text-slate-500">ניהול</p>
-              <h1 className="text-2xl font-semibold text-slate-900">ניהול עובדים ותחנות</h1>
-              <p className="text-sm text-slate-500">הוספה, עריכה והרשאות של עובדים ומכונות.</p>
+              <h1 className="text-2xl font-semibold text-slate-900">
+                ניהול עובדים ותחנות
+              </h1>
+              <p className="text-sm text-slate-500">
+                הוספה, עריכה והרשאות של עובדים ומכונות.
+              </p>
             </div>
             <div className="flex items-center gap-2">
               <Button
@@ -281,12 +308,15 @@ export const ManagementDashboard = () => {
               </Button>
             </div>
           </div>
+
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div className="flex flex-wrap items-center gap-2">
               <Input
                 aria-label="חיפוש"
                 placeholder={
-                  activeTab === "workers" ? "חיפוש עובד לפי שם או קוד" : "חיפוש תחנה לפי שם או קוד"
+                  activeTab === "workers"
+                    ? "חיפוש עובד לפי שם או קוד"
+                    : "חיפוש תחנה לפי שם או קוד"
                 }
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
@@ -337,41 +367,49 @@ export const ManagementDashboard = () => {
             ) : null}
           </div>
           {bannerError ? (
-            <Alert variant="destructive" className="border-red-200 bg-red-50 text-right text-sm text-red-700">
+            <Alert
+              variant="destructive"
+              className="border-red-200 bg-red-50 text-right text-sm text-red-700"
+            >
               <AlertTitle>שגיאה</AlertTitle>
               <AlertDescription>{bannerError}</AlertDescription>
             </Alert>
           ) : null}
         </div>
-        <div className="space-y-4 p-6">
-          {activeTab === "workers" ? (
-            <>
-              <WorkersManagement
-                workers={workers}
-                isLoading={isLoadingWorkers}
-                onAdd={handleAddWorker}
-                onEdit={handleUpdateWorker}
-                onDelete={handleDeleteWorker}
-                onFetchAssignments={handleFetchAssignments}
-                onAssignStation={handleAssignStation}
-                onRemoveStation={handleRemoveStation}
-                stations={stations.map((row) => row.station)}
-                departments={departments}
-              />
-              <Separator />
-              <DepartmentManager departments={departments} onClear={handleClearDepartment} />
-            </>
-          ) : (
-            <StationsManagement
-              stations={filteredStations}
-              isLoading={isLoadingStations}
-              onAdd={handleAddStation}
-              onEdit={handleUpdateStation}
-              onDelete={handleDeleteStation}
+      }
+    >
+      <div className="space-y-4">
+        {activeTab === "workers" ? (
+          <>
+            <WorkersManagement
+              workers={workers}
+              isLoading={isLoadingWorkers}
+              onAdd={handleAddWorker}
+              onEdit={handleUpdateWorker}
+              onDelete={handleDeleteWorker}
+              onFetchAssignments={handleFetchAssignments}
+              onAssignStation={handleAssignStation}
+              onRemoveStation={handleRemoveStation}
+              stations={stations.map((row) => row.station)}
+              departments={departments}
             />
-          )}
-        </div>
-      </Card>
-    </section>
+            <Separator />
+            <DepartmentManager
+              departments={departments}
+              onClear={handleClearDepartment}
+            />
+          </>
+        ) : (
+          <StationsManagement
+            stations={filteredStations}
+            isLoading={isLoadingStations}
+            onAdd={handleAddStation}
+            onEdit={handleUpdateStation}
+            onDelete={handleDeleteStation}
+            onEditChecklists={handleUpdateStationChecklists}
+          />
+        )}
+      </div>
+    </AdminLayout>
   );
 };

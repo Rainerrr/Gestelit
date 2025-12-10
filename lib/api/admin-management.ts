@@ -15,6 +15,9 @@ type StationPayload = {
   code: string;
   station_type: Station["station_type"];
   is_active?: boolean;
+  station_reasons?: Station["station_reasons"];
+  start_checklist?: Station["start_checklist"];
+  end_checklist?: Station["end_checklist"];
 };
 
 type WorkerUpdatePayload = Partial<WorkerPayload>;

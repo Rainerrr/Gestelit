@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { AdminActionError, deleteStation, updateStation } from "@/lib/data/admin-management";
-import type { StationType } from "@/lib/types";
+import type { StationChecklistItem, StationReason, StationType } from "@/lib/types";
 
 type StationPayload = {
   name?: string;
   code?: string;
   station_type?: StationType;
   is_active?: boolean;
+  station_reasons?: StationReason[] | null;
+  start_checklist?: StationChecklistItem[] | null;
+  end_checklist?: StationChecklistItem[] | null;
 };
 
 const stationTypes: StationType[] = [
@@ -46,6 +49,14 @@ export async function PUT(
     return NextResponse.json({ error: "INVALID_STATION_TYPE" }, { status: 400 });
   }
 
+  if (body.start_checklist !== undefined && Array.isArray(body.start_checklist) && body.start_checklist.length === 0) {
+    return NextResponse.json({ error: "INVALID_PAYLOAD", message: "start_checklist must include at least one item" }, { status: 400 });
+  }
+
+  if (body.end_checklist !== undefined && Array.isArray(body.end_checklist) && body.end_checklist.length === 0) {
+    return NextResponse.json({ error: "INVALID_PAYLOAD", message: "end_checklist must include at least one item" }, { status: 400 });
+  }
+
   try {
     const { id } = await context.params;
     const station = await updateStation(id, {
@@ -53,6 +64,9 @@ export async function PUT(
       code: body.code,
       station_type: body.station_type,
       is_active: body.is_active,
+      station_reasons: body.station_reasons,
+      start_checklist: body.start_checklist,
+      end_checklist: body.end_checklist,
     });
 
     return NextResponse.json({ station });
