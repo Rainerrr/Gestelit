@@ -24,6 +24,7 @@ import { StationChecklistDialog } from "./station-checklist-dialog";
 type StationsManagementProps = {
   stations: StationWithStats[];
   isLoading: boolean;
+  stationTypes: string[];
   onAdd: (payload: Partial<Station>) => Promise<void>;
   onEdit: (id: string, payload: Partial<Station>) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
@@ -39,6 +40,7 @@ type StationsManagementProps = {
 export const StationsManagement = ({
   stations,
   isLoading,
+  stationTypes,
   onAdd,
   onEdit,
   onDelete,
@@ -49,6 +51,11 @@ export const StationsManagement = ({
   const [deleteStationId, setDeleteStationId] = useState<string | null>(null);
   const [checklistStation, setChecklistStation] = useState<Station | null>(null);
   const [isChecklistSubmitting, setIsChecklistSubmitting] = useState(false);
+
+  const normalizedStationTypes = useMemo(
+    () => (stationTypes.includes("other") ? stationTypes : ["other", ...stationTypes]),
+    [stationTypes],
+  );
 
   const sortedStations = useMemo(
     () =>
@@ -112,6 +119,7 @@ export const StationsManagement = ({
         </div>
         <StationFormDialog
           mode="create"
+          stationTypes={normalizedStationTypes}
           onSubmit={handleAdd}
           trigger={<Button>הוסף תחנה</Button>}
           loading={isSubmitting}
@@ -132,13 +140,92 @@ export const StationsManagement = ({
                   <TableHead className="whitespace-nowrap text-right">סוג</TableHead>
                   <TableHead className="whitespace-nowrap text-right">עובדים משויכים</TableHead>
                   <TableHead className="whitespace-nowrap text-right">מצב</TableHead>
-                  <TableHead className="whitespace-nowrap text-right">פעולות</TableHead>
+                  <TableHead className="hidden whitespace-nowrap text-right lg:table-cell">
+                    פעולות
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {sortedStations.map(({ station, workerCount }) => (
                   <TableRow key={station.id} className="h-14">
-                    <TableCell className="whitespace-nowrap font-medium">{station.name}</TableCell>
+                    <TableCell className="whitespace-nowrap font-medium">
+                      <div className="flex items-center justify-between gap-3">
+                        <span>{station.name}</span>
+                        <div className="flex items-center gap-2 lg:hidden">
+                          <StationFormDialog
+                            mode="edit"
+                            station={station}
+                            stationTypes={normalizedStationTypes}
+                            onSubmit={handleEdit}
+                            trigger={
+                              <Button
+                                variant="secondary"
+                                size="icon"
+                                onClick={() => setEditingStation(station)}
+                                aria-label="עריכת תחנה"
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                            }
+                            open={editingStation?.id === station.id}
+                            onOpenChange={(open) =>
+                              setEditingStation(open ? station : null)
+                            }
+                            loading={isSubmitting}
+                          />
+                          <Button
+                            variant="secondary"
+                            size="icon"
+                            onClick={() => setChecklistStation(station)}
+                            aria-label="ניהול צ'קליסטים"
+                            disabled={isChecklistSubmitting}
+                          >
+                            <ListChecks className="h-4 w-4" />
+                          </Button>
+                          <Dialog
+                            open={deleteStationId === station.id}
+                            onOpenChange={(open) =>
+                              setDeleteStationId(open ? station.id : null)
+                            }
+                          >
+                            <DialogTrigger asChild>
+                              <Button
+                                variant="destructive"
+                                size="icon"
+                                disabled={isSubmitting}
+                                aria-label="מחיקת תחנה"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent dir="rtl">
+                              <DialogHeader>
+                                <DialogTitle>האם למחוק את התחנה?</DialogTitle>
+                                <DialogDescription>
+                                  הפעולה תמחק את התחנה לחלוטין ותשמור היסטוריה בסשנים קיימים. לא ניתן לבטל.
+                                </DialogDescription>
+                              </DialogHeader>
+                              <DialogFooter className="justify-start">
+                                <Button
+                                  variant="destructive"
+                                  onClick={() => void handleDelete(station.id)}
+                                  disabled={isSubmitting}
+                                >
+                                  מחיקה סופית
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  onClick={() => setDeleteStationId(null)}
+                                  disabled={isSubmitting}
+                                >
+                                  ביטול
+                                </Button>
+                              </DialogFooter>
+                            </DialogContent>
+                          </Dialog>
+                        </div>
+                      </div>
+                    </TableCell>
                     <TableCell className="whitespace-nowrap">{station.code}</TableCell>
                     <TableCell className="whitespace-nowrap">
                       <Badge variant="secondary">{station.station_type}</Badge>
@@ -152,11 +239,12 @@ export const StationsManagement = ({
                         <Switch checked={station.is_active} disabled aria-readonly />
                       </div>
                     </TableCell>
-                    <TableCell className="whitespace-nowrap">
+                    <TableCell className="hidden whitespace-nowrap lg:table-cell">
                       <div className="flex flex-wrap items-center justify-end gap-2">
                         <StationFormDialog
                           mode="edit"
                           station={station}
+                          stationTypes={normalizedStationTypes}
                           onSubmit={handleEdit}
                           trigger={
                             <Button
@@ -183,7 +271,7 @@ export const StationsManagement = ({
                           disabled={isChecklistSubmitting}
                         >
                           <ListChecks className="h-4 w-4" />
-                          <span className="sr-only">צ'קליסטים</span>
+                          <span className="sr-only">צ׳קליסטים</span>
                         </Button>
                         <Dialog open={deleteStationId === station.id} onOpenChange={(open) => setDeleteStationId(open ? station.id : null)}>
                           <DialogTrigger asChild>
