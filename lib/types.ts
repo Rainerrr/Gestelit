@@ -4,13 +4,9 @@ export type WorkerRole = "worker" | "admin";
 export type StationType = string;
 export type SessionStatus = "active" | "completed" | "aborted";
 export type ChecklistKind = "start" | "end";
-export type StatusEventState =
-  | "setup"
-  | "production"
-  | "stopped"
-  | "fault"
-  | "waiting_client"
-  | "plate_change";
+export type StatusScope = "global" | "station";
+export type StatusCode = string; // status_definition.id
+export type StatusEventState = StatusCode;
 export type SessionAbandonReason = "worker_choice" | "expired";
 
 export interface Worker {
@@ -33,6 +29,7 @@ export interface Station {
   start_checklist?: StationChecklistItem[] | null;
   end_checklist?: StationChecklistItem[] | null;
   station_reasons?: StationReason[] | null;
+  station_statuses?: StatusDefinition[] | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -59,7 +56,7 @@ export interface Session {
   station_id: string;
   job_id: string;
   status: SessionStatus;
-  current_status?: StatusEventState | null;
+  current_status_id?: StatusEventState | null;
   started_at: string;
   ended_at?: string | null;
   total_good: number;
@@ -81,7 +78,7 @@ export interface WorkerResumeSession {
 export interface StatusEvent {
   id: string;
   session_id: string;
-  status: StatusEventState;
+  status_definition_id: StatusEventState;
   station_reason_id?: string | null;
   note?: string | null;
   image_url?: string | null;
@@ -117,5 +114,16 @@ export interface StationChecklistItem {
 export interface StationChecklist {
   kind: ChecklistKind;
   items: StationChecklistItem[];
+}
+
+export interface StatusDefinition {
+  id: string;
+  scope: StatusScope;
+  station_id?: string | null;
+  label_he: string;
+  label_ru?: string | null;
+  color_hex: string;
+  created_at?: string;
+  updated_at?: string;
 }
 

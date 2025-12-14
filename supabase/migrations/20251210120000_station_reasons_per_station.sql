@@ -59,28 +59,16 @@ end $$;
 
 -- 4) Backfill station_reason_id for malfunctions
 update malfunctions m
-set station_reason_id = coalesce(sr.obj->>'id', 'general-malfunction')
+set station_reason_id = 'general-malfunction'
 from stations s
-left join lateral (
-  select obj
-  from jsonb_array_elements(coalesce(s.station_reasons, '[]'::jsonb)) obj
-  where obj->>'id' = coalesce(m.reason_id::text, '')
-  limit 1
-) sr on true
 where s.id = m.station_id
   and m.station_reason_id is null;
 
 -- 5) Backfill station_reason_id for status events (via session->station)
 update status_events se
-set station_reason_id = coalesce(sr.obj->>'id', 'general-malfunction')
+set station_reason_id = 'general-malfunction'
 from sessions sess
 join stations s on s.id = sess.station_id
-left join lateral (
-  select obj
-  from jsonb_array_elements(coalesce(s.station_reasons, '[]'::jsonb)) obj
-  where obj->>'id' = coalesce(se.reason_id::text, '')
-  limit 1
-) sr on true
 where se.session_id = sess.id
   and se.station_reason_id is null;
 

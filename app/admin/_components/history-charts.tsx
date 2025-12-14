@@ -17,7 +17,11 @@ import {
   YAxis,
 } from "recharts";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { STATUS_ORDER, STATUS_LABELS, getStatusHex } from "./status-dictionary";
+import type { StatusDictionary } from "@/lib/status";
+import {
+  getStatusColorFromDictionary,
+  getStatusLabelFromDictionary,
+} from "./status-dictionary";
 
 export type StatusSummary = {
   key: string;
@@ -45,6 +49,7 @@ type HistoryChartsProps = {
   onPrevPage: () => void;
   onNextPage: () => void;
   pageLabel: string;
+  dictionary: StatusDictionary;
 };
 
 const tooltipStyle = {
@@ -55,7 +60,10 @@ const tooltipStyle = {
   textAlign: "right" as const,
 };
 
-const getStatusColor = (statusKey: string): string => getStatusHex(statusKey);
+const getStatusColor = (
+  statusKey: string,
+  dictionary: StatusDictionary,
+): string => getStatusColorFromDictionary(statusKey, dictionary);
 
 const formatDuration = (valueMs: number): string => {
   const totalMinutes = Math.max(0, Math.round(valueMs / 60000));
@@ -85,6 +93,7 @@ export const HistoryCharts = ({
   onPrevPage,
   onNextPage,
   pageLabel,
+  dictionary,
 }: HistoryChartsProps) => {
   const [activeIndex, setActiveIndex] = useState<number | undefined>(undefined);
 
@@ -98,7 +107,7 @@ export const HistoryCharts = ({
         ...item,
         label:
           item.label ??
-          STATUS_LABELS[item.key as keyof typeof STATUS_LABELS] ??
+          getStatusLabelFromDictionary(item.key, dictionary) ??
           item.key,
       }))
       .filter((item) => item.value > 0);
@@ -132,7 +141,7 @@ export const HistoryCharts = ({
                 {normalized.map((entry, index) => (
                   <Cell
                     key={entry.key ?? entry.label ?? index}
-                    fill={getStatusColor(entry.key)}
+                    fill={getStatusColor(entry.key, dictionary)}
                     style={{
                       filter:
                         activeIndex === index
@@ -174,7 +183,9 @@ export const HistoryCharts = ({
             >
               <span
                 className="h-2.5 w-2.5 rounded-full shrink-0"
-                style={{ backgroundColor: getStatusColor(entry.key) }}
+                    style={{
+                      backgroundColor: getStatusColor(entry.key, dictionary),
+                    }}
               />
               <span>{entry.label}</span>
             </div>

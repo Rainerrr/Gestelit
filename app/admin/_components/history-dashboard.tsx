@@ -24,7 +24,12 @@ import {
   type JobThroughput,
 } from "@/lib/data/admin-dashboard";
 import type { CompletedSession } from "@/lib/data/admin-dashboard";
-import { STATUS_LABELS, STATUS_ORDER } from "./status-dictionary";
+import {
+  getStatusLabelFromDictionary,
+  getStatusOrderFromDictionary,
+  getStatusScopeFromDictionary,
+  useStatusDictionary,
+} from "./status-dictionary";
 
 type Option = { id: string; label: string };
 
@@ -63,6 +68,20 @@ export const HistoryDashboard = () => {
     key: "endedAt",
     direction: "desc",
   });
+  const stationIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          sessions
+            .map((session) => session.stationId)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      ),
+    [sessions],
+  );
+  const { dictionary, isLoading: isStatusesLoading } = useStatusDictionary(
+    stationIds,
+  );
 
   const loadFiltersData = useCallback(async () => {
     setIsLoadingFilters(true);
@@ -185,17 +204,11 @@ export const HistoryDashboard = () => {
       });
       return next;
     });
-  }, [sessions]);
+  }, [dictionary, sessions, statusEvents]);
 
   const statusData: StatusSummary[] = useMemo(() => {
     const totals = new Map<string, StatusSummary>();
-    STATUS_ORDER.forEach((status) => {
-      totals.set(status, {
-        key: status,
-        label: STATUS_LABELS[status],
-        value: 0,
-      });
-    });
+    let otherDuration = 0;
 
     const nowTs = Date.now();
     const sessionEndTimes = new Map<string, number>();
@@ -216,14 +229,18 @@ export const HistoryDashboard = () => {
         return;
       }
 
+      const scope = getStatusScopeFromDictionary(event.status, dictionary);
+      if (scope === "station" || scope === "unknown") {
+        otherDuration += durationMs;
+        return;
+      }
+
       const summary =
         totals.get(event.status) ??
         (() => {
           const fallback: StatusSummary = {
             key: event.status,
-            label:
-              STATUS_LABELS[event.status as keyof typeof STATUS_LABELS] ??
-              event.status,
+            label: getStatusLabelFromDictionary(event.status, dictionary),
             value: 0,
           };
           totals.set(event.status, fallback);
@@ -234,16 +251,26 @@ export const HistoryDashboard = () => {
       totals.set(summary.key, summary);
     });
 
-    const ordered = STATUS_ORDER.map(
-      (status) => totals.get(status),
-    ).filter((item): item is StatusSummary => Boolean(item));
+    const ordered = getStatusOrderFromDictionary(dictionary, Array.from(totals.keys()))
+      .map((status) => totals.get(status))
+      .filter((item): item is StatusSummary => Boolean(item));
 
+    const orderSet = new Set(getStatusOrderFromDictionary(dictionary));
     const extras = Array.from(totals.values()).filter(
-      (item) => !STATUS_ORDER.includes(item.key as (typeof STATUS_ORDER)[number]),
+      (item) => !orderSet.has(item.key),
     );
 
-    return [...ordered, ...extras];
-  }, [sessions, statusEvents]);
+    const combined: StatusSummary[] = [...ordered, ...extras];
+    if (otherDuration > 0) {
+      combined.push({
+        key: "other_station_statuses",
+        label: "אחר",
+        value: otherDuration,
+      });
+    }
+
+    return combined;
+  }, [dictionary, sessions, statusEvents]);
 
   const monthLabel = useMemo(() => {
     const monthNames = [
@@ -512,13 +539,14 @@ export const HistoryDashboard = () => {
 
           <RecentSessionsTable
             sessions={sortedSessions}
-            isLoading={isLoading}
+            isLoading={isLoading || isStatusesLoading}
             selectedIds={selectedIds}
             onToggleRow={handleToggleRow}
             onToggleAll={handleToggleAll}
             sortKey={sort.key}
             sortDirection={sort.direction}
             onSort={handleSort}
+            dictionary={dictionary}
           />
         </div>
 
@@ -526,7 +554,11 @@ export const HistoryDashboard = () => {
           statusData={statusData}
           throughputData={throughputData}
           isLoading={
-            isLoading || isLoadingFilters || isLoadingStatusEvents || isLoadingJobs
+            isLoading ||
+            isLoadingFilters ||
+            isLoadingStatusEvents ||
+            isLoadingJobs ||
+            isStatusesLoading
           }
           monthLabel={monthLabel}
           onPrevMonth={handlePrevMonth}
@@ -536,6 +568,7 @@ export const HistoryDashboard = () => {
           onPrevPage={handlePrevPage}
           onNextPage={handleNextPage}
           pageLabel={pageLabel}
+          dictionary={dictionary}
         />
       </div>
     </AdminLayout>

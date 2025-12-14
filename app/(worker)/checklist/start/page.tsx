@@ -13,6 +13,7 @@ import {
   fetchChecklistApi,
   startStatusEventApi,
   submitChecklistResponsesApi,
+  fetchStationStatusesApi,
 } from "@/lib/api/client";
 import type { StationChecklist, StationChecklistItem } from "@/lib/types";
 
@@ -134,12 +135,23 @@ export default function OpeningChecklistPage() {
       if (session?.started_at) {
         setSessionStartedAt(session.started_at);
       }
-      await startStatusEventApi({
-        sessionId,
-        status: "stopped",
-      });
+      const statuses = await fetchStationStatusesApi(station.id);
+      const stoppedStatus =
+        statuses.find((item) => (item.label_he ?? "").includes("עצירה")) ??
+        statuses.find((item) =>
+          (item.label_he ?? "").toLowerCase().includes("stop"),
+        ) ??
+        statuses.find((item) => item.scope === "global") ??
+        statuses[0];
+
+      if (stoppedStatus?.id) {
+        await startStatusEventApi({
+          sessionId,
+          statusDefinitionId: stoppedStatus.id,
+        });
+        setCurrentStatus(stoppedStatus.id);
+      }
       completeChecklist("start");
-      setCurrentStatus("stopped");
       router.push("/work");
     } catch {
       setSubmitError(t("checklist.error.submit"));

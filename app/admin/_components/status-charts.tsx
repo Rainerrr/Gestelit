@@ -14,7 +14,10 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { STATUS_ORDER, getStatusHex } from "./status-dictionary";
+import type { StatusDictionary } from "@/lib/status";
+import {
+  getStatusColorFromDictionary,
+} from "./status-dictionary";
 
 type StatusDataPoint = {
   key: string;
@@ -33,6 +36,7 @@ type StatusChartsProps = {
   statusData: StatusDataPoint[];
   throughputData: ThroughputDataPoint[];
   isLoading: boolean;
+  dictionary: StatusDictionary;
 };
 
 const tooltipStyle = {
@@ -43,7 +47,10 @@ const tooltipStyle = {
   textAlign: "right" as const,
 };
 
-const getStatusColor = (statusKey: string): string => getStatusHex(statusKey);
+const getStatusColor = (
+  statusKey: string,
+  dictionary: StatusDictionary,
+): string => getStatusColorFromDictionary(statusKey, dictionary);
 const throughputColors = {
   good: "#10b981",
   scrap: "#ef4444",
@@ -53,6 +60,7 @@ export const StatusCharts = ({
   statusData,
   throughputData,
   isLoading,
+  dictionary,
 }: StatusChartsProps) => {
   const [activeIndex, setActiveIndex] = useState<number | undefined>(undefined);
 
@@ -110,7 +118,7 @@ export const StatusCharts = ({
                 {normalized.map((entry, index) => (
                   <Cell
                     key={entry.key ?? entry.label ?? index}
-                    fill={getStatusColor(entry.key)}
+                    fill={getStatusColor(entry.key, dictionary)}
                     style={{
                       filter: activeIndex === index ? "brightness(1.1)" : activeIndex !== undefined ? "opacity(0.5)" : "none",
                       transition: "filter 0.2s ease",
@@ -144,7 +152,7 @@ export const StatusCharts = ({
             >
               <span
                 className="h-2.5 w-2.5 rounded-full shrink-0"
-                style={{ backgroundColor: getStatusColor(entry.key) }}
+                style={{ backgroundColor: getStatusColor(entry.key, dictionary) }}
               />
               <span>{entry.label}</span>
             </div>

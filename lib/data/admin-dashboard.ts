@@ -43,7 +43,8 @@ type SessionRow = {
 };
 
 type RawActiveSession = SessionRow & {
-  current_status: StatusEventState | null;
+  current_status_id?: StatusEventState | null;
+  current_status_code?: StatusEventState | null;
   last_status_change_at: string | null;
   jobs: { job_number: string | null } | null;
   stations: { name: string | null; station_type: StationType | null } | null;
@@ -64,7 +65,29 @@ const ACTIVE_SESSIONS_SELECT = `
   ended_at,
   total_good,
   total_scrap,
-  current_status,
+  current_status_id,
+  last_status_change_at,
+  forced_closed_at,
+  worker_full_name_snapshot,
+  worker_code_snapshot,
+  station_name_snapshot,
+  station_code_snapshot,
+  jobs:jobs(job_number),
+  stations:stations(name, station_type),
+  workers:workers(full_name)
+`;
+
+const LEGACY_ACTIVE_SESSIONS_SELECT = `
+  id,
+  worker_id,
+  station_id,
+  job_id,
+  status,
+  started_at,
+  ended_at,
+  total_good,
+  total_scrap,
+  current_status_code,
   last_status_change_at,
   forced_closed_at,
   worker_full_name_snapshot,
@@ -89,7 +112,10 @@ const mapActiveSession = (
   workerId: row.worker_id ?? "",
   workerName: row.workers?.full_name ?? row.worker_full_name_snapshot ?? "לא משויך",
   status: row.status,
-  currentStatus: row.current_status ?? null,
+  currentStatus:
+    row.current_status_id ??
+    row.current_status_code ??
+    null,
   lastStatusChangeAt: row.last_status_change_at ?? row.started_at,
   startedAt: row.started_at,
   totalGood: row.total_good ?? 0,
@@ -101,19 +127,35 @@ const mapActiveSession = (
 export const fetchActiveSessions = async (): Promise<ActiveSession[]> => {
   const supabase = getBrowserSupabaseClient();
 
-  const { data, error } = await supabase
-    .from("sessions")
-    .select(ACTIVE_SESSIONS_SELECT)
-    .eq("status", "active")
-    .is("ended_at", null)
-    .order("started_at", { ascending: false });
+  const runQuery = async (select: string) =>
+    supabase
+      .from("sessions")
+      .select(select)
+      .eq("status", "active")
+      .is("ended_at", null)
+      .order("started_at", { ascending: false });
+
+  const { data, error } = await runQuery(ACTIVE_SESSIONS_SELECT);
+
+  let rows = data as RawActiveSession[] | null;
 
   if (error) {
-    console.error("[admin-dashboard] Failed to fetch active sessions", error);
+    console.error("[admin-dashboard] Active sessions fetch failed (new schema)", error);
+    const legacyResult = await runQuery(LEGACY_ACTIVE_SESSIONS_SELECT);
+    if (legacyResult.error) {
+      console.error(
+        "[admin-dashboard] Active sessions fetch failed (legacy schema)",
+        legacyResult.error,
+      );
+      return [];
+    }
+    rows = legacyResult.data as RawActiveSession[];
+  }
+
+  if (!rows) {
     return [];
   }
 
-  const rows = (data as RawActiveSession[]) ?? [];
   console.log(
     `[admin-dashboard] Fetched ${rows.length} active sessions`,
     rows.map((r) => ({ id: r.id, status: r.status, ended_at: r.ended_at })),
@@ -240,14 +282,17 @@ export const fetchRecentSessions = async (
 
 type StatusEventRow = {
   session_id: string;
-  status: StatusEventState;
+  status_definition_id?: StatusEventState;
+  status_code?: StatusEventState;
   started_at: string;
   ended_at: string | null;
+  sessions?: { station_id: string | null } | null;
 };
 
 export type SessionStatusEvent = {
   sessionId: string;
   status: StatusEventState;
+  stationId: string | null;
   startedAt: string;
   endedAt: string | null;
 };
@@ -260,22 +305,42 @@ export const fetchStatusEventsBySessionIds = async (
   }
 
   const supabase = getBrowserSupabaseClient();
-  const { data, error } = await supabase
-    .from("status_events")
-    .select("session_id, status, started_at, ended_at")
-    .in("session_id", sessionIds)
-    .order("started_at", { ascending: true });
+  const runQuery = async (select: string) =>
+    supabase
+      .from("status_events")
+      .select(select)
+      .in("session_id", sessionIds)
+      .order("started_at", { ascending: true });
+
+  const { data, error } = await runQuery(
+    "session_id, status_definition_id, started_at, ended_at, sessions!inner(station_id)",
+  );
+
+  let rows = data as StatusEventRow[] | null;
 
   if (error) {
-    console.error("[admin-dashboard] Failed to fetch status events", error);
+    console.error("[admin-dashboard] Status events fetch failed (new schema)", error);
+    const legacy = await runQuery(
+      "session_id, status_code, started_at, ended_at, sessions!inner(station_id)",
+    );
+    if (legacy.error) {
+      console.error(
+        "[admin-dashboard] Status events fetch failed (legacy schema)",
+        legacy.error,
+      );
+      return [];
+    }
+    rows = legacy.data as StatusEventRow[];
+  }
+
+  if (!rows) {
     return [];
   }
 
-  const rows = (data as StatusEventRow[]) ?? [];
-
   return rows.map((row) => ({
     sessionId: row.session_id,
-    status: row.status,
+    status: row.status_definition_id ?? row.status_code ?? null,
+    stationId: row.sessions?.station_id ?? null,
     startedAt: row.started_at,
     endedAt: row.ended_at,
   }));

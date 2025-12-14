@@ -212,7 +212,6 @@ export const StationChecklistDialog = ({
   );
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [activeId, setActiveId] = useState<string | null>(null);
   const [activeList, setActiveList] = useState<ChecklistKind | null>(null);
 
   const sensors = useSensors(
@@ -223,11 +222,16 @@ export const StationChecklistDialog = ({
 
   useEffect(() => {
     if (!open) return;
-    setActiveTab("start");
-    setError(null);
-    setSuccess(null);
-    setStartItems(normalizeInitialItems(station.start_checklist));
-    setEndItems(normalizeInitialItems(station.end_checklist));
+    const nextStart = normalizeInitialItems(station.start_checklist);
+    const nextEnd = normalizeInitialItems(station.end_checklist);
+    const timer = window.setTimeout(() => {
+      setActiveTab("start");
+      setError(null);
+      setSuccess(null);
+      setStartItems(nextStart);
+      setEndItems(nextEnd);
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [open, station]);
 
   const tabMeta = useMemo(

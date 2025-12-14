@@ -22,9 +22,10 @@ import { KpiCards } from "./kpi-cards";
 import { ActiveSessionsTable } from "./active-sessions-table";
 import { StatusCharts } from "./status-charts";
 import {
-  STATUS_LABELS,
-  STATUS_ORDER,
-  STOPPAGE_STATUSES,
+  getStatusLabelFromDictionary,
+  getStatusOrderFromDictionary,
+  getStatusScopeFromDictionary,
+  useStatusDictionary,
 } from "./status-dictionary";
 import { AdminLayout } from "./admin-layout";
 
@@ -36,6 +37,20 @@ export const AdminDashboard = () => {
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [resetResult, setResetResult] = useState<string | null>(null);
+  const stationIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          sessions
+            .map((session) => session.stationId)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      ),
+    [sessions],
+  );
+  const { dictionary, isLoading: isStatusesLoading } = useStatusDictionary(
+    stationIds,
+  );
 
   const refreshDashboardData = useCallback(async () => {
     const [active] = await Promise.all([fetchActiveSessions()]);
@@ -103,17 +118,45 @@ export const AdminDashboard = () => {
     }
   };
 
-  const statusData = useMemo(
-    () =>
-      STATUS_ORDER.map((status) => ({
+  const statusData = useMemo(() => {
+    const counts = new Map<string, number>();
+    let otherCount = 0;
+
+    sessions.forEach((session) => {
+      const statusId = session.currentStatus;
+      if (!statusId) return;
+      const scope = getStatusScopeFromDictionary(statusId, dictionary);
+      if (scope === "station" || scope === "unknown") {
+        otherCount += 1;
+        return;
+      }
+      counts.set(statusId, (counts.get(statusId) ?? 0) + 1);
+    });
+
+    const orderedKeys = getStatusOrderFromDictionary(
+      dictionary,
+      Array.from(counts.keys()),
+    );
+
+    const globals = orderedKeys
+      .filter((status) => counts.has(status))
+      .map((status) => ({
         key: status,
-        label: STATUS_LABELS[status],
-        value: sessions.filter(
-          (session) => (session.currentStatus ?? "setup") === status,
-        ).length,
-      })),
-    [sessions],
-  );
+        label: getStatusLabelFromDictionary(status, dictionary),
+        value: counts.get(status) ?? 0,
+      }));
+
+    const combined = [...globals];
+    if (otherCount > 0) {
+      combined.push({
+        key: "other_station_statuses",
+        label: "אחר",
+        value: otherCount,
+      });
+    }
+
+    return combined;
+  }, [dictionary, sessions]);
 
   const throughputData = useMemo(() => {
     const map = new Map<
@@ -134,12 +177,13 @@ export const AdminDashboard = () => {
   }, [sessions]);
 
   const kpis = useMemo(() => {
-    const productionCount = sessions.filter(
-      (session) => session.currentStatus === "production",
+    const productionIds = Array.from(dictionary.global.values())
+      .filter((item) => item.label_he.includes("ייצור"))
+      .map((item) => item.id);
+    const productionCount = sessions.filter((session) =>
+      session.currentStatus ? productionIds.includes(session.currentStatus) : false,
     ).length;
-    const stopCount = sessions.filter((session) =>
-      STOPPAGE_STATUSES.includes(session.currentStatus ?? "setup"),
-    ).length;
+    const stopCount = 0;
     const totalGood = sessions.reduce(
       (acc, session) => acc + (session.totalGood ?? 0),
       0,
@@ -151,7 +195,7 @@ export const AdminDashboard = () => {
       stopCount,
       totalGood,
     };
-  }, [sessions]);
+  }, [dictionary, sessions]);
 
   if (hasAccess === null) {
     return (
@@ -215,13 +259,15 @@ export const AdminDashboard = () => {
             <ActiveSessionsTable
               sessions={sessions}
               now={now}
-              isLoading={isInitialLoading}
+              isLoading={isInitialLoading || isStatusesLoading}
+              dictionary={dictionary}
             />
 
             <StatusCharts
               statusData={statusData}
               throughputData={throughputData}
-              isLoading={isInitialLoading}
+              isLoading={isInitialLoading || isStatusesLoading}
+              dictionary={dictionary}
             />
         </div>
       </AdminLayout>

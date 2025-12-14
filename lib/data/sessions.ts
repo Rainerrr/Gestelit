@@ -1,10 +1,14 @@
 import { createServiceSupabase } from "@/lib/supabase/client";
+import {
+  fetchActiveStatusDefinitions,
+} from "@/lib/data/status-definitions";
 import type {
   Job,
   Session,
   SessionAbandonReason,
   SessionStatus,
   Station,
+  StatusDefinition,
   StatusEvent,
   StatusEventState,
 } from "@/lib/types";
@@ -18,25 +22,116 @@ type SessionPayload = {
   started_at?: string;
 };
 
+async function getInitialStatusId(stationId: string): Promise<string> {
+  const definitions = await fetchActiveStatusDefinitions(stationId);
+  const sorted = definitions.sort(
+    (a, b) =>
+      new Date(a.created_at ?? 0).getTime() -
+      new Date(b.created_at ?? 0).getTime(),
+  );
+  const globalFirst = sorted.find((item) => item.scope === "global") ?? sorted[0];
+  if (!globalFirst) {
+    throw new Error("INITIAL_STATUS_NOT_FOUND");
+  }
+  return globalFirst.id;
+}
+
 export async function createSession(
   payload: SessionPayload,
 ): Promise<Session> {
   const supabase = createServiceSupabase();
+  const initialStatusId = await getInitialStatusId(payload.station_id);
+  // #region agent log
+  fetch("http://127.0.0.1:7242/ingest/e9e360f1-cac8-4774-88a3-e97a664d1472", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      sessionId: "debug-session",
+      runId: "initial",
+      hypothesisId: "S1",
+      location: "lib/data/sessions.ts:createSession:start",
+      message: "create session request",
+      data: { payload, initialStatusId },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
   const { data, error } = await supabase
     .from("sessions")
     .insert({
       ...payload,
       status: "active" satisfies SessionStatus,
       started_at: payload.started_at ?? new Date().toISOString(),
+      current_status_id: initialStatusId,
     })
     .select("*")
     .single();
 
   if (error) {
+    // #region agent log
+    fetch("http://127.0.0.1:7242/ingest/e9e360f1-cac8-4774-88a3-e97a664d1472", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId: "debug-session",
+        runId: "initial",
+        hypothesisId: "S1",
+        location: "lib/data/sessions.ts:createSession:error",
+        message: "create session failed",
+        data: { payload, initialStatusId, error: error.message },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
     throw new Error(`Failed to create session: ${error.message}`);
   }
 
-  return data as Session;
+  const sessionRow = data as Session;
+
+  const { error: eventError } = await supabase.from("status_events").insert({
+    session_id: sessionRow.id,
+    status_definition_id: initialStatusId,
+    started_at: sessionRow.started_at,
+  });
+
+  if (eventError) {
+    fetch("http://127.0.0.1:7242/ingest/e9e360f1-cac8-4774-88a3-e97a664d1472", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId: "debug-session",
+        runId: "initial",
+        hypothesisId: "S1",
+        location: "lib/data/sessions.ts:createSession:event_error",
+        message: "initial status event failed",
+        data: { sessionId: sessionRow.id, initialStatusId, error: eventError.message },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    throw new Error(`Failed to log initial status event: ${eventError.message}`);
+  }
+
+  // #region agent log
+  fetch("http://127.0.0.1:7242/ingest/e9e360f1-cac8-4774-88a3-e97a664d1472", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      sessionId: "debug-session",
+      runId: "initial",
+      hypothesisId: "S1",
+      location: "lib/data/sessions.ts:createSession:success",
+      message: "create session success",
+      data: {
+        id: sessionRow.id,
+        station: payload.station_id,
+        job: payload.job_id,
+        initialStatusId,
+      },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
+  return sessionRow;
 }
 
 export async function completeSession(
@@ -144,25 +239,76 @@ async function closeOpenStatusEvents(sessionId: string) {
   }
 }
 
+async function getStoppedStatusId(): Promise<string> {
+  const definitions = await fetchActiveStatusDefinitions();
+  const stopped =
+    definitions.find(
+      (item) =>
+        item.label_he === "עצירה" ||
+        item.label_ru === "Остановка" ||
+        item.label_he === "עצור",
+    ) ?? definitions[0];
+
+  if (!stopped) {
+    throw new Error("STOPPED_STATUS_NOT_FOUND");
+  }
+
+  return stopped.id;
+}
+
 type StatusEventPayload = {
   session_id: string;
-  status: StatusEventState;
+  status_definition_id: StatusEventState;
   station_reason_id?: string | null;
   note?: string | null;
   image_url?: string | null;
   started_at?: string;
 };
 
+const assertStatusAllowedForSession = async (
+  sessionId: string,
+  statusDefinitionId: StatusEventState,
+): Promise<{ station_id: string; definitions: StatusDefinition[] }> => {
+  const supabase = createServiceSupabase();
+  const { data: sessionRow, error: sessionError } = await supabase
+    .from("sessions")
+    .select("id, station_id")
+    .eq("id", sessionId)
+    .maybeSingle();
+
+  if (sessionError || !sessionRow) {
+    throw new Error(sessionError?.message ?? "SESSION_NOT_FOUND");
+  }
+
+  const stationId = (sessionRow as { station_id: string }).station_id;
+  const definitions = await fetchActiveStatusDefinitions(stationId);
+  const isAllowed = definitions.some((item) => item.id === statusDefinitionId);
+
+  if (!isAllowed) {
+    throw new Error("STATUS_NOT_ALLOWED");
+  }
+
+  return { station_id: stationId, definitions };
+};
+
 export async function startStatusEvent(
   payload: StatusEventPayload,
 ): Promise<StatusEvent> {
+  await assertStatusAllowedForSession(
+    payload.session_id,
+    payload.status_definition_id,
+  );
   await closeOpenStatusEvents(payload.session_id);
   const supabase = createServiceSupabase();
   const startedAt = payload.started_at ?? new Date().toISOString();
   const { data, error } = await supabase
     .from("status_events")
     .insert({
-      ...payload,
+      session_id: payload.session_id,
+      station_reason_id: payload.station_reason_id,
+      note: payload.note,
+      image_url: payload.image_url,
+      status_definition_id: payload.status_definition_id,
       started_at: startedAt,
     })
     .select("*")
@@ -175,7 +321,7 @@ export async function startStatusEvent(
   const { error: sessionError } = await supabase
     .from("sessions")
     .update({
-      current_status: payload.status,
+      current_status_id: payload.status_definition_id,
       last_status_change_at: startedAt,
     })
     .eq("id", payload.session_id);
@@ -211,7 +357,7 @@ type WorkerActiveSessionRow = {
   station_id: string;
   job_id: string;
   status: SessionStatus;
-  current_status: StatusEventState | null;
+  current_status_id: StatusEventState | null;
   started_at: string;
   ended_at: string | null;
   total_good: number | null;
@@ -238,7 +384,7 @@ const workerSessionSelect = `
   station_id,
   job_id,
   status,
-  current_status,
+  current_status_id,
   started_at,
   ended_at,
   total_good,
@@ -257,7 +403,7 @@ function mapSessionRow(row: WorkerActiveSessionRow): WorkerActiveSessionDetails 
       station_id: row.station_id,
       job_id: row.job_id,
       status: row.status,
-      current_status: row.current_status,
+      current_status_id: row.current_status_id,
       started_at: row.started_at,
       ended_at: row.ended_at,
       total_good: row.total_good ?? 0,
@@ -325,12 +471,16 @@ export async function abandonActiveSession(
   const note =
     reason === "worker_choice" ? "worker-abandon" : "grace-window-expired";
 
-  const { error: statusError } = await supabase.from("status_events").insert({
-    session_id: sessionId,
-    status: "stopped",
-    note,
-    started_at: timestamp,
-  });
+  const stoppedId = await getStoppedStatusId();
+
+  const { error: statusError } = await supabase
+    .from("status_events")
+    .insert({
+      session_id: sessionId,
+      status_definition_id: stoppedId,
+      note,
+      started_at: timestamp,
+    });
 
   if (statusError) {
     throw new Error(
@@ -344,7 +494,7 @@ export async function abandonActiveSession(
       status: "completed" satisfies SessionStatus,
       ended_at: timestamp,
       forced_closed_at: timestamp,
-      current_status: "stopped",
+      current_status_id: stoppedId,
       last_status_change_at: timestamp,
     })
     .eq("id", sessionId);

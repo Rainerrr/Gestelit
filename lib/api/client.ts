@@ -4,6 +4,7 @@ import type {
   Malfunction,
   Station,
   StationChecklist,
+  StatusDefinition,
   StatusEventState,
   Session,
   SessionAbandonReason,
@@ -112,7 +113,7 @@ export async function submitChecklistResponsesApi(
 
 export async function startStatusEventApi(options: {
   sessionId: string;
-  status: StatusEventState;
+  statusDefinitionId: StatusEventState;
   stationReasonId?: string | null;
   note?: string | null;
   imageUrl?: string | null;
@@ -122,13 +123,23 @@ export async function startStatusEventApi(options: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       sessionId: options.sessionId,
-      status: options.status,
+      statusDefinitionId: options.statusDefinitionId,
       stationReasonId: options.stationReasonId,
       note: options.note,
       imageUrl: options.imageUrl,
     }),
   });
   await handleResponse(response);
+}
+
+export async function fetchStationStatusesApi(
+  stationId: string,
+): Promise<StatusDefinition[]> {
+  const response = await fetch(
+    `/api/statuses?stationId=${encodeURIComponent(stationId)}`,
+  );
+  const data = await handleResponse<{ statuses: StatusDefinition[] }>(response);
+  return data.statuses ?? [];
 }
 
 export async function updateSessionTotalsApi(
