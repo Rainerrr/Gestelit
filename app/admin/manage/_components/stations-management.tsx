@@ -152,6 +152,15 @@ export const StationsManagement = ({
                       <div className="flex items-center justify-between gap-3">
                         <span>{station.name}</span>
                         <div className="flex items-center gap-2 lg:hidden">
+                          <Button
+                            variant="secondary"
+                            size="icon"
+                            onClick={() => setChecklistStation(station)}
+                            aria-label="ניהול צ'קליסטים"
+                            disabled={isChecklistSubmitting}
+                          >
+                            <ListChecks className="h-4 w-4" />
+                          </Button>
                           <StationFormDialog
                             mode="edit"
                             station={station}
@@ -173,15 +182,6 @@ export const StationsManagement = ({
                             }
                             loading={isSubmitting}
                           />
-                          <Button
-                            variant="secondary"
-                            size="icon"
-                            onClick={() => setChecklistStation(station)}
-                            aria-label="ניהול צ'קליסטים"
-                            disabled={isChecklistSubmitting}
-                          >
-                            <ListChecks className="h-4 w-4" />
-                          </Button>
                           <Dialog
                             open={deleteStationId === station.id}
                             onOpenChange={(open) =>
@@ -241,6 +241,16 @@ export const StationsManagement = ({
                     </TableCell>
                     <TableCell className="hidden whitespace-nowrap lg:table-cell">
                       <div className="flex flex-wrap items-center justify-end gap-2">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => setChecklistStation(station)}
+                          aria-label="ניהול צ'קליסטים"
+                          disabled={isChecklistSubmitting}
+                        >
+                          <ListChecks className="h-4 w-4" />
+                          <span className="sr-only">צ׳קליסטים</span>
+                        </Button>
                         <StationFormDialog
                           mode="edit"
                           station={station}
@@ -263,16 +273,6 @@ export const StationsManagement = ({
                           }
                           loading={isSubmitting}
                         />
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => setChecklistStation(station)}
-                          aria-label="ניהול צ'קליסטים"
-                          disabled={isChecklistSubmitting}
-                        >
-                          <ListChecks className="h-4 w-4" />
-                          <span className="sr-only">צ׳קליסטים</span>
-                        </Button>
                         <Dialog open={deleteStationId === station.id} onOpenChange={(open) => setDeleteStationId(open ? station.id : null)}>
                           <DialogTrigger asChild>
                             <Button

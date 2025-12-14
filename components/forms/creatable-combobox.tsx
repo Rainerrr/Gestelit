@@ -5,6 +5,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
+const EMPTY_OPTION_VALUE = "__EMPTY_OPTION__";
+const NO_OPTIONS_VALUE = "__NO_OPTIONS__";
+
 type CreatableComboboxProps = {
   value: string;
   onChange: (value: string) => void;
@@ -31,6 +34,8 @@ export const CreatableCombobox = ({
   inputId,
 }: CreatableComboboxProps) => {
   const [customValue, setCustomValue] = useState("");
+  const normalizedValue =
+    allowEmpty && (value ?? "").trim() === "" ? EMPTY_OPTION_VALUE : value;
   const normalizedOptions = useMemo(
     () =>
       Array.from(
@@ -42,6 +47,15 @@ export const CreatableCombobox = ({
       ),
     [options, value],
   );
+
+  const handleSelectChange = (nextValue: string) => {
+    if (allowEmpty && nextValue === EMPTY_OPTION_VALUE) {
+      onChange("");
+      return;
+    }
+    if (nextValue === NO_OPTIONS_VALUE) return;
+    onChange(nextValue);
+  };
 
   const handleCreate = () => {
     const trimmed = customValue.trim();
@@ -59,19 +73,21 @@ export const CreatableCombobox = ({
 
   return (
     <div className="space-y-2">
-      <Select value={value} onValueChange={onChange}>
+      <Select value={normalizedValue} onValueChange={handleSelectChange}>
         <SelectTrigger aria-label={ariaLabel ?? placeholder}>
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
         <SelectContent>
-          {allowEmpty ? <SelectItem value="">{emptyLabel}</SelectItem> : null}
+          {allowEmpty ? (
+            <SelectItem value={EMPTY_OPTION_VALUE}>{emptyLabel}</SelectItem>
+          ) : null}
           {normalizedOptions.map((option) => (
             <SelectItem key={option} value={option}>
               {option}
             </SelectItem>
           ))}
           {normalizedOptions.length === 0 && !allowEmpty ? (
-            <SelectItem value="" disabled>
+            <SelectItem value={NO_OPTIONS_VALUE} disabled>
               אין אפשרויות
             </SelectItem>
           ) : null}

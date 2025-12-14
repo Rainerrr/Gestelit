@@ -20,6 +20,8 @@ import {
   fetchRecentSessions,
   fetchStatusEventsBySessionIds,
   type SessionStatusEvent,
+  fetchMonthlyJobThroughput,
+  type JobThroughput,
 } from "@/lib/data/admin-dashboard";
 import type { CompletedSession } from "@/lib/data/admin-dashboard";
 import { STATUS_LABELS, STATUS_ORDER } from "./status-dictionary";
@@ -34,11 +36,18 @@ export const HistoryDashboard = () => {
   const [stations, setStations] = useState<Option[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingFilters, setIsLoadingFilters] = useState(true);
+  const [isLoadingJobs, setIsLoadingJobs] = useState(true);
   const [isLoadingStatusEvents, setIsLoadingStatusEvents] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [statusEvents, setStatusEvents] = useState<SessionStatusEvent[]>([]);
+  const [monthlyJobs, setMonthlyJobs] = useState<JobThroughput[]>([]);
+  const [monthCursor, setMonthCursor] = useState(() => {
+    const now = new Date();
+    return { year: now.getFullYear(), month: now.getMonth() + 1 };
+  });
+  const [pageIndex, setPageIndex] = useState(0);
   const [sort, setSort] = useState<{
     key:
       | "jobNumber"
@@ -122,6 +131,29 @@ export const HistoryDashboard = () => {
     }
   }, []);
 
+  const loadMonthlyJobs = useCallback(
+    async (targetMonth: { year: number; month: number }, nextFilters: HistoryFiltersState) => {
+      setIsLoadingJobs(true);
+      try {
+        const items = await fetchMonthlyJobThroughput({
+          year: targetMonth.year,
+          month: targetMonth.month,
+          workerId: nextFilters.workerId,
+          stationId: nextFilters.stationId,
+          jobNumber: nextFilters.jobNumber?.trim(),
+        });
+        setMonthlyJobs(items);
+        setPageIndex(0);
+      } catch (error) {
+        console.error("[history-dashboard] failed to fetch monthly jobs", error);
+        setMonthlyJobs([]);
+      } finally {
+        setIsLoadingJobs(false);
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
     if (hasAccess !== true) return;
     void loadFiltersData();
@@ -137,6 +169,11 @@ export const HistoryDashboard = () => {
     const ids = sessions.map((session) => session.id);
     void loadStatusEvents(ids);
   }, [hasAccess, sessions, loadStatusEvents]);
+
+  useEffect(() => {
+    if (hasAccess !== true) return;
+    void loadMonthlyJobs(monthCursor, filters);
+  }, [hasAccess, monthCursor, filters, loadMonthlyJobs]);
 
   useEffect(() => {
     setSelectedIds((prev) => {
@@ -208,20 +245,80 @@ export const HistoryDashboard = () => {
     return [...ordered, ...extras];
   }, [sessions, statusEvents]);
 
-  const throughputData: ThroughputSummary[] = useMemo(() => {
-    const map = new Map<string, ThroughputSummary>();
+  const monthLabel = useMemo(() => {
+    const monthNames = [
+      "ינואר",
+      "פברואר",
+      "מרץ",
+      "אפריל",
+      "מאי",
+      "יוני",
+      "יולי",
+      "אוגוסט",
+      "ספטמבר",
+      "אוקטובר",
+      "נובמבר",
+      "דצמבר",
+    ];
+    const name = monthNames[monthCursor.month - 1] ?? "";
+    return `${name} ${monthCursor.year}`;
+  }, [monthCursor]);
 
-    sessions.forEach((session) => {
-      const key = session.stationName || "לא משויך";
-      const current =
-        map.get(key) ?? { name: key, label: key, good: 0, scrap: 0 };
-      current.good += session.totalGood ?? 0;
-      current.scrap += session.totalScrap ?? 0;
-      map.set(key, current);
+  const totalPages = useMemo(() => {
+    const pageSize = 5;
+    return Math.max(1, Math.ceil(monthlyJobs.length / pageSize));
+  }, [monthlyJobs.length]);
+
+  useEffect(() => {
+    const maxPage = Math.max(0, totalPages - 1);
+    if (pageIndex > maxPage) {
+      setPageIndex(maxPage);
+    }
+  }, [pageIndex, totalPages]);
+
+  const handlePrevMonth = () => {
+    setMonthCursor((prev) => {
+      if (prev.month === 1) {
+        return { year: prev.year - 1, month: 12 };
+      }
+      return { year: prev.year, month: prev.month - 1 };
     });
+  };
 
-    return Array.from(map.values());
-  }, [sessions]);
+  const handleNextMonth = () => {
+    setMonthCursor((prev) => {
+      if (prev.month === 12) {
+        return { year: prev.year + 1, month: 1 };
+      }
+      return { year: prev.year, month: prev.month + 1 };
+    });
+  };
+
+  const handlePrevPage = () => {
+    setPageIndex((prev) => Math.max(0, prev - 1));
+  };
+
+  const handleNextPage = () => {
+    setPageIndex((prev) => Math.min(totalPages - 1, prev + 1));
+  };
+
+  const pageLabel = useMemo(
+    () => `${pageIndex + 1} / ${totalPages}`,
+    [pageIndex, totalPages],
+  );
+
+  const throughputData: ThroughputSummary[] = useMemo(() => {
+    const pageSize = 5;
+    const start = pageIndex * pageSize;
+    const end = start + pageSize;
+    return monthlyJobs.slice(start, end).map((job) => ({
+      name: job.jobNumber,
+      label: job.jobNumber,
+      good: job.totalGood,
+      scrap: job.totalScrap,
+      planned: job.plannedQuantity ?? 0,
+    }));
+  }, [monthlyJobs, pageIndex]);
 
   const jobNumbers = useMemo(
     () => sessions.map((session) => session.jobNumber).filter(Boolean),
@@ -428,7 +525,17 @@ export const HistoryDashboard = () => {
         <HistoryCharts
           statusData={statusData}
           throughputData={throughputData}
-          isLoading={isLoading || isLoadingFilters || isLoadingStatusEvents}
+          isLoading={
+            isLoading || isLoadingFilters || isLoadingStatusEvents || isLoadingJobs
+          }
+          monthLabel={monthLabel}
+          onPrevMonth={handlePrevMonth}
+          onNextMonth={handleNextMonth}
+          canPrevPage={pageIndex > 0}
+          canNextPage={pageIndex < totalPages - 1}
+          onPrevPage={handlePrevPage}
+          onNextPage={handleNextPage}
+          pageLabel={pageLabel}
         />
       </div>
     </AdminLayout>

@@ -281,5 +281,125 @@ export const fetchStatusEventsBySessionIds = async (
   }));
 };
 
+export type JobThroughput = {
+  jobId: string;
+  jobNumber: string;
+  plannedQuantity: number;
+  totalGood: number;
+  totalScrap: number;
+  lastEndedAt: string;
+};
+
+type FetchMonthlyJobThroughputArgs = {
+  year: number;
+  month: number; // 1-12
+  workerId?: string;
+  stationId?: string;
+  jobNumber?: string;
+};
+
+type MonthlySessionRow = {
+  job_id: string | null;
+  total_good: number | null;
+  total_scrap: number | null;
+  ended_at: string | null;
+  jobs: {
+    job_number: string | null;
+    planned_quantity: number | null;
+  } | null;
+};
+
+export const fetchMonthlyJobThroughput = async (
+  args: FetchMonthlyJobThroughputArgs,
+): Promise<JobThroughput[]> => {
+  const { year, month, workerId, stationId, jobNumber } = args;
+  if (!year || !month) return [];
+
+  const supabase = getBrowserSupabaseClient();
+  const monthStart = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0));
+  const monthEnd = new Date(Date.UTC(year, month, 1, 0, 0, 0));
+
+  let query = supabase
+    .from("sessions")
+    .select(
+      `
+      job_id,
+      total_good,
+      total_scrap,
+      ended_at,
+      jobs:jobs(job_number, planned_quantity)
+    `,
+    )
+    .eq("status", "completed")
+    .not("job_id", "is", null)
+    .gte("ended_at", monthStart.toISOString())
+    .lt("ended_at", monthEnd.toISOString());
+
+  if (workerId) {
+    query = query.eq("worker_id", workerId);
+  }
+  if (stationId) {
+    query = query.eq("station_id", stationId);
+  }
+  if (jobNumber) {
+    query = query.eq("jobs.job_number", jobNumber);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error("[admin-dashboard] Failed to fetch monthly jobs", error);
+    return [];
+  }
+
+  const rows = (data as MonthlySessionRow[]) ?? [];
+  const map = new Map<string, JobThroughput>();
+
+  const pickMockPlannedQuantity = (jobNum: string | null | undefined) => {
+    const options = [40, 50, 60, 70, 80, 90];
+    if (!jobNum) return 50;
+    let hash = 0;
+    for (let i = 0; i < jobNum.length; i += 1) {
+      hash = (hash * 31 + jobNum.charCodeAt(i)) | 0;
+    }
+    const index = Math.abs(hash) % options.length;
+    return options[index];
+  };
+
+  rows.forEach((row) => {
+    if (!row.job_id || !row.ended_at) {
+      return;
+    }
+    const jobNumber = row.jobs?.job_number ?? "לא ידוע";
+    const plannedQuantity =
+      row.jobs?.planned_quantity != null
+        ? row.jobs.planned_quantity
+        : pickMockPlannedQuantity(jobNumber);
+    const current =
+      map.get(row.job_id) ??
+      ({
+        jobId: row.job_id,
+        jobNumber,
+        plannedQuantity,
+        totalGood: 0,
+        totalScrap: 0,
+        lastEndedAt: row.ended_at,
+      } satisfies JobThroughput);
+
+    current.totalGood += row.total_good ?? 0;
+    current.totalScrap += row.total_scrap ?? 0;
+
+    if (new Date(row.ended_at).getTime() > new Date(current.lastEndedAt).getTime()) {
+      current.lastEndedAt = row.ended_at;
+    }
+
+    map.set(row.job_id, current);
+  });
+
+  return Array.from(map.values()).sort(
+    (a, b) => new Date(b.lastEndedAt).getTime() - new Date(a.lastEndedAt).getTime(),
+  );
+};
+
 
 

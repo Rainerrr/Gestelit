@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import type { Station, Worker } from "@/lib/types";
 import type { WorkerWithStats } from "@/lib/data/admin-management";
-import { Pencil, Trash2 } from "lucide-react";
+import { KeyRound, Pencil, Trash2 } from "lucide-react";
 import { WorkerFormDialog } from "./worker-form-dialog";
 import { WorkerPermissionsDialog } from "./worker-permissions-dialog";
 
@@ -136,11 +136,12 @@ export const WorkersManagement = ({
                             onFetchAssignments={onFetchAssignments}
                             onAssign={onAssignStation}
                             onRemove={onRemoveStation}
-                            trigger={
-                              <Button variant="outline" size="sm" aria-label="ניהול הרשאות תחנות">
-                                הרשאות
-                              </Button>
-                            }
+                          trigger={
+                            <Button variant="secondary" size="icon" aria-label="ניהול הרשאות תחנות">
+                              <KeyRound className="h-4 w-4" />
+                              <span className="sr-only">הרשאות</span>
+                            </Button>
+                          }
                           />
                           <WorkerFormDialog
                             mode="edit"
@@ -229,8 +230,9 @@ export const WorkersManagement = ({
                           onAssign={onAssignStation}
                           onRemove={onRemoveStation}
                           trigger={
-                            <Button variant="outline" size="sm" aria-label="ניהול הרשאות תחנות">
-                              הרשאות
+                            <Button variant="secondary" size="icon" aria-label="ניהול הרשאות תחנות">
+                              <KeyRound className="h-4 w-4" />
+                              <span className="sr-only">הרשאות</span>
                             </Button>
                           }
                         />

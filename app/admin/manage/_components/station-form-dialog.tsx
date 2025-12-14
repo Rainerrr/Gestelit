@@ -268,7 +268,7 @@ export const StationFormDialog = ({
                 לא הוגדרו סוגי תקלות. הוסיפו סוג חדש כדי להתחיל.
               </p>
             ) : (
-              <div className="max-h-48 space-y-2 overflow-y-auto pr-1">
+              <div className="space-y-2 pr-1">
                 {stationReasons.map((reason, index) => (
                   <div
                     key={reason.id}

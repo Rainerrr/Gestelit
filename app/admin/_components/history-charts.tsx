@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import {
   Bar,
-  BarChart,
+  ComposedChart,
   CartesianGrid,
   Cell,
+  Line,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -14,6 +16,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { STATUS_ORDER, STATUS_LABELS, getStatusHex } from "./status-dictionary";
 
 export type StatusSummary = {
@@ -27,12 +30,21 @@ export type ThroughputSummary = {
   label: string;
   good: number;
   scrap: number;
+  planned: number;
 };
 
 type HistoryChartsProps = {
   statusData: StatusSummary[];
   throughputData: ThroughputSummary[];
   isLoading: boolean;
+  monthLabel: string;
+  onPrevMonth: () => void;
+  onNextMonth: () => void;
+  canPrevPage: boolean;
+  canNextPage: boolean;
+  onPrevPage: () => void;
+  onNextPage: () => void;
+  pageLabel: string;
 };
 
 const tooltipStyle = {
@@ -58,12 +70,21 @@ const formatDuration = (valueMs: number): string => {
 const throughputColors = {
   good: "#10b981",
   scrap: "#ef4444",
+  planned: "#0f172a",
 };
 
 export const HistoryCharts = ({
   statusData,
   throughputData,
   isLoading,
+  monthLabel,
+  onPrevMonth,
+  onNextMonth,
+  canPrevPage,
+  canNextPage,
+  onPrevPage,
+  onNextPage,
+  pageLabel,
 }: HistoryChartsProps) => {
   const [activeIndex, setActiveIndex] = useState<number | undefined>(undefined);
 
@@ -169,7 +190,7 @@ export const HistoryCharts = ({
     }
 
     if (throughputData.length === 0) {
-      return <p className="text-sm text-slate-500">אין נתוני תפוקה להצגה.</p>;
+      return <p className="text-sm text-slate-500">אין נתוני פק&quot;ע להצגה בחודש זה.</p>;
     }
 
     const normalized = throughputData.map((item) => ({
@@ -177,13 +198,14 @@ export const HistoryCharts = ({
       label: item.label ?? item.name,
       good: item.good ?? 0,
       scrap: item.scrap ?? 0,
+      planned: item.planned ?? 0,
     }));
 
     return (
       <div dir="ltr" className="w-full overflow-visible [direction:ltr]">
         <div className="flex justify-center">
-          <ResponsiveContainer width="100%" height={320}>
-            <BarChart
+          <ResponsiveContainer width="100%" height={340}>
+            <ComposedChart
               data={normalized}
               margin={{ top: 12, right: 12, bottom: 24, left: 12 }}
               barCategoryGap={18}
@@ -202,10 +224,22 @@ export const HistoryCharts = ({
               <Tooltip
                 cursor={{ fill: "rgba(15, 23, 42, 0.05)" }}
                 contentStyle={tooltipStyle}
-                formatter={(value, name) =>
-                  [value as number, name === "good" ? "טוב" : "פסול"]
-                }
-                labelFormatter={(label) => `תחנה: ${label}`}
+                formatter={(value, name, entry) => {
+                  const dataKey = (entry && "dataKey" in entry ? entry.dataKey : undefined) as
+                    | string
+                    | undefined;
+                  if (dataKey === "planned") {
+                    return [value as number, "כמות מתוכננת"];
+                  }
+                  if (dataKey === "good") {
+                    return [value as number, "טוב"];
+                  }
+                  if (dataKey === "scrap") {
+                    return [value as number, "פסול"];
+                  }
+                  return [value as number, name];
+                }}
+                labelFormatter={(label) => `פק\"ע: ${label}`}
               />
               <Bar
                 dataKey="good"
@@ -219,12 +253,21 @@ export const HistoryCharts = ({
                 radius={[6, 6, 0, 0]}
                 fill={throughputColors.scrap}
               />
-            </BarChart>
+              <Line
+                type="monotone"
+                dataKey="planned"
+                name="כמות מתוכננת"
+                stroke={throughputColors.planned}
+                strokeWidth={2}
+                dot={{ r: 3, strokeWidth: 1, stroke: throughputColors.planned }}
+                activeDot={{ r: 5 }}
+              />
+            </ComposedChart>
           </ResponsiveContainer>
         </div>
 
         <div
-          className="mt-3 flex justify-center gap-4 text-xs text-slate-600"
+          className="mt-3 flex flex-wrap items-center justify-center gap-4 text-xs text-slate-600"
           dir="rtl"
         >
           <div className="flex items-center gap-2">
@@ -241,6 +284,37 @@ export const HistoryCharts = ({
             />
             <span>פסול</span>
           </div>
+          <div className="flex items-center gap-2">
+            <span
+              className="h-0.5 w-5 rounded-sm shrink-0"
+              style={{ backgroundColor: throughputColors.planned }}
+            />
+            <span>כמות מתוכננת</span>
+          </div>
+        </div>
+
+        <div className="mt-3 flex items-center justify-center gap-3 text-xs text-slate-700">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onPrevPage}
+            disabled={!canPrevPage}
+            aria-label="סט הקודם"
+            className="h-8 px-2"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <span className="min-w-[64px] text-center">{pageLabel}</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onNextPage}
+            disabled={!canNextPage}
+            aria-label="סט הבא"
+            className="h-8 px-2"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
         </div>
       </div>
     );
@@ -257,8 +331,32 @@ export const HistoryCharts = ({
         </Card>
 
         <Card className="overflow-hidden">
-          <CardHeader className="px-4 pb-3">
-            <CardTitle className="text-lg">תפוקה לפי תחנה</CardTitle>
+          <CardHeader className="flex items-center justify-between px-4 pb-3">
+            <div>
+              <CardTitle className="text-lg">תפוקה לפי פק&quot;ע</CardTitle>
+              <p className="text-sm text-slate-600">5 פק&quot;עים אחרונים בחודש הנבחר</p>
+            </div>
+            <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            aria-label="חודש הבא"
+            onClick={onNextMonth}
+            className="h-8 px-2"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+              <span className="text-sm text-slate-700">{monthLabel}</span>
+              <Button
+                variant="outline"
+                size="sm"
+            aria-label="חודש קודם"
+            onClick={onPrevMonth}
+                className="h-8 px-2"
+              >
+            <ChevronLeft className="h-4 w-4" />
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="px-4 pb-4">{renderThroughputBars()}</CardContent>
         </Card>

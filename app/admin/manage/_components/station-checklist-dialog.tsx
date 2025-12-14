@@ -397,7 +397,7 @@ export const StationChecklistDialog = ({
                 items={items.map((item) => item.id)}
                 strategy={verticalListSortingStrategy}
               >
-                <div className="max-h-[52vh] space-y-2 overflow-y-auto pr-1 sm:max-h-[360px] sm:space-y-3">
+                <div className="space-y-2 pr-1 sm:space-y-3">
                   {items.map((item) => (
                     <SortableRow
                       key={item.id}
@@ -435,73 +435,71 @@ export const StationChecklistDialog = ({
         dir="rtl"
         className="max-w-4xl text-right max-h-[90vh] overflow-hidden p-0 sm:max-h-[80vh] sm:p-6"
       >
-        <div className="space-y-3 px-4 pt-4 sm:px-0 sm:pt-0">
-          <DialogHeader>
-            <DialogTitle className="flex items-center justify-between gap-2">
-              <span>צ׳קליסטים לתחנה {station.name}</span>
-              <Badge variant="outline" className="flex items-center gap-1">
-                <ListChecks className="h-4 w-4" />
-                {station.code}
-              </Badge>
-            </DialogTitle>
-          </DialogHeader>
+        <DialogHeader className="px-4 pt-4 sm:px-0 sm:pt-0">
+          <DialogTitle className="flex items-center justify-between gap-2">
+            <span>צ׳קליסטים לתחנה {station.name}</span>
+            <Badge variant="outline" className="flex items-center gap-1">
+              <ListChecks className="h-4 w-4" />
+              {station.code}
+            </Badge>
+          </DialogTitle>
+        </DialogHeader>
 
-          <div className="space-y-3 max-h-[70vh] overflow-y-auto sm:max-h-[65vh]">
-            {error ? (
-              <Alert
-                variant="destructive"
-                className="border-red-200 bg-red-50 text-right text-sm text-red-700"
+        <div className="space-y-3 px-4 sm:px-0">
+          {error ? (
+            <Alert
+              variant="destructive"
+              className="border-red-200 bg-red-50 text-right text-sm text-red-700"
+            >
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          ) : null}
+          {success ? (
+            <Alert className="border-emerald-200 bg-emerald-50 text-right text-sm text-emerald-800">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4" />
+                <AlertDescription>{success}</AlertDescription>
+              </div>
+            </Alert>
+          ) : null}
+
+          <div className="flex items-center gap-2">
+            {tabMeta.map((tab) => (
+              <Button
+                key={tab.key}
+                type="button"
+                variant={activeTab === tab.key ? "default" : "outline"}
+                size="sm"
+                onClick={() => setActiveTab(tab.key)}
+                aria-label={tab.label}
+                className="flex items-center gap-2"
               >
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            ) : null}
-            {success ? (
-              <Alert className="border-emerald-200 bg-emerald-50 text-right text-sm text-emerald-800">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4" />
-                  <AlertDescription>{success}</AlertDescription>
-                </div>
-              </Alert>
-            ) : null}
-
-            <div className="flex items-center gap-2">
-              {tabMeta.map((tab) => (
-                <Button
-                  key={tab.key}
-                  type="button"
-                  variant={activeTab === tab.key ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setActiveTab(tab.key)}
-                  aria-label={tab.label}
-                  className="flex items-center gap-2"
+                {tab.label}
+                <Badge
+                  variant={activeTab === tab.key ? "secondary" : "outline"}
+                  className="text-xs"
                 >
-                  {tab.label}
-                  <Badge
-                    variant={activeTab === tab.key ? "secondary" : "outline"}
-                    className="text-xs"
-                  >
-                    {tab.count}
-                  </Badge>
-                </Button>
-              ))}
-            </div>
-
-            {activeTab === "start" ? renderTab("start", startItems) : renderTab("end", endItems)}
+                  {tab.count}
+                </Badge>
+              </Button>
+            ))}
           </div>
 
-          <DialogFooter className="justify-start pt-2">
-            <Button onClick={() => void handleSubmit()} disabled={loading}>
-              {loading ? "שומר..." : "שמור צ'קליסטים"}
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              disabled={loading}
-            >
-              ביטול
-            </Button>
-          </DialogFooter>
+          {activeTab === "start" ? renderTab("start", startItems) : renderTab("end", endItems)}
         </div>
+
+        <DialogFooter className="justify-start px-4 pb-4 pt-2 sm:px-0 sm:pb-0">
+          <Button onClick={() => void handleSubmit()} disabled={loading}>
+            {loading ? "שומר..." : "שמור צ'קליסטים"}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={loading}
+          >
+            ביטול
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

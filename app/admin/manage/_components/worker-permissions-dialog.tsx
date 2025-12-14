@@ -95,7 +95,7 @@ export const WorkerPermissionsDialog = ({
         <DialogHeader>
           <DialogTitle>הרשאות תחנות עבור {worker.full_name}</DialogTitle>
         </DialogHeader>
-        <div className="space-y-3 max-h-[320px] overflow-y-auto pr-1">
+        <div className="space-y-3 pr-1">
           {isLoading ? (
             <p className="text-sm text-slate-500">טוען הרשאות...</p>
           ) : stations.length === 0 ? (
@@ -127,9 +127,6 @@ export const WorkerPermissionsDialog = ({
         <DialogFooter className="justify-start">
           <Button onClick={() => void handleSave()} disabled={isSaving || isLoading}>
             {isSaving ? "שומר..." : "שמור הרשאות"}
-          </Button>
-          <Button variant="outline" onClick={() => setOpen(false)} disabled={isSaving}>
-            סגור
           </Button>
         </DialogFooter>
       </DialogContent>
