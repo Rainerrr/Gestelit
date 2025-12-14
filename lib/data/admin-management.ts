@@ -1,5 +1,16 @@
+import {
+  GENERAL_STATION_REASON_ID,
+  mergeStationReasonsWithDefault,
+  validateUniqueLabels,
+} from "@/lib/data/station-reasons";
 import { createServiceSupabase } from "@/lib/supabase/client";
-import type { Station, StationType, Worker } from "@/lib/types";
+import type {
+  Station,
+  StationChecklistItem,
+  StationReason,
+  StationType,
+  Worker,
+} from "@/lib/types";
 
 type WorkerRow = Worker & {
   worker_stations?: { count: number }[] | null;
@@ -70,6 +81,9 @@ type StationInput = {
   code: string;
   station_type: StationType;
   is_active?: boolean;
+  station_reasons?: StationReason[] | null;
+  start_checklist?: StationChecklistItem[] | null;
+  end_checklist?: StationChecklistItem[] | null;
 };
 
 type StationUpdateInput = Partial<StationInput>;
@@ -78,6 +92,59 @@ const normalizeDepartment = (value: string | null | undefined) => {
   if (!value) return null;
   const trimmed = value.trim();
   return trimmed.length === 0 ? null : trimmed;
+};
+
+const prepareStationReasons = (
+  reasons?: StationReason[] | null,
+): StationReason[] => {
+  const cleaned =
+    reasons
+      ?.map((reason) => ({
+        ...reason,
+        id: (reason.id ?? "").trim(),
+        label_he: (reason.label_he ?? "").trim(),
+        label_ru: (reason.label_ru ?? "").trim(),
+        is_active: reason.is_active ?? true,
+      }))
+      .filter((reason) => reason.label_he && reason.label_ru) ?? [];
+
+  const merged = mergeStationReasonsWithDefault(cleaned);
+  validateUniqueLabels(
+    merged.filter((reason) => reason.id !== GENERAL_STATION_REASON_ID),
+  );
+  return merged;
+};
+
+const generateChecklistId = () =>
+  `chk-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+
+const prepareChecklistItems = (
+  list: StationChecklistItem[] | null | undefined,
+  field: "start_checklist" | "end_checklist",
+): StationChecklistItem[] | null | undefined => {
+  if (list === undefined) return undefined;
+  if (list === null) return null;
+  if (!Array.isArray(list) || list.length === 0) {
+    throwAdminError("INVALID_PAYLOAD", 400, `${field.toUpperCase()}_REQUIRED`);
+  }
+  const sorted = [...list].sort(
+    (a, b) => (a.order_index ?? 0) - (b.order_index ?? 0),
+  );
+
+  const normalized = sorted.map((item, index) => ({
+    id: (item.id ?? "").trim() || generateChecklistId(),
+    order_index: index,
+    label_he: (item.label_he ?? "").trim(),
+    label_ru: (item.label_ru ?? "").trim(),
+    is_required: true,
+  }));
+
+  const hasEmpty = normalized.some((item) => !item.label_he || !item.label_ru);
+  if (hasEmpty) {
+    throwAdminError("INVALID_PAYLOAD", 400, `${field.toUpperCase()}_LABELS_REQUIRED`);
+  }
+
+  return normalized.map((item, index) => ({ ...item, order_index: index }));
 };
 
 const throwAdminError = (
@@ -110,7 +177,11 @@ const ensureStationExists = async (id: string) => {
   if (!data) {
     throwAdminError("STATION_NOT_FOUND", 404);
   }
-  return data as Station;
+  const station = data as Station;
+  return {
+    ...station,
+    station_reasons: mergeStationReasonsWithDefault(station.station_reasons),
+  };
 };
 
 export async function fetchAllWorkers(options?: {
@@ -166,14 +237,35 @@ export async function fetchAllWorkers(options?: {
   }));
 }
 
-export async function fetchAllStations(): Promise<StationWithStats[]> {
+export async function fetchAllStations(options?: {
+  stationType?: string | null;
+  search?: string;
+  startsWith?: string;
+}): Promise<StationWithStats[]> {
   const supabase = createServiceSupabase();
-  const { data, error } = await supabase
+  let query = supabase
     .from("stations")
     .select(
-      "id, name, code, station_type, is_active, start_checklist, end_checklist, created_at, updated_at, worker_stations(count), sessions(count)",
+      "id, name, code, station_type, is_active, start_checklist, end_checklist, station_reasons, created_at, updated_at, worker_stations(count), sessions(count)",
     )
     .order("name", { ascending: true });
+
+  if (options?.stationType) {
+    query = query.eq("station_type", options.stationType);
+  }
+
+  if (options?.search) {
+    const term = options.search.trim();
+    if (term.length > 0) {
+      query = query.or(`name.ilike.%${term}%,code.ilike.%${term}%`);
+    }
+  }
+
+  if (options?.startsWith) {
+    query = query.ilike("name", `${options.startsWith}%`);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     throwAdminError("UNKNOWN_ERROR", 500, error.message);
@@ -190,6 +282,7 @@ export async function fetchAllStations(): Promise<StationWithStats[]> {
       is_active: row.is_active,
       start_checklist: row.start_checklist,
       end_checklist: row.end_checklist,
+      station_reasons: mergeStationReasonsWithDefault(row.station_reasons),
       created_at: row.created_at,
       updated_at: row.updated_at,
     },
@@ -328,6 +421,23 @@ export async function deleteWorker(id: string): Promise<void> {
 export async function createStation(payload: StationInput): Promise<Station> {
   const supabase = createServiceSupabase();
   const code = payload.code.trim();
+  const stationType = (payload.station_type ?? "other").trim() || "other";
+  let stationReasons: StationReason[];
+  try {
+    stationReasons = prepareStationReasons(payload.station_reasons);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "INVALID_REASONS";
+    throwAdminError("INVALID_PAYLOAD", 400, message);
+  }
+  let startChecklist: StationChecklistItem[] | null | undefined;
+  let endChecklist: StationChecklistItem[] | null | undefined;
+  try {
+    startChecklist = prepareChecklistItems(payload.start_checklist, "start_checklist");
+    endChecklist = prepareChecklistItems(payload.end_checklist, "end_checklist");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "INVALID_CHECKLIST";
+    throwAdminError("INVALID_PAYLOAD", 400, message);
+  }
 
   const { data: existing, error: uniqueError } = await supabase
     .from("stations")
@@ -348,8 +458,11 @@ export async function createStation(payload: StationInput): Promise<Station> {
     .insert({
       name: payload.name.trim(),
       code,
-      station_type: payload.station_type,
+      station_type: stationType,
       is_active: payload.is_active ?? true,
+      station_reasons: stationReasons,
+      start_checklist: startChecklist ?? null,
+      end_checklist: endChecklist ?? null,
     })
     .select("*")
     .maybeSingle();
@@ -364,6 +477,38 @@ export async function createStation(payload: StationInput): Promise<Station> {
 export async function updateStation(id: string, payload: StationUpdateInput): Promise<Station> {
   const supabase = createServiceSupabase();
   const current = await ensureStationExists(id);
+  const stationType =
+    payload.station_type !== undefined
+      ? (payload.station_type ?? "").trim() || "other"
+      : current.station_type;
+  let stationReasons =
+    payload.station_reasons !== undefined
+      ? payload.station_reasons
+      : current.station_reasons;
+
+  if (payload.station_reasons !== undefined) {
+    try {
+      stationReasons = prepareStationReasons(payload.station_reasons);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "INVALID_REASONS";
+      throwAdminError("INVALID_PAYLOAD", 400, message);
+    }
+  }
+
+  let startChecklist =
+    payload.start_checklist !== undefined
+      ? payload.start_checklist
+      : current.start_checklist ?? null;
+  let endChecklist =
+    payload.end_checklist !== undefined ? payload.end_checklist : current.end_checklist ?? null;
+
+  if (payload.start_checklist !== undefined) {
+    startChecklist = prepareChecklistItems(payload.start_checklist, "start_checklist") ?? null;
+  }
+
+  if (payload.end_checklist !== undefined) {
+    endChecklist = prepareChecklistItems(payload.end_checklist, "end_checklist") ?? null;
+  }
 
   if (payload.code && payload.code.trim() !== current.code) {
     const { data: existing, error: uniqueError } = await supabase
@@ -386,8 +531,11 @@ export async function updateStation(id: string, payload: StationUpdateInput): Pr
     .update({
       name: payload.name?.trim() ?? current.name,
       code: payload.code?.trim() ?? current.code,
-      station_type: payload.station_type ?? current.station_type,
+      station_type: stationType,
       is_active: payload.is_active ?? current.is_active,
+      station_reasons: stationReasons ?? [],
+      start_checklist: startChecklist ?? null,
+      end_checklist: endChecklist ?? null,
     })
     .eq("id", id)
     .select("*")
@@ -561,6 +709,45 @@ export async function fetchDepartmentList(): Promise<string[]> {
 export async function clearDepartment(department: string): Promise<void> {
   const supabase = createServiceSupabase();
   const { error } = await supabase.from("workers").update({ department: null }).eq("department", department);
+  if (error) {
+    throwAdminError("UNKNOWN_ERROR", 500, error.message);
+  }
+}
+
+export async function fetchStationTypeList(): Promise<string[]> {
+  const supabase = createServiceSupabase();
+  const { data, error } = await supabase
+    .from("stations")
+    .select("station_type")
+    .not("station_type", "is", null)
+    .order("station_type", { ascending: true });
+
+  if (error) {
+    throwAdminError("UNKNOWN_ERROR", 500, error.message);
+  }
+
+  const rows = (data as { station_type: string | null }[]) ?? [];
+  const unique = Array.from(
+    new Set(
+      rows
+        .map((row) => (row.station_type ? row.station_type.trim() : null))
+        .filter((value): value is string => Boolean(value)),
+    ),
+  );
+  return unique;
+}
+
+export async function clearStationType(stationType: string): Promise<void> {
+  const supabase = createServiceSupabase();
+  const trimmed = stationType.trim();
+  if (!trimmed) {
+    throwAdminError("INVALID_PAYLOAD", 400, "INVALID_STATION_TYPE");
+  }
+  const { error } = await supabase
+    .from("stations")
+    .update({ station_type: "other" })
+    .eq("station_type", trimmed);
+
   if (error) {
     throwAdminError("UNKNOWN_ERROR", 500, error.message);
   }

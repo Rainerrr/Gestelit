@@ -1,4 +1,13 @@
-import type { Reason, Station, Worker, WorkerStation } from "@/lib/types";
+import type { Station, Worker, WorkerStation } from "@/lib/types";
+
+const defaultStationReasons = [
+  {
+    id: "general-malfunction",
+    label_he: "תקלת כללית",
+    label_ru: "Общая неисправность",
+    is_active: true,
+  },
+];
 
 export const mockWorkers: Worker[] = [
   {
@@ -58,6 +67,7 @@ export const mockStations: Station[] = [
         is_required: true,
       },
     ],
+    station_reasons: defaultStationReasons,
   },
   {
     id: "station-2",
@@ -83,6 +93,7 @@ export const mockStations: Station[] = [
         is_required: true,
       },
     ],
+    station_reasons: defaultStationReasons,
   },
   {
     id: "station-3",
@@ -92,6 +103,7 @@ export const mockStations: Station[] = [
     is_active: true,
     start_checklist: [],
     end_checklist: [],
+    station_reasons: defaultStationReasons,
   },
 ];
 
@@ -110,30 +122,6 @@ export const mockWorkerStations: WorkerStation[] = [
     id: "ws-3",
     worker_id: "worker-2",
     station_id: "station-3",
-  },
-];
-
-export const mockReasons: Reason[] = [
-  {
-    id: "reason-1",
-    type: "stop",
-    label_he: "חוסר חומר גלם",
-    label_ru: "Нет материала",
-    is_active: true,
-  },
-  {
-    id: "reason-2",
-    type: "stop",
-    label_he: "תקלת מכונה",
-    label_ru: "Поломка станка",
-    is_active: true,
-  },
-  {
-    id: "reason-3",
-    type: "scrap",
-    label_he: "פגם הדפסה",
-    label_ru: "Дефект печати",
-    is_active: true,
   },
 ];
 

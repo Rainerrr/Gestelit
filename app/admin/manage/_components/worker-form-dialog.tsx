@@ -21,6 +21,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import type { Worker } from "@/lib/types";
+import { CreatableCombobox } from "@/components/forms/creatable-combobox";
 
 type WorkerFormDialogProps = {
   mode: "create" | "edit";
@@ -121,19 +122,18 @@ export const WorkerFormDialog = ({
           </div>
           <div className="space-y-2">
             <Label htmlFor="department">מחלקה</Label>
-            <Input
-              id="department"
-              list="department-options"
-              aria-label="מחלקה"
-              placeholder="לדוגמה: ייצור"
-              value={department}
-              onChange={(event) => setDepartment(event.target.value)}
-            />
-            <datalist id="department-options">
-              {departments.map((dept) => (
-                <option key={dept} value={dept} />
-              ))}
-            </datalist>
+          <CreatableCombobox
+            value={department}
+            onChange={setDepartment}
+            options={departments}
+            placeholder="בחר או הוסף מחלקה"
+            ariaLabel="מחלקה"
+            allowEmpty
+            emptyLabel="ללא מחלקה"
+            inputPlaceholder="שם מחלקה חדשה"
+            helperText="בחר מחלקה קיימת או הוסיפו אחת חדשה"
+            inputId="department"
+          />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">

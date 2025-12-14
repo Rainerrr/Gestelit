@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import type { Station, Worker } from "@/lib/types";
 import type { WorkerWithStats } from "@/lib/data/admin-management";
+import { KeyRound, Pencil, Trash2 } from "lucide-react";
 import { WorkerFormDialog } from "./worker-form-dialog";
 import { WorkerPermissionsDialog } from "./worker-permissions-dialog";
 
@@ -108,109 +109,193 @@ export const WorkersManagement = ({
         ) : sortedWorkers.length === 0 ? (
           <p className="text-sm text-slate-500">אין עובדים להצגה.</p>
         ) : (
-          <Table className="text-right">
-            <TableHeader>
-              <TableRow>
-                <TableHead className="text-right">שם מלא</TableHead>
-                <TableHead className="text-right">קוד עובד</TableHead>
-                <TableHead className="text-right">מחלקה</TableHead>
-                <TableHead className="text-right">תחנות משויכות</TableHead>
-                <TableHead className="text-right">מצב</TableHead>
-                <TableHead className="text-right">פעולות</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {sortedWorkers.map(({ worker, stationCount }) => (
-                <TableRow key={worker.id}>
-                  <TableCell className="font-medium">{worker.full_name}</TableCell>
-                  <TableCell>{worker.worker_code}</TableCell>
-                  <TableCell>
-                    {worker.department ? (
-                      <Badge variant="secondary">{worker.department}</Badge>
-                    ) : (
-                      <span className="text-slate-500">ללא</span>
-                    )}
-                  </TableCell>
-                  <TableCell>{stationCount}</TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <Switch checked={worker.is_active} disabled aria-readonly />
-                      <span className="text-sm text-slate-600">
-                        {worker.is_active ? "פעיל" : "לא פעיל"}
-                      </span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-wrap gap-2">
-                      <WorkerPermissionsDialog
-                        worker={worker}
-                        stations={stations}
-                        onFetchAssignments={onFetchAssignments}
-                        onAssign={onAssignStation}
-                        onRemove={onRemoveStation}
-                        trigger={
-                          <Button variant="outline" size="sm" aria-label="ניהול הרשאות תחנות">
-                            הרשאות
-                          </Button>
-                        }
-                      />
-                      <WorkerFormDialog
-                        mode="edit"
-                        worker={worker}
-                        departments={departments}
-                        onSubmit={handleEdit}
-                        trigger={
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => setEditingWorker(worker)}
-                            aria-label="עריכת עובד"
+          <div className="w-full overflow-x-auto">
+            <Table className="min-w-[880px] text-right [&_td]:px-3 [&_td]:py-3 [&_th]:px-3 [&_th]:py-3">
+              <TableHeader>
+                <TableRow className="h-12">
+                  <TableHead className="whitespace-nowrap text-right">שם מלא</TableHead>
+                  <TableHead className="whitespace-nowrap text-right">קוד עובד</TableHead>
+                  <TableHead className="whitespace-nowrap text-right">מחלקה</TableHead>
+                  <TableHead className="whitespace-nowrap text-right">תחנות משויכות</TableHead>
+                  <TableHead className="whitespace-nowrap text-right">מצב</TableHead>
+                  <TableHead className="hidden whitespace-nowrap text-right lg:table-cell">
+                    פעולות
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {sortedWorkers.map(({ worker, stationCount }) => (
+                  <TableRow key={worker.id} className="h-14">
+                    <TableCell className="whitespace-nowrap font-medium">
+                      <div className="flex items-center justify-between gap-3">
+                        <span>{worker.full_name}</span>
+                        <div className="flex items-center gap-2 lg:hidden">
+                          <WorkerPermissionsDialog
+                            worker={worker}
+                            stations={stations}
+                            onFetchAssignments={onFetchAssignments}
+                            onAssign={onAssignStation}
+                            onRemove={onRemoveStation}
+                          trigger={
+                            <Button variant="secondary" size="icon" aria-label="ניהול הרשאות תחנות">
+                              <KeyRound className="h-4 w-4" />
+                              <span className="sr-only">הרשאות</span>
+                            </Button>
+                          }
+                          />
+                          <WorkerFormDialog
+                            mode="edit"
+                            worker={worker}
+                            departments={departments}
+                            onSubmit={handleEdit}
+                            trigger={
+                              <Button
+                                variant="secondary"
+                                size="icon"
+                                onClick={() => setEditingWorker(worker)}
+                                aria-label="עריכת עובד"
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                            }
+                            open={editingWorker?.id === worker.id}
+                            onOpenChange={(open) => setEditingWorker(open ? worker : null)}
+                            loading={isSubmitting}
+                          />
+                          <Dialog
+                            open={deleteWorkerId === worker.id}
+                            onOpenChange={(open) => setDeleteWorkerId(open ? worker.id : null)}
                           >
-                            ערוך
-                          </Button>
-                        }
-                        open={editingWorker?.id === worker.id}
-                        onOpenChange={(open) => setEditingWorker(open ? worker : null)}
-                        loading={isSubmitting}
-                      />
-                      <Dialog open={deleteWorkerId === worker.id} onOpenChange={(open) => setDeleteWorkerId(open ? worker.id : null)}>
-                        <DialogTrigger asChild>
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            disabled={isSubmitting}
-                            aria-label="מחיקת עובד"
-                          >
-                            מחק
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent dir="rtl">
-                          <DialogHeader>
-                            <DialogTitle>האם למחוק את העובד?</DialogTitle>
-                            <DialogDescription>
-                              הפעולה תמחק את העובד לחלוטין ותשמור היסטוריה בסשנים קיימים. לא ניתן לבטל.
-                            </DialogDescription>
-                          </DialogHeader>
-                          <DialogFooter className="justify-start">
+                            <DialogTrigger asChild>
+                              <Button
+                                variant="destructive"
+                                size="icon"
+                                disabled={isSubmitting}
+                                aria-label="מחיקת עובד"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent dir="rtl">
+                              <DialogHeader>
+                                <DialogTitle>האם למחוק את העובד?</DialogTitle>
+                                <DialogDescription>
+                                  הפעולה תמחק את העובד לחלוטין ותשמור היסטוריה בסשנים קיימים. לא ניתן לבטל.
+                                </DialogDescription>
+                              </DialogHeader>
+                              <DialogFooter className="justify-start">
+                                <Button
+                                  variant="destructive"
+                                  onClick={() => void handleDelete(worker.id)}
+                                  disabled={isSubmitting}
+                                >
+                                  מחיקה סופית
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  onClick={() => setDeleteWorkerId(null)}
+                                  disabled={isSubmitting}
+                                >
+                                  ביטול
+                                </Button>
+                              </DialogFooter>
+                            </DialogContent>
+                          </Dialog>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">{worker.worker_code}</TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {worker.department ? (
+                        <Badge variant="secondary">{worker.department}</Badge>
+                      ) : (
+                        <span className="text-slate-500">ללא</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">{stationCount}</TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      <div className="flex flex-row-reverse items-center justify-end gap-2">
+                        <span className="text-sm text-slate-600">
+                          {worker.is_active ? "פעיל" : "לא פעיל"}
+                        </span>
+                        <Switch checked={worker.is_active} disabled aria-readonly />
+                      </div>
+                    </TableCell>
+                    <TableCell className="hidden whitespace-nowrap lg:table-cell">
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        <WorkerPermissionsDialog
+                          worker={worker}
+                          stations={stations}
+                          onFetchAssignments={onFetchAssignments}
+                          onAssign={onAssignStation}
+                          onRemove={onRemoveStation}
+                          trigger={
+                            <Button variant="secondary" size="icon" aria-label="ניהול הרשאות תחנות">
+                              <KeyRound className="h-4 w-4" />
+                              <span className="sr-only">הרשאות</span>
+                            </Button>
+                          }
+                        />
+                        <WorkerFormDialog
+                          mode="edit"
+                          worker={worker}
+                          departments={departments}
+                          onSubmit={handleEdit}
+                          trigger={
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => setEditingWorker(worker)}
+                              aria-label="עריכת עובד"
+                            >
+                              <Pencil className="h-4 w-4" />
+                              <span className="sr-only">עריכה</span>
+                            </Button>
+                          }
+                          open={editingWorker?.id === worker.id}
+                          onOpenChange={(open) => setEditingWorker(open ? worker : null)}
+                          loading={isSubmitting}
+                        />
+                        <Dialog open={deleteWorkerId === worker.id} onOpenChange={(open) => setDeleteWorkerId(open ? worker.id : null)}>
+                          <DialogTrigger asChild>
                             <Button
                               variant="destructive"
-                              onClick={() => void handleDelete(worker.id)}
+                              size="sm"
                               disabled={isSubmitting}
+                            aria-label="מחיקת עובד"
                             >
-                              מחיקה סופית
+                              <Trash2 className="h-4 w-4" />
+                              <span className="sr-only">מחיקה</span>
                             </Button>
-                            <Button variant="outline" onClick={() => setDeleteWorkerId(null)} disabled={isSubmitting}>
-                              ביטול
-                            </Button>
-                          </DialogFooter>
-                        </DialogContent>
-                      </Dialog>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+                          </DialogTrigger>
+                          <DialogContent dir="rtl">
+                            <DialogHeader>
+                              <DialogTitle>האם למחוק את העובד?</DialogTitle>
+                              <DialogDescription>
+                                הפעולה תמחק את העובד לחלוטין ותשמור היסטוריה בסשנים קיימים. לא ניתן לבטל.
+                              </DialogDescription>
+                            </DialogHeader>
+                            <DialogFooter className="justify-start">
+                              <Button
+                                variant="destructive"
+                                onClick={() => void handleDelete(worker.id)}
+                                disabled={isSubmitting}
+                              >
+                                מחיקה סופית
+                              </Button>
+                              <Button variant="outline" onClick={() => setDeleteWorkerId(null)} disabled={isSubmitting}>
+                                ביטול
+                              </Button>
+                            </DialogFooter>
+                          </DialogContent>
+                        </Dialog>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         )}
       </CardContent>
     </Card>

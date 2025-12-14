@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -26,114 +26,63 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useWorkerSession } from "@/contexts/WorkerSessionContext";
 import {
-  fetchReasonsApi,
+  createMalfunctionApi,
   startStatusEventApi,
   updateSessionTotalsApi,
 } from "@/lib/api/client";
+import { getActiveStationReasons } from "@/lib/data/station-reasons";
+import {
+  buildStatusDictionary,
+  getStatusHex,
+  getStatusLabel,
+} from "@/lib/status";
 import { cn } from "@/lib/utils";
-import type { TranslationKey } from "@/lib/i18n/translations";
-import type { Reason, StatusEventState } from "@/lib/types";
+import type { StationReason } from "@/lib/types";
 import { useSessionHeartbeat } from "@/hooks/useSessionHeartbeat";
-
-const statusButtons = [
-  { id: "setup", labelKey: "work.status.setup" },
-  { id: "production", labelKey: "work.status.production" },
-  { id: "stopped", labelKey: "work.status.stopped" },
-  { id: "fault", labelKey: "work.status.fault" },
-  { id: "waiting_client", labelKey: "work.status.waiting" },
-  { id: "plate_change", labelKey: "work.status.plateChange" },
-] satisfies { id: StatusEventState; labelKey: TranslationKey }[];
+import { fetchStationStatusesApi } from "@/lib/api/client";
+import { useRef } from "react";
 
 type StatusVisual = {
-  dot: string;
-  selectedBorder: string;
-  selectedBg: string;
-  selectedText: string;
-  selectedShadow: string;
-  selectedRing: string;
+  dotColor: string;
+  highlightBg: string;
+  highlightBorder: string;
+  textColor: string;
   timerBorder: string;
-  timerShadow: string;
+  shadow: string;
 };
 
 const neutralVisual: StatusVisual = {
-  dot: "bg-slate-400",
-  selectedBorder: "border-slate-300",
-  selectedBg: "bg-slate-50",
-  selectedText: "text-slate-800",
-  selectedShadow: "shadow-md",
-  selectedRing: "ring-slate-200",
-  timerBorder: "border-slate-200",
-  timerShadow: "shadow-sm",
+  dotColor: "#cbd5e1",
+  highlightBg: "rgba(148, 163, 184, 0.1)",
+  highlightBorder: "#cbd5e1",
+  textColor: "#0f172a",
+  timerBorder: "#e2e8f0",
+  shadow: "0 10px 25px rgba(148,163,184,0.18)",
 };
 
-const statusVisuals: Record<StatusEventState, StatusVisual> = {
-  production: {
-    dot: "bg-emerald-500",
-    selectedBorder: "border-emerald-500",
-    selectedBg: "bg-emerald-50",
-    selectedText: "text-emerald-900",
-    selectedShadow: "shadow-[0_10px_25px_rgba(16,185,129,0.25)]",
-    selectedRing: "ring-emerald-200",
-    timerBorder: "border-emerald-200",
-    timerShadow: "shadow-[0_0_35px_rgba(16,185,129,0.25)]",
-  },
-  setup: {
-    dot: "bg-amber-400",
-    selectedBorder: "border-amber-400",
-    selectedBg: "bg-amber-50",
-    selectedText: "text-amber-900",
-    selectedShadow: "shadow-[0_10px_25px_rgba(251,191,36,0.3)]",
-    selectedRing: "ring-amber-200",
-    timerBorder: "border-amber-200",
-    timerShadow: "shadow-[0_0_35px_rgba(251,191,36,0.3)]",
-  },
-  waiting_client: {
-    dot: "bg-amber-400",
-    selectedBorder: "border-amber-400",
-    selectedBg: "bg-amber-50",
-    selectedText: "text-amber-900",
-    selectedShadow: "shadow-[0_10px_25px_rgba(251,191,36,0.3)]",
-    selectedRing: "ring-amber-200",
-    timerBorder: "border-amber-200",
-    timerShadow: "shadow-[0_0_35px_rgba(251,191,36,0.3)]",
-  },
-  plate_change: {
-    dot: "bg-amber-400",
-    selectedBorder: "border-amber-400",
-    selectedBg: "bg-amber-50",
-    selectedText: "text-amber-900",
-    selectedShadow: "shadow-[0_10px_25px_rgba(251,191,36,0.3)]",
-    selectedRing: "ring-amber-200",
-    timerBorder: "border-amber-200",
-    timerShadow: "shadow-[0_0_35px_rgba(251,191,36,0.3)]",
-  },
-  stopped: {
-    dot: "bg-rose-500",
-    selectedBorder: "border-rose-500",
-    selectedBg: "bg-rose-50",
-    selectedText: "text-rose-900",
-    selectedShadow: "shadow-[0_10px_25px_rgba(244,63,94,0.25)]",
-    selectedRing: "ring-rose-200",
-    timerBorder: "border-rose-200",
-    timerShadow: "shadow-[0_0_35px_rgba(244,63,94,0.25)]",
-  },
-  fault: {
-    dot: "bg-rose-500",
-    selectedBorder: "border-rose-500",
-    selectedBg: "bg-rose-50",
-    selectedText: "text-rose-900",
-    selectedShadow: "shadow-[0_10px_25px_rgba(244,63,94,0.25)]",
-    selectedRing: "ring-rose-200",
-    timerBorder: "border-rose-200",
-    timerShadow: "shadow-[0_0_35px_rgba(244,63,94,0.25)]",
-  },
+const hexToRgba = (hex: string, alpha = 1) => {
+  const clean = hex.replace("#", "");
+  if (clean.length !== 6) return `rgba(148,163,184,${alpha})`;
+  const num = Number.parseInt(clean, 16);
+  const r = (num >> 16) & 255;
+  const g = (num >> 8) & 255;
+  const b = num & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 };
+
+const buildStatusVisual = (hex: string): StatusVisual => ({
+  dotColor: hex,
+  highlightBg: hexToRgba(hex, 0.12),
+  highlightBorder: hex,
+  textColor: hex,
+  timerBorder: hex,
+  shadow: `0 10px 25px ${hexToRgba(hex, 0.18)}`,
+});
 
 function formatDuration(elapsedSeconds: number) {
   const hours = Math.floor(elapsedSeconds / 3600)
@@ -159,19 +108,60 @@ export default function WorkPage() {
     sessionId,
     sessionStartedAt,
     currentStatus,
+    statuses,
+    setStatuses,
     setCurrentStatus,
     totals,
     updateTotals,
   } = useWorkerSession();
+  const [isStatusesLoading, setStatusesLoading] = useState(false);
+  const dictionary = useMemo(
+    () => buildStatusDictionary(statuses),
+    [statuses],
+  );
   const [faultReason, setFaultReason] = useState<string>();
   const [faultNote, setFaultNote] = useState("");
+  const [faultImage, setFaultImage] = useState<File | null>(null);
+  const [faultImagePreview, setFaultImagePreview] = useState<string | null>(null);
+  const [isFaultSubmitting, setIsFaultSubmitting] = useState(false);
   const [isFaultDialogOpen, setFaultDialogOpen] = useState(false);
   const [isEndSessionDialogOpen, setEndSessionDialogOpen] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [productionError, setProductionError] = useState<string | null>(null);
   const [faultError, setFaultError] = useState<string | null>(null);
-  const [reasons, setReasons] = useState<Reason[]>([]);
-  const [reasonsLoading, setReasonsLoading] = useState(true);
+  const lastStatusesFetchRef = useRef<string | null>(null);
+  const reasons = useMemo<StationReason[]>(
+    () => getActiveStationReasons(station?.station_reasons ?? []),
+    [station?.station_reasons],
+  );
+  useEffect(() => {
+    if (!station?.id) {
+      setStatuses([]);
+      return;
+    }
+    if (
+      lastStatusesFetchRef.current === station.id &&
+      statuses.length > 0 &&
+      !isStatusesLoading
+    ) {
+      return;
+    }
+    lastStatusesFetchRef.current = station.id;
+    setStatusesLoading(true);
+    fetchStationStatusesApi(station.id)
+      .then((list) => {
+        setStatuses(list);
+      })
+      .catch(() => {
+        setStatuses([]);
+      })
+      .finally(() => setStatusesLoading(false));
+  }, [station?.id, statuses.length, isStatusesLoading, setStatuses]);
+  useEffect(() => {
+    if (!faultReason && reasons.length > 0) {
+      setFaultReason(reasons[0].id);
+    }
+  }, [faultReason, reasons]);
 
   useEffect(() => {
     if (!worker) {
@@ -193,36 +183,50 @@ export default function WorkPage() {
 
   useSessionHeartbeat(sessionId);
 
-  const formatReason = (reason: Reason) =>
+  const formatReason = (reason: StationReason) =>
     language === "he" ? reason.label_he : reason.label_ru;
 
-  useEffect(() => {
-    fetchReasonsApi("stop")
-      .then((items) => setReasons(items))
-      .catch(() => setReasons([]))
-      .finally(() => setReasonsLoading(false));
-  }, []);
+  const orderedStatuses = useMemo(() => {
+    const globals = Array.from(dictionary.global.values()).sort(
+      (a, b) =>
+        new Date(a.created_at ?? 0).getTime() -
+        new Date(b.created_at ?? 0).getTime(),
+    );
+    const stationSpecific = station?.id
+      ? Array.from(dictionary.station.get(station.id)?.values() ?? []).sort(
+          (a, b) =>
+            new Date(a.created_at ?? 0).getTime() -
+            new Date(b.created_at ?? 0).getTime(),
+        )
+      : [];
+    return [...globals, ...stationSpecific];
+  }, [dictionary, station?.id]);
 
   if (!worker || !station || !job || !sessionId) {
     return null;
   }
 
-  const currentStatusSafe = currentStatus ?? "stopped";
+  const currentStatusSafe = currentStatus ?? "";
   const statusLabel =
-    statusButtons.find((entry) => entry.id === currentStatusSafe)?.labelKey ??
-    "work.status.stopped";
-  const activeVisual = statusVisuals[currentStatusSafe] ?? neutralVisual;
+    currentStatusSafe && station
+      ? getStatusLabel(currentStatusSafe, dictionary, station.id)
+      : "סטטוס";
+  const activeVisual = buildStatusVisual(
+    currentStatusSafe && station
+      ? getStatusHex(currentStatusSafe, dictionary, station.id)
+      : "#94a3b8",
+  );
 
-  const handleStatusChange = async (status: StatusEventState) => {
-    if (!sessionId || currentStatus === status) {
+  const handleStatusChange = async (statusId: string) => {
+    if (!sessionId || currentStatus === statusId) {
       return;
     }
     setStatusError(null);
-    setCurrentStatus(status);
+    setCurrentStatus(statusId);
     try {
       await startStatusEventApi({
         sessionId,
-        status,
+        statusDefinitionId: statusId,
       });
     } catch {
       setStatusError(t("work.error.status"));
@@ -273,6 +277,18 @@ export default function WorkPage() {
     syncTotals(key, next);
   };
 
+  const handleFaultImageChange = (file: File | null) => {
+    setFaultImage(file);
+    if (faultImagePreview) {
+      URL.revokeObjectURL(faultImagePreview);
+    }
+    if (file) {
+      setFaultImagePreview(URL.createObjectURL(file));
+    } else {
+      setFaultImagePreview(null);
+    }
+  };
+
   return (
     <>
       <PageHeader
@@ -293,7 +309,7 @@ export default function WorkPage() {
             title={t("work.timer")}
             sessionId={sessionId}
             badgeLabel={t("work.section.status")}
-            statusLabel={t(statusLabel)}
+            statusLabel={statusLabel}
             visual={activeVisual}
             startedAt={sessionStartedAt}
           />
@@ -309,9 +325,10 @@ export default function WorkPage() {
             </CardHeader>
             <CardContent>
               <div className="grid gap-3 md:grid-cols-3">
-                {statusButtons.map((status) => {
+                {orderedStatuses.map((status) => {
                   const isActive = currentStatus === status.id;
-                  const visual = statusVisuals[status.id] ?? neutralVisual;
+                  const colorHex = getStatusHex(status.id, dictionary, station.id);
+                  const visual = buildStatusVisual(colorHex);
                   return (
                     <Button
                       key={status.id}
@@ -320,31 +337,42 @@ export default function WorkPage() {
                       className={cn(
                         "h-auto w-full justify-between rounded-2xl border bg-white p-4 text-base font-semibold transition focus-visible:outline-none focus-visible:ring-2",
                         isActive
-                          ? cn(
-                              visual.selectedBorder,
-                              visual.selectedBg,
-                              visual.selectedText,
-                              visual.selectedShadow,
-                              visual.selectedRing,
-                            )
+                          ? "shadow"
                           : "border-slate-200 text-slate-600 hover:border-primary/40 hover:shadow",
                       )}
                       aria-pressed={isActive}
+                      style={
+                        isActive
+                          ? {
+                              borderColor: visual.highlightBorder,
+                              backgroundColor: visual.highlightBg,
+                              color: visual.textColor,
+                              boxShadow: visual.shadow,
+                            }
+                          : undefined
+                      }
                       onClick={() => handleStatusChange(status.id)}
                     >
                       <div className="flex w-full items-center justify-between gap-3 text-right">
-                        <span>{t(status.labelKey)}</span>
+                        <span>
+                          {getStatusLabel(status.id, dictionary, station.id)}
+                        </span>
                         <span
                           aria-hidden
-                          className={cn(
-                            "inline-flex h-2.5 w-2.5 rounded-full",
-                            isActive ? visual.dot : "bg-slate-300",
-                          )}
+                          className="inline-flex h-2.5 w-2.5 rounded-full"
+                          style={{
+                            backgroundColor: isActive
+                              ? visual.dotColor
+                              : neutralVisual.dotColor,
+                          }}
                         />
                       </div>
                     </Button>
                   );
                 })}
+                {isStatusesLoading ? (
+                  <p className="text-sm text-slate-500">טוען סטטוסים...</p>
+                ) : null}
               </div>
               {statusError ? (
                 <p className="mt-3 text-sm text-rose-600">{statusError}</p>
@@ -532,8 +560,8 @@ export default function WorkPage() {
                   <SelectValue placeholder={t("work.dialog.fault.reason")} />
                 </SelectTrigger>
                 <SelectContent align="end">
-                  {reasonsLoading ? (
-                    <SelectItem value="loading" disabled>
+                  {reasons.length === 0 ? (
+                    <SelectItem value="empty" disabled>
                       {t("checklist.loading")}
                     </SelectItem>
                   ) : (
@@ -564,8 +592,28 @@ export default function WorkPage() {
               <label className="text-sm font-medium text-slate-700">
                 {t("work.dialog.fault.image")}
               </label>
-              <div className="rounded-xl border border-dashed border-slate-300 p-4 text-right text-sm text-slate-500">
-                {t("work.dialog.fault.imagePlaceholder")}
+              <div className="space-y-3">
+                <Input
+                  type="file"
+                  accept="image/*"
+                  aria-label={t("work.dialog.fault.image")}
+                  onChange={(event) =>
+                    handleFaultImageChange(event.target.files?.[0] ?? null)
+                  }
+                />
+                {faultImagePreview ? (
+                  <div className="overflow-hidden rounded-xl border border-slate-200">
+                    <img
+                      src={faultImagePreview}
+                      alt={t("work.dialog.fault.image")}
+                      className="h-48 w-full object-cover"
+                    />
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-slate-300 p-4 text-right text-sm text-slate-500">
+                    {t("work.dialog.fault.imagePlaceholder")}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -584,26 +632,32 @@ export default function WorkPage() {
             </Button>
             <Button
               type="button"
+              disabled={isFaultSubmitting}
               onClick={async () => {
-                if (!sessionId) return;
+                if (!station) return;
+                setFaultError(null);
+                setIsFaultSubmitting(true);
                 try {
-                  setFaultError(null);
-                  await startStatusEventApi({
-                    sessionId,
-                    status: "fault",
-                    reasonId: faultReason,
-                    note: faultNote,
+                  await createMalfunctionApi({
+                    stationId: station.id,
+                    stationReasonId: faultReason,
+                    description: faultNote,
+                    image: faultImage,
                   });
-                  setCurrentStatus("fault");
                   setFaultDialogOpen(false);
                   setFaultReason(undefined);
                   setFaultNote("");
+                  handleFaultImageChange(null);
                 } catch {
                   setFaultError(t("work.error.fault"));
+                } finally {
+                  setIsFaultSubmitting(false);
                 }
               }}
             >
-              {t("work.dialog.fault.submit")}
+              {isFaultSubmitting
+                ? `${t("work.dialog.fault.submit")}...`
+                : t("work.dialog.fault.submit")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -673,10 +727,12 @@ function WorkTimer({
   return (
     <Card
       className={cn(
-        "border-2",
-        visual?.timerBorder ?? neutralVisual.timerBorder,
-        visual?.timerShadow ?? neutralVisual.timerShadow,
+        "border-2 shadow-sm",
       )}
+      style={{
+        borderColor: visual?.timerBorder ?? neutralVisual.timerBorder,
+        boxShadow: visual?.shadow ?? neutralVisual.shadow,
+      }}
     >
       <CardHeader className="space-y-2 text-right">
         <CardTitle>{title}</CardTitle>
@@ -688,15 +744,15 @@ function WorkTimer({
             <span
               className={cn(
                 "inline-flex h-2.5 w-2.5 rounded-full",
-                visual?.dot ?? neutralVisual.dot,
               )}
+              style={{ backgroundColor: visual?.dotColor ?? neutralVisual.dotColor }}
             />
             <Badge
               variant="outline"
               className={cn(
                 "border-none bg-transparent px-2 py-1 text-xs font-semibold",
-                visual?.selectedText ?? neutralVisual.selectedText,
               )}
+              style={{ color: visual?.textColor ?? neutralVisual.textColor }}
             >
               {statusLabel}
             </Badge>

@@ -43,7 +43,8 @@ type SessionRow = {
 };
 
 type RawActiveSession = SessionRow & {
-  current_status: StatusEventState | null;
+  current_status_id?: StatusEventState | null;
+  current_status_code?: StatusEventState | null;
   last_status_change_at: string | null;
   jobs: { job_number: string | null } | null;
   stations: { name: string | null; station_type: StationType | null } | null;
@@ -64,7 +65,29 @@ const ACTIVE_SESSIONS_SELECT = `
   ended_at,
   total_good,
   total_scrap,
-  current_status,
+  current_status_id,
+  last_status_change_at,
+  forced_closed_at,
+  worker_full_name_snapshot,
+  worker_code_snapshot,
+  station_name_snapshot,
+  station_code_snapshot,
+  jobs:jobs(job_number),
+  stations:stations(name, station_type),
+  workers:workers(full_name)
+`;
+
+const LEGACY_ACTIVE_SESSIONS_SELECT = `
+  id,
+  worker_id,
+  station_id,
+  job_id,
+  status,
+  started_at,
+  ended_at,
+  total_good,
+  total_scrap,
+  current_status_code,
   last_status_change_at,
   forced_closed_at,
   worker_full_name_snapshot,
@@ -89,7 +112,10 @@ const mapActiveSession = (
   workerId: row.worker_id ?? "",
   workerName: row.workers?.full_name ?? row.worker_full_name_snapshot ?? "לא משויך",
   status: row.status,
-  currentStatus: row.current_status ?? null,
+  currentStatus:
+    row.current_status_id ??
+    row.current_status_code ??
+    null,
   lastStatusChangeAt: row.last_status_change_at ?? row.started_at,
   startedAt: row.started_at,
   totalGood: row.total_good ?? 0,
@@ -101,19 +127,35 @@ const mapActiveSession = (
 export const fetchActiveSessions = async (): Promise<ActiveSession[]> => {
   const supabase = getBrowserSupabaseClient();
 
-  const { data, error } = await supabase
-    .from("sessions")
-    .select(ACTIVE_SESSIONS_SELECT)
-    .eq("status", "active")
-    .is("ended_at", null)
-    .order("started_at", { ascending: false });
+  const runQuery = async (select: string) =>
+    supabase
+      .from("sessions")
+      .select(select)
+      .eq("status", "active")
+      .is("ended_at", null)
+      .order("started_at", { ascending: false });
+
+  const { data, error } = await runQuery(ACTIVE_SESSIONS_SELECT);
+
+  let rows = data as RawActiveSession[] | null;
 
   if (error) {
-    console.error("[admin-dashboard] Failed to fetch active sessions", error);
+    console.error("[admin-dashboard] Active sessions fetch failed (new schema)", error);
+    const legacyResult = await runQuery(LEGACY_ACTIVE_SESSIONS_SELECT);
+    if (legacyResult.error) {
+      console.error(
+        "[admin-dashboard] Active sessions fetch failed (legacy schema)",
+        legacyResult.error,
+      );
+      return [];
+    }
+    rows = legacyResult.data as RawActiveSession[];
+  }
+
+  if (!rows) {
     return [];
   }
 
-  const rows = (data as RawActiveSession[]) ?? [];
   console.log(
     `[admin-dashboard] Fetched ${rows.length} active sessions`,
     rows.map((r) => ({ id: r.id, status: r.status, ended_at: r.ended_at })),
@@ -174,16 +216,38 @@ const fetchLastEventNote = async (sessionId: string): Promise<string | null> => 
   return data.note;
 };
 
+type FetchRecentSessionsArgs = {
+  workerId?: string;
+  stationId?: string;
+  jobNumber?: string;
+  limit?: number;
+};
+
 export const fetchRecentSessions = async (
-  limit = 8,
+  args: FetchRecentSessionsArgs = {},
 ): Promise<CompletedSession[]> => {
+  const { workerId, stationId, jobNumber, limit = 8 } = args;
   const supabase = getBrowserSupabaseClient();
-  const { data, error } = await supabase
+  let query = supabase
     .from("sessions")
     .select(ACTIVE_SESSIONS_SELECT)
     .not("ended_at", "is", null)
     .order("ended_at", { ascending: false })
     .limit(limit);
+
+  if (workerId) {
+    query = query.eq("worker_id", workerId);
+  }
+
+  if (stationId) {
+    query = query.eq("station_id", stationId);
+  }
+
+  if (jobNumber) {
+    query = query.eq("jobs.job_number", jobNumber);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     console.error("[admin-dashboard] Failed to fetch recent sessions", error);
@@ -214,6 +278,192 @@ export const fetchRecentSessions = async (
   );
 
   return sessionsWithNotes;
+};
+
+type StatusEventRow = {
+  session_id: string;
+  status_definition_id?: StatusEventState;
+  status_code?: StatusEventState;
+  started_at: string;
+  ended_at: string | null;
+  sessions?: { station_id: string | null } | null;
+};
+
+export type SessionStatusEvent = {
+  sessionId: string;
+  status: StatusEventState;
+  stationId: string | null;
+  startedAt: string;
+  endedAt: string | null;
+};
+
+export const fetchStatusEventsBySessionIds = async (
+  sessionIds: string[],
+): Promise<SessionStatusEvent[]> => {
+  if (sessionIds.length === 0) {
+    return [];
+  }
+
+  const supabase = getBrowserSupabaseClient();
+  const runQuery = async (select: string) =>
+    supabase
+      .from("status_events")
+      .select(select)
+      .in("session_id", sessionIds)
+      .order("started_at", { ascending: true });
+
+  const { data, error } = await runQuery(
+    "session_id, status_definition_id, started_at, ended_at, sessions!inner(station_id)",
+  );
+
+  let rows = data as StatusEventRow[] | null;
+
+  if (error) {
+    console.error("[admin-dashboard] Status events fetch failed (new schema)", error);
+    const legacy = await runQuery(
+      "session_id, status_code, started_at, ended_at, sessions!inner(station_id)",
+    );
+    if (legacy.error) {
+      console.error(
+        "[admin-dashboard] Status events fetch failed (legacy schema)",
+        legacy.error,
+      );
+      return [];
+    }
+    rows = legacy.data as StatusEventRow[];
+  }
+
+  if (!rows) {
+    return [];
+  }
+
+  return rows.map((row) => ({
+    sessionId: row.session_id,
+    status: row.status_definition_id ?? row.status_code ?? null,
+    stationId: row.sessions?.station_id ?? null,
+    startedAt: row.started_at,
+    endedAt: row.ended_at,
+  }));
+};
+
+export type JobThroughput = {
+  jobId: string;
+  jobNumber: string;
+  plannedQuantity: number;
+  totalGood: number;
+  totalScrap: number;
+  lastEndedAt: string;
+};
+
+type FetchMonthlyJobThroughputArgs = {
+  year: number;
+  month: number; // 1-12
+  workerId?: string;
+  stationId?: string;
+  jobNumber?: string;
+};
+
+type MonthlySessionRow = {
+  job_id: string | null;
+  total_good: number | null;
+  total_scrap: number | null;
+  ended_at: string | null;
+  jobs: {
+    job_number: string | null;
+    planned_quantity: number | null;
+  } | null;
+};
+
+export const fetchMonthlyJobThroughput = async (
+  args: FetchMonthlyJobThroughputArgs,
+): Promise<JobThroughput[]> => {
+  const { year, month, workerId, stationId, jobNumber } = args;
+  if (!year || !month) return [];
+
+  const supabase = getBrowserSupabaseClient();
+  const monthStart = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0));
+  const monthEnd = new Date(Date.UTC(year, month, 1, 0, 0, 0));
+
+  let query = supabase
+    .from("sessions")
+    .select(
+      `
+      job_id,
+      total_good,
+      total_scrap,
+      ended_at,
+      jobs:jobs(job_number, planned_quantity)
+    `,
+    )
+    .eq("status", "completed")
+    .not("job_id", "is", null)
+    .gte("ended_at", monthStart.toISOString())
+    .lt("ended_at", monthEnd.toISOString());
+
+  if (workerId) {
+    query = query.eq("worker_id", workerId);
+  }
+  if (stationId) {
+    query = query.eq("station_id", stationId);
+  }
+  if (jobNumber) {
+    query = query.eq("jobs.job_number", jobNumber);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error("[admin-dashboard] Failed to fetch monthly jobs", error);
+    return [];
+  }
+
+  const rows = (data as MonthlySessionRow[]) ?? [];
+  const map = new Map<string, JobThroughput>();
+
+  const pickMockPlannedQuantity = (jobNum: string | null | undefined) => {
+    const options = [40, 50, 60, 70, 80, 90];
+    if (!jobNum) return 50;
+    let hash = 0;
+    for (let i = 0; i < jobNum.length; i += 1) {
+      hash = (hash * 31 + jobNum.charCodeAt(i)) | 0;
+    }
+    const index = Math.abs(hash) % options.length;
+    return options[index];
+  };
+
+  rows.forEach((row) => {
+    if (!row.job_id || !row.ended_at) {
+      return;
+    }
+    const jobNumber = row.jobs?.job_number ?? "לא ידוע";
+    const plannedQuantity =
+      row.jobs?.planned_quantity != null
+        ? row.jobs.planned_quantity
+        : pickMockPlannedQuantity(jobNumber);
+    const current =
+      map.get(row.job_id) ??
+      ({
+        jobId: row.job_id,
+        jobNumber,
+        plannedQuantity,
+        totalGood: 0,
+        totalScrap: 0,
+        lastEndedAt: row.ended_at,
+      } satisfies JobThroughput);
+
+    current.totalGood += row.total_good ?? 0;
+    current.totalScrap += row.total_scrap ?? 0;
+
+    if (new Date(row.ended_at).getTime() > new Date(current.lastEndedAt).getTime()) {
+      current.lastEndedAt = row.ended_at;
+    }
+
+    map.set(row.job_id, current);
+  });
+
+  return Array.from(map.values()).sort(
+    (a, b) => new Date(b.lastEndedAt).getTime() - new Date(a.lastEndedAt).getTime(),
+  );
 };
 
 

@@ -4,8 +4,8 @@ import type { StatusEventState } from "@/lib/types";
 
 type StatusPayload = {
   sessionId: string;
-  status: StatusEventState;
-  reasonId?: string | null;
+  statusDefinitionId: StatusEventState;
+  stationReasonId?: string | null;
   note?: string | null;
   imageUrl?: string | null;
 };
@@ -15,15 +15,15 @@ export async function POST(request: Request) {
     | StatusPayload
     | null;
 
-  if (!body?.sessionId || !body.status) {
+  if (!body?.sessionId || !body.statusDefinitionId) {
     return NextResponse.json({ error: "INVALID_PAYLOAD" }, { status: 400 });
   }
 
   try {
     const event = await startStatusEvent({
       session_id: body.sessionId,
-      status: body.status,
-      reason_id: body.reasonId,
+      status_definition_id: body.statusDefinitionId,
+      station_reason_id: body.stationReasonId,
       note: body.note,
       image_url: body.imageUrl,
     });

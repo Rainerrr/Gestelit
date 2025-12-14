@@ -2,6 +2,7 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useMemo,
   useReducer,
@@ -11,6 +12,7 @@ import type {
   Job,
   Station,
   Worker,
+  StatusDefinition,
   StatusEventState,
   WorkerResumeSession,
 } from "@/lib/types";
@@ -22,6 +24,7 @@ type WorkerSessionState = {
   sessionId?: string;
   sessionStartedAt?: string | null;
   currentStatus?: StatusEventState;
+  statuses: StatusDefinition[];
   totals: {
     good: number;
     scrap: number;
@@ -40,6 +43,7 @@ type WorkerSessionAction =
   | { type: "setSessionId"; payload?: string }
   | { type: "setSessionStart"; payload?: string | null }
   | { type: "setStatus"; payload?: StatusEventState }
+  | { type: "setStatuses"; payload: StatusDefinition[] }
   | { type: "setTotals"; payload: Partial<WorkerSessionState["totals"]> }
   | { type: "completeChecklist"; payload: "start" | "end" }
   | { type: "setPendingRecovery"; payload?: WorkerResumeSession | null }
@@ -54,6 +58,7 @@ const WorkerSessionContext = createContext<
       setSessionId: (sessionId?: string) => void;
       setSessionStartedAt: (startedAt?: string | null) => void;
       setCurrentStatus: (status?: StatusEventState) => void;
+      setStatuses: (definitions: StatusDefinition[]) => void;
       updateTotals: (totals: Partial<WorkerSessionState["totals"]>) => void;
       completeChecklist: (kind: "start" | "end") => void;
       setPendingRecovery: (payload?: WorkerResumeSession | null) => void;
@@ -64,6 +69,7 @@ const WorkerSessionContext = createContext<
 >(undefined);
 
 const initialState: WorkerSessionState = {
+  statuses: [],
   totals: {
     good: 0,
     scrap: 0,
@@ -93,6 +99,8 @@ function reducer(
       return { ...state, sessionStartedAt: action.payload };
     case "setStatus":
       return { ...state, currentStatus: action.payload };
+    case "setStatuses":
+      return { ...state, statuses: action.payload };
     case "setTotals":
       return {
         ...state,
@@ -119,7 +127,7 @@ function reducer(
         job: job ?? state.job,
         sessionId: session.id,
         sessionStartedAt: session.started_at,
-        currentStatus: session.current_status ?? state.currentStatus,
+        currentStatus: session.current_status_id ?? state.currentStatus,
         totals: {
           good: session.total_good ?? 0,
           scrap: session.total_scrap ?? 0,
@@ -145,31 +153,91 @@ export function WorkerSessionProvider({
 }) {
   const [state, dispatch] = useReducer(reducer, initialState);
 
+  const setWorker = useCallback(
+    (worker?: Worker) => dispatch({ type: "setWorker", payload: worker }),
+    [],
+  );
+  const setStation = useCallback(
+    (station?: Station) => dispatch({ type: "setStation", payload: station }),
+    [],
+  );
+  const setJob = useCallback(
+    (job?: Job) => dispatch({ type: "setJob", payload: job }),
+    [],
+  );
+  const setSessionId = useCallback(
+    (sessionId?: string) =>
+      dispatch({ type: "setSessionId", payload: sessionId }),
+    [],
+  );
+  const setSessionStartedAt = useCallback(
+    (startedAt?: string | null) =>
+      dispatch({ type: "setSessionStart", payload: startedAt }),
+    [],
+  );
+  const setCurrentStatus = useCallback(
+    (status?: StatusEventState) =>
+      dispatch({ type: "setStatus", payload: status }),
+    [],
+  );
+  const setStatuses = useCallback(
+    (definitions: StatusDefinition[]) =>
+      dispatch({ type: "setStatuses", payload: definitions }),
+    [],
+  );
+  const updateTotals = useCallback(
+    (totals: Partial<WorkerSessionState["totals"]>) =>
+      dispatch({ type: "setTotals", payload: totals }),
+    [],
+  );
+  const completeChecklist = useCallback(
+    (kind: "start" | "end") =>
+      dispatch({ type: "completeChecklist", payload: kind }),
+    [],
+  );
+  const setPendingRecovery = useCallback(
+    (payload?: WorkerResumeSession | null) =>
+      dispatch({ type: "setPendingRecovery", payload }),
+    [],
+  );
+  const hydrateFromSnapshot = useCallback(
+    (payload: WorkerResumeSession) =>
+      dispatch({ type: "hydrateFromSnapshot", payload }),
+    [],
+  );
+  const reset = useCallback(() => dispatch({ type: "reset" }), []);
+
   const value = useMemo(
     () => ({
       ...state,
-      setWorker: (worker?: Worker) =>
-        dispatch({ type: "setWorker", payload: worker }),
-      setStation: (station?: Station) =>
-        dispatch({ type: "setStation", payload: station }),
-      setJob: (job?: Job) => dispatch({ type: "setJob", payload: job }),
-      setSessionId: (sessionId?: string) =>
-        dispatch({ type: "setSessionId", payload: sessionId }),
-      setSessionStartedAt: (startedAt?: string | null) =>
-        dispatch({ type: "setSessionStart", payload: startedAt }),
-      setCurrentStatus: (status?: StatusEventState) =>
-        dispatch({ type: "setStatus", payload: status }),
-      updateTotals: (totals: Partial<WorkerSessionState["totals"]>) =>
-        dispatch({ type: "setTotals", payload: totals }),
-      completeChecklist: (kind: "start" | "end") =>
-        dispatch({ type: "completeChecklist", payload: kind }),
-      setPendingRecovery: (payload?: WorkerResumeSession | null) =>
-        dispatch({ type: "setPendingRecovery", payload }),
-      hydrateFromSnapshot: (payload: WorkerResumeSession) =>
-        dispatch({ type: "hydrateFromSnapshot", payload }),
-      reset: () => dispatch({ type: "reset" }),
+      setWorker,
+      setStation,
+      setJob,
+      setSessionId,
+      setSessionStartedAt,
+      setCurrentStatus,
+      setStatuses,
+      updateTotals,
+      completeChecklist,
+      setPendingRecovery,
+      hydrateFromSnapshot,
+      reset,
     }),
-    [state],
+    [
+      state,
+      completeChecklist,
+      hydrateFromSnapshot,
+      reset,
+      setCurrentStatus,
+      setJob,
+      setPendingRecovery,
+      setSessionId,
+      setSessionStartedAt,
+      setStation,
+      setStatuses,
+      setWorker,
+      updateTotals,
+    ],
   );
 
   return (

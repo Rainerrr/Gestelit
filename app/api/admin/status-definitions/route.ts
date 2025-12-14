@@ -1,0 +1,58 @@
+import { NextResponse } from "next/server";
+import {
+  createStatusDefinition,
+  fetchStatusDefinitionsByStationIds,
+} from "@/lib/data/status-definitions";
+import type { StatusScope } from "@/lib/types";
+
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const stationId = searchParams.get("stationId");
+  const stationIdsParam = searchParams.get("stationIds");
+  const stationIds = stationIdsParam
+    ? stationIdsParam.split(",").filter(Boolean)
+    : stationId
+      ? [stationId]
+      : [];
+
+  try {
+    const statuses = await fetchStatusDefinitionsByStationIds(stationIds);
+    return NextResponse.json({ statuses });
+  } catch (error) {
+    return NextResponse.json(
+      { error: "STATUS_DEFINITIONS_FETCH_FAILED", details: String(error) },
+      { status: 500 },
+    );
+  }
+}
+
+export async function POST(request: Request) {
+  const body = (await request.json().catch(() => null)) as {
+    scope?: StatusScope;
+    station_id?: string | null;
+    label_he?: string;
+    label_ru?: string | null;
+    color_hex?: string;
+  } | null;
+
+  if (!body?.scope || !body.label_he) {
+    return NextResponse.json({ error: "INVALID_PAYLOAD" }, { status: 400 });
+  }
+
+  try {
+    const status = await createStatusDefinition({
+      scope: body.scope,
+      station_id: body.station_id,
+      label_he: body.label_he,
+      label_ru: body.label_ru,
+      color_hex: body.color_hex,
+    });
+    return NextResponse.json({ status });
+  } catch (error) {
+    return NextResponse.json(
+      { error: "STATUS_DEFINITION_CREATE_FAILED", details: String(error) },
+      { status: 500 },
+    );
+  }
+}
+

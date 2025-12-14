@@ -1,13 +1,6 @@
-import {
-  mockReasons,
-  mockStations,
-  mockWorkerStations,
-  mockWorkers,
-} from "@/lib/mocks/data";
+import { mockStations, mockWorkerStations, mockWorkers } from "@/lib/mocks/data";
 import type {
   ChecklistKind,
-  Reason,
-  ReasonType,
   Station,
   StationChecklist,
   Worker,
@@ -56,11 +49,5 @@ export function getMockChecklist(
     kind,
     items: [...items].sort((a, b) => a.order_index - b.order_index),
   };
-}
-
-export function getMockReasons(type?: ReasonType): Reason[] {
-  return mockReasons.filter(
-    (reason) => reason.is_active && (!type || reason.type === type),
-  );
 }
 

@@ -65,4 +65,23 @@
   body {
     @apply min-h-screen bg-background text-foreground antialiased font-sans;
   }
+
+  /* Normalize toggle thumb position for RTL/LTR using logical positioning */
+  .switch-thumb {
+    inset-block-start: 2px;
+    inset-inline-start: 2px;
+  }
+
+  .switch-thumb[data-state="checked"] {
+    inset-inline-start: calc(100% - 1.2rem);
+  }
+
+  [dir="rtl"] .switch-thumb {
+    inset-inline-start: auto;
+    inset-inline-end: 2px;
+  }
+
+  [dir="rtl"] .switch-thumb[data-state="checked"] {
+    inset-inline-end: calc(100% - 1.2rem);
+  }
 }

@@ -1,38 +1,92 @@
-import type { StatusEventState } from "@/lib/types";
+import { useEffect, useMemo, useState } from "react";
+import {
+  buildStatusDictionary,
+  getStatusBadgeClass,
+  getStatusHex,
+  getStatusLabel,
+  getStatusScope,
+} from "@/lib/status";
+import { fetchStatusDefinitionsAdminApi } from "@/lib/api/admin-management";
+import type { StatusDefinition } from "@/lib/types";
 
-export const STATUS_LABELS: Record<StatusEventState, string> = {
-  setup: "כיוונים",
-  production: "ייצור",
-  stopped: "עצירה",
-  fault: "תקלה",
-  waiting_client: "המתנה ללקוח",
-  plate_change: "שינוי גלופות",
+export type StatusDictionaryState = {
+  statuses: StatusDefinition[];
+  isLoading: boolean;
+  error: string | null;
 };
 
-export const STATUS_BADGE_STYLES: Record<StatusEventState, string> = {
-  setup: "bg-amber-100 text-amber-800",
-  production: "bg-emerald-100 text-emerald-800",
-  stopped: "bg-slate-100 text-slate-700",
-  fault: "bg-red-100 text-red-700",
-  waiting_client: "bg-yellow-100 text-yellow-800",
-  plate_change: "bg-indigo-100 text-indigo-800",
+export const useStatusDictionary = (stationIds: string[] = []) => {
+  const stationKey = stationIds.join(",");
+  const [state, setState] = useState<StatusDictionaryState>({
+    statuses: [],
+    isLoading: true,
+    error: null,
+  });
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      setState((prev) => ({ ...prev, isLoading: true, error: null }));
+      try {
+        const response = await fetchStatusDefinitionsAdminApi(
+          stationIds.length ? { stationIds } : undefined,
+        );
+        if (!active) return;
+        setState({
+          statuses: response.statuses ?? [],
+          isLoading: false,
+          error: null,
+        });
+      } catch (error) {
+        if (!active) return;
+        setState({
+          statuses: [],
+          isLoading: false,
+          error: error instanceof Error ? error.message : "STATUS_FETCH_FAILED",
+        });
+      }
+    };
+    void load();
+    return () => {
+      active = false;
+    };
+  }, [stationKey, stationIds]);
+
+  const dictionary = useMemo(
+    () => buildStatusDictionary(state.statuses),
+    [state.statuses],
+  );
+
+  return {
+    ...state,
+    dictionary,
+  };
 };
 
-export const STOPPAGE_STATUSES: StatusEventState[] = [
-  "stopped",
-  "fault",
-  "waiting_client",
-  "plate_change",
-];
+export const getStatusLabelFromDictionary = (
+  id: string,
+  dictionary: ReturnType<typeof buildStatusDictionary>,
+  stationId?: string | null,
+) => getStatusLabel(id, dictionary, stationId);
 
-export const STATUS_ORDER: StatusEventState[] = [
-  "production",
-  "setup",
-  "stopped",
-  "fault",
-  "waiting_client",
-  "plate_change",
-];
+export const getStatusColorFromDictionary = (
+  id: string,
+  dictionary: ReturnType<typeof buildStatusDictionary>,
+  stationId?: string | null,
+) => getStatusHex(id, dictionary, stationId);
 
+export const getStatusBadgeFromDictionary = (
+  id: string,
+  dictionary: ReturnType<typeof buildStatusDictionary>,
+  stationId?: string | null,
+) => getStatusBadgeClass(id, dictionary, stationId);
 
+export const getStatusOrderFromDictionary = (
+  dictionary: ReturnType<typeof buildStatusDictionary>,
+  fallback: string[] = [],
+) => (dictionary.order.length ? dictionary.order : Array.from(new Set(fallback)));
 
+export const getStatusScopeFromDictionary = (
+  id: string,
+  dictionary: ReturnType<typeof buildStatusDictionary>,
+) => getStatusScope(id, dictionary);

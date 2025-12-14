@@ -1,5 +1,6 @@
+import { getActiveStationReasons, mergeStationReasonsWithDefault } from "@/lib/data/station-reasons";
 import { createServiceSupabase } from "@/lib/supabase/client";
-import type { Station } from "@/lib/types";
+import type { Station, StationReason } from "@/lib/types";
 
 type WorkerStationRow = {
   station_id: string;
@@ -25,7 +26,12 @@ export async function fetchStationsForWorker(
   return rows
     .map((row) => row.stations)
     .filter(Boolean)
-    .map((station) => station as Station)
+    .map((station) => ({
+      ...(station as Station),
+      station_reasons: mergeStationReasonsWithDefault(
+        (station as Station).station_reasons,
+      ),
+    }))
     .filter((station) => station.is_active);
 }
 
@@ -48,6 +54,23 @@ export async function getStationById(
     return null;
   }
 
-  return station;
+  if (!station) {
+    return null;
+  }
+
+  return {
+    ...station,
+    station_reasons: mergeStationReasonsWithDefault(station.station_reasons),
+  };
+}
+
+export async function getStationActiveReasons(
+  stationId: string,
+): Promise<StationReason[]> {
+  const station = await getStationById(stationId);
+  if (!station) {
+    throw new Error("STATION_NOT_FOUND");
+  }
+  return getActiveStationReasons(station.station_reasons);
 }
 

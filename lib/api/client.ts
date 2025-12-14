@@ -1,9 +1,10 @@
 import type {
   ChecklistKind,
   Job,
-  Reason,
+  Malfunction,
   Station,
   StationChecklist,
+  StatusDefinition,
   StatusEventState,
   Session,
   SessionAbandonReason,
@@ -112,8 +113,8 @@ export async function submitChecklistResponsesApi(
 
 export async function startStatusEventApi(options: {
   sessionId: string;
-  status: StatusEventState;
-  reasonId?: string | null;
+  statusDefinitionId: StatusEventState;
+  stationReasonId?: string | null;
   note?: string | null;
   imageUrl?: string | null;
 }) {
@@ -122,13 +123,23 @@ export async function startStatusEventApi(options: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       sessionId: options.sessionId,
-      status: options.status,
-      reasonId: options.reasonId,
+      statusDefinitionId: options.statusDefinitionId,
+      stationReasonId: options.stationReasonId,
       note: options.note,
       imageUrl: options.imageUrl,
     }),
   });
   await handleResponse(response);
+}
+
+export async function fetchStationStatusesApi(
+  stationId: string,
+): Promise<StatusDefinition[]> {
+  const response = await fetch(
+    `/api/statuses?stationId=${encodeURIComponent(stationId)}`,
+  );
+  const data = await handleResponse<{ statuses: StatusDefinition[] }>(response);
+  return data.statuses ?? [];
 }
 
 export async function updateSessionTotalsApi(
@@ -164,9 +175,29 @@ export async function abandonSessionApi(
   await handleResponse(response);
 }
 
-export async function fetchReasonsApi(type: string) {
-  const response = await fetch(`/api/reasons?type=${type}`);
-  const data = await handleResponse<{ reasons: Reason[] }>(response);
-  return data.reasons;
+export async function createMalfunctionApi(input: {
+  stationId: string;
+  stationReasonId?: string;
+  description?: string;
+  image?: File | null;
+}): Promise<Malfunction> {
+  const formData = new FormData();
+  formData.append("stationId", input.stationId);
+  if (input.stationReasonId) {
+    formData.append("stationReasonId", input.stationReasonId);
+  }
+  if (input.description) {
+    formData.append("description", input.description);
+  }
+  if (input.image) {
+    formData.append("image", input.image);
+  }
+
+  const response = await fetch("/api/malfunctions", {
+    method: "POST",
+    body: formData,
+  });
+  const data = await handleResponse<{ malfunction: Malfunction }>(response);
+  return data.malfunction;
 }
 
