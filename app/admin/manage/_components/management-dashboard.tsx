@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { CheckCircle2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -60,6 +61,7 @@ export const ManagementDashboard = () => {
   const [isLoadingWorkers, setIsLoadingWorkers] = useState<boolean>(true);
   const [isLoadingStations, setIsLoadingStations] = useState<boolean>(true);
   const [bannerError, setBannerError] = useState<string | null>(null);
+  const [bannerSuccess, setBannerSuccess] = useState<string | null>(null);
 
   const hebrewLetters = useMemo(
     () => ["א", "ב", "ג", "ד", "ה", "ו", "ז", "ח", "ט", "י", "כ", "ל", "מ", "נ", "ס", "ע", "פ", "צ", "ק", "ר", "ש", "ת"],
@@ -167,7 +169,8 @@ export const ManagementDashboard = () => {
         department: payload.department ?? null,
         is_active: payload.is_active,
       });
-      await Promise.all([loadWorkers(), loadDepartments()]);
+      // Don't refresh immediately - let the dialog show success message
+      // Refresh will happen when dialog closes
     } catch (error) {
       friendlyError(error);
     }
@@ -175,9 +178,13 @@ export const ManagementDashboard = () => {
 
   const handleDeleteWorker = async (id: string) => {
     setBannerError(null);
+    setBannerSuccess(null);
     try {
       await deleteWorkerAdminApi(id);
+      setBannerSuccess("העובד נמחק בהצלחה.");
       await Promise.all([loadWorkers(), loadDepartments()]);
+      // Clear success message after 5 seconds
+      setTimeout(() => setBannerSuccess(null), 5000);
     } catch (error) {
       friendlyError(error);
     }
@@ -191,7 +198,8 @@ export const ManagementDashboard = () => {
   const handleAssignStation = async (workerId: string, stationId: string) => {
     try {
       await assignWorkerStationAdminApi(workerId, stationId);
-      await loadWorkers();
+      // Don't refresh immediately - let the dialog show success message
+      // Refresh will happen when dialog closes
     } catch (error) {
       friendlyError(error);
       throw error;
@@ -201,7 +209,8 @@ export const ManagementDashboard = () => {
   const handleRemoveStation = async (workerId: string, stationId: string) => {
     try {
       await removeWorkerStationAdminApi(workerId, stationId);
-      await loadWorkers();
+      // Don't refresh immediately - let the dialog show success message
+      // Refresh will happen when dialog closes
     } catch (error) {
       friendlyError(error);
       throw error;
@@ -234,7 +243,8 @@ export const ManagementDashboard = () => {
         is_active: payload.is_active,
         station_reasons: payload.station_reasons,
       });
-      await Promise.all([loadStations(), loadStationTypes()]);
+      // Don't refresh immediately - let the dialog show success message
+      // Refresh will happen when dialog closes
     } catch (error) {
       friendlyError(error);
     }
@@ -253,7 +263,8 @@ export const ManagementDashboard = () => {
         start_checklist: payload.start_checklist ?? [],
         end_checklist: payload.end_checklist ?? [],
       });
-      await loadStations();
+      // Don't refresh immediately - let the dialog show success message
+      // Refresh will happen when dialog closes
     } catch (error) {
       friendlyError(error);
       throw error;
@@ -262,9 +273,13 @@ export const ManagementDashboard = () => {
 
   const handleDeleteStation = async (id: string) => {
     setBannerError(null);
+    setBannerSuccess(null);
     try {
       await deleteStationAdminApi(id);
+      setBannerSuccess("התחנה נמחקה בהצלחה.");
       await Promise.all([loadStations(), loadStationTypes()]);
+      // Clear success message after 5 seconds
+      setTimeout(() => setBannerSuccess(null), 5000);
     } catch (error) {
       friendlyError(error);
     }
@@ -419,6 +434,17 @@ export const ManagementDashboard = () => {
               <AlertDescription>{bannerError}</AlertDescription>
             </Alert>
           ) : null}
+          {bannerSuccess ? (
+            <Alert className="border-emerald-200 bg-emerald-50 text-right text-sm text-emerald-800">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4" />
+                <div>
+                  <AlertTitle>הצלחה</AlertTitle>
+                  <AlertDescription>{bannerSuccess}</AlertDescription>
+                </div>
+              </div>
+            </Alert>
+          ) : null}
         </div>
       }
     >
@@ -436,6 +462,9 @@ export const ManagementDashboard = () => {
               onRemoveStation={handleRemoveStation}
               stations={stations.map((row) => row.station)}
               departments={departments}
+              onRefresh={async () => {
+                await Promise.all([loadWorkers(), loadDepartments()]);
+              }}
             />
             <Separator />
             <DepartmentManager
@@ -452,6 +481,9 @@ export const ManagementDashboard = () => {
             onDelete={handleDeleteStation}
             onEditChecklists={handleUpdateStationChecklists}
             stationTypes={stationTypes}
+            onRefresh={async () => {
+              await Promise.all([loadStations(), loadStationTypes()]);
+            }}
           />
         )}
         {activeTab === "stations" ? (

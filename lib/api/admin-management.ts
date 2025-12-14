@@ -287,4 +287,22 @@ export async function deleteStatusDefinitionAdminApi(
   return handleResponse(response);
 }
 
+export async function checkWorkerActiveSessionAdminApi(
+  workerId: string,
+): Promise<{ hasActiveSession: boolean }> {
+  const response = await fetch(
+    `/api/admin/workers/${workerId}/active-session`,
+  );
+  return handleResponse(response);
+}
+
+export async function checkStationActiveSessionAdminApi(
+  stationId: string,
+): Promise<{ hasActiveSession: boolean }> {
+  const response = await fetch(
+    `/api/admin/stations/${stationId}/active-session`,
+  );
+  return handleResponse(response);
+}
+
 

@@ -212,6 +212,7 @@ export const StationChecklistDialog = ({
   );
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [activeList, setActiveList] = useState<ChecklistKind | null>(null);
 
   const sensors = useSensors(
@@ -363,9 +364,12 @@ export const StationChecklistDialog = ({
         end_checklist: trimmedEnd,
       });
       setSuccess("הצ'קליסט נשמר בהצלחה.");
+      setError(null);
+      // Keep dialog open to show success message
     } catch (err) {
       const message = err instanceof Error ? err.message : "שמירת הצ'קליסט נכשלה.";
       setError(message || "שמירת הצ'קליסט נכשלה.");
+      setSuccess(null);
     }
   };
 

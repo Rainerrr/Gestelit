@@ -20,6 +20,8 @@ import type { WorkerWithStats } from "@/lib/data/admin-management";
 import { KeyRound, Pencil, Trash2 } from "lucide-react";
 import { WorkerFormDialog } from "./worker-form-dialog";
 import { WorkerPermissionsDialog } from "./worker-permissions-dialog";
+import { checkWorkerActiveSessionAdminApi } from "@/lib/api/admin-management";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 type WorkersManagementProps = {
   workers: WorkerWithStats[];
@@ -32,6 +34,7 @@ type WorkersManagementProps = {
   onFetchAssignments: (workerId: string) => Promise<Station[]>;
   onAssignStation: (workerId: string, stationId: string) => Promise<void>;
   onRemoveStation: (workerId: string, stationId: string) => Promise<void>;
+  onRefresh?: () => Promise<void>;
 };
 
 export const WorkersManagement = ({
@@ -45,10 +48,13 @@ export const WorkersManagement = ({
   onFetchAssignments,
   onAssignStation,
   onRemoveStation,
+  onRefresh,
 }: WorkersManagementProps) => {
   const [editingWorker, setEditingWorker] = useState<Worker | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deleteWorkerId, setDeleteWorkerId] = useState<string | null>(null);
+  const [deleteWorkerHasActiveSession, setDeleteWorkerHasActiveSession] = useState(false);
+  const [isCheckingDeleteSession, setIsCheckingDeleteSession] = useState(false);
   const sortedWorkers = useMemo(
     () =>
       [...workers].sort((a, b) =>
@@ -71,7 +77,7 @@ export const WorkersManagement = ({
     setIsSubmitting(true);
     try {
       await onEdit(editingWorker.id, payload);
-      setEditingWorker(null);
+      // Don't close dialog - let the form dialog show success message and stay open
     } finally {
       setIsSubmitting(false);
     }
@@ -79,11 +85,38 @@ export const WorkersManagement = ({
 
   const handleDelete = async (workerId: string) => {
     setIsSubmitting(true);
+    setDeleteWorkerHasActiveSession(false);
     try {
+      // Check for active session before attempting delete
+      const { hasActiveSession } = await checkWorkerActiveSessionAdminApi(workerId);
+      if (hasActiveSession) {
+        setDeleteWorkerHasActiveSession(true);
+        setIsSubmitting(false);
+        return;
+      }
       await onDelete(workerId);
+      setDeleteWorkerId(null);
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleDeleteDialogOpenChange = async (open: boolean, workerId?: string) => {
+    if (open && workerId) {
+      setIsCheckingDeleteSession(true);
+      try {
+        const { hasActiveSession } = await checkWorkerActiveSessionAdminApi(workerId);
+        setDeleteWorkerHasActiveSession(hasActiveSession);
+      } catch (err) {
+        console.error("[workers-management] Failed to check active session", err);
+        setDeleteWorkerHasActiveSession(false);
+      } finally {
+        setIsCheckingDeleteSession(false);
+      }
+    } else {
+      setDeleteWorkerHasActiveSession(false);
+    }
+    setDeleteWorkerId(open ? (workerId ?? null) : null);
   };
 
   return (
@@ -136,7 +169,8 @@ export const WorkersManagement = ({
                             onFetchAssignments={onFetchAssignments}
                             onAssign={onAssignStation}
                             onRemove={onRemoveStation}
-                          trigger={
+                            onRefresh={onRefresh}
+                            trigger={
                             <Button variant="secondary" size="icon" aria-label="ניהול הרשאות תחנות">
                               <KeyRound className="h-4 w-4" />
                               <span className="sr-only">הרשאות</span>
@@ -159,12 +193,18 @@ export const WorkersManagement = ({
                               </Button>
                             }
                             open={editingWorker?.id === worker.id}
-                            onOpenChange={(open) => setEditingWorker(open ? worker : null)}
+                            onOpenChange={async (open) => {
+                              setEditingWorker(open ? worker : null);
+                              // Refresh when dialog closes to update the list
+                              if (!open && onRefresh) {
+                                await onRefresh();
+                              }
+                            }}
                             loading={isSubmitting}
                           />
                           <Dialog
                             open={deleteWorkerId === worker.id}
-                            onOpenChange={(open) => setDeleteWorkerId(open ? worker.id : null)}
+                            onOpenChange={(open) => handleDeleteDialogOpenChange(open, worker.id)}
                           >
                             <DialogTrigger asChild>
                               <Button
@@ -183,11 +223,23 @@ export const WorkersManagement = ({
                                   הפעולה תמחק את העובד לחלוטין ותשמור היסטוריה בסשנים קיימים. לא ניתן לבטל.
                                 </DialogDescription>
                               </DialogHeader>
+                              {isCheckingDeleteSession ? (
+                                <p className="text-sm text-slate-500">בודק סשנים פעילים...</p>
+                              ) : deleteWorkerHasActiveSession ? (
+                                <Alert
+                                  variant="destructive"
+                                  className="border-amber-200 bg-amber-50 text-right text-sm text-amber-800"
+                                >
+                                  <AlertDescription>
+                                    לא ניתן למחוק עובד עם סשן פעיל. יש לסיים את הסשן הפעיל לפני מחיקה.
+                                  </AlertDescription>
+                                </Alert>
+                              ) : null}
                               <DialogFooter className="justify-start">
                                 <Button
                                   variant="destructive"
                                   onClick={() => void handleDelete(worker.id)}
-                                  disabled={isSubmitting}
+                                  disabled={isSubmitting || deleteWorkerHasActiveSession || isCheckingDeleteSession}
                                 >
                                   מחיקה סופית
                                 </Button>
@@ -256,7 +308,7 @@ export const WorkersManagement = ({
                           onOpenChange={(open) => setEditingWorker(open ? worker : null)}
                           loading={isSubmitting}
                         />
-                        <Dialog open={deleteWorkerId === worker.id} onOpenChange={(open) => setDeleteWorkerId(open ? worker.id : null)}>
+                        <Dialog open={deleteWorkerId === worker.id} onOpenChange={(open) => handleDeleteDialogOpenChange(open, worker.id)}>
                           <DialogTrigger asChild>
                             <Button
                               variant="destructive"
@@ -275,11 +327,23 @@ export const WorkersManagement = ({
                                 הפעולה תמחק את העובד לחלוטין ותשמור היסטוריה בסשנים קיימים. לא ניתן לבטל.
                               </DialogDescription>
                             </DialogHeader>
+                            {isCheckingDeleteSession ? (
+                              <p className="text-sm text-slate-500">בודק סשנים פעילים...</p>
+                            ) : deleteWorkerHasActiveSession ? (
+                              <Alert
+                                variant="destructive"
+                                className="border-amber-200 bg-amber-50 text-right text-sm text-amber-800"
+                              >
+                                <AlertDescription>
+                                  לא ניתן למחוק עובד עם סשן פעיל. יש לסיים את הסשן הפעיל לפני מחיקה.
+                                </AlertDescription>
+                              </Alert>
+                            ) : null}
                             <DialogFooter className="justify-start">
                               <Button
                                 variant="destructive"
                                 onClick={() => void handleDelete(worker.id)}
-                                disabled={isSubmitting}
+                                disabled={isSubmitting || deleteWorkerHasActiveSession || isCheckingDeleteSession}
                               >
                                 מחיקה סופית
                               </Button>

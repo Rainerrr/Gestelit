@@ -9,8 +9,10 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { CheckCircle2 } from "lucide-react";
 import type { Station, Worker } from "@/lib/types";
 
 type WorkerPermissionsDialogProps = {
@@ -20,6 +22,7 @@ type WorkerPermissionsDialogProps = {
   onFetchAssignments: (workerId: string) => Promise<Station[]>;
   onAssign: (workerId: string, stationId: string) => Promise<void>;
   onRemove: (workerId: string, stationId: string) => Promise<void>;
+  onRefresh?: () => Promise<void>;
 };
 
 export const WorkerPermissionsDialog = ({
@@ -29,12 +32,14 @@ export const WorkerPermissionsDialog = ({
   onFetchAssignments,
   onAssign,
   onRemove,
+  onRefresh,
 }: WorkerPermissionsDialogProps) => {
   const [open, setOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const errorCopy: Record<string, string> = {
     ASSIGNMENT_EXISTS: "לעובד כבר יש הרשאה לתחנה.",
     ASSIGNMENT_DELETE_FAILED: "מחיקת ההרשאה נכשלה.",
@@ -42,10 +47,15 @@ export const WorkerPermissionsDialog = ({
   };
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setSuccessMessage(null);
+      setErrorText(null);
+      return;
+    }
     const load = async () => {
       setIsLoading(true);
       setErrorText(null);
+      setSuccessMessage(null);
       const assigned = await onFetchAssignments(worker.id);
       setSelectedIds(new Set(assigned.map((station) => station.id)));
       setIsLoading(false);
@@ -66,6 +76,7 @@ export const WorkerPermissionsDialog = ({
   const handleSave = async () => {
     setIsSaving(true);
     setErrorText(null);
+    setSuccessMessage(null);
 
     try {
       const currentAssignments = await onFetchAssignments(worker.id);
@@ -79,17 +90,28 @@ export const WorkerPermissionsDialog = ({
         ...toRemove.map((stationId) => onRemove(worker.id, stationId)),
       ]);
 
-      setOpen(false);
+      setSuccessMessage("ההרשאות עודכנו בהצלחה.");
+      setErrorText(null);
+      // Keep dialog open to show success message
     } catch (error) {
       const message = error instanceof Error ? error.message : "עדכון ההרשאות נכשל.";
       setErrorText(errorCopy[message] ?? "עדכון ההרשאות נכשל.");
+      setSuccessMessage(null);
     } finally {
       setIsSaving(false);
     }
   };
 
+  const handleDialogOpenChange = async (newOpen: boolean) => {
+    setOpen(newOpen);
+    // Refresh when dialog closes to update the list
+    if (!newOpen && onRefresh) {
+      await onRefresh();
+    }
+  };
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleDialogOpenChange}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent className="text-right">
         <DialogHeader>
@@ -122,7 +144,20 @@ export const WorkerPermissionsDialog = ({
           )}
         </div>
         {errorText ? (
-          <p className="text-sm text-red-600">{errorText}</p>
+          <Alert
+            variant="destructive"
+            className="border-red-200 bg-red-50 text-right text-sm text-red-700"
+          >
+            <AlertDescription>{errorText}</AlertDescription>
+          </Alert>
+        ) : null}
+        {successMessage ? (
+          <Alert className="border-emerald-200 bg-emerald-50 text-right text-sm text-emerald-800">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4" />
+              <AlertDescription>{successMessage}</AlertDescription>
+            </div>
+          </Alert>
         ) : null}
         <DialogFooter className="justify-start">
           <Button onClick={() => void handleSave()} disabled={isSaving || isLoading}>

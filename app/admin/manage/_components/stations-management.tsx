@@ -20,6 +20,8 @@ import type { StationWithStats } from "@/lib/data/admin-management";
 import { ListChecks, Pencil, Trash2 } from "lucide-react";
 import { StationFormDialog } from "./station-form-dialog";
 import { StationChecklistDialog } from "./station-checklist-dialog";
+import { checkStationActiveSessionAdminApi } from "@/lib/api/admin-management";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 type StationsManagementProps = {
   stations: StationWithStats[];
@@ -35,6 +37,7 @@ type StationsManagementProps = {
       end_checklist: StationChecklistItem[];
     },
   ) => Promise<void>;
+  onRefresh?: () => Promise<void>;
 };
 
 export const StationsManagement = ({
@@ -45,10 +48,13 @@ export const StationsManagement = ({
   onEdit,
   onDelete,
   onEditChecklists,
+  onRefresh,
 }: StationsManagementProps) => {
   const [editingStation, setEditingStation] = useState<Station | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deleteStationId, setDeleteStationId] = useState<string | null>(null);
+  const [deleteStationHasActiveSession, setDeleteStationHasActiveSession] = useState(false);
+  const [isCheckingDeleteSession, setIsCheckingDeleteSession] = useState(false);
   const [checklistStation, setChecklistStation] = useState<Station | null>(null);
   const [isChecklistSubmitting, setIsChecklistSubmitting] = useState(false);
 
@@ -79,7 +85,7 @@ export const StationsManagement = ({
     setIsSubmitting(true);
     try {
       await onEdit(editingStation.id, payload);
-      setEditingStation(null);
+      // Don't close dialog - let the form dialog show success message and stay open
     } finally {
       setIsSubmitting(false);
     }
@@ -87,11 +93,38 @@ export const StationsManagement = ({
 
   const handleDelete = async (stationId: string) => {
     setIsSubmitting(true);
+    setDeleteStationHasActiveSession(false);
     try {
+      // Check for active session before attempting delete
+      const { hasActiveSession } = await checkStationActiveSessionAdminApi(stationId);
+      if (hasActiveSession) {
+        setDeleteStationHasActiveSession(true);
+        setIsSubmitting(false);
+        return;
+      }
       await onDelete(stationId);
+      setDeleteStationId(null);
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleDeleteDialogOpenChange = async (open: boolean, stationId?: string) => {
+    if (open && stationId) {
+      setIsCheckingDeleteSession(true);
+      try {
+        const { hasActiveSession } = await checkStationActiveSessionAdminApi(stationId);
+        setDeleteStationHasActiveSession(hasActiveSession);
+      } catch (err) {
+        console.error("[stations-management] Failed to check active session", err);
+        setDeleteStationHasActiveSession(false);
+      } finally {
+        setIsCheckingDeleteSession(false);
+      }
+    } else {
+      setDeleteStationHasActiveSession(false);
+    }
+    setDeleteStationId(open ? (stationId ?? null) : null);
   };
 
   const handleChecklistsSubmit = async (
@@ -104,7 +137,7 @@ export const StationsManagement = ({
     setIsChecklistSubmitting(true);
     try {
       await onEditChecklists(stationId, payload);
-      setChecklistStation(null);
+      // Keep dialog open to show success message
     } finally {
       setIsChecklistSubmitting(false);
     }
@@ -185,7 +218,7 @@ export const StationsManagement = ({
                           <Dialog
                             open={deleteStationId === station.id}
                             onOpenChange={(open) =>
-                              setDeleteStationId(open ? station.id : null)
+                              handleDeleteDialogOpenChange(open, station.id)
                             }
                           >
                             <DialogTrigger asChild>
@@ -205,11 +238,23 @@ export const StationsManagement = ({
                                   הפעולה תמחק את התחנה לחלוטין ותשמור היסטוריה בסשנים קיימים. לא ניתן לבטל.
                                 </DialogDescription>
                               </DialogHeader>
+                              {isCheckingDeleteSession ? (
+                                <p className="text-sm text-slate-500">בודק סשנים פעילים...</p>
+                              ) : deleteStationHasActiveSession ? (
+                                <Alert
+                                  variant="destructive"
+                                  className="border-amber-200 bg-amber-50 text-right text-sm text-amber-800"
+                                >
+                                  <AlertDescription>
+                                    לא ניתן למחוק תחנה עם סשן פעיל. יש לסיים את הסשן הפעיל לפני מחיקה.
+                                  </AlertDescription>
+                                </Alert>
+                              ) : null}
                               <DialogFooter className="justify-start">
                                 <Button
                                   variant="destructive"
                                   onClick={() => void handleDelete(station.id)}
-                                  disabled={isSubmitting}
+                                  disabled={isSubmitting || deleteStationHasActiveSession || isCheckingDeleteSession}
                                 >
                                   מחיקה סופית
                                 </Button>
@@ -268,12 +313,16 @@ export const StationsManagement = ({
                             </Button>
                           }
                           open={editingStation?.id === station.id}
-                          onOpenChange={(open) =>
-                            setEditingStation(open ? station : null)
-                          }
+                          onOpenChange={async (open) => {
+                            setEditingStation(open ? station : null);
+                            // Refresh when dialog closes to update the list
+                            if (!open && onRefresh) {
+                              await onRefresh();
+                            }
+                          }}
                           loading={isSubmitting}
                         />
-                        <Dialog open={deleteStationId === station.id} onOpenChange={(open) => setDeleteStationId(open ? station.id : null)}>
+                        <Dialog open={deleteStationId === station.id} onOpenChange={(open) => handleDeleteDialogOpenChange(open, station.id)}>
                           <DialogTrigger asChild>
                             <Button
                               variant="destructive"
@@ -292,11 +341,23 @@ export const StationsManagement = ({
                                 הפעולה תמחק את התחנה לחלוטין ותשמור היסטוריה בסשנים קיימים. לא ניתן לבטל.
                               </DialogDescription>
                             </DialogHeader>
+                            {isCheckingDeleteSession ? (
+                              <p className="text-sm text-slate-500">בודק סשנים פעילים...</p>
+                            ) : deleteStationHasActiveSession ? (
+                              <Alert
+                                variant="destructive"
+                                className="border-amber-200 bg-amber-50 text-right text-sm text-amber-800"
+                              >
+                                <AlertDescription>
+                                  לא ניתן למחוק תחנה עם סשן פעיל. יש לסיים את הסשן הפעיל לפני מחיקה.
+                                </AlertDescription>
+                              </Alert>
+                            ) : null}
                             <DialogFooter className="justify-start">
                               <Button
                                 variant="destructive"
                                 onClick={() => void handleDelete(station.id)}
-                                disabled={isSubmitting}
+                                disabled={isSubmitting || deleteStationHasActiveSession || isCheckingDeleteSession}
                               >
                                 מחיקה סופית
                               </Button>
@@ -319,7 +380,13 @@ export const StationsManagement = ({
         <StationChecklistDialog
           station={checklistStation}
           open={Boolean(checklistStation)}
-          onOpenChange={(open) => setChecklistStation(open ? checklistStation : null)}
+          onOpenChange={async (open) => {
+            setChecklistStation(open ? checklistStation : null);
+            // Refresh when dialog closes to update the list
+            if (!open && onRefresh) {
+              await onRefresh();
+            }
+          }}
           onSubmit={handleChecklistsSubmit}
           loading={isChecklistSubmitting}
         />

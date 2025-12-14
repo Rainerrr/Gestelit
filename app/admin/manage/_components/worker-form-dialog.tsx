@@ -9,6 +9,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import {
@@ -20,8 +21,10 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { CheckCircle2 } from "lucide-react";
 import type { Worker } from "@/lib/types";
 import { CreatableCombobox } from "@/components/forms/creatable-combobox";
+import { checkWorkerActiveSessionAdminApi } from "@/lib/api/admin-management";
 
 type WorkerFormDialogProps = {
   mode: "create" | "edit";
@@ -51,6 +54,11 @@ export const WorkerFormDialog = ({
   const [role, setRole] = useState(worker?.role ?? "worker");
   const [department, setDepartment] = useState(worker?.department ?? "");
   const [isActive, setIsActive] = useState(worker?.is_active ?? true);
+  const [hasActiveSession, setHasActiveSession] = useState(false);
+  const [isCheckingActiveSession, setIsCheckingActiveSession] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [warningMessage, setWarningMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const controlledOpen = open ?? localOpen;
 
   /* eslint-disable react-hooks/set-state-in-effect */
@@ -65,41 +73,122 @@ export const WorkerFormDialog = ({
   }, [worker, mode]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
+  useEffect(() => {
+    if (controlledOpen && mode === "edit" && worker?.id) {
+      void checkActiveSession(worker.id);
+    } else if (controlledOpen && mode === "create") {
+      setHasActiveSession(false);
+    }
+  }, [controlledOpen, mode, worker?.id]);
+
+  const checkActiveSession = async (workerId: string) => {
+    setIsCheckingActiveSession(true);
+    try {
+      const { hasActiveSession: active } = await checkWorkerActiveSessionAdminApi(workerId);
+      setHasActiveSession(active);
+    } catch (err) {
+      console.error("[worker-form-dialog] Failed to check active session", err);
+      setHasActiveSession(false);
+    } finally {
+      setIsCheckingActiveSession(false);
+    }
+  };
+
   const handleSubmit = async () => {
     if (!fullName.trim() || !workerCode.trim()) {
       return;
     }
 
-    await onSubmit({
-      full_name: fullName.trim(),
-      worker_code: workerCode.trim(),
-      language,
-      role: role as Worker["role"],
-      department: department.trim() || null,
-      is_active: isActive,
-    });
+    setError(null);
+    setSuccessMessage(null);
+    setWarningMessage(null);
 
-    if (!open) {
-      setLocalOpen(false);
-      setFullName("");
-      setWorkerCode("");
-      setLanguage("auto");
-      setRole("worker");
-      setDepartment("");
-      setIsActive(true);
+    // Check for active session if editing
+    if (mode === "edit" && worker?.id) {
+      const { hasActiveSession: active } = await checkWorkerActiveSessionAdminApi(worker.id);
+      if (active) {
+        setWarningMessage("לא ניתן לערוך עובד עם סשן פעיל. יש לסיים את הסשן הפעיל לפני עריכה.");
+        setHasActiveSession(true);
+        return;
+      }
+      setHasActiveSession(false);
+    }
+
+    try {
+      await onSubmit({
+        full_name: fullName.trim(),
+        worker_code: workerCode.trim(),
+        language,
+        role: role as Worker["role"],
+        department: department.trim() || null,
+        is_active: isActive,
+      });
+
+      setSuccessMessage("העובד נשמר בהצלחה.");
+      setError(null);
+      setWarningMessage(null);
+
+      // Keep dialog open if controlled, otherwise close for create mode
+      if (mode === "create" && !open) {
+        setLocalOpen(false);
+        setFullName("");
+        setWorkerCode("");
+        setLanguage("auto");
+        setRole("worker");
+        setDepartment("");
+        setIsActive(true);
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      setError(errorMessage || "שגיאה בשמירת העובד");
+      setSuccessMessage(null);
     }
   };
 
   const dialogTitle = mode === "create" ? "הוספת עובד חדש" : "עריכת עובד";
 
+  const handleDialogOpenChange = (open: boolean) => {
+    if (!open) {
+      setError(null);
+      setSuccessMessage(null);
+      setWarningMessage(null);
+      setHasActiveSession(false);
+    }
+    (onOpenChange ?? setLocalOpen)(open);
+  };
+
   return (
-    <Dialog open={controlledOpen} onOpenChange={onOpenChange ?? setLocalOpen}>
+    <Dialog open={controlledOpen} onOpenChange={handleDialogOpenChange}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent className="text-right">
         <DialogHeader>
           <DialogTitle>{dialogTitle}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
+          {error && (
+            <Alert
+              variant="destructive"
+              className="border-red-200 bg-red-50 text-right text-sm text-red-700"
+            >
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+          {warningMessage && (
+            <Alert
+              variant="destructive"
+              className="border-amber-200 bg-amber-50 text-right text-sm text-amber-800"
+            >
+              <AlertDescription>{warningMessage}</AlertDescription>
+            </Alert>
+          )}
+          {successMessage && (
+            <Alert className="border-emerald-200 bg-emerald-50 text-right text-sm text-emerald-800">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4" />
+                <AlertDescription>{successMessage}</AlertDescription>
+              </div>
+            </Alert>
+          )}
           <div className="space-y-2">
             <Label htmlFor="full_name">שם מלא</Label>
             <Input

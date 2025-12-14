@@ -28,11 +28,13 @@ import {
 } from "@/lib/data/station-reasons";
 import { CreatableCombobox } from "@/components/forms/creatable-combobox";
 import {
+  checkStationActiveSessionAdminApi,
   createStatusDefinitionAdminApi,
   deleteStatusDefinitionAdminApi,
   fetchStatusDefinitionsAdminApi,
   updateStatusDefinitionAdminApi,
 } from "@/lib/api/admin-management";
+import { CheckCircle2 } from "lucide-react";
 
 type StationFormDialogProps = {
   mode: "create" | "edit";
@@ -144,6 +146,10 @@ export const StationFormDialog = ({
   const [activeColorPickerId, setActiveColorPickerId] = useState<string | null>(null);
   const [pendingDeletedStatusIds, setPendingDeletedStatusIds] = useState<string[]>([]);
   const [isSavingStatuses, setIsSavingStatuses] = useState(false);
+  const [hasActiveSession, setHasActiveSession] = useState(false);
+  const [isCheckingActiveSession, setIsCheckingActiveSession] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [warningMessage, setWarningMessage] = useState<string | null>(null);
   const controlledOpen = open ?? localOpen;
   const availableStationTypes = useMemo(
     () => Array.from(new Set((stationTypes.includes("other") ? stationTypes : ["other", ...stationTypes]).filter(Boolean))),
@@ -156,6 +162,9 @@ export const StationFormDialog = ({
       setStatusError(null);
       setActiveColorPickerId(null);
       setPendingDeletedStatusIds([]);
+      setHasActiveSession(false);
+      setSuccessMessage(null);
+      setWarningMessage(null);
     }
     (onOpenChange ?? setLocalOpen)(open);
   };
@@ -178,8 +187,24 @@ export const StationFormDialog = ({
   useEffect(() => {
     if (controlledOpen && mode === "edit" && station?.id) {
       void loadStatuses(station.id);
+      void checkActiveSession(station.id);
+    } else if (controlledOpen && mode === "create") {
+      setHasActiveSession(false);
     }
   }, [controlledOpen, mode, station?.id]);
+
+  const checkActiveSession = async (stationId: string) => {
+    setIsCheckingActiveSession(true);
+    try {
+      const { hasActiveSession: active } = await checkStationActiveSessionAdminApi(stationId);
+      setHasActiveSession(active);
+    } catch (err) {
+      console.error("[station-form-dialog] Failed to check active session", err);
+      setHasActiveSession(false);
+    } finally {
+      setIsCheckingActiveSession(false);
+    }
+  };
 
   const loadStatuses = async (stationId?: string) => {
     if (!stationId) {
@@ -237,6 +262,19 @@ export const StationFormDialog = ({
 
     setError(null);
     setStatusError(null);
+    setSuccessMessage(null);
+    setWarningMessage(null);
+
+    // Check for active session if editing
+    if (mode === "edit" && station?.id) {
+      const { hasActiveSession: active } = await checkStationActiveSessionAdminApi(station.id);
+      if (active) {
+        setWarningMessage("לא ניתן לערוך תחנה עם סשן פעיל. יש לסיים את הסשן הפעיל לפני עריכה.");
+        setHasActiveSession(true);
+        return;
+      }
+      setHasActiveSession(false);
+    }
     const normalizedType = type.trim() || "other";
     const trimmedReasons = stationReasons.map((reason) => ({
       ...reason,
@@ -315,7 +353,12 @@ export const StationFormDialog = ({
         station_reasons: payloadReasons,
       });
 
-      if (!open) {
+      setSuccessMessage("התחנה נשמרה בהצלחה.");
+      setError(null);
+      setWarningMessage(null);
+
+      // Keep dialog open if controlled, otherwise close for create mode
+      if (mode === "create" && !open) {
         setLocalOpen(false);
         setName("");
         setCode("");
@@ -326,6 +369,7 @@ export const StationFormDialog = ({
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       setError(errorMessage || "שגיאה בשמירת התחנה");
+      setSuccessMessage(null);
     }
   };
 
@@ -483,6 +527,22 @@ export const StationFormDialog = ({
               className="border-red-200 bg-red-50 text-right text-sm text-red-700"
             >
               <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+          {warningMessage && (
+            <Alert
+              variant="destructive"
+              className="border-amber-200 bg-amber-50 text-right text-sm text-amber-800"
+            >
+              <AlertDescription>{warningMessage}</AlertDescription>
+            </Alert>
+          )}
+          {successMessage && (
+            <Alert className="border-emerald-200 bg-emerald-50 text-right text-sm text-emerald-800">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4" />
+                <AlertDescription>{successMessage}</AlertDescription>
+              </div>
             </Alert>
           )}
           <div className="space-y-2">
