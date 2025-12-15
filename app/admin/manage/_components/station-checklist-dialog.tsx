@@ -212,7 +212,6 @@ export const StationChecklistDialog = ({
   );
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [activeId, setActiveId] = useState<string | null>(null);
   const [activeList, setActiveList] = useState<ChecklistKind | null>(null);
 
   const sensors = useSensors(
@@ -278,34 +277,29 @@ export const StationChecklistDialog = ({
 
   const handleDragStart = (event: DragStartEvent) => {
     const kind = event.active.data.current?.kind as ChecklistKind | undefined;
-    setActiveId(String(event.active.id));
     setActiveList(kind ?? null);
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || !activeList) {
-      setActiveId(null);
       setActiveList(null);
       return;
     }
     const kind = active.data.current?.kind as ChecklistKind | undefined;
     const overKind = over.data.current?.kind as ChecklistKind | undefined;
     if (kind !== overKind || !kind) {
-      setActiveId(null);
       setActiveList(null);
       return;
     }
     const updater = kind === "start" ? setStartItems : setEndItems;
     updater((prev) => reorderItems(prev, String(active.id), String(over.id)));
-    setActiveId(null);
     setActiveList(null);
   };
 
   const resetStates = () => {
     setError(null);
     setSuccess(null);
-    setActiveId(null);
     setActiveList(null);
   };
 
@@ -512,5 +506,4 @@ export const StationChecklistDialog = ({
     </Dialog>
   );
 };
-
 

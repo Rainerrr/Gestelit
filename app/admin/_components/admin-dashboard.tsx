@@ -15,8 +15,8 @@ import { useAdminGuard } from "@/hooks/useAdminGuard";
 import { useIdleSessionCleanup } from "@/hooks/useIdleSessionCleanup";
 import {
   fetchActiveSessionsAdminApi,
-  type ActiveSession,
 } from "@/lib/api/admin-management";
+import type { ActiveSession } from "@/lib/data/admin-dashboard";
 import { KpiCards } from "./kpi-cards";
 import { ActiveSessionsTable } from "./active-sessions-table";
 import { StatusCharts } from "./status-charts";
@@ -308,5 +308,4 @@ export const AdminDashboard = () => {
     </>
   );
 };
-
 

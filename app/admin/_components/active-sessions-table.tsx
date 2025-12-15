@@ -53,11 +53,10 @@ export const ActiveSessionsTable = ({
   isLoading,
   dictionary,
 }: ActiveSessionsTableProps) => {
-  const [openSession, setOpenSession] = useState<ActiveSession | null>(null);
+  const [openSessionId, setOpenSessionId] = useState<string | null>(null);
 
   const handleOpenTimeline = (sessionId: string) => {
-    const target = sessions.find((item) => item.id === sessionId) ?? null;
-    setOpenSession(target);
+    setOpenSessionId(sessionId);
   };
 
   const handleKeyOpen = (sessionId: string, event: KeyboardEvent) => {
@@ -74,7 +73,7 @@ export const ActiveSessionsTable = ({
     if (!status) {
       return (
         <Badge variant="secondary" className="bg-slate-100 text-slate-600">
-          לא ידוע
+          No status
         </Badge>
       );
     }
@@ -86,88 +85,34 @@ export const ActiveSessionsTable = ({
     );
   };
 
-  return (
-    <Card className="h-full">
-      <CardHeader>
-        <CardTitle className="text-lg">עבודות פעילות</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {isLoading ? (
-          <p className="text-sm text-slate-500">טוען נתונים בזמן אמת...</p>
-        ) : sessions.length === 0 ? (
-          <p className="text-sm text-slate-500">אין עבודות פעילות כרגע.</p>
-        ) : (
-          <div className="overflow-x-auto -mx-6 px-6">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{"פק\"ע"}</TableHead>
-                  <TableHead>תחנה</TableHead>
-                  <TableHead>עובד</TableHead>
-                  <TableHead>סטטוס נוכחי</TableHead>
-                  <TableHead>זמן ריצה (שעות:דקות:שניות)</TableHead>
-                  <TableHead>כמות טובה</TableHead>
-                  <TableHead>כמות פסולה</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-            {sessions.map((session) => (
-              <TableRow
-                key={session.id}
-                role="button"
-                tabIndex={0}
-                className="cursor-pointer transition-colors hover:bg-slate-50"
-                aria-label={`ציר זמן לפק\"ע ${session.jobNumber}`}
-                onClick={() => handleOpenTimeline(session.id)}
-                onKeyDown={(event) => handleKeyOpen(session.id, event)}
-              >
-                <TableCell className="font-medium">
-                  {session.jobNumber}
-                </TableCell>
-                <TableCell>{session.stationName}</TableCell>
-                <TableCell>{session.workerName}</TableCell>
-                <TableCell>
-                  {renderStatusBadge(session.currentStatus, session.stationId)}
-                </TableCell>
-                <TableCell className="font-mono text-sm text-slate-800">
-                  {getDurationLabel(session.startedAt, now)}
-                </TableCell>
-                <TableCell>{session.totalGood}</TableCell>
-                <TableCell>{session.totalScrap}</TableCell>
-              </TableRow>
-            ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-  const selectedSession = openSession;
+  const selectedSession =
+    openSessionId !== null
+      ? sessions.find((session) => session.id === openSessionId) ?? null
+      : null;
 
   return (
     <>
       <Card className="h-full">
         <CardHeader>
-          <CardTitle className="text-lg">עבודות פעילות</CardTitle>
+          <CardTitle className="text-lg">Active Sessions</CardTitle>
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <p className="text-sm text-slate-500">טוען נתונים בזמן אמת...</p>
+            <p className="text-sm text-slate-500">Loading active sessions...</p>
           ) : sessions.length === 0 ? (
-            <p className="text-sm text-slate-500">אין עבודות פעילות כרגע.</p>
+            <p className="text-sm text-slate-500">No active sessions.</p>
           ) : (
             <div className="overflow-x-auto -mx-6 px-6">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>{"פק\"ע"}</TableHead>
-                    <TableHead>תחנה</TableHead>
-                    <TableHead>עובד</TableHead>
-                    <TableHead>סטטוס נוכחי</TableHead>
-                    <TableHead>זמן ריצה (שעות:דקות:שניות)</TableHead>
-                    <TableHead>כמות טובה</TableHead>
-                    <TableHead>כמות פסולה</TableHead>
+                    <TableHead>Job</TableHead>
+                    <TableHead>Station</TableHead>
+                    <TableHead>Worker</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Runtime (hh:mm:ss)</TableHead>
+                    <TableHead>Good qty</TableHead>
+                    <TableHead>Scrap qty</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -177,7 +122,7 @@ export const ActiveSessionsTable = ({
                       role="button"
                       tabIndex={0}
                       className="cursor-pointer transition-colors hover:bg-slate-50"
-                      aria-label={`ציר זמן לפק\"ע ${session.jobNumber}`}
+                      aria-label={`Active session for job ${session.jobNumber}`}
                       onClick={() => handleOpenTimeline(session.id)}
                       onKeyDown={(event) => handleKeyOpen(session.id, event)}
                     >
@@ -186,7 +131,9 @@ export const ActiveSessionsTable = ({
                       </TableCell>
                       <TableCell>{session.stationName}</TableCell>
                       <TableCell>{session.workerName}</TableCell>
-                      <TableCell>{renderStatusBadge(session.currentStatus)}</TableCell>
+                      <TableCell>
+                        {renderStatusBadge(session.currentStatus, session.stationId)}
+                      </TableCell>
                       <TableCell className="font-mono text-sm text-slate-800">
                         {getDurationLabel(session.startedAt, now)}
                       </TableCell>
@@ -213,14 +160,12 @@ export const ActiveSessionsTable = ({
             endedAt: null,
             currentStatus: selectedSession.currentStatus ?? null,
           }}
-          open={Boolean(selectedSession)}
+          open
           onOpenChange={(next) =>
-            setOpenSession(next ? selectedSession : null)
+            setOpenSessionId(next ? selectedSession.id : null)
           }
         />
       ) : null}
     </>
   );
 };
-
-

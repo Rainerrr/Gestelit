@@ -57,7 +57,7 @@ export const AdminAccessDialog = () => {
       setAdminPassword(password);
       setIsOpen(false);
       router.push("/admin");
-    } catch (err) {
+    } catch {
       setError("שגיאה בחיבור לשרת");
     } finally {
       setIsSubmitting(false);
@@ -117,5 +117,4 @@ export const AdminAccessDialog = () => {
     </Dialog>
   );
 };
-
 

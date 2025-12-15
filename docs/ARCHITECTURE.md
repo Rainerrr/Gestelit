@@ -1,6 +1,6 @@
 # Gestelit Work Monitor – Architecture Overview
 
-> Updated: 2025‑12‑10  
+> Updated: 2025‑12‑15  
 > Context: Next.js 16 + React 19 (App Router), Tailwind, shadcn/ui, Supabase
 
 ## 1. High-Level Structure
@@ -62,19 +62,28 @@
 
 ### 3.1 Access & Authentication
 
-- **Access**: Landing page (`app/page.tsx`) exposes a dialog with mock password `1234`. When correct, it sets `localStorage.isAdmin` and redirects to `/admin`.
-- **Guard**: `hooks/useAdminGuard.ts` watches `localStorage` via `useSyncExternalStore` and redirects unauthorized visitors to `/`.
+- **Access**: Landing page (`app/page.tsx`) exposes a dialog (`components/landing/admin-access-dialog.tsx`) for admin login.
+- **Server-Side Authentication**: 
+  - Password is validated server-side via `POST /api/admin/auth/login` against `ADMIN_PASSWORD` environment variable.
+  - On successful login, password is stored in `localStorage.adminPassword` for subsequent API requests.
+  - All admin API routes require `X-Admin-Password` header matching the server's `ADMIN_PASSWORD`.
+- **Client-Side Guard**: `hooks/useAdminGuard.ts` watches `localStorage.isAdmin` via `useSyncExternalStore` and redirects unauthorized visitors to `/`.
+- **Password Management**: Admin can change password via `POST /api/admin/auth/change-password` (requires updating `ADMIN_PASSWORD` env var manually).
 - **Layout**: `app/admin/_components/admin-dashboard.tsx` mimics the shadcn dashboard (sidebar + header + KPI row + content grid).
 
 ### 3.2 Main Dashboard (`/admin`)
 
-**Data Source**: `lib/data/admin-dashboard.ts`.
+**Data Source**: Admin dashboard data is fetched via API routes (not direct Supabase calls):
+- `GET /api/admin/dashboard/active-sessions` – Returns all active sessions (uses service role, bypasses RLS).
+- `GET /api/admin/dashboard/recent-sessions` – Returns completed sessions with optional filters.
+- `POST /api/admin/dashboard/status-events` – Returns status events for given session IDs.
+- `GET /api/admin/dashboard/monthly-throughput` – Returns monthly job throughput data.
 
-- `fetchActiveSessions()` – `sessions` join with workers/stations/jobs + derived status via latest `status_events`.
-- `fetchRecentSessions()` – Completed sessions for the history table.
-- Realtime:
-  - `subscribeToActiveSessions()` listens to `sessions` inserts/updates where `status='active'`.
-  - `sessions.current_status` mirrors the latest `status_events` row so the dashboard refreshes via a single channel.
+**Server-Side Functions**: `lib/data/admin-dashboard.ts` contains the actual data fetching logic using `createServiceSupabase()` (service role client that bypasses RLS).
+
+**Realtime**: 
+- Admin dashboard uses polling (every 5 seconds) instead of realtime subscriptions, since browser client is subject to RLS.
+- `sessions.current_status` mirrors the latest `status_events` row for efficient queries.
 
 **UI Components**:
 - `KpiCards`: counts for total active jobs, machines in production, machines stopped/faulted, total good output.
@@ -104,9 +113,9 @@
   - **Monthly Throughput**: Paginated bar chart (5 jobs per page) showing good/scrap/planned quantities per job for selected month.
   - Month navigation (prev/next) with Hebrew month labels.
 - **Data Loading**:
-  - `fetchRecentSessions()` with filters (limit 120).
-  - `fetchStatusEventsBySessionIds()` to calculate status durations.
-  - `fetchMonthlyJobThroughput()` for throughput charts.
+  - `fetchRecentSessionsAdminApi()` with filters (limit 120) – calls `/api/admin/dashboard/recent-sessions`.
+  - `fetchStatusEventsAdminApi()` to calculate status durations – calls `/api/admin/dashboard/status-events`.
+  - `fetchMonthlyJobThroughputAdminApi()` for throughput charts – calls `/api/admin/dashboard/monthly-throughput`.
 
 ### 3.4 Session Timeline
 
@@ -222,6 +231,26 @@
 - **Session snapshots**: `worker_full_name_snapshot`, `worker_code_snapshot`, `station_name_snapshot`, `station_code_snapshot` preserve names at session creation for historical accuracy.
 - **Status mirroring**: `sessions.current_status` and `last_status_change_at` mirror the latest `status_events` row for efficient realtime queries (single table subscription).
 
+### 4.4 Row Level Security (RLS)
+
+**Migration**: `supabase/migrations/20251215112227_enable_rls_policies.sql`
+
+RLS is enabled on all tables to protect against unauthorized direct database access via the anon key. The service role (used by API routes) bypasses RLS automatically.
+
+**Policy Strategy**:
+- **Service Role**: All tables allow full access to `service_role` (used by API routes via `createServiceSupabase()`).
+- **Anonymous Access**: Limited to specific read operations:
+  - `stations`: Can view active stations only (`is_active = true`).
+  - `jobs`: Can read and create jobs (needed for session creation).
+  - `status_definitions`: Can read all status definitions.
+  - `malfunctions`: Can create and read malfunctions.
+- **Workers, Sessions, Status Events**: No anonymous access (service role only).
+
+**Why This Matters**:
+- Frontend components using `getBrowserSupabaseClient()` (anon key) are subject to RLS restrictions.
+- Admin dashboard must use API routes (service role) to access all data.
+- Worker API routes validate permissions server-side even though service role bypasses RLS (defense in depth).
+
 ## 5. API Routes Reference
 
 ### 5.1 Worker Routes
@@ -239,13 +268,18 @@
 
 ### 5.3 Job & Session Routes
 
-| Route | Method | Purpose | Key Logic |
-|-------|--------|---------|-----------|
-| `/api/jobs` | POST | Create/get job + create session | `getOrCreateJob`, `createSession` |
-| `/api/sessions/complete` | POST | Mark session as completed | `completeSession`, sets `status=completed`, `ended_at` |
-| `/api/sessions/quantities` | POST | Update production totals | `updateSessionTotals`, updates `total_good`/`total_scrap` |
-| `/api/sessions/heartbeat` | POST | Update `last_seen_at` | `recordSessionHeartbeat`, accepts JSON/text payload |
-| `/api/sessions/abandon` | POST | Abandon session (worker-initiated) | Marks session as aborted |
+| Route | Method | Purpose | Key Logic | Auth |
+|-------|--------|---------|-----------|------|
+| `/api/jobs` | POST | Create/get job + create session | `getOrCreateJob`, `createSession` | `requireWorkerOwnership` |
+| `/api/sessions/complete` | POST | Mark session as completed | `completeSession`, sets `status=completed`, `ended_at` | `requireSessionOwnership` |
+| `/api/sessions/quantities` | POST | Update production totals | `updateSessionTotals`, updates `total_good`/`total_scrap` | `requireSessionOwnership` |
+| `/api/sessions/heartbeat` | POST | Update `last_seen_at` | `recordSessionHeartbeat`, accepts JSON/text payload | `requireSessionOwnership` |
+| `/api/sessions/abandon` | POST | Abandon session (worker-initiated) | Marks session as aborted | `requireSessionOwnership` |
+
+**Permission Validation**: All worker-facing session routes validate that:
+- Worker is authenticated (via `X-Worker-Id` header or request body).
+- Worker is active (`is_active = true`).
+- Session belongs to the authenticated worker (for session operations).
 
 ### 5.4 Checklist Routes
 
@@ -256,16 +290,25 @@
 
 ### 5.5 Status & Malfunction Routes
 
-| Route | Method | Purpose | Key Logic |
-|-------|--------|---------|-----------|
-| `/api/status-events` | POST | Create status event | `startStatusEvent`, closes open event, inserts new, mirrors on `sessions` |
-| `/api/reasons` | GET | Get active reasons for station | `getStationActiveReasons`, requires `?stationId=`, returns station's active reasons |
-| `/api/malfunctions` | POST | Create malfunction record | Inserts into `malfunctions` table |
+| Route | Method | Purpose | Key Logic | Auth |
+|-------|--------|---------|-----------|------|
+| `/api/status-events` | POST | Create status event | `startStatusEvent`, closes open event, inserts new, mirrors on `sessions` | `requireSessionOwnership` |
+| `/api/reasons` | GET | Get active reasons for station | `getStationActiveReasons`, requires `?stationId=`, returns station's active reasons | None (public) |
+| `/api/malfunctions` | POST | Create malfunction record | Inserts into `malfunctions` table | None (public) |
+| `/api/stations` | GET | Get stations for worker | `fetchStationsForWorker`, requires `?workerId=` | `requireWorkerOwnership` |
 
 ### 5.6 Admin Routes
 
+**Authentication**: All admin routes require `X-Admin-Password` header matching `ADMIN_PASSWORD` environment variable (validated via `requireAdminPassword`).
+
 | Route | Method | Purpose | Key Logic |
 |-------|--------|---------|-----------|
+| `/api/admin/auth/login` | POST | Validate admin password | Checks password against `ADMIN_PASSWORD` env var |
+| `/api/admin/auth/change-password` | POST | Change admin password | Validates current password, returns instructions to update env var |
+| `/api/admin/dashboard/active-sessions` | GET | Get all active sessions | Uses service role, bypasses RLS |
+| `/api/admin/dashboard/recent-sessions` | GET | Get completed sessions | Uses service role, supports filters (workerId, stationId, jobNumber, limit) |
+| `/api/admin/dashboard/status-events` | POST | Get status events for sessions | Uses service role, accepts array of session IDs |
+| `/api/admin/dashboard/monthly-throughput` | GET | Get monthly job throughput | Uses service role, supports filters |
 | `/api/admin/workers` | GET, POST | List/create workers | `fetchAllWorkers`, validates uniqueness |
 | `/api/admin/workers/[id]` | PUT, DELETE | Update/delete worker | Soft delete if no active sessions |
 | `/api/admin/stations` | GET, POST | List/create stations | `fetchAllStations`, validates uniqueness |
@@ -273,8 +316,8 @@
 | `/api/admin/worker-stations` | GET, POST, DELETE | Manage worker-station assignments | Prevents duplicates |
 | `/api/admin/departments` | GET, DELETE | List/clear departments | Derived from workers table |
 | `/api/admin/station-types` | GET | Get station type enum values | Returns enum options |
-| `/api/admin/sessions/close-all` | POST | Force-close all active sessions | Service key required, for demo resets |
-| `/api/admin/sessions/delete` | POST | Delete selected sessions | Bulk delete by IDs |
+| `/api/admin/sessions/close-all` | POST | Force-close all active sessions | Uses service role, for demo resets |
+| `/api/admin/sessions/delete` | POST | Delete selected sessions | Bulk delete by IDs, uses service role |
 
 ### 5.7 Cron Routes
 
@@ -317,13 +360,26 @@ Centralizes Supabase queries for reuse across API routes and edge functions:
 
 Browser-side fetch wrappers with consistent error handling:
 
-- **`client.ts`**: Worker-facing APIs (`createJobSessionApi`, `fetchChecklistApi`, `startStatusEventApi`, `updateSessionTotalsApi`, `completeSessionApi`, `createMalfunctionApi`, etc.).
-- **`admin-management.ts`**: Admin CRUD APIs (`fetchWorkersAdminApi`, `createWorkerApi`, `updateWorkerApi`, `deleteWorkerApi`, etc.).
+- **`client.ts`**: Worker-facing APIs (`createJobSessionApi`, `fetchChecklistApi`, `startStatusEventApi`, `updateSessionTotalsApi`, `completeSessionApi`, `createMalfunctionApi`, etc.). Automatically includes `X-Worker-Id` header from `localStorage`.
+- **`admin-management.ts`**: Admin CRUD APIs (`fetchWorkersAdminApi`, `createWorkerApi`, `updateWorkerApi`, `deleteWorkerApi`, etc.) plus dashboard APIs (`fetchActiveSessionsAdminApi`, `fetchRecentSessionsAdminApi`, `fetchStatusEventsAdminApi`, `fetchMonthlyJobThroughputAdminApi`). Automatically includes `X-Admin-Password` header from `localStorage`.
+- **`auth-helpers.ts`**: Helper functions for managing authentication state in `localStorage` (`getAdminPassword`, `setAdminPassword`, `clearAdminPassword`, `getWorkerCode`, `setWorkerCode`).
 
 ### 7.3 Supabase Clients
 
-- **Browser client** (`lib/supabase/client.ts`): `getBrowserSupabaseClient()` – singleton for frontend, supports Realtime subscriptions.
-- **Service client**: `createServiceSupabase()` – service-role client for API routes (bypasses RLS).
+- **Browser client** (`lib/supabase/client.ts`): `getBrowserSupabaseClient()` – singleton for frontend, uses anon key, supports Realtime subscriptions, **subject to RLS policies**.
+- **Service client**: `createServiceSupabase()` – service-role client for API routes, **bypasses RLS automatically**. Used by all server-side data functions.
+
+### 7.4 Authentication & Authorization Layer (`lib/auth/**`)
+
+Server-side permission validation and request context extraction:
+
+- **`request-context.ts`**: Extracts worker information from requests (`getWorkerFromRequest`, `getWorkerIdFromRequest`). Handles both header-based (`X-Worker-Id`) and body-based authentication.
+- **`permissions.ts`**: Permission validation functions:
+  - `requireWorker()` – Validates worker is authenticated and active.
+  - `requireWorkerOwnership()` – Ensures worker ID matches authenticated worker.
+  - `requireSessionOwnership()` – Ensures session belongs to authenticated worker.
+  - `requireAdminPassword()` – Validates admin password from `X-Admin-Password` header against `ADMIN_PASSWORD` env var.
+  - `createErrorResponse()` – Standardized error response helper.
 
 ## 8. Realtime Architecture
 
@@ -359,87 +415,167 @@ Browser-side fetch wrappers with consistent error handling:
 - **API**: `GET /api/workers/active-session` returns any active session for a worker.
 - **UI**: Login page checks for active session and offers resume option with countdown timer.
 
-## 10. Recent Architecture Changes (Dec 10, 2025)
+## 10. Security Architecture
 
-1. **Station-scoped malfunction reasons**
+### 10.1 Row Level Security (RLS)
+
+**Implementation Date**: December 15, 2025
+
+RLS policies protect all database tables from unauthorized access via the anon key. This provides defense-in-depth security:
+
+- **Service Role Bypass**: API routes use `createServiceSupabase()` (service role key) which bypasses RLS automatically.
+- **Anonymous Access**: Limited to specific read operations needed for worker UI (active stations, jobs, status definitions, malfunctions).
+- **No Direct Worker Data Access**: Workers, sessions, and status events are only accessible via API routes (service role).
+
+**Migration**: `supabase/migrations/20251215112227_enable_rls_policies.sql` must be run in all environments.
+
+### 10.2 Admin Authentication
+
+**Implementation Date**: December 15, 2025
+
+- **Server-Side Validation**: Admin password is validated server-side against `ADMIN_PASSWORD` environment variable.
+- **No Database Users**: Admin authentication is password-based only (no admin users in database).
+- **Password Storage**: Password is stored in `localStorage.adminPassword` after successful login for API request headers.
+- **Password Change**: Admin can request password change via UI, but requires manual update of `ADMIN_PASSWORD` env var and redeployment.
+
+### 10.3 Worker Permission Validation
+
+**Implementation Date**: December 15, 2025
+
+All worker-facing API routes validate:
+- Worker is authenticated (via `X-Worker-Id` header or request body).
+- Worker is active (`is_active = true`).
+- Worker can only access their own sessions (session ownership validation).
+
+This provides application-level security even though service role bypasses RLS.
+
+## 11. Recent Architecture Changes
+
+### 11.1 December 15, 2025 – RLS & Security Implementation
+
+1. **Row Level Security (RLS) Implementation**
+   - RLS enabled on all tables via migration `20251215112227_enable_rls_policies.sql`.
+   - Service role (API routes) bypasses RLS; anon key has limited read access.
+   - Admin dashboard switched from direct Supabase calls to API routes (service role).
+   - Worker API routes validate permissions server-side (defense in depth).
+
+2. **Server-Side Admin Authentication**
+   - Admin login validates password server-side via `POST /api/admin/auth/login`.
+   - Password stored in `ADMIN_PASSWORD` environment variable (not in database).
+   - All admin API routes require `X-Admin-Password` header.
+   - Admin password change endpoint added (requires manual env var update).
+
+3. **Worker Permission Validation**
+   - All worker API routes validate worker authentication and ownership.
+   - Workers can only access/modify their own sessions.
+   - Permission validation via `lib/auth/permissions.ts` helpers.
+
+4. **Admin Dashboard API Routes**
+   - Created `/api/admin/dashboard/*` routes for all dashboard data.
+   - Routes use service role to bypass RLS and access all data.
+   - Frontend switched from direct Supabase calls to API routes.
+   - Realtime subscriptions replaced with polling (every 5 seconds).
+
+5. **Station-scoped malfunction reasons**
    - `reasons` table removed; each station owns `station_reasons` JSON with the built-in default `{ id: "general-malfunction", label_he: "תקלת כללית", label_ru: "Общая לאисправность", is_active: true }`.
    - `malfunctions` and `status_events` now reference `station_reason_id` (string) instead of FK `reason_id`.
    - `/api/reasons` is station-scoped (`?stationId=`) and returns active station reasons (default included).
    - Admin "סוגי תקלות" list edits station-level reasons; default reason is hidden but injected on save with server-side validation.
 
-2. **Admin Dashboard MVP (Dec 3, 2025)**  
-   - Added `/admin` route, RTL layout, KPIs, realtime active sessions table, charts, and recent sessions panel.  
-   - Hooked to Supabase Realtime for `sessions` and `status_events`.
+6. **Admin Dashboard MVP (Dec 3, 2025)**  
+   - Added `/admin` route, RTL layout, KPIs, active sessions table, charts, and recent sessions panel.  
+   - Now uses API routes instead of direct Supabase calls (updated Dec 15, 2025).
 
-3. **History Dashboard (Dec 2025)**
+7. **History Dashboard (Dec 2025)**
    - Added `/admin/history` route with filtering, sortable sessions table, status distribution charts, monthly throughput charts, and session timeline dialogs.
    - Bulk delete functionality for selected sessions.
+   - Now uses API routes for data fetching (updated Dec 15, 2025).
 
-4. **Admin Management (Dec 2025)**
+8. **Admin Management (Dec 2025)**
    - Added `/admin/manage` route for CRUD operations on workers, stations, worker-station assignments, and departments.
    - Station checklist editing via JSON editor.
    - Department management (derived from workers table).
+   - All routes now protected with admin password validation (updated Dec 15, 2025).
 
-5. **Session Timeline (Dec 2025)**
+9. **Session Timeline (Dec 2025)**
    - Visual timeline component with status segments, time ticks, and realtime updates.
    - Collapses rapid status switches for readability.
    - Integrated into admin dashboard and history dashboard via dialogs.
 
-6. **Mock Admin Access**  
-   - Landing page "כניסת מנהל" dialog with password `1234` storing `localStorage.isAdmin`.
+10. **Timer Synchronization**  
+    - Worker timer now uses persisted `sessionStartedAt`.  
+    - Admin timer uses server-side `started_at` with 1-second updates.
 
-7. **Timer Synchronization**  
-   - Worker timer now uses persisted `sessionStartedAt`.  
-   - Admin timer uses server-side `started_at` with 1-second updates.
+11. **Checklist & Session Start Flow**  
+    - Start checklist submission now:  
+      1. Validates client-side that all required checklist items are checked.  
+      2. Server marks session officially started via `markSessionStarted` and sets `start_checklist_completed = true` on the `sessions` row.  
+      3. Client sets start timestamp and sends default `"stopped"` status event.  
+    - No individual checklist answers are persisted; only the fact that the start checklist was completed.
 
-8. **Checklist & Session Start Flow**  
-   - Start checklist submission now:  
-     1. Validates client-side that all required checklist items are checked.  
-     2. Server marks session officially started via `markSessionStarted` and sets `start_checklist_completed = true` on the `sessions` row.  
-     3. Client sets start timestamp and sends default `"stopped"` status event.  
-   - No individual checklist answers are persisted; only the fact that the start checklist was completed.
+12. **Realtime Status Reliability**  
+    - Admin dashboard uses polling (every 5 seconds) instead of realtime subscriptions due to RLS restrictions.
+    - `status_events` subscription still used for session timeline views.
 
-9. **Realtime Status Reliability**  
-   - Restored `status_events` subscription to avoid missing state changes; admin now responds instantly when workers switch statuses without needing production count updates.
-
-10. **Force-Close Utility**  
+13. **Force-Close Utility**  
     - `/api/admin/sessions/close-all` to terminate stuck sessions during demos/tests.
     - `/api/admin/sessions/delete` for bulk deletion of completed sessions.
 
-11. **Session Lifecycle Guard**  
+14. **Session Lifecycle Guard**  
     - Workers ping `/api/sessions/heartbeat` every 15 seconds and send `navigator.sendBeacon` on tab close so `last_seen_at` stays updated.  
     - Supabase cron (`close-idle-sessions`) closes sessions not seen for more than 5 minutes, marks `forced_closed_at`, and updates status to `stopped`.  
     - Worker login screen offers "חזרה לעבודה פעילה" dialog with 5-minute timer to resume open work before it auto-closes.  
-    - Every status change updates `current_status` and `last_status_change_at` fields on `sessions` table so admin screens receive Realtime data through a single channel.
+    - Every status change updates `current_status` and `last_status_change_at` fields on `sessions` table so admin screens receive data through a single channel.
 
-12. **Session Snapshots**
+15. **Session Snapshots**
     - Added snapshot columns (`worker_full_name_snapshot`, `worker_code_snapshot`, `station_name_snapshot`, `station_code_snapshot`) to preserve names at session creation for historical accuracy.
 
-## 11. Known Issues / Follow-ups
+## 12. Known Issues / Follow-ups
 
 - **Lint noise**: Several legacy `.cjs` scripts still use `require`, triggering ESLint errors.
-- **Security**: Admin auth remains mock-only (localStorage flag). Real RBAC/auth still needed.
+- **Admin Password Management**: Password change requires manual environment variable update and redeployment. Consider storing password hash in database for easier management.
 - **Schema drift**: Recent attempts to add `current_status` column were reverted; status derivation still relies on `status_events`. If you reintroduce a column, ensure Supabase migrations run in all environments.
-- **Realtime load**: `subscribeToActiveSessions` triggers full refetches on every insert/update. Consider differential updates or edge functions if scaling becomes an issue.
+- **Admin Dashboard Polling**: Admin dashboard uses 5-second polling instead of realtime due to RLS. Consider WebSocket or Server-Sent Events for better realtime experience.
 - **Testing**: No automated tests yet; all flows rely on manual verification.
 - **Department field**: `workers.department` is a free-text field (not a foreign key). Consider normalization if departments need their own metadata.
 - **Pagination**: History dashboard and admin management tables don't paginate; may need pagination for large datasets.
+- **RLS Migration**: The RLS migration (`20251215112227_enable_rls_policies.sql`) must be run in all environments (local, staging, production) before deployment.
 
-## 12. Tips for Next Agent
+## 13. Tips for Next Agent
 
-- Keep RTL/Hebrew-first UI rules in mind (dir="rtl", Hebrew labels, no escaped text).
-- Prefer shadcn ui primitives + Tailwind; avoid custom CSS files.
-- When touching supabase data, confirm migrations match schema (see `supabase/schema.sql`).
-- Reuse existing hooks (`useWorkerSession`, `useAdminGuard`, `useSessionTimeline`) to avoid duplicating logic.
-- For realtime work, share the singleton browser Supabase client (`getBrowserSupabaseClient`) to avoid multiple websocket connections.
-- Session lifecycle helpers in `lib/data/sessions.ts` handle complex multi-step operations (closing events, mirroring status); use them instead of direct Supabase calls.
-- Admin management routes validate business rules (e.g., prevent deleting workers/stations with active sessions); follow the same pattern for new routes.
-- Status events must always close the previous event before opening a new one; use `startStatusEvent` helper.
-- Checklist responses are not stored; only completion flags. Don't try to persist individual answers.
+- **RLS Awareness**: 
+  - Frontend components using `getBrowserSupabaseClient()` are subject to RLS restrictions.
+  - Admin dashboard data must be fetched via API routes (service role), not direct Supabase calls.
+  - All server-side data functions should use `createServiceSupabase()` to bypass RLS.
 
-## 13. File Structure Reference
+- **Authentication & Authorization**:
+  - Use `requireWorker()`, `requireWorkerOwnership()`, `requireSessionOwnership()` from `lib/auth/permissions.ts` for worker routes.
+  - Use `requireAdminPassword()` for all admin routes.
+  - Worker ID should be passed via `X-Worker-Id` header (automatically added by `lib/api/client.ts`).
+  - Admin password should be passed via `X-Admin-Password` header (automatically added by `lib/api/admin-management.ts`).
 
-### 13.1 Key Directories
+- **UI & Styling**:
+  - Keep RTL/Hebrew-first UI rules in mind (dir="rtl", Hebrew labels, no escaped text).
+  - Prefer shadcn ui primitives + Tailwind; avoid custom CSS files.
+
+- **Database & Migrations**:
+  - When touching supabase data, confirm migrations match schema (see `supabase/schema.sql`).
+  - Always run RLS migration (`20251215112227_enable_rls_policies.sql`) in all environments.
+  - Service role bypasses RLS; anon key is restricted.
+
+- **Code Reuse**:
+  - Reuse existing hooks (`useWorkerSession`, `useAdminGuard`, `useSessionTimeline`) to avoid duplicating logic.
+  - Session lifecycle helpers in `lib/data/sessions.ts` handle complex multi-step operations (closing events, mirroring status); use them instead of direct Supabase calls.
+  - Admin management routes validate business rules (e.g., prevent deleting workers/stations with active sessions); follow the same pattern for new routes.
+
+- **Data Flow**:
+  - Status events must always close the previous event before opening a new one; use `startStatusEvent` helper.
+  - Checklist responses are not stored; only completion flags. Don't try to persist individual answers.
+  - Admin dashboard uses polling (5 seconds) instead of realtime subscriptions due to RLS.
+
+## 14. File Structure Reference
+
+### 14.1 Key Directories
 
 ```
 app/
@@ -470,12 +606,13 @@ supabase/
 docs/                # Architecture and design docs
 ```
 
-### 13.2 Important Files
+### 14.2 Important Files
 
 - **Session Management**: `lib/data/sessions.ts`, `contexts/WorkerSessionContext.tsx`
-- **Admin Dashboard**: `lib/data/admin-dashboard.ts`, `app/admin/_components/admin-dashboard.tsx`
+- **Admin Dashboard**: `lib/data/admin-dashboard.ts`, `app/admin/_components/admin-dashboard.tsx`, `app/api/admin/dashboard/*`
 - **History Dashboard**: `app/admin/_components/history-dashboard.tsx`, `lib/data/admin-dashboard.ts`
 - **Admin Management**: `lib/data/admin-management.ts`, `lib/api/admin-management.ts`, `app/admin/manage/_components/`
 - **Session Timeline**: `hooks/useSessionTimeline.ts`, `app/admin/_components/session-timeline.tsx`
-- **API Client**: `lib/api/client.ts`, `lib/api/admin-management.ts`
-- **Schema**: `supabase/schema.sql`, `supabase/migrations/`
+- **API Client**: `lib/api/client.ts`, `lib/api/admin-management.ts`, `lib/api/auth-helpers.ts`
+- **Authentication**: `lib/auth/permissions.ts`, `lib/auth/request-context.ts`, `app/api/admin/auth/*`
+- **Schema**: `supabase/schema.sql`, `supabase/migrations/` (especially `20251215112227_enable_rls_policies.sql`)

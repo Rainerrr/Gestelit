@@ -146,8 +146,6 @@ export const StationFormDialog = ({
   const [activeColorPickerId, setActiveColorPickerId] = useState<string | null>(null);
   const [pendingDeletedStatusIds, setPendingDeletedStatusIds] = useState<string[]>([]);
   const [isSavingStatuses, setIsSavingStatuses] = useState(false);
-  const [hasActiveSession, setHasActiveSession] = useState(false);
-  const [isCheckingActiveSession, setIsCheckingActiveSession] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
   const controlledOpen = open ?? localOpen;
@@ -162,7 +160,6 @@ export const StationFormDialog = ({
       setStatusError(null);
       setActiveColorPickerId(null);
       setPendingDeletedStatusIds([]);
-      setHasActiveSession(false);
       setSuccessMessage(null);
       setWarningMessage(null);
     }
@@ -187,24 +184,8 @@ export const StationFormDialog = ({
   useEffect(() => {
     if (controlledOpen && mode === "edit" && station?.id) {
       void loadStatuses(station.id);
-      void checkActiveSession(station.id);
-    } else if (controlledOpen && mode === "create") {
-      setHasActiveSession(false);
     }
   }, [controlledOpen, mode, station?.id]);
-
-  const checkActiveSession = async (stationId: string) => {
-    setIsCheckingActiveSession(true);
-    try {
-      const { hasActiveSession: active } = await checkStationActiveSessionAdminApi(stationId);
-      setHasActiveSession(active);
-    } catch (err) {
-      console.error("[station-form-dialog] Failed to check active session", err);
-      setHasActiveSession(false);
-    } finally {
-      setIsCheckingActiveSession(false);
-    }
-  };
 
   const loadStatuses = async (stationId?: string) => {
     if (!stationId) {
@@ -270,10 +251,8 @@ export const StationFormDialog = ({
       const { hasActiveSession: active } = await checkStationActiveSessionAdminApi(station.id);
       if (active) {
         setWarningMessage("לא ניתן לערוך תחנה עם סשן פעיל. יש לסיים את הסשן הפעיל לפני עריכה.");
-        setHasActiveSession(true);
         return;
       }
-      setHasActiveSession(false);
     }
     const normalizedType = type.trim() || "other";
     const trimmedReasons = stationReasons.map((reason) => ({
@@ -503,7 +482,7 @@ export const StationFormDialog = ({
     }
 
     setPendingDeletedStatusIds([]);
-    setStationStatuses((prev) =>
+    setStationStatuses(() =>
       preparedStatuses.map((status) => {
         if (status.id.startsWith("temp-")) {
           return createdMap.get(status.id) ?? status;
@@ -798,4 +777,3 @@ export const StationFormDialog = ({
     </Dialog>
   );
 };
-

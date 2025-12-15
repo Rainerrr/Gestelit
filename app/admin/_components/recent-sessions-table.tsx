@@ -198,7 +198,9 @@ export const RecentSessionsTable = ({
                         >
                           <button
                             type="button"
-                            onClick={() => onSort?.(column.key as typeof sortKey)}
+                            onClick={() =>
+                              onSort?.(column.key as NonNullable<typeof sortKey>)
+                            }
                             className="flex w-full items-center justify-between gap-1 rounded-md px-1 py-1 transition hover:bg-blue-100/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                           >
                             <span>{column.label}</span>
@@ -308,5 +310,4 @@ export const RecentSessionsTable = ({
     </>
   );
 };
-
 

@@ -1,5 +1,12 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+// @ts-expect-error jsr imports are resolved in the Supabase Edge runtime
 import { createClient } from "jsr:@supabase/supabase-js@2";
+
+// Deno globals are provided at runtime in the Edge environment
+declare const Deno: {
+  env: { get(key: string): string | undefined };
+  serve: (handler: (request: Request) => Response | Promise<Response>) => void;
+};
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -11,8 +18,12 @@ if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 const IDLE_THRESHOLD_MS = 5 * 60 * 1000;
 
-type SessionRow = {
+type SessionRow = { id: string };
+type StatusDefinitionRow = {
   id: string;
+  label_he: string | null;
+  scope: string | null;
+  created_at?: string | null;
 };
 
 const resolveStoppedStatusId = async () => {
@@ -21,16 +32,18 @@ const resolveStoppedStatusId = async () => {
     .select("id, label_he, scope, created_at")
     .order("created_at", { ascending: true });
 
-  if (error || !data || data.length === 0) {
+  const items = (data as StatusDefinitionRow[]) ?? [];
+
+  if (error || items.length === 0) {
     console.error("[close-idle-sessions] Failed to resolve stopped status id", error);
     return null;
   }
 
   const preferred =
-    data.find((item) => (item.label_he ?? "").includes("עצירה")) ??
-    data.find((item) => (item.label_he ?? "").toLowerCase().includes("stop"));
+    items.find((item) => (item.label_he ?? "").includes("עצירה")) ??
+    items.find((item) => (item.label_he ?? "").toLowerCase().includes("stop"));
 
-  return (preferred ?? data[0]).id;
+  return (preferred ?? items[0]).id;
 };
 
 const closeSession = async (sessionId: string, timestamp: string) => {
@@ -78,13 +91,10 @@ Deno.serve(async () => {
 
   if (error) {
     console.error("[close-idle-sessions] Failed to fetch sessions", error);
-    return new Response(
-      JSON.stringify({ ok: false, error: "FETCH_FAILED" }),
-      {
-        headers: { "Content-Type": "application/json" },
-        status: 500,
-      },
-    );
+    return new Response(JSON.stringify({ ok: false, error: "FETCH_FAILED" }), {
+      headers: { "Content-Type": "application/json" },
+      status: 500,
+    });
   }
 
   const sessions = (data as SessionRow[]) ?? [];
@@ -93,22 +103,16 @@ Deno.serve(async () => {
     const timestamp = new Date().toISOString();
     try {
       await closeSession(session.id, timestamp);
-    } catch (error) {
+    } catch (err) {
       console.error(
         `[close-idle-sessions] Failed to close session ${session.id}`,
-        error,
+        err,
       );
     }
   }
 
   return new Response(
-    JSON.stringify({
-      ok: true,
-      closed: sessions.length,
-    }),
-    {
-      headers: { "Content-Type": "application/json" },
-    },
+    JSON.stringify({ ok: true, closed: sessions.length }),
+    { headers: { "Content-Type": "application/json" } },
   );
 });
-

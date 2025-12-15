@@ -422,7 +422,7 @@ export async function createStation(payload: StationInput): Promise<Station> {
   const supabase = createServiceSupabase();
   const code = payload.code.trim();
   const stationType = (payload.station_type ?? "other").trim() || "other";
-  let stationReasons: StationReason[];
+  let stationReasons: StationReason[] = [];
   try {
     stationReasons = prepareStationReasons(payload.station_reasons);
   } catch (error) {

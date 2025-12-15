@@ -137,7 +137,7 @@ export const fetchActiveSessions = async (): Promise<ActiveSession[]> => {
 
   const { data, error } = await runQuery(ACTIVE_SESSIONS_SELECT);
 
-  let rows = data as RawActiveSession[] | null;
+  let rows = (data as unknown as RawActiveSession[]) ?? null;
 
   if (error) {
     console.error("[admin-dashboard] Active sessions fetch failed (new schema)", error);
@@ -149,7 +149,8 @@ export const fetchActiveSessions = async (): Promise<ActiveSession[]> => {
       );
       return [];
     }
-    rows = legacyResult.data as RawActiveSession[];
+    const legacyRows = (legacyResult.data as unknown as RawActiveSession[]) ?? null;
+    rows = legacyRows;
   }
 
   if (!rows) {
@@ -171,6 +172,7 @@ export const subscribeToActiveSessions = (
 ) => {
   // This function is deprecated for admin use - use API polling instead
   // Keeping for backward compatibility but it won't work with RLS
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { getBrowserSupabaseClient } = require("@/lib/supabase/client");
   const supabase = getBrowserSupabaseClient();
   const channel = supabase
@@ -178,7 +180,7 @@ export const subscribeToActiveSessions = (
     .on(
       "postgres_changes",
       { event: "INSERT", schema: "public", table: "sessions" },
-      (payload) => {
+      (payload: { new: unknown }) => {
         console.log("[admin-realtime] INSERT event", payload.new);
         void onRefresh();
       },
@@ -186,7 +188,7 @@ export const subscribeToActiveSessions = (
     .on(
       "postgres_changes",
       { event: "UPDATE", schema: "public", table: "sessions" },
-      (payload) => {
+      (payload: { old: unknown; new: unknown }) => {
         console.log("[admin-realtime] UPDATE event", {
           old: payload.old,
           new: payload.new,
@@ -194,7 +196,7 @@ export const subscribeToActiveSessions = (
         void onRefresh();
       },
     )
-    .subscribe((status, err) => {
+    .subscribe((status: string, err: unknown) => {
       console.log("[admin-realtime] Subscription status:", status, err);
     });
 
@@ -259,7 +261,7 @@ export const fetchRecentSessions = async (
     return [];
   }
 
-  const rows = (data as RawActiveSession[]) ?? [];
+  const rows = (data as unknown as RawActiveSession[]) ?? [];
 
   const sessionsWithNotes = await Promise.all(
     rows.map(async (row) => {
@@ -321,7 +323,7 @@ export const fetchStatusEventsBySessionIds = async (
     "session_id, status_definition_id, started_at, ended_at, sessions!inner(station_id)",
   );
 
-  let rows = data as StatusEventRow[] | null;
+  let rows = (data as unknown as StatusEventRow[]) ?? null;
 
   if (error) {
     console.error("[admin-dashboard] Status events fetch failed (new schema)", error);
@@ -335,7 +337,7 @@ export const fetchStatusEventsBySessionIds = async (
       );
       return [];
     }
-    rows = legacy.data as StatusEventRow[];
+    rows = (legacy.data as unknown as StatusEventRow[]) ?? null;
   }
 
   if (!rows) {
@@ -344,7 +346,7 @@ export const fetchStatusEventsBySessionIds = async (
 
   return rows.map((row) => ({
     sessionId: row.session_id,
-    status: row.status_definition_id ?? row.status_code ?? null,
+    status: row.status_definition_id ?? row.status_code ?? "unknown",
     stationId: row.sessions?.station_id ?? null,
     startedAt: row.started_at,
     endedAt: row.ended_at,
@@ -422,7 +424,7 @@ export const fetchMonthlyJobThroughput = async (
     return [];
   }
 
-  const rows = (data as MonthlySessionRow[]) ?? [];
+  const rows = (data as unknown as MonthlySessionRow[]) ?? [];
   const map = new Map<string, JobThroughput>();
 
   const pickMockPlannedQuantity = (jobNum: string | null | undefined) => {
@@ -470,6 +472,3 @@ export const fetchMonthlyJobThroughput = async (
     (a, b) => new Date(b.lastEndedAt).getTime() - new Date(a.lastEndedAt).getTime(),
   );
 };
-
-
-

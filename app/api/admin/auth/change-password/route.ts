@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import {
   requireAdminPassword,
   createErrorResponse,
-  UnauthorizedError,
 } from "@/lib/auth/permissions";
 
 type ChangePasswordPayload = {
@@ -71,4 +70,3 @@ export async function POST(request: Request) {
     note: "For security, update the ADMIN_PASSWORD environment variable in your deployment configuration.",
   });
 }
-

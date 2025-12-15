@@ -22,7 +22,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { CheckCircle2 } from "lucide-react";
-import type { Worker } from "@/lib/types";
+import type { Worker, WorkerRole } from "@/lib/types";
+import type { SupportedLanguage } from "@/lib/i18n/translations";
 import { CreatableCombobox } from "@/components/forms/creatable-combobox";
 import { checkWorkerActiveSessionAdminApi } from "@/lib/api/admin-management";
 
@@ -50,20 +51,20 @@ export const WorkerFormDialog = ({
   const [localOpen, setLocalOpen] = useState(false);
   const [fullName, setFullName] = useState(worker?.full_name ?? "");
   const [workerCode, setWorkerCode] = useState(worker?.worker_code ?? "");
-  const [language, setLanguage] = useState(worker?.language ?? "auto");
-  const [role, setRole] = useState(worker?.role ?? "worker");
+  const [language, setLanguage] = useState<SupportedLanguage | "auto">(
+    worker?.language ?? "auto",
+  );
+  const [role, setRole] = useState<WorkerRole>(worker?.role ?? "worker");
   const [department, setDepartment] = useState(worker?.department ?? "");
   const [isActive, setIsActive] = useState(worker?.is_active ?? true);
-  const [hasActiveSession, setHasActiveSession] = useState(false);
-  const [isCheckingActiveSession, setIsCheckingActiveSession] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const controlledOpen = open ?? localOpen;
 
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!worker || mode !== "edit") return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setFullName(worker.full_name);
     setWorkerCode(worker.worker_code);
     setLanguage(worker.language ?? "auto");
@@ -71,28 +72,6 @@ export const WorkerFormDialog = ({
     setDepartment(worker.department ?? "");
     setIsActive(worker.is_active);
   }, [worker, mode]);
-  /* eslint-enable react-hooks/set-state-in-effect */
-
-  useEffect(() => {
-    if (controlledOpen && mode === "edit" && worker?.id) {
-      void checkActiveSession(worker.id);
-    } else if (controlledOpen && mode === "create") {
-      setHasActiveSession(false);
-    }
-  }, [controlledOpen, mode, worker?.id]);
-
-  const checkActiveSession = async (workerId: string) => {
-    setIsCheckingActiveSession(true);
-    try {
-      const { hasActiveSession: active } = await checkWorkerActiveSessionAdminApi(workerId);
-      setHasActiveSession(active);
-    } catch (err) {
-      console.error("[worker-form-dialog] Failed to check active session", err);
-      setHasActiveSession(false);
-    } finally {
-      setIsCheckingActiveSession(false);
-    }
-  };
 
   const handleSubmit = async () => {
     if (!fullName.trim() || !workerCode.trim()) {
@@ -108,10 +87,8 @@ export const WorkerFormDialog = ({
       const { hasActiveSession: active } = await checkWorkerActiveSessionAdminApi(worker.id);
       if (active) {
         setWarningMessage("לא ניתן לערוך עובד עם סשן פעיל. יש לסיים את הסשן הפעיל לפני עריכה.");
-        setHasActiveSession(true);
         return;
       }
-      setHasActiveSession(false);
     }
 
     try {
@@ -152,7 +129,6 @@ export const WorkerFormDialog = ({
       setError(null);
       setSuccessMessage(null);
       setWarningMessage(null);
-      setHasActiveSession(false);
     }
     (onOpenChange ?? setLocalOpen)(open);
   };
@@ -227,7 +203,12 @@ export const WorkerFormDialog = ({
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>שפה</Label>
-              <Select value={language ?? "auto"} onValueChange={setLanguage}>
+              <Select
+                value={language ?? "auto"}
+                onValueChange={(value) =>
+                  setLanguage((value || "auto") as SupportedLanguage | "auto")
+                }
+              >
                 <SelectTrigger aria-label="בחירת שפה">
                   <SelectValue placeholder="בחר שפה" />
                 </SelectTrigger>
@@ -240,7 +221,10 @@ export const WorkerFormDialog = ({
             </div>
             <div className="space-y-2">
               <Label>תפקיד</Label>
-              <Select value={role} onValueChange={setRole}>
+              <Select
+                value={role}
+                onValueChange={(value) => setRole((value || "worker") as WorkerRole)}
+              >
                 <SelectTrigger aria-label="בחירת תפקיד">
                   <SelectValue placeholder="בחר תפקיד" />
                 </SelectTrigger>
@@ -279,5 +263,3 @@ export const WorkerFormDialog = ({
     </Dialog>
   );
 };
-
-

@@ -15,6 +15,7 @@ export interface Worker {
   full_name: string;
   language?: SupportedLanguage | "auto" | null;
   role: WorkerRole;
+  department?: string | null;
   is_active: boolean;
   created_at?: string;
   updated_at?: string;
@@ -126,4 +127,3 @@ export interface StatusDefinition {
   created_at?: string;
   updated_at?: string;
 }
-

@@ -20,10 +20,12 @@ import {
   fetchRecentSessionsAdminApi,
   fetchStatusEventsAdminApi,
   fetchMonthlyJobThroughputAdminApi,
-  type SessionStatusEvent,
-  type JobThroughput,
 } from "@/lib/api/admin-management";
-import type { CompletedSession } from "@/lib/data/admin-dashboard";
+import type {
+  CompletedSession,
+  JobThroughput,
+  SessionStatusEvent,
+} from "@/lib/data/admin-dashboard";
 import {
   getStatusLabelFromDictionary,
   getStatusOrderFromDictionary,
@@ -574,4 +576,3 @@ export const HistoryDashboard = () => {
     </AdminLayout>
   );
 };
-

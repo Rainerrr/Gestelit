@@ -441,7 +441,7 @@ export async function getGracefulActiveSession(
     return null;
   }
 
-  const row = data as WorkerActiveSessionRow;
+  const row = data as unknown as WorkerActiveSessionRow;
   const lastSeenSource = row.last_seen_at ?? row.started_at;
   const graceExpiresAt = new Date(
     new Date(lastSeenSource).getTime() + SESSION_GRACE_MS,
@@ -503,4 +503,3 @@ export async function abandonActiveSession(
     throw new Error(`Failed to abandon session: ${sessionError.message}`);
   }
 }
-

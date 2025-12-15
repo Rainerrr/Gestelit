@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -603,9 +604,11 @@ export default function WorkPage() {
                 />
                 {faultImagePreview ? (
                   <div className="overflow-hidden rounded-xl border border-slate-200">
-                    <img
+                    <Image
                       src={faultImagePreview}
                       alt={t("work.dialog.fault.image")}
+                      width={800}
+                      height={400}
                       className="h-48 w-full object-cover"
                     />
                   </div>
@@ -768,4 +771,3 @@ function WorkTimer({
     </Card>
   );
 }
-
