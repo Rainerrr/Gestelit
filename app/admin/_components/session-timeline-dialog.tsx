@@ -54,7 +54,7 @@ export const SessionTimelineDialog = ({
     if (!status) {
       return (
         <Badge variant="secondary" className="bg-slate-100 text-slate-600">
-          לא ידוע
+          ללא סטטוס
         </Badge>
       );
     }
@@ -80,10 +80,10 @@ export const SessionTimelineDialog = ({
       <DialogContent className="max-w-6xl w-[1200px] max-h-[90vh] overflow-visible text-right">
         <DialogHeader className="text-right">
           <DialogTitle className="text-lg">
-            ציר זמן עבודה - פק&quot;ע {session.jobNumber}
+            ציר זמן תחנה - עבודה {session.jobNumber}
           </DialogTitle>
           <DialogDescription className="text-sm text-slate-500">
-            צפייה ברצף הסטטוסים מתחילת העבודה ועד עכשיו.
+            סקירה של הסטטוסים האחרונים בתחנה זו.
           </DialogDescription>
         </DialogHeader>
 
@@ -115,7 +115,7 @@ export const SessionTimelineDialog = ({
                     day: "2-digit",
                     month: "2-digit",
                   }).format(new Date(session.endedAt))}`
-                : "עבודה פעילה"}
+                : "עדיין פעילה"}
             </Badge>
           </div>
         </div>
@@ -139,5 +139,3 @@ export const SessionTimelineDialog = ({
     </Dialog>
   );
 };
-
-

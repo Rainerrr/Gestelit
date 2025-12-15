@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -11,12 +11,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AdminSessionsProvider,
+  useAdminSessionCount,
+  useAdminSessionStats,
+  useAdminSessionsLoading,
+  useAdminSessionsRefresh,
+  useAdminSessionsSelector,
+  useAdminStationIds,
+} from "@/contexts/AdminSessionsContext";
 import { useAdminGuard } from "@/hooks/useAdminGuard";
 import { useIdleSessionCleanup } from "@/hooks/useIdleSessionCleanup";
-import {
-  fetchActiveSessionsAdminApi,
-} from "@/lib/api/admin-management";
-import type { ActiveSession } from "@/lib/data/admin-dashboard";
 import { KpiCards } from "./kpi-cards";
 import { ActiveSessionsTable } from "./active-sessions-table";
 import { StatusCharts } from "./status-charts";
@@ -28,119 +33,75 @@ import {
 } from "./status-dictionary";
 import { AdminLayout } from "./admin-layout";
 
-export const AdminDashboard = () => {
-  const { hasAccess } = useAdminGuard();
-  const [sessions, setSessions] = useState<ActiveSession[]>([]);
-  const [isInitialLoading, setIsInitialLoading] = useState(true);
-  const [now, setNow] = useState(() => Date.now());
-  const [resetDialogOpen, setResetDialogOpen] = useState(false);
-  const [resetting, setResetting] = useState(false);
-  const [resetResult, setResetResult] = useState<string | null>(null);
-  const stationIds = useMemo(
+export const AdminDashboard = () => (
+  <AdminSessionsProvider>
+    <AdminDashboardContent />
+  </AdminSessionsProvider>
+);
+
+type SectionProps = {
+  dictionary: ReturnType<typeof useStatusDictionary>["dictionary"];
+  isLoading: boolean;
+};
+
+const KpiCardsSection = ({ dictionary, isLoading }: SectionProps) => {
+  const activeCount = useAdminSessionCount();
+  const stats = useAdminSessionStats();
+
+  const productionIds = useMemo(
     () =>
-      Array.from(
-        new Set(
-          sessions
-            .map((session) => session.stationId)
-            .filter((id): id is string => Boolean(id)),
-        ),
-      ),
-    [sessions],
-  );
-  const { dictionary, isLoading: isStatusesLoading } = useStatusDictionary(
-    stationIds,
+      Array.from(dictionary.global.values())
+        .filter((item) => item.label_he.includes("ייצור"))
+        .map((item) => item.id),
+    [dictionary],
   );
 
-  const refreshDashboardData = useCallback(async () => {
-    try {
-      const { sessions: active } = await fetchActiveSessionsAdminApi();
-      setSessions(active);
-    } catch (error) {
-      console.error("[admin-dashboard] failed to fetch active sessions", error);
-      setSessions([]);
-    } finally {
-      setIsInitialLoading(false);
-    }
-  }, []);
-
-  useIdleSessionCleanup(refreshDashboardData);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    const loadInitial = async () => {
-      await refreshDashboardData();
-      if (!isMounted) {
-        return;
+  const productionCount = useAdminSessionsSelector((state) => {
+    if (productionIds.length === 0) return 0;
+    const lookup = new Set(productionIds);
+    let count = 0;
+    state.sessionIds.forEach((id) => {
+      const session = state.sessionsMap.get(id);
+      if (session?.currentStatus && lookup.has(session.currentStatus)) {
+        count += 1;
       }
-    };
+    });
+    return count;
+  });
 
-    void loadInitial();
+  const stopCount = 0;
 
-    return () => {
-      isMounted = false;
-    };
-  }, [refreshDashboardData]);
+  return (
+    <KpiCards
+      activeCount={activeCount}
+      productionCount={productionCount}
+      stopCount={stopCount}
+      totalGood={stats.totalGood}
+      isLoading={isLoading}
+    />
+  );
+};
 
-  // Poll for updates every 5 seconds instead of using realtime (which requires browser client)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      void refreshDashboardData();
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [refreshDashboardData]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
-    return () => window.clearInterval(timer);
-  }, []);
-
-  const handleForceCloseSessions = async () => {
-    setResetting(true);
-    setResetResult(null);
-    try {
-      const response = await fetch("/api/admin/sessions/close-all", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Admin-Password": window.localStorage.getItem("adminPassword") || "",
-        },
-      });
-      if (!response.ok) {
-        throw new Error("close_failed");
-      }
-      const result = (await response.json()) as { closed: number };
-      setResetResult(
-        result.closed === 0
-          ? "לא נמצאו עבודות פעילות לסגירה."
-          : `נסגרו ${result.closed} עבודות פעילות.`,
-      );
-      await refreshDashboardData();
-      setResetDialogOpen(false);
-    } catch (error) {
-      setResetResult("הסגירה נכשלה, נסה שוב.");
-      console.error(error);
-    } finally {
-      setResetting(false);
-    }
-  };
-
-  const statusData = useMemo(() => {
+const StatusChartsSection = ({ dictionary, isLoading }: SectionProps) => {
+  const statusData = useAdminSessionsSelector((state) => {
     const counts = new Map<string, number>();
     let otherCount = 0;
 
-    sessions.forEach((session) => {
-      const statusId = session.currentStatus;
-      if (!statusId) return;
-      const scope = getStatusScopeFromDictionary(statusId, dictionary);
+    state.sessionIds.forEach((id) => {
+      const session = state.sessionsMap.get(id);
+      if (!session?.currentStatus) return;
+      const scope = getStatusScopeFromDictionary(
+        session.currentStatus,
+        dictionary,
+      );
       if (scope === "station" || scope === "unknown") {
         otherCount += 1;
         return;
       }
-      counts.set(statusId, (counts.get(statusId) ?? 0) + 1);
+      counts.set(
+        session.currentStatus,
+        (counts.get(session.currentStatus) ?? 0) + 1,
+      );
     });
 
     const orderedKeys = getStatusOrderFromDictionary(
@@ -160,22 +121,24 @@ export const AdminDashboard = () => {
     if (otherCount > 0) {
       combined.push({
         key: "other_station_statuses",
-        label: "אחר",
+        label: "מצבי תחנה אחרים",
         value: otherCount,
       });
     }
 
     return combined;
-  }, [dictionary, sessions]);
+  });
 
-  const throughputData = useMemo(() => {
+  const throughputData = useAdminSessionsSelector((state) => {
     const map = new Map<
       string,
       { name: string; label: string; good: number; scrap: number }
     >();
 
-    sessions.forEach((session) => {
-      const key = session.stationName || "לא משויך";
+    state.sessionIds.forEach((id) => {
+      const session = state.sessionsMap.get(id);
+      if (!session) return;
+      const key = session.stationName || "תחנה לא ידועה";
       const current =
         map.get(key) ?? { name: key, label: key, good: 0, scrap: 0 };
       current.good += session.totalGood ?? 0;
@@ -184,33 +147,69 @@ export const AdminDashboard = () => {
     });
 
     return Array.from(map.values());
-  }, [sessions]);
+  });
 
-  const kpis = useMemo(() => {
-    const productionIds = Array.from(dictionary.global.values())
-      .filter((item) => item.label_he.includes("ייצור"))
-      .map((item) => item.id);
-    const productionCount = sessions.filter((session) =>
-      session.currentStatus ? productionIds.includes(session.currentStatus) : false,
-    ).length;
-    const stopCount = 0;
-    const totalGood = sessions.reduce(
-      (acc, session) => acc + (session.totalGood ?? 0),
-      0,
-    );
+  return (
+    <StatusCharts
+      statusData={statusData}
+      throughputData={throughputData}
+      isLoading={isLoading}
+      dictionary={dictionary}
+    />
+  );
+};
 
-    return {
-      activeCount: sessions.length,
-      productionCount,
-      stopCount,
-      totalGood,
-    };
-  }, [dictionary, sessions]);
+const AdminDashboardContent = () => {
+  const { hasAccess } = useAdminGuard();
+  const refresh = useAdminSessionsRefresh();
+  const isInitialLoading = useAdminSessionsLoading();
+  const stationIds = useAdminStationIds();
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [resetResult, setResetResult] = useState<string | null>(null);
+
+  const { dictionary, isLoading: isStatusesLoading } = useStatusDictionary(
+    stationIds,
+  );
+
+  useIdleSessionCleanup(refresh);
+
+  const handleForceCloseSessions = async () => {
+    setResetting(true);
+    setResetResult(null);
+    try {
+      const response = await fetch("/api/admin/sessions/close-all", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Admin-Password": window.localStorage.getItem("adminPassword") || "",
+        },
+      });
+      if (!response.ok) {
+        throw new Error("close_failed");
+      }
+      const result = (await response.json()) as { closed: number };
+      setResetResult(
+        result.closed === 0
+          ? "לא נמצאו תחנות פעילות לסגירה."
+          : `נסגרו ${result.closed} תחנות פעילות.`,
+      );
+      await refresh();
+      setResetDialogOpen(false);
+    } catch (error) {
+      setResetResult("הסגירה נכשלה.");
+      console.error(error);
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  const isLoading = isInitialLoading || isStatusesLoading;
 
   if (hasAccess === null) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center rounded-2xl border bg-white text-sm text-slate-500">
-        טוען נתוני מנהלים...
+        טוען נתונים...
       </div>
     );
   }
@@ -227,14 +226,14 @@ export const AdminDashboard = () => {
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="space-y-1 text-right">
                 <div className="flex items-center gap-2 text-xs text-slate-500">
-                  <span>גרסת הדגמה</span>
+                  <span>לוח בקרה בזמן אמת</span>
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                 </div>
                 <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">
-                  דשבורד מנהלים - רצפת ייצור
+                  מסך ניהול - תחנות פעילות
                 </h1>
                 <p className="text-xs text-slate-500 sm:text-sm">
-                  מבט מרוכז על עבודות פעילות ומצב המכונות.
+                  התמונה מתעדכנת בתדירות גבוהה, ללא ריענון מלא של העמוד.
                 </p>
               </div>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
@@ -244,10 +243,10 @@ export const AdminDashboard = () => {
                   className="w-full sm:w-auto"
                   size="sm"
                 >
-                  סגירת כל העבודות הפעילות
+                  סגירת כל התחנות הפעילות
                 </Button>
                 <Button variant="outline" asChild className="w-full sm:min-w-32 sm:w-auto" size="sm">
-                  <Link href="/">מסך עובד</Link>
+                  <Link href="/">חזרה למסך הבית</Link>
                 </Button>
               </div>
             </div>
@@ -258,37 +257,23 @@ export const AdminDashboard = () => {
         }
       >
         <div className="space-y-6">
-            <KpiCards
-              activeCount={kpis.activeCount}
-              productionCount={kpis.productionCount}
-              stopCount={kpis.stopCount}
-              totalGood={kpis.totalGood}
-              isLoading={isInitialLoading}
-            />
+          <KpiCardsSection dictionary={dictionary} isLoading={isLoading} />
 
-            <ActiveSessionsTable
-              sessions={sessions}
-              now={now}
-              isLoading={isInitialLoading || isStatusesLoading}
-              dictionary={dictionary}
-            />
+          <ActiveSessionsTable
+            dictionary={dictionary}
+            isDictionaryLoading={isStatusesLoading}
+          />
 
-            <StatusCharts
-              statusData={statusData}
-              throughputData={throughputData}
-              isLoading={isInitialLoading || isStatusesLoading}
-              dictionary={dictionary}
-            />
+          <StatusChartsSection dictionary={dictionary} isLoading={isLoading} />
         </div>
       </AdminLayout>
 
       <Dialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
         <DialogContent className="text-right">
           <DialogHeader>
-            <DialogTitle>לאפס את העבודות הפעילות?</DialogTitle>
+            <DialogTitle>לסגור את כל התחנות הפעילות?</DialogTitle>
             <DialogDescription>
-              פעולה זו תסגור את כל העבודות הפעילות ותעביר אותן למעקב העבודות
-              שהושלמו. השתמש בזה לצרכי בדיקות בלבד.
+              פעולה זו תסגור את כל הסשנים הפעילים ותעדכן את הדשבורד.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="justify-start gap-2">
@@ -308,4 +293,3 @@ export const AdminDashboard = () => {
     </>
   );
 };
-

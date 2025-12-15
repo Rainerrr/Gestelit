@@ -1,3 +1,4 @@
+import { memo, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 type KpiCardsProps = {
@@ -11,19 +12,22 @@ type KpiCardsProps = {
 const formatNumber = (value: number) =>
   Intl.NumberFormat("he-IL").format(value);
 
-export const KpiCards = ({
+const KpiCardsComponent = ({
   activeCount,
   productionCount,
   stopCount,
   totalGood,
   isLoading,
 }: KpiCardsProps) => {
-  const items = [
-    { label: "עבודות פעילות", value: activeCount },
-    { label: "מכונות בייצור", value: productionCount },
-    { label: "מכונות בעצירה/תקלה", value: stopCount },
-    { label: "סה\"כ תפוקה טובה", value: totalGood },
-  ];
+  const items = useMemo(
+    () => [
+      { label: "תחנות פעילות", value: activeCount },
+      { label: "בסטטוס ייצור", value: productionCount },
+      { label: "עצירות/שיבושים", value: stopCount },
+      { label: "כמות תקינה", value: totalGood },
+    ],
+    [activeCount, productionCount, stopCount, totalGood],
+  );
 
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:gap-4">
@@ -36,7 +40,7 @@ export const KpiCards = ({
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-semibold sm:text-3xl">
-              {isLoading ? "—" : formatNumber(item.value)}
+              {isLoading ? "..." : formatNumber(item.value)}
             </p>
           </CardContent>
         </Card>
@@ -45,5 +49,11 @@ export const KpiCards = ({
   );
 };
 
+const areEqual = (prev: KpiCardsProps, next: KpiCardsProps) =>
+  prev.isLoading === next.isLoading &&
+  prev.activeCount === next.activeCount &&
+  prev.productionCount === next.productionCount &&
+  prev.stopCount === next.stopCount &&
+  prev.totalGood === next.totalGood;
 
-
+export const KpiCards = memo(KpiCardsComponent, areEqual);

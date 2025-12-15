@@ -1,4 +1,4 @@
-import { createServiceSupabase } from "@/lib/supabase/client";
+﻿import { createServiceSupabase } from "@/lib/supabase/client";
 import type {
   SessionStatus,
   StationType,
@@ -163,6 +163,51 @@ export const fetchActiveSessions = async (): Promise<ActiveSession[]> => {
   );
 
   return rows.map((row) => mapActiveSession(row));
+};
+
+export const fetchActiveSessionById = async (
+  sessionId: string,
+): Promise<ActiveSession | null> => {
+  if (!sessionId) {
+    return null;
+  }
+
+  const supabase = createServiceSupabase();
+
+  const runQuery = async (select: string) =>
+    supabase
+      .from("sessions")
+      .select(select)
+      .eq("id", sessionId)
+      .eq("status", "active")
+      .is("ended_at", null)
+      .maybeSingle();
+
+  const { data, error } = await runQuery(ACTIVE_SESSIONS_SELECT);
+
+  let row = (data as unknown as RawActiveSession | null) ?? null;
+
+  if (error) {
+    console.error(
+      `[admin-dashboard] Active session fetch failed for ${sessionId} (new schema)`,
+      error,
+    );
+    const legacyResult = await runQuery(LEGACY_ACTIVE_SESSIONS_SELECT);
+    if (legacyResult.error) {
+      console.error(
+        `[admin-dashboard] Active session fetch failed for ${sessionId} (legacy schema)`,
+        legacyResult.error,
+      );
+      return null;
+    }
+    row = (legacyResult.data as unknown as RawActiveSession | null) ?? null;
+  }
+
+  if (!row) {
+    return null;
+  }
+
+  return mapActiveSession(row);
 };
 
 // Note: Realtime subscriptions need browser client, but this is only used client-side
@@ -472,3 +517,4 @@ export const fetchMonthlyJobThroughput = async (
     (a, b) => new Date(b.lastEndedAt).getTime() - new Date(a.lastEndedAt).getTime(),
   );
 };
+

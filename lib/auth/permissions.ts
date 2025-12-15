@@ -61,6 +61,18 @@ export async function requireAdminPassword(request: Request): Promise<void> {
     return;
   }
 
+  // Try to get password from query params (used for SSE where headers aren't available)
+  try {
+    const passwordFromQuery =
+      new URL(request.url).searchParams.get("password") ??
+      new URL(request.url).searchParams.get("adminPassword");
+    if (passwordFromQuery === adminPassword) {
+      return;
+    }
+  } catch {
+    // Ignore URL parsing errors and continue to other strategies
+  }
+
   // Try to get password from request body
   try {
     const body = await request.clone().json().catch(() => null);
@@ -152,4 +164,3 @@ export function createErrorResponse(
     { status: 500 },
   );
 }
-

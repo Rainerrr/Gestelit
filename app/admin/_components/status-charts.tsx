@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Bar,
@@ -51,12 +51,13 @@ const getStatusColor = (
   statusKey: string,
   dictionary: StatusDictionary,
 ): string => getStatusColorFromDictionary(statusKey, dictionary);
+
 const throughputColors = {
   good: "#10b981",
   scrap: "#ef4444",
 };
 
-export const StatusCharts = ({
+const StatusChartsComponent = ({
   statusData,
   throughputData,
   isLoading,
@@ -64,25 +65,35 @@ export const StatusCharts = ({
 }: StatusChartsProps) => {
   const [activeIndex, setActiveIndex] = useState<number | undefined>(undefined);
 
-  const renderStatusPie = () => {
+  const normalizedStatusData = useMemo(
+    () =>
+      statusData
+        .map((item) => ({
+          ...item,
+          label: item.label ?? item.key,
+        }))
+        .filter((item) => item.value > 0),
+    [statusData],
+  );
 
-    if (isLoading) {
-      return <p className="text-sm text-slate-500">טוען תרשים...</p>;
-    }
-
-    if (statusData.length === 0) {
-      return <p className="text-sm text-slate-500">אין עבודות פעילות להצגה.</p>;
-    }
-
-    const normalized = statusData
-      .map((item) => ({
+  const normalizedThroughput = useMemo(
+    () =>
+      throughputData.map((item) => ({
         ...item,
-        label: item.label ?? item.key,
-      }))
-      .filter((item) => item.value > 0);
+        label: item.label ?? item.name,
+        good: item.good ?? 0,
+        scrap: item.scrap ?? 0,
+      })),
+    [throughputData],
+  );
 
-    if (normalized.length === 0) {
-      return <p className="text-sm text-slate-500">אין עבודות פעילות להצגה.</p>;
+  const renderStatusPie = () => {
+    if (isLoading) {
+      return <p className="text-sm text-slate-500">טוען סטטוסים...</p>;
+    }
+
+    if (normalizedStatusData.length === 0) {
+      return <p className="text-sm text-slate-500">אין סטטוסים להצגה.</p>;
     }
 
     const onPieEnter = (_: unknown, index: number) => {
@@ -93,7 +104,7 @@ export const StatusCharts = ({
       setActiveIndex(undefined);
     };
 
-    const total = normalized.reduce((sum, item) => sum + item.value, 0);
+    const total = normalizedStatusData.reduce((sum, item) => sum + item.value, 0);
 
     return (
       <div className="w-full">
@@ -101,7 +112,7 @@ export const StatusCharts = ({
           <ResponsiveContainer width="100%" height={240} className="sm:h-[280px]">
             <PieChart>
               <Pie
-                data={normalized}
+                data={normalizedStatusData}
                 dataKey="value"
                 nameKey="label"
                 cx="50%"
@@ -111,11 +122,10 @@ export const StatusCharts = ({
                 paddingAngle={2}
                 onMouseEnter={onPieEnter}
                 onMouseLeave={onPieLeave}
-                animationBegin={0}
+                isAnimationActive
                 animationDuration={600}
-                animationEasing="ease-out"
               >
-                {normalized.map((entry, index) => (
+                {normalizedStatusData.map((entry, index) => (
                   <Cell
                     key={entry.key ?? entry.label ?? index}
                     fill={getStatusColor(entry.key, dictionary)}
@@ -140,7 +150,7 @@ export const StatusCharts = ({
         </div>
 
         <div className="mt-4 flex flex-wrap justify-center gap-x-4 gap-y-2 text-xs text-slate-600" dir="rtl">
-          {normalized.map((entry, index) => (
+          {normalizedStatusData.map((entry, index) => (
             <div
               key={entry.key ?? entry.label ?? index}
               className="flex items-center gap-2 cursor-pointer transition-opacity shrink-0"
@@ -164,26 +174,19 @@ export const StatusCharts = ({
 
   const renderThroughputBars = () => {
     if (isLoading) {
-      return <p className="text-sm text-slate-500">טוען תרשים...</p>;
+      return <p className="text-sm text-slate-500">טוען נתוני תפוקה...</p>;
     }
 
-    if (throughputData.length === 0) {
-      return <p className="text-sm text-slate-500">אין נתוני תפוקה מהעבודות הפעילות.</p>;
+    if (normalizedThroughput.length === 0) {
+      return <p className="text-sm text-slate-500">אין נתוני תפוקה להצגה.</p>;
     }
-
-    const normalized = throughputData.map((item) => ({
-      ...item,
-      label: item.label ?? item.name,
-      good: item.good ?? 0,
-      scrap: item.scrap ?? 0,
-    }));
 
     return (
       <div dir="ltr" className="w-full overflow-visible [direction:ltr]">
         <div className="flex justify-center">
           <ResponsiveContainer width="100%" height={280} className="sm:h-[320px]">
             <BarChart
-              data={normalized}
+              data={normalizedThroughput}
               margin={{ top: 12, right: 12, bottom: 24, left: 12 }}
               barCategoryGap={18}
             >
@@ -202,21 +205,25 @@ export const StatusCharts = ({
                 cursor={{ fill: "rgba(15, 23, 42, 0.05)" }}
                 contentStyle={tooltipStyle}
                 formatter={(value, name) =>
-                  [value as number, name === "good" ? "טוב" : "פסול"]
+                  [value as number, name === "good" ? "כמות תקינה" : "כמות פסולה"]
                 }
                 labelFormatter={(label) => `תחנה: ${label}`}
               />
               <Bar
                 dataKey="good"
-                name="טוב"
+                name="כמות תקינה"
                 radius={[6, 6, 0, 0]}
                 fill={throughputColors.good}
+                isAnimationActive
+                animationDuration={600}
               />
               <Bar
                 dataKey="scrap"
-                name="פסול"
+                name="כמות פסולה"
                 radius={[6, 6, 0, 0]}
                 fill={throughputColors.scrap}
+                isAnimationActive
+                animationDuration={600}
               />
             </BarChart>
           </ResponsiveContainer>
@@ -228,14 +235,14 @@ export const StatusCharts = ({
               className="h-2.5 w-2.5 rounded-full shrink-0"
               style={{ backgroundColor: throughputColors.good }}
             />
-            <span>טוב</span>
+            <span>כמות תקינה</span>
           </div>
           <div className="flex items-center gap-2">
             <span
               className="h-2.5 w-2.5 rounded-full shrink-0"
               style={{ backgroundColor: throughputColors.scrap }}
             />
-            <span>פסול</span>
+            <span>כמות פסולה</span>
           </div>
         </div>
       </div>
@@ -247,7 +254,7 @@ export const StatusCharts = ({
       <div className="grid grid-cols-1 gap-4 lg:gap-6 xl:grid-cols-2">
         <Card className="overflow-hidden">
           <CardHeader className="px-4 pb-3 pt-4 sm:px-6 sm:pt-6">
-            <CardTitle className="text-base sm:text-lg">התפלגות סטטוסים</CardTitle>
+            <CardTitle className="text-base sm:text-lg">פיזור סטטוסים</CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4 sm:px-6 sm:pb-6">
             {renderStatusPie()}
@@ -266,3 +273,41 @@ export const StatusCharts = ({
     </div>
   );
 };
+
+const statusDataEqual = (a: StatusDataPoint[], b: StatusDataPoint[]) => {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    const prev = a[i];
+    const next = b[i];
+    if (prev.key !== next.key) return false;
+    if (prev.label !== next.label) return false;
+    if (prev.value !== next.value) return false;
+  }
+  return true;
+};
+
+const throughputDataEqual = (
+  a: ThroughputDataPoint[],
+  b: ThroughputDataPoint[],
+) => {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    const prev = a[i];
+    const next = b[i];
+    if (prev.name !== next.name) return false;
+    if (prev.label !== next.label) return false;
+    if (prev.good !== next.good) return false;
+    if (prev.scrap !== next.scrap) return false;
+  }
+  return true;
+};
+
+const areEqual = (prev: StatusChartsProps, next: StatusChartsProps) => {
+  if (prev.isLoading !== next.isLoading) return false;
+  if (prev.dictionary !== next.dictionary) return false;
+  if (!statusDataEqual(prev.statusData, next.statusData)) return false;
+  if (!throughputDataEqual(prev.throughputData, next.throughputData)) return false;
+  return true;
+};
+
+export const StatusCharts = memo(StatusChartsComponent, areEqual);
