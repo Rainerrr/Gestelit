@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { updateSessionTotals } from "@/lib/data/sessions";
+import {
+  requireSessionOwnership,
+  createErrorResponse,
+} from "@/lib/auth/permissions";
 
 type TotalsPayload = {
   sessionId: string;
@@ -20,16 +24,16 @@ export async function POST(request: Request) {
   }
 
   try {
+    // Verify session belongs to authenticated worker
+    await requireSessionOwnership(request, body.sessionId);
+
     const session = await updateSessionTotals(body.sessionId, {
       total_good: body.total_good,
       total_scrap: body.total_scrap,
     });
     return NextResponse.json({ session });
   } catch (error) {
-    return NextResponse.json(
-      { error: "SESSION_TOTALS_FAILED", details: String(error) },
-      { status: 500 },
-    );
+    return createErrorResponse(error, "SESSION_TOTALS_FAILED");
   }
 }
 

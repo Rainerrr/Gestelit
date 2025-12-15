@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { createServiceSupabase } from "@/lib/supabase/client";
+import {
+  requireAdminPassword,
+  createErrorResponse,
+} from "@/lib/auth/permissions";
 
 type BlockedStatus = {
   id: string;
@@ -18,6 +22,11 @@ type PurgeResult = {
 };
 
 export async function POST(request: Request) {
+  try {
+    await requireAdminPassword(request);
+  } catch (error) {
+    return createErrorResponse(error);
+  }
   const supabase = createServiceSupabase();
   const { searchParams } = new URL(request.url);
   const confirmed = searchParams.get("confirm") === "true";

@@ -14,10 +14,9 @@ import {
 import { useAdminGuard } from "@/hooks/useAdminGuard";
 import { useIdleSessionCleanup } from "@/hooks/useIdleSessionCleanup";
 import {
-  fetchActiveSessions,
-  subscribeToActiveSessions,
+  fetchActiveSessionsAdminApi,
   type ActiveSession,
-} from "@/lib/data/admin-dashboard";
+} from "@/lib/api/admin-management";
 import { KpiCards } from "./kpi-cards";
 import { ActiveSessionsTable } from "./active-sessions-table";
 import { StatusCharts } from "./status-charts";
@@ -53,9 +52,15 @@ export const AdminDashboard = () => {
   );
 
   const refreshDashboardData = useCallback(async () => {
-    const [active] = await Promise.all([fetchActiveSessions()]);
-    setSessions(active);
-    setIsInitialLoading(false);
+    try {
+      const { sessions: active } = await fetchActiveSessionsAdminApi();
+      setSessions(active);
+    } catch (error) {
+      console.error("[admin-dashboard] failed to fetch active sessions", error);
+      setSessions([]);
+    } finally {
+      setIsInitialLoading(false);
+    }
   }, []);
 
   useIdleSessionCleanup(refreshDashboardData);
@@ -77,11 +82,12 @@ export const AdminDashboard = () => {
     };
   }, [refreshDashboardData]);
 
+  // Poll for updates every 5 seconds instead of using realtime (which requires browser client)
   useEffect(() => {
-    const unsubscribe = subscribeToActiveSessions(async () => {
-      await refreshDashboardData();
-    });
-    return () => unsubscribe();
+    const interval = setInterval(() => {
+      void refreshDashboardData();
+    }, 5000);
+    return () => clearInterval(interval);
   }, [refreshDashboardData]);
 
   useEffect(() => {
@@ -98,6 +104,10 @@ export const AdminDashboard = () => {
     try {
       const response = await fetch("/api/admin/sessions/close-all", {
         method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Admin-Password": window.localStorage.getItem("adminPassword") || "",
+        },
       });
       if (!response.ok) {
         throw new Error("close_failed");

@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { completeSession } from "@/lib/data/sessions";
+import {
+  requireSessionOwnership,
+  createErrorResponse,
+} from "@/lib/auth/permissions";
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
@@ -13,13 +17,13 @@ export async function POST(request: Request) {
   }
 
   try {
+    // Verify session belongs to authenticated worker
+    await requireSessionOwnership(request, sessionId);
+
     const session = await completeSession(sessionId);
     return NextResponse.json({ session });
   } catch (error) {
-    return NextResponse.json(
-      { error: "SESSION_COMPLETE_FAILED", details: String(error) },
-      { status: 500 },
-    );
+    return createErrorResponse(error, "SESSION_COMPLETE_FAILED");
   }
 }
 

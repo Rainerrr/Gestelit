@@ -4,6 +4,10 @@ import {
   clearDepartment,
   fetchDepartmentList,
 } from "@/lib/data/admin-management";
+import {
+  requireAdminPassword,
+  createErrorResponse,
+} from "@/lib/auth/permissions";
 
 const respondWithError = (error: unknown) => {
   if (error instanceof AdminActionError) {
@@ -17,7 +21,12 @@ const respondWithError = (error: unknown) => {
   return NextResponse.json({ error: "UNKNOWN_ERROR" }, { status: 500 });
 };
 
-export async function GET() {
+export async function GET(request: Request) {
+  try {
+    await requireAdminPassword(request);
+  } catch (error) {
+    return createErrorResponse(error);
+  }
   try {
     const departments = await fetchDepartmentList();
     return NextResponse.json({ departments });
@@ -27,6 +36,12 @@ export async function GET() {
 }
 
 export async function DELETE(request: Request) {
+  try {
+    await requireAdminPassword(request);
+  } catch (error) {
+    return createErrorResponse(error);
+  }
+
   const body = (await request.json().catch(() => null)) as { department?: string } | null;
   if (!body?.department) {
     return NextResponse.json({ error: "INVALID_DEPARTMENT" }, { status: 400 });

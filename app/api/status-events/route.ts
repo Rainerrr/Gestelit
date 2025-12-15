@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { startStatusEvent } from "@/lib/data/sessions";
 import type { StatusEventState } from "@/lib/types";
+import {
+  requireSessionOwnership,
+  createErrorResponse,
+} from "@/lib/auth/permissions";
 
 type StatusPayload = {
   sessionId: string;
@@ -20,6 +24,9 @@ export async function POST(request: Request) {
   }
 
   try {
+    // Verify session belongs to authenticated worker
+    await requireSessionOwnership(request, body.sessionId);
+
     const event = await startStatusEvent({
       session_id: body.sessionId,
       status_definition_id: body.statusDefinitionId,
@@ -30,10 +37,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ event });
   } catch (error) {
-    return NextResponse.json(
-      { error: "STATUS_EVENT_FAILED", details: String(error) },
-      { status: 500 },
-    );
+    return createErrorResponse(error, "STATUS_EVENT_FAILED");
   }
 }
 

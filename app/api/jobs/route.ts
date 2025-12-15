@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { getOrCreateJob } from "@/lib/data/jobs";
 import { createSession } from "@/lib/data/sessions";
+import {
+  requireWorkerOwnership,
+  createErrorResponse,
+} from "@/lib/auth/permissions";
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
@@ -16,6 +20,9 @@ export async function POST(request: Request) {
   }
 
   try {
+    // Verify workerId matches authenticated worker
+    await requireWorkerOwnership(request, workerId);
+
     const job = await getOrCreateJob(jobNumber);
     const session = await createSession({
       worker_id: workerId,
@@ -25,10 +32,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ job, session });
   } catch (error) {
-    return NextResponse.json(
-      { error: "JOB_SESSION_FAILED", details: String(error) },
-      { status: 500 },
-    );
+    return createErrorResponse(error, "JOB_SESSION_FAILED");
   }
 }
 

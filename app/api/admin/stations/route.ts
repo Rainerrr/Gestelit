@@ -6,6 +6,10 @@ import {
   type StationWithStats,
 } from "@/lib/data/admin-management";
 import type { StationReason, StationType } from "@/lib/types";
+import {
+  requireAdminPassword,
+  createErrorResponse,
+} from "@/lib/auth/permissions";
 
 type StationPayload = {
   name?: string;
@@ -28,6 +32,11 @@ const respondWithError = (error: unknown) => {
 };
 
 export async function GET(request: Request) {
+  try {
+    await requireAdminPassword(request);
+  } catch (error) {
+    return createErrorResponse(error);
+  }
   const { searchParams } = new URL(request.url);
   const search = searchParams.get("search") ?? undefined;
   const stationType = searchParams.get("stationType") ?? undefined;
@@ -46,6 +55,12 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  try {
+    await requireAdminPassword(request);
+  } catch (error) {
+    return createErrorResponse(error);
+  }
+
   const body = (await request.json().catch(() => null)) as StationPayload | null;
 
   if (!body?.name || !body.code || !body.station_type) {

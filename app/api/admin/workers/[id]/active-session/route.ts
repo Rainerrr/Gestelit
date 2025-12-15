@@ -1,10 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceSupabase } from "@/lib/supabase/client";
+import {
+  requireAdminPassword,
+  createErrorResponse,
+} from "@/lib/auth/permissions";
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
+  try {
+    await requireAdminPassword(request);
+  } catch (error) {
+    return createErrorResponse(error);
+  }
+
   try {
     const { id } = await context.params;
     const supabase = createServiceSupabase();

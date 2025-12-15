@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { AdminActionError, deleteStation, updateStation } from "@/lib/data/admin-management";
 import type { StationChecklistItem, StationReason, StationType } from "@/lib/types";
+import {
+  requireAdminPassword,
+  createErrorResponse,
+} from "@/lib/auth/permissions";
 
 type StationPayload = {
   name?: string;
@@ -28,6 +32,12 @@ export async function PUT(
   request: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
+  try {
+    await requireAdminPassword(request);
+  } catch (error) {
+    return createErrorResponse(error);
+  }
+
   const body = (await request.json().catch(() => null)) as StationPayload | null;
   if (!body) {
     return NextResponse.json({ error: "INVALID_PAYLOAD" }, { status: 400 });
@@ -60,9 +70,15 @@ export async function PUT(
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
+  try {
+    await requireAdminPassword(request);
+  } catch (error) {
+    return createErrorResponse(error);
+  }
+
   try {
     const { id } = await context.params;
     await deleteStation(id);

@@ -38,6 +38,10 @@ export default function LoginPage() {
       const worker = await loginWorkerApi(trimmedId);
       reset();
       setWorker(worker);
+      // Store worker code for API authentication
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("workerCode", worker.worker_code);
+      }
       if (worker.language && worker.language !== "auto") {
         setLanguage(worker.language as SupportedLanguage);
       }

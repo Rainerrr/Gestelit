@@ -1,7 +1,16 @@
 import { NextResponse } from "next/server";
 import { createServiceSupabase } from "@/lib/supabase/client";
+import {
+  requireAdminPassword,
+  createErrorResponse,
+} from "@/lib/auth/permissions";
 
-export async function POST() {
+export async function POST(request: Request) {
+  try {
+    await requireAdminPassword(request);
+  } catch (error) {
+    return createErrorResponse(error);
+  }
   const supabase = createServiceSupabase();
   const { data, error } = await supabase
     .from("sessions")

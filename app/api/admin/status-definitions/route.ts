@@ -4,8 +4,17 @@ import {
   fetchStatusDefinitionsByStationIds,
 } from "@/lib/data/status-definitions";
 import type { StatusScope } from "@/lib/types";
+import {
+  requireAdminPassword,
+  createErrorResponse,
+} from "@/lib/auth/permissions";
 
 export async function GET(request: Request) {
+  try {
+    await requireAdminPassword(request);
+  } catch (error) {
+    return createErrorResponse(error);
+  }
   const { searchParams } = new URL(request.url);
   const stationId = searchParams.get("stationId");
   const stationIdsParam = searchParams.get("stationIds");
@@ -27,6 +36,12 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  try {
+    await requireAdminPassword(request);
+  } catch (error) {
+    return createErrorResponse(error);
+  }
+
   const body = (await request.json().catch(() => null)) as {
     scope?: StatusScope;
     station_id?: string | null;

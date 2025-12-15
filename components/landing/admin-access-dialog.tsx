@@ -13,14 +13,14 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-
-const ADMIN_PASSWORD = "1234";
+import { setAdminPassword } from "@/lib/api/auth-helpers";
 
 export const AdminAccessDialog = () => {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleDialogChange = (open: boolean) => {
     setIsOpen(open);
@@ -30,21 +30,44 @@ export const AdminAccessDialog = () => {
     }
   };
 
-  const handleSubmit = () => {
-    if (password === ADMIN_PASSWORD) {
-      window.localStorage.setItem("isAdmin", "true");
-      setIsOpen(false);
-      router.push("/admin");
+  const handleSubmit = async () => {
+    if (!password) {
+      setError("נא להזין סיסמה");
       return;
     }
 
-    setError("סיסמה שגויה");
+    setIsSubmitting(true);
+    setError("");
+
+    try {
+      const response = await fetch("/api/admin/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        setError(data.message || "סיסמה שגויה");
+        return;
+      }
+
+      // Password is valid - store it and grant access
+      setAdminPassword(password);
+      setIsOpen(false);
+      router.push("/admin");
+    } catch (err) {
+      setError("שגיאה בחיבור לשרת");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Enter") {
+    if (event.key === "Enter" && !isSubmitting) {
       event.preventDefault();
-      handleSubmit();
+      void handleSubmit();
     }
   };
 
@@ -61,7 +84,7 @@ export const AdminAccessDialog = () => {
       <DialogContent className="text-right">
         <DialogHeader>
           <DialogTitle>כניסת מנהלים</DialogTitle>
-          <DialogDescription>הזן סיסמה זמנית לצפייה בדשבורד.</DialogDescription>
+          <DialogDescription>הזן סיסמת מנהל לצפייה בדשבורד.</DialogDescription>
         </DialogHeader>
         <div className="space-y-2">
           <Label htmlFor="admin-password">סיסמת מנהל</Label>
@@ -73,6 +96,7 @@ export const AdminAccessDialog = () => {
             onKeyDown={handleKeyDown}
             placeholder="••••"
             autoComplete="current-password"
+            disabled={isSubmitting}
           />
           {error ? (
             <p className="text-sm text-red-600" role="alert">
@@ -81,8 +105,12 @@ export const AdminAccessDialog = () => {
           ) : null}
         </div>
         <DialogFooter className="justify-start">
-          <Button onClick={handleSubmit} className="min-w-32">
-            כניסה
+          <Button
+            onClick={handleSubmit}
+            className="min-w-32"
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? "בודק..." : "כניסה"}
           </Button>
         </DialogFooter>
       </DialogContent>

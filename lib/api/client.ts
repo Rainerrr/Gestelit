@@ -11,6 +11,7 @@ import type {
   Worker,
   WorkerResumeSession,
 } from "@/lib/types";
+import { getWorkerCode } from "./auth-helpers";
 
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -18,6 +19,22 @@ async function handleResponse<T>(response: Response): Promise<T> {
     throw new Error(payload.error ?? "REQUEST_FAILED");
   }
   return response.json();
+}
+
+/**
+ * Create headers with worker authentication
+ */
+function createWorkerHeaders(): HeadersInit {
+  const headers: HeadersInit = {
+    "Content-Type": "application/json",
+  };
+  
+  const workerCode = getWorkerCode();
+  if (workerCode) {
+    headers["X-Worker-Code"] = workerCode;
+  }
+  
+  return headers;
 }
 
 export async function loginWorkerApi(workerCode: string) {
@@ -56,6 +73,9 @@ export async function fetchWorkerActiveSessionApi(workerId: string) {
 export async function fetchStationsApi(workerId: string) {
   const response = await fetch(
     `/api/stations?workerId=${encodeURIComponent(workerId)}`,
+    {
+      headers: createWorkerHeaders(),
+    },
   );
   const data = await handleResponse<{ stations: Station[] }>(response);
   return data.stations;
@@ -68,7 +88,7 @@ export async function createJobSessionApi(
 ) {
   const response = await fetch("/api/jobs", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: createWorkerHeaders(),
     body: JSON.stringify({ workerId, stationId, jobNumber }),
   });
   const data = await handleResponse<{ job: Job; session: Session }>(response);
@@ -120,7 +140,7 @@ export async function startStatusEventApi(options: {
 }) {
   const response = await fetch("/api/status-events", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: createWorkerHeaders(),
     body: JSON.stringify({
       sessionId: options.sessionId,
       statusDefinitionId: options.statusDefinitionId,
@@ -148,7 +168,7 @@ export async function updateSessionTotalsApi(
 ) {
   const response = await fetch("/api/sessions/quantities", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: createWorkerHeaders(),
     body: JSON.stringify({ sessionId, ...totals }),
   });
   await handleResponse(response);
@@ -157,7 +177,7 @@ export async function updateSessionTotalsApi(
 export async function completeSessionApi(sessionId: string) {
   const response = await fetch("/api/sessions/complete", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: createWorkerHeaders(),
     body: JSON.stringify({ sessionId }),
   });
   await handleResponse(response);

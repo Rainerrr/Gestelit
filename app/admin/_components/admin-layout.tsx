@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { Menu } from "lucide-react";
+import { Menu, Settings } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,6 +12,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { ChangePasswordDialog } from "./change-password-dialog";
 import type { ReactNode } from "react";
 
 type AdminLayoutProps = {
@@ -28,6 +29,7 @@ const navItems = [
 export const AdminLayout = ({ children, header }: AdminLayoutProps) => {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
 
   const renderNavItem = (item: (typeof navItems)[number]) => {
     const isActive = pathname === item.href;
@@ -114,7 +116,19 @@ export const AdminLayout = ({ children, header }: AdminLayoutProps) => {
 
         <div className="flex min-w-0 flex-1 flex-col bg-slate-50">
           <header className="shrink-0 border-b border-slate-200 bg-white px-4 py-4 sm:px-6 sm:py-5">
-            {header}
+            <div className="flex items-center justify-between">
+              <div className="flex-1">{header}</div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setPasswordDialogOpen(true)}
+                className="gap-2"
+                aria-label="שינוי סיסמה"
+              >
+                <Settings className="h-4 w-4" />
+                <span className="hidden sm:inline">הגדרות</span>
+              </Button>
+            </div>
           </header>
 
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
@@ -124,6 +138,10 @@ export const AdminLayout = ({ children, header }: AdminLayoutProps) => {
           </div>
         </div>
       </div>
+      <ChangePasswordDialog
+        isOpen={passwordDialogOpen}
+        onOpenChange={setPasswordDialogOpen}
+      />
     </section>
   );
 };

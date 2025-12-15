@@ -4,6 +4,10 @@ import {
   updateStatusDefinition,
 } from "@/lib/data/status-definitions";
 import type { StatusScope } from "@/lib/types";
+import {
+  requireAdminPassword,
+  createErrorResponse,
+} from "@/lib/auth/permissions";
 
 type StatusUpdatePayload = {
   scope?: StatusScope;
@@ -16,6 +20,12 @@ type StatusUpdatePayload = {
 type StatusDefinitionRouteContext = { params: Promise<{ id: string }> };
 
 export async function PUT(request: Request, context: StatusDefinitionRouteContext) {
+  try {
+    await requireAdminPassword(request);
+  } catch (error) {
+    return createErrorResponse(error);
+  }
+
   const { id } = await context.params;
 
   if (!id) {
@@ -81,9 +91,15 @@ export async function PUT(request: Request, context: StatusDefinitionRouteContex
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   context: StatusDefinitionRouteContext,
 ) {
+  try {
+    await requireAdminPassword(request);
+  } catch (error) {
+    return createErrorResponse(error);
+  }
+
   const { id } = await context.params;
 
   if (!id) {

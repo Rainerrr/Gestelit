@@ -17,12 +17,12 @@ import {
   fetchWorkersAdminApi,
 } from "@/lib/api/admin-management";
 import {
-  fetchRecentSessions,
-  fetchStatusEventsBySessionIds,
+  fetchRecentSessionsAdminApi,
+  fetchStatusEventsAdminApi,
+  fetchMonthlyJobThroughputAdminApi,
   type SessionStatusEvent,
-  fetchMonthlyJobThroughput,
   type JobThroughput,
-} from "@/lib/data/admin-dashboard";
+} from "@/lib/api/admin-management";
 import type { CompletedSession } from "@/lib/data/admin-dashboard";
 import {
   getStatusLabelFromDictionary,
@@ -115,7 +115,7 @@ export const HistoryDashboard = () => {
     async (nextFilters: HistoryFiltersState) => {
       setIsLoading(true);
       try {
-        const data = await fetchRecentSessions({
+        const { sessions: data } = await fetchRecentSessionsAdminApi({
           workerId: nextFilters.workerId,
           stationId: nextFilters.stationId,
           jobNumber: nextFilters.jobNumber?.trim(),
@@ -140,7 +140,7 @@ export const HistoryDashboard = () => {
 
     setIsLoadingStatusEvents(true);
     try {
-      const events = await fetchStatusEventsBySessionIds(sessionIds);
+      const { events } = await fetchStatusEventsAdminApi(sessionIds);
       setStatusEvents(events);
     } catch (error) {
       console.error("[history-dashboard] failed to fetch status events", error);
@@ -154,7 +154,7 @@ export const HistoryDashboard = () => {
     async (targetMonth: { year: number; month: number }, nextFilters: HistoryFiltersState) => {
       setIsLoadingJobs(true);
       try {
-        const items = await fetchMonthlyJobThroughput({
+        const { throughput: items } = await fetchMonthlyJobThroughputAdminApi({
           year: targetMonth.year,
           month: targetMonth.month,
           workerId: nextFilters.workerId,

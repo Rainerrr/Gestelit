@@ -1,4 +1,4 @@
-import { getBrowserSupabaseClient } from "@/lib/supabase/client";
+import { createServiceSupabase } from "@/lib/supabase/client";
 import type {
   SessionStatus,
   StationType,
@@ -125,7 +125,7 @@ const mapActiveSession = (
 });
 
 export const fetchActiveSessions = async (): Promise<ActiveSession[]> => {
-  const supabase = getBrowserSupabaseClient();
+  const supabase = createServiceSupabase();
 
   const runQuery = async (select: string) =>
     supabase
@@ -164,9 +164,14 @@ export const fetchActiveSessions = async (): Promise<ActiveSession[]> => {
   return rows.map((row) => mapActiveSession(row));
 };
 
+// Note: Realtime subscriptions need browser client, but this is only used client-side
+// For admin dashboard, we'll use polling instead of realtime
 export const subscribeToActiveSessions = (
   onRefresh: () => void | Promise<void>,
 ) => {
+  // This function is deprecated for admin use - use API polling instead
+  // Keeping for backward compatibility but it won't work with RLS
+  const { getBrowserSupabaseClient } = require("@/lib/supabase/client");
   const supabase = getBrowserSupabaseClient();
   const channel = supabase
     .channel("admin-active-sessions")
@@ -200,7 +205,7 @@ export const subscribeToActiveSessions = (
 };
 
 const fetchLastEventNote = async (sessionId: string): Promise<string | null> => {
-  const supabase = getBrowserSupabaseClient();
+  const supabase = createServiceSupabase();
   const { data, error } = await supabase
     .from("status_events")
     .select("note")
@@ -227,7 +232,7 @@ export const fetchRecentSessions = async (
   args: FetchRecentSessionsArgs = {},
 ): Promise<CompletedSession[]> => {
   const { workerId, stationId, jobNumber, limit = 8 } = args;
-  const supabase = getBrowserSupabaseClient();
+  const supabase = createServiceSupabase();
   let query = supabase
     .from("sessions")
     .select(ACTIVE_SESSIONS_SELECT)
@@ -304,7 +309,7 @@ export const fetchStatusEventsBySessionIds = async (
     return [];
   }
 
-  const supabase = getBrowserSupabaseClient();
+  const supabase = createServiceSupabase();
   const runQuery = async (select: string) =>
     supabase
       .from("status_events")
@@ -380,7 +385,7 @@ export const fetchMonthlyJobThroughput = async (
   const { year, month, workerId, stationId, jobNumber } = args;
   if (!year || !month) return [];
 
-  const supabase = getBrowserSupabaseClient();
+  const supabase = createServiceSupabase();
   const monthStart = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0));
   const monthEnd = new Date(Date.UTC(year, month, 1, 0, 0, 0));
 

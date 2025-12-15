@@ -5,6 +5,10 @@ import {
   fetchAllWorkers,
   type WorkerWithStats,
 } from "@/lib/data/admin-management";
+import {
+  requireAdminPassword,
+  createErrorResponse,
+} from "@/lib/auth/permissions";
 
 type WorkerPayload = {
   worker_code?: string;
@@ -28,6 +32,11 @@ const respondWithError = (error: unknown) => {
 };
 
 export async function GET(request: Request) {
+  try {
+    await requireAdminPassword(request);
+  } catch (error) {
+    return createErrorResponse(error);
+  }
   const { searchParams } = new URL(request.url);
   const department = searchParams.get("department");
   const search = searchParams.get("search");
@@ -46,6 +55,12 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  try {
+    await requireAdminPassword(request);
+  } catch (error) {
+    return createErrorResponse(error);
+  }
+
   const body = (await request.json().catch(() => null)) as WorkerPayload | null;
 
   if (!body?.worker_code || !body.full_name) {
