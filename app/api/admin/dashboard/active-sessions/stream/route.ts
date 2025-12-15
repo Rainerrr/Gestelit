@@ -46,6 +46,7 @@ export async function GET(request: Request) {
   const supabase = createServiceSupabase();
   let channel: ReturnType<typeof supabase.channel> | null = null;
   let heartbeat: ReturnType<typeof setInterval> | null = null;
+  let isClosing = false;
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -67,10 +68,16 @@ export async function GET(request: Request) {
       }, 25_000);
 
       const closeChannel = async () => {
+        if (isClosing) {
+          return;
+        }
+        isClosing = true;
         clearHeartbeat();
+        const channelToClose = channel;
+        channel = null; // Set to null immediately to prevent callback from triggering again
         try {
-          if (channel) {
-            await supabase.removeChannel(channel);
+          if (channelToClose) {
+            await supabase.removeChannel(channelToClose);
           }
         } catch (error) {
           console.error("[admin-dashboard] Failed to remove realtime channel", error);
@@ -177,12 +184,14 @@ export async function GET(request: Request) {
             return;
           }
           if (status === "CHANNEL_ERROR" || status === "CLOSED") {
-            console.error(
-              "[admin-dashboard] Realtime channel closed",
-              error,
-            );
-            sendError("CHANNEL_CLOSED");
-            void closeChannel();
+            if (!isClosing && channel) {
+              console.error(
+                "[admin-dashboard] Realtime channel closed",
+                error,
+              );
+              sendError("CHANNEL_CLOSED");
+              void closeChannel();
+            }
           }
         });
     },
