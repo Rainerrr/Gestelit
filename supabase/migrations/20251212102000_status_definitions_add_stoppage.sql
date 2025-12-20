@@ -7,3 +7,7 @@ set is_stoppage = true
 where code in ('stopped', 'fault', 'waiting_client', 'plate_change');
 
 
+
+
+
+

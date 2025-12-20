@@ -19,6 +19,7 @@ import {
   useAdminSessionsRefresh,
   useAdminSessionsSelector,
   useAdminStationIds,
+  useAdminConnectionState,
 } from "@/contexts/AdminSessionsContext";
 import { useAdminGuard } from "@/hooks/useAdminGuard";
 import { useIdleSessionCleanup } from "@/hooks/useIdleSessionCleanup";
@@ -159,6 +160,31 @@ const StatusChartsSection = ({ dictionary, isLoading }: SectionProps) => {
   );
 };
 
+const ConnectionIndicator = () => {
+  const connectionState = useAdminConnectionState();
+
+  const stateConfig = {
+    connected: { color: "bg-emerald-500", pulse: true, label: "מחובר" },
+    connecting: { color: "bg-amber-500", pulse: true, label: "מתחבר..." },
+    disconnected: { color: "bg-amber-500", pulse: true, label: "מתחבר מחדש..." },
+    error: { color: "bg-red-500", pulse: false, label: "לא מחובר" },
+  };
+
+  const config = stateConfig[connectionState];
+
+  return (
+    <div className="flex items-center gap-2">
+      <div className="relative flex h-2.5 w-2.5">
+        {config.pulse && (
+          <span className={`absolute inline-flex h-full w-full animate-ping rounded-full ${config.color} opacity-75`} />
+        )}
+        <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${config.color}`} />
+      </div>
+      <span className="text-xs font-medium text-zinc-400 font-mono tracking-wide">{config.label}</span>
+    </div>
+  );
+};
+
 const AdminDashboardContent = () => {
   const { hasAccess } = useAdminGuard();
   const refresh = useAdminSessionsRefresh();
@@ -208,8 +234,14 @@ const AdminDashboardContent = () => {
 
   if (hasAccess === null) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center rounded-2xl border bg-white text-sm text-slate-500">
-        טוען נתונים...
+      <div className="flex min-h-screen items-center justify-center bg-zinc-950">
+        <div className="flex flex-col items-center gap-4">
+          <div className="relative h-12 w-12">
+            <div className="absolute inset-0 rounded-full border-2 border-amber-500/20" />
+            <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-amber-500" />
+          </div>
+          <p className="font-mono text-sm text-zinc-500 tracking-wider">טוען נתונים...</p>
+        </div>
       </div>
     );
   }
@@ -222,17 +254,17 @@ const AdminDashboardContent = () => {
     <>
       <AdminLayout
         header={
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div className="space-y-1 text-right">
-                <div className="flex items-center gap-2 text-xs text-slate-500">
-                  <span>לוח בקרה בזמן אמת</span>
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+          <div className="flex flex-col gap-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="space-y-2">
+                <div className="flex items-center gap-3">
+                  <ConnectionIndicator />
+                  <span className="text-[10px] font-mono text-zinc-600 uppercase tracking-[0.2em]">לוח בקרה בזמן אמת</span>
                 </div>
-                <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">
-                  מסך ניהול - תחנות פעילות
+                <h1 className="text-2xl font-bold text-zinc-100 tracking-tight lg:text-3xl">
+                  מסך ניהול — תחנות פעילות
                 </h1>
-                <p className="text-xs text-slate-500 sm:text-sm">
+                <p className="text-sm text-zinc-500 max-w-xl">
                   התמונה מתעדכנת בתדירות גבוהה, ללא ריענון מלא של העמוד.
                 </p>
               </div>
@@ -240,51 +272,62 @@ const AdminDashboardContent = () => {
                 <Button
                   variant="destructive"
                   onClick={() => setResetDialogOpen(true)}
-                  className="w-full sm:w-auto"
+                  className="w-full sm:w-auto bg-red-600 hover:bg-red-700 border-0 font-medium shadow-lg shadow-red-900/20"
                   size="sm"
                 >
-                  סגירת כל התחנות הפעילות
+                  סגירת כל התחנות
                 </Button>
-                <Button variant="outline" asChild className="w-full sm:min-w-32 sm:w-auto" size="sm">
+                <Button
+                  variant="outline"
+                  asChild
+                  className="w-full sm:w-auto border-zinc-700 bg-zinc-800/50 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 hover:border-zinc-600"
+                  size="sm"
+                >
                   <Link href="/">חזרה למסך הבית</Link>
                 </Button>
               </div>
             </div>
             {resetResult ? (
-              <p className="text-xs text-slate-500 sm:text-sm">{resetResult}</p>
+              <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2.5">
+                <div className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                <p className="text-sm font-medium text-amber-200">{resetResult}</p>
+              </div>
             ) : null}
           </div>
         }
       >
         <div className="space-y-6">
           <KpiCardsSection dictionary={dictionary} isLoading={isLoading} />
-
           <ActiveSessionsTable
             dictionary={dictionary}
             isDictionaryLoading={isStatusesLoading}
           />
-
           <StatusChartsSection dictionary={dictionary} isLoading={isLoading} />
         </div>
       </AdminLayout>
 
       <Dialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
-        <DialogContent className="text-right">
+        <DialogContent className="border-zinc-800 bg-zinc-900 text-right sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>לסגור את כל התחנות הפעילות?</DialogTitle>
-            <DialogDescription>
+            <DialogTitle className="text-xl font-bold text-zinc-100">לסגור את כל התחנות הפעילות?</DialogTitle>
+            <DialogDescription className="text-zinc-400">
               פעולה זו תסגור את כל הסשנים הפעילים ותעדכן את הדשבורד.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="justify-start gap-2">
+          <DialogFooter className="flex-row-reverse justify-start gap-2 sm:flex-row-reverse">
             <Button
               variant="destructive"
               onClick={handleForceCloseSessions}
               disabled={resetting}
+              className="bg-red-600 hover:bg-red-700 border-0 font-medium"
             >
               {resetting ? "סוגר..." : "כן, סגור הכל"}
             </Button>
-            <Button variant="outline" onClick={() => setResetDialogOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setResetDialogOpen(false)}
+              className="border-zinc-700 bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100"
+            >
               ביטול
             </Button>
           </DialogFooter>

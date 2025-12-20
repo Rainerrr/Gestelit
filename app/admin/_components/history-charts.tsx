@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   Bar,
@@ -16,7 +15,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, PieChart as PieIcon, BarChart3 } from "lucide-react";
 import type { StatusDictionary } from "@/lib/status";
 import {
   getStatusColorFromDictionary,
@@ -52,12 +51,15 @@ type HistoryChartsProps = {
   dictionary: StatusDictionary;
 };
 
-const tooltipStyle = {
-  backgroundColor: "white",
-  border: "1px solid #e2e8f0",
+const darkTooltipStyle = {
+  backgroundColor: "#18181b",
+  border: "1px solid #3f3f46",
   borderRadius: "0.5rem",
-  padding: "0.5rem 0.75rem",
+  padding: "0.625rem 0.875rem",
   textAlign: "right" as const,
+  color: "#fafafa",
+  fontSize: "0.8125rem",
+  boxShadow: "0 10px 25px rgba(0,0,0,0.4)",
 };
 
 const getStatusColor = (
@@ -70,15 +72,15 @@ const formatDuration = (valueMs: number): string => {
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
   if (hours > 0) {
-    return `${hours}ש ${minutes}דק`;
+    return `${hours}ש׳ ${minutes}דק׳`;
   }
-  return `${minutes}דק`;
+  return `${minutes} דק׳`;
 };
 
 const throughputColors = {
   good: "#10b981",
   scrap: "#ef4444",
-  planned: "#0f172a",
+  planned: "#f59e0b",
 };
 
 export const HistoryCharts = ({
@@ -99,7 +101,16 @@ export const HistoryCharts = ({
 
   const renderStatusPie = () => {
     if (isLoading) {
-      return <p className="text-sm text-slate-500">טוען תרשים...</p>;
+      return (
+        <div className="flex items-center justify-center h-[260px]">
+          <div className="flex flex-col items-center gap-3">
+            <div className="relative h-8 w-8">
+              <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-amber-500" />
+            </div>
+            <p className="text-sm text-zinc-500">טוען נתונים...</p>
+          </div>
+        </div>
+      );
     }
 
     const normalized = statusData
@@ -113,7 +124,12 @@ export const HistoryCharts = ({
       .filter((item) => item.value > 0);
 
     if (normalized.length === 0) {
-      return <p className="text-sm text-slate-500">אין נתונים להצגה.</p>;
+      return (
+        <div className="flex flex-col items-center justify-center h-[260px] text-zinc-500">
+          <PieIcon className="h-10 w-10 mb-3 opacity-30" />
+          <p className="text-sm">אין נתונים להצגה</p>
+        </div>
+      );
     }
 
     const total = normalized.reduce((sum, item) => sum + item.value, 0);
@@ -121,7 +137,7 @@ export const HistoryCharts = ({
     return (
       <div className="w-full">
         <div dir="ltr" className="w-full [direction:ltr]">
-          <ResponsiveContainer width="100%" height={280}>
+          <ResponsiveContainer width="100%" height={240}>
             <PieChart>
               <Pie
                 data={normalized}
@@ -129,14 +145,15 @@ export const HistoryCharts = ({
                 nameKey="label"
                 cx="50%"
                 cy="50%"
-                innerRadius={60}
-                outerRadius={90}
-                paddingAngle={2}
+                innerRadius={55}
+                outerRadius={85}
+                paddingAngle={3}
                 onMouseEnter={(_, index) => setActiveIndex(index)}
                 onMouseLeave={() => setActiveIndex(undefined)}
                 animationBegin={0}
-                animationDuration={600}
+                animationDuration={500}
                 animationEasing="ease-out"
+                stroke="transparent"
               >
                 {normalized.map((entry, index) => (
                   <Cell
@@ -145,9 +162,9 @@ export const HistoryCharts = ({
                     style={{
                       filter:
                         activeIndex === index
-                          ? "brightness(1.1)"
+                          ? "brightness(1.15)"
                           : activeIndex !== undefined
-                            ? "opacity(0.5)"
+                            ? "opacity(0.4)"
                             : "none",
                       transition: "filter 0.2s ease",
                       cursor: "pointer",
@@ -156,38 +173,40 @@ export const HistoryCharts = ({
                 ))}
               </Pie>
               <Tooltip
-                contentStyle={tooltipStyle}
+                contentStyle={darkTooltipStyle}
                 formatter={(value: number) => {
                   const percent = total > 0 ? Math.round((value / total) * 100) : 0;
                   return [`${formatDuration(value)} (${percent}%)`, ""];
                 }}
                 labelFormatter={(label) => label}
+                cursor={false}
               />
             </PieChart>
           </ResponsiveContainer>
         </div>
 
+        {/* Legend */}
         <div
-          className="mt-4 flex flex-wrap justify-center gap-x-4 gap-y-2 text-xs text-slate-600"
+          className="mt-2 flex flex-wrap justify-center gap-x-5 gap-y-2 text-xs"
           dir="rtl"
         >
           {normalized.map((entry, index) => (
             <div
               key={entry.key ?? entry.label ?? index}
-              className="flex items-center gap-2 cursor-pointer transition-opacity shrink-0"
+              className="flex items-center gap-2 cursor-pointer transition-all duration-200"
               style={{
-                opacity: activeIndex !== undefined && activeIndex !== index ? 0.5 : 1,
+                opacity: activeIndex !== undefined && activeIndex !== index ? 0.4 : 1,
               }}
               onMouseEnter={() => setActiveIndex(index)}
               onMouseLeave={() => setActiveIndex(undefined)}
             >
               <span
                 className="h-2.5 w-2.5 rounded-full shrink-0"
-                    style={{
-                      backgroundColor: getStatusColor(entry.key, dictionary),
-                    }}
+                style={{
+                  backgroundColor: getStatusColor(entry.key, dictionary),
+                }}
               />
-              <span>{entry.label}</span>
+              <span className="text-zinc-400">{entry.label}</span>
             </div>
           ))}
         </div>
@@ -197,11 +216,25 @@ export const HistoryCharts = ({
 
   const renderThroughputBars = () => {
     if (isLoading) {
-      return <p className="text-sm text-slate-500">טוען תרשים...</p>;
+      return (
+        <div className="flex items-center justify-center h-[280px]">
+          <div className="flex flex-col items-center gap-3">
+            <div className="relative h-8 w-8">
+              <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-amber-500" />
+            </div>
+            <p className="text-sm text-zinc-500">טוען נתונים...</p>
+          </div>
+        </div>
+      );
     }
 
     if (throughputData.length === 0) {
-      return <p className="text-sm text-slate-500">אין נתוני פק&quot;ע להצגה בחודש זה.</p>;
+      return (
+        <div className="flex flex-col items-center justify-center h-[280px] text-zinc-500">
+          <BarChart3 className="h-10 w-10 mb-3 opacity-30" />
+          <p className="text-sm">אין נתוני פק״ע בחודש זה</p>
+        </div>
+      );
     }
 
     const normalized = throughputData.map((item) => ({
@@ -213,118 +246,132 @@ export const HistoryCharts = ({
     }));
 
     return (
-      <div dir="ltr" className="w-full overflow-visible [direction:ltr]">
-        <div className="flex justify-center">
-          <ResponsiveContainer width="100%" height={340}>
+      <div className="w-full">
+        <div dir="ltr" className="w-full overflow-visible [direction:ltr]">
+          <ResponsiveContainer width="100%" height={280}>
             <ComposedChart
               data={normalized}
-              margin={{ top: 12, right: 12, bottom: 24, left: 12 }}
-              barCategoryGap={18}
+              margin={{ top: 8, right: 8, bottom: 20, left: 8 }}
+              barCategoryGap={16}
             >
-              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+              <CartesianGrid
+                strokeDasharray="0"
+                stroke="#27272a"
+                vertical={false}
+              />
               <XAxis
                 dataKey="label"
-                tick={{ fontSize: 11, fill: "#475569" }}
+                tick={{ fontSize: 11, fill: "#71717a" }}
+                axisLine={{ stroke: "#3f3f46" }}
+                tickLine={false}
                 interval={0}
               />
               <YAxis
                 type="number"
-                tick={{ fontSize: 11, fill: "#475569" }}
+                tick={{ fontSize: 11, fill: "#71717a" }}
+                axisLine={false}
+                tickLine={false}
                 allowDecimals={false}
               />
               <Tooltip
-                cursor={{ fill: "rgba(15, 23, 42, 0.05)" }}
-                contentStyle={tooltipStyle}
-                formatter={(value, name, entry) => {
+                cursor={{ fill: "rgba(245, 158, 11, 0.05)" }}
+                contentStyle={darkTooltipStyle}
+                formatter={(value, _name, entry) => {
                   const dataKey = (entry && "dataKey" in entry ? entry.dataKey : undefined) as
                     | string
                     | undefined;
                   if (dataKey === "planned") {
-                    return [value as number, "כמות מתוכננת"];
+                    return [value as number, "מתוכנן"];
                   }
                   if (dataKey === "good") {
-                    return [value as number, "טוב"];
+                    return [value as number, "תקין"];
                   }
                   if (dataKey === "scrap") {
                     return [value as number, "פסול"];
                   }
-                  return [value as number, name];
+                  return [value as number, ""];
                 }}
-                labelFormatter={(label) => `פק\"ע: ${label}`}
+                labelFormatter={(label) => `פק״ע: ${label}`}
               />
               <Bar
                 dataKey="good"
-                name="טוב"
-                radius={[6, 6, 0, 0]}
+                name="תקין"
+                radius={[4, 4, 0, 0]}
                 fill={throughputColors.good}
+                maxBarSize={40}
               />
               <Bar
                 dataKey="scrap"
                 name="פסול"
-                radius={[6, 6, 0, 0]}
+                radius={[4, 4, 0, 0]}
                 fill={throughputColors.scrap}
+                maxBarSize={40}
               />
               <Line
                 type="monotone"
                 dataKey="planned"
-                name="כמות מתוכננת"
+                name="מתוכנן"
                 stroke={throughputColors.planned}
                 strokeWidth={2}
-                dot={{ r: 3, strokeWidth: 1, stroke: throughputColors.planned }}
-                activeDot={{ r: 5 }}
+                dot={{ r: 3, fill: "#18181b", strokeWidth: 2, stroke: throughputColors.planned }}
+                activeDot={{ r: 5, fill: throughputColors.planned }}
               />
             </ComposedChart>
           </ResponsiveContainer>
         </div>
 
+        {/* Legend */}
         <div
-          className="mt-3 flex flex-wrap items-center justify-center gap-4 text-xs text-slate-600"
+          className="mt-2 flex flex-wrap items-center justify-center gap-5 text-xs"
           dir="rtl"
         >
           <div className="flex items-center gap-2">
             <span
-              className="h-2.5 w-2.5 rounded-full shrink-0"
+              className="h-2.5 w-2.5 rounded shrink-0"
               style={{ backgroundColor: throughputColors.good }}
             />
-            <span>טוב</span>
+            <span className="text-zinc-400">תקין</span>
           </div>
           <div className="flex items-center gap-2">
             <span
-              className="h-2.5 w-2.5 rounded-full shrink-0"
+              className="h-2.5 w-2.5 rounded shrink-0"
               style={{ backgroundColor: throughputColors.scrap }}
             />
-            <span>פסול</span>
+            <span className="text-zinc-400">פסול</span>
           </div>
           <div className="flex items-center gap-2">
             <span
-              className="h-0.5 w-5 rounded-sm shrink-0"
+              className="h-0.5 w-4 rounded shrink-0"
               style={{ backgroundColor: throughputColors.planned }}
             />
-            <span>כמות מתוכננת</span>
+            <span className="text-zinc-400">מתוכנן</span>
           </div>
         </div>
 
-        <div className="mt-3 flex items-center justify-center gap-3 text-xs text-slate-700">
+        {/* Pagination */}
+        <div className="mt-4 flex items-center justify-center gap-2">
           <Button
             variant="ghost"
             size="sm"
             onClick={onPrevPage}
             disabled={!canPrevPage}
             aria-label="סט הקודם"
-            className="h-8 px-2"
+            className="h-7 w-7 p-0 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 disabled:opacity-30"
           >
-            <ChevronLeft className="h-4 w-4" />
+            <ChevronRight className="h-4 w-4" />
           </Button>
-          <span className="min-w-[64px] text-center">{pageLabel}</span>
+          <span className="text-xs text-zinc-500 min-w-[50px] text-center font-mono">
+            {pageLabel}
+          </span>
           <Button
             variant="ghost"
             size="sm"
             onClick={onNextPage}
             disabled={!canNextPage}
             aria-label="סט הבא"
-            className="h-8 px-2"
+            className="h-7 w-7 p-0 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 disabled:opacity-30"
           >
-            <ChevronRight className="h-4 w-4" />
+            <ChevronLeft className="h-4 w-4" />
           </Button>
         </div>
       </div>
@@ -332,51 +379,66 @@ export const HistoryCharts = ({
   };
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <Card className="overflow-hidden">
-          <CardHeader className="px-4 pb-3">
-            <CardTitle className="text-lg">התפלגות סטטוסים</CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">{renderStatusPie()}</CardContent>
-        </Card>
-
-        <Card className="overflow-hidden">
-          <CardHeader className="flex items-center justify-between px-4 pb-3">
+    <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+      {/* Status Distribution Card */}
+      <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/50 backdrop-blur-sm overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800/60">
+          <div className="flex items-center gap-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-800">
+              <PieIcon className="h-4 w-4 text-zinc-400" />
+            </div>
             <div>
-              <CardTitle className="text-lg">תפוקה לפי פק&quot;ע</CardTitle>
-              <p className="text-sm text-slate-600">5 פק&quot;עים אחרונים בחודש הנבחר</p>
+              <h3 className="text-sm font-semibold text-zinc-100">התפלגות סטטוסים</h3>
+              <p className="text-xs text-zinc-500">זמן בכל סטטוס</p>
             </div>
-            <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            aria-label="חודש הבא"
-            onClick={onNextMonth}
-            className="h-8 px-2"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-              <span className="text-sm text-slate-700">{monthLabel}</span>
-              <Button
-                variant="outline"
-                size="sm"
-            aria-label="חודש קודם"
-            onClick={onPrevMonth}
-                className="h-8 px-2"
-              >
-            <ChevronLeft className="h-4 w-4" />
-              </Button>
+          </div>
+        </div>
+        <div className="p-5">
+          {renderStatusPie()}
+        </div>
+      </div>
+
+      {/* Throughput Card */}
+      <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/50 backdrop-blur-sm overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800/60">
+          <div className="flex items-center gap-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-800">
+              <BarChart3 className="h-4 w-4 text-zinc-400" />
             </div>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">{renderThroughputBars()}</CardContent>
-        </Card>
+            <div>
+              <h3 className="text-sm font-semibold text-zinc-100">תפוקה לפי פק״ע</h3>
+              <p className="text-xs text-zinc-500">כמויות בחודש הנבחר</p>
+            </div>
+          </div>
+          {/* Month Navigation */}
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label="חודש הבא"
+              onClick={onNextMonth}
+              className="h-7 w-7 p-0 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            <span className="text-xs text-zinc-300 min-w-[80px] text-center font-medium">
+              {monthLabel}
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label="חודש קודם"
+              onClick={onPrevMonth}
+              className="h-7 w-7 p-0 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+        <div className="p-5">
+          {renderThroughputBars()}
+        </div>
       </div>
     </div>
   );
 };
-
-
-
-
-

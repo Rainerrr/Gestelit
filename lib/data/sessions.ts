@@ -22,6 +22,90 @@ type SessionPayload = {
   started_at?: string;
 };
 
+async function getStoppedStatusId(): Promise<string> {
+  const definitions = await fetchActiveStatusDefinitions();
+  const stopped =
+    definitions.find(
+      (item) =>
+        item.label_he === "עצירה" ||
+        item.label_ru === "Остановка" ||
+        item.label_he === "עצור",
+    ) ?? definitions[0];
+
+  if (!stopped) {
+    throw new Error("STOPPED_STATUS_NOT_FOUND");
+  }
+
+  return stopped.id;
+}
+
+/**
+ * Closes all active sessions for a worker.
+ * Called before creating a new session to enforce single-session-per-worker.
+ */
+export async function closeActiveSessionsForWorker(
+  workerId: string,
+): Promise<string[]> {
+  const supabase = createServiceSupabase();
+  const timestamp = new Date().toISOString();
+
+  // Find all active sessions for this worker
+  const { data: activeSessions, error: fetchError } = await supabase
+    .from("sessions")
+    .select("id")
+    .eq("worker_id", workerId)
+    .eq("status", "active")
+    .is("ended_at", null);
+
+  if (fetchError) {
+    throw new Error(
+      `Failed to fetch active sessions for worker: ${fetchError.message}`,
+    );
+  }
+
+  if (!activeSessions || activeSessions.length === 0) {
+    return [];
+  }
+
+  const closedIds: string[] = [];
+  const stoppedId = await getStoppedStatusId();
+
+  for (const session of activeSessions) {
+    // Close open status events
+    await supabase
+      .from("status_events")
+      .update({ ended_at: timestamp })
+      .eq("session_id", session.id)
+      .is("ended_at", null);
+
+    // Create final stopped status event
+    await supabase.from("status_events").insert({
+      session_id: session.id,
+      status_definition_id: stoppedId,
+      note: "replaced-by-new-session",
+      started_at: timestamp,
+    });
+
+    // Close the session
+    const { error: updateError } = await supabase
+      .from("sessions")
+      .update({
+        status: "completed" as SessionStatus,
+        ended_at: timestamp,
+        forced_closed_at: timestamp,
+        current_status_id: stoppedId,
+        last_status_change_at: timestamp,
+      })
+      .eq("id", session.id);
+
+    if (!updateError) {
+      closedIds.push(session.id);
+    }
+  }
+
+  return closedIds;
+}
+
 async function getInitialStatusId(stationId: string): Promise<string> {
   const definitions = await fetchActiveStatusDefinitions(stationId);
   const sorted = definitions.sort(
@@ -41,21 +125,7 @@ export async function createSession(
 ): Promise<Session> {
   const supabase = createServiceSupabase();
   const initialStatusId = await getInitialStatusId(payload.station_id);
-  // #region agent log
-  fetch("http://127.0.0.1:7242/ingest/e9e360f1-cac8-4774-88a3-e97a664d1472", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      sessionId: "debug-session",
-      runId: "initial",
-      hypothesisId: "S1",
-      location: "lib/data/sessions.ts:createSession:start",
-      message: "create session request",
-      data: { payload, initialStatusId },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
+
   const { data, error } = await supabase
     .from("sessions")
     .insert({
@@ -68,21 +138,6 @@ export async function createSession(
     .single();
 
   if (error) {
-    // #region agent log
-    fetch("http://127.0.0.1:7242/ingest/e9e360f1-cac8-4774-88a3-e97a664d1472", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sessionId: "debug-session",
-        runId: "initial",
-        hypothesisId: "S1",
-        location: "lib/data/sessions.ts:createSession:error",
-        message: "create session failed",
-        data: { payload, initialStatusId, error: error.message },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     throw new Error(`Failed to create session: ${error.message}`);
   }
 
@@ -95,42 +150,9 @@ export async function createSession(
   });
 
   if (eventError) {
-    fetch("http://127.0.0.1:7242/ingest/e9e360f1-cac8-4774-88a3-e97a664d1472", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sessionId: "debug-session",
-        runId: "initial",
-        hypothesisId: "S1",
-        location: "lib/data/sessions.ts:createSession:event_error",
-        message: "initial status event failed",
-        data: { sessionId: sessionRow.id, initialStatusId, error: eventError.message },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
     throw new Error(`Failed to log initial status event: ${eventError.message}`);
   }
 
-  // #region agent log
-  fetch("http://127.0.0.1:7242/ingest/e9e360f1-cac8-4774-88a3-e97a664d1472", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      sessionId: "debug-session",
-      runId: "initial",
-      hypothesisId: "S1",
-      location: "lib/data/sessions.ts:createSession:success",
-      message: "create session success",
-      data: {
-        id: sessionRow.id,
-        station: payload.station_id,
-        job: payload.job_id,
-        initialStatusId,
-      },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
   return sessionRow;
 }
 
@@ -237,23 +259,6 @@ async function closeOpenStatusEvents(sessionId: string) {
   if (error) {
     throw new Error(`Failed to close open status events: ${error.message}`);
   }
-}
-
-async function getStoppedStatusId(): Promise<string> {
-  const definitions = await fetchActiveStatusDefinitions();
-  const stopped =
-    definitions.find(
-      (item) =>
-        item.label_he === "עצירה" ||
-        item.label_ru === "Остановка" ||
-        item.label_he === "עצור",
-    ) ?? definitions[0];
-
-  if (!stopped) {
-    throw new Error("STOPPED_STATUS_NOT_FOUND");
-  }
-
-  return stopped.id;
 }
 
 type StatusEventPayload = {

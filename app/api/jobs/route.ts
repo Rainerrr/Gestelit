@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { getOrCreateJob } from "@/lib/data/jobs";
-import { createSession } from "@/lib/data/sessions";
+import {
+  createSession,
+  closeActiveSessionsForWorker,
+} from "@/lib/data/sessions";
 import {
   requireWorkerOwnership,
   createErrorResponse,
@@ -22,6 +25,10 @@ export async function POST(request: Request) {
   try {
     // Verify workerId matches authenticated worker
     await requireWorkerOwnership(request, workerId);
+
+    // Close any existing active sessions for this worker
+    // This enforces single-session-per-worker constraint
+    await closeActiveSessionsForWorker(workerId);
 
     const job = await getOrCreateJob(jobNumber);
     const session = await createSession({

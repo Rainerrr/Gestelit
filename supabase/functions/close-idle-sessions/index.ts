@@ -18,7 +18,7 @@ if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 const IDLE_THRESHOLD_MS = 5 * 60 * 1000;
 
-type SessionRow = { id: string };
+type SessionRow = { id: string; last_seen_at: string | null; started_at: string };
 type StatusDefinitionRow = {
   id: string;
   label_he: string | null;
@@ -80,13 +80,16 @@ const closeSession = async (sessionId: string, timestamp: string) => {
 };
 
 Deno.serve(async () => {
-  const idleSince = new Date(Date.now() - IDLE_THRESHOLD_MS).toISOString();
+  const idleSinceMs = Date.now() - IDLE_THRESHOLD_MS;
+  const idleSince = new Date(idleSinceMs).toISOString();
 
+  // Fetch all active sessions (without filtering by last_seen_at in query)
+  // We need to check both last_seen_at and started_at as fallback
   const { data, error } = await supabase
     .from("sessions")
-    .select("id")
+    .select("id, last_seen_at, started_at")
     .eq("status", "active")
-    .lt("last_seen_at", idleSince)
+    .is("ended_at", null)
     .is("forced_closed_at", null);
 
   if (error) {
@@ -99,10 +102,19 @@ Deno.serve(async () => {
 
   const sessions = (data as SessionRow[]) ?? [];
 
-  for (const session of sessions) {
+  // Filter idle sessions in code to handle null last_seen_at
+  const idleSessions = sessions.filter((session) => {
+    const lastActivity = session.last_seen_at ?? session.started_at;
+    if (!lastActivity) return false;
+    return new Date(lastActivity).getTime() < idleSinceMs;
+  });
+
+  const closed: string[] = [];
+  for (const session of idleSessions) {
     const timestamp = new Date().toISOString();
     try {
       await closeSession(session.id, timestamp);
+      closed.push(session.id);
     } catch (err) {
       console.error(
         `[close-idle-sessions] Failed to close session ${session.id}`,
@@ -112,7 +124,7 @@ Deno.serve(async () => {
   }
 
   return new Response(
-    JSON.stringify({ ok: true, closed: sessions.length }),
+    JSON.stringify({ ok: true, checked: sessions.length, closed: closed.length, closedIds: closed }),
     { headers: { "Content-Type": "application/json" } },
   );
 });

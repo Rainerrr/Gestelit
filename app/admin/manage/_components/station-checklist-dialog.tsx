@@ -19,7 +19,6 @@ import { CSS } from "@dnd-kit/utilities";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -67,15 +66,15 @@ const SortableRow = ({
     <div
       ref={setNodeRef}
       style={style}
-      className="flex items-start gap-2 rounded-md border border-slate-200 bg-white px-2 py-2 shadow-sm sm:gap-3 sm:rounded-lg sm:px-3 sm:py-2"
+      className="flex items-start gap-2 rounded-md border border-zinc-700 bg-zinc-800/80 px-2 py-2 shadow-sm sm:gap-3 sm:rounded-lg sm:px-3 sm:py-2"
     >
       <div className="flex w-12 flex-col items-center gap-1 pt-1 sm:w-14 sm:gap-2">
-        <span className="text-base font-semibold text-slate-900 sm:text-lg">
+        <span className="text-base font-semibold text-zinc-100 sm:text-lg">
           {item.order_index + 1}
         </span>
         <button
           type="button"
-          className="flex h-8 w-8 items-center justify-center rounded-md border border-dashed border-slate-300 text-slate-500 transition hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-primary sm:h-9 sm:w-9"
+          className="flex h-8 w-8 items-center justify-center rounded-md border border-dashed border-zinc-600 text-zinc-500 transition hover:border-zinc-500 hover:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-amber-500/50 sm:h-9 sm:w-9"
           aria-label="גרירה לשינוי סדר"
           {...attributes}
           {...listeners}
@@ -85,7 +84,7 @@ const SortableRow = ({
       </div>
       <div className="grid flex-1 grid-cols-1 gap-2 md:grid-cols-2 md:gap-3">
         <div className="space-y-1">
-          <label className="text-xs text-slate-600" htmlFor={`he-${item.id}`}>
+          <label className="text-xs text-zinc-400" htmlFor={`he-${item.id}`}>
             תווית בעברית
           </label>
           <Input
@@ -97,11 +96,11 @@ const SortableRow = ({
             }
             disabled={loading}
             placeholder="לדוגמה: בדיקת ניקיון"
-            className="h-10 text-sm"
+            className="h-10 text-sm border-zinc-600 bg-zinc-700/80 text-zinc-100 placeholder:text-zinc-500"
           />
         </div>
         <div className="space-y-1">
-          <label className="text-xs text-slate-600" htmlFor={`ru-${item.id}`}>
+          <label className="text-xs text-zinc-400" htmlFor={`ru-${item.id}`}>
             תווית ברוסית
           </label>
           <Input
@@ -113,7 +112,7 @@ const SortableRow = ({
             }
             disabled={loading}
             placeholder="Например: проверка чистоты"
-            className="h-10 text-sm"
+            className="h-10 text-sm border-zinc-600 bg-zinc-700/80 text-zinc-100 placeholder:text-zinc-500"
           />
         </div>
       </div>
@@ -124,7 +123,7 @@ const SortableRow = ({
         onClick={() => onRemove(kind, item.id)}
         disabled={loading || listLength <= 1}
         aria-label="מחיקת פריט"
-        className="self-start h-8 px-2 text-rose-600 hover:text-rose-700 disabled:opacity-60 sm:h-9"
+        className="self-start h-8 px-2 text-red-400 hover:text-red-300 hover:bg-red-500/10 disabled:opacity-60 sm:h-9"
       >
         <Trash2 className="h-4 w-4" />
       </Button>
@@ -369,23 +368,23 @@ export const StationChecklistDialog = ({
 
   const renderTab = (kind: ChecklistKind, items: StationChecklistItem[]) => (
     <div className="space-y-3">
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-3">
+      <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/50 backdrop-blur-sm overflow-hidden">
+        <div className="flex flex-row items-center justify-between gap-3 px-4 py-3 border-b border-zinc-800/60">
           <div className="space-y-1 text-right">
-            <CardTitle className="text-base">
+            <h4 className="text-base font-semibold text-zinc-100">
               {kind === "start" ? "פריטי פתיחה" : "פריטי סגירה"}
-            </CardTitle>
-            <p className="text-xs text-slate-500">
+            </h4>
+            <p className="text-xs text-zinc-500">
               גררו לשינוי סדר, סמנו סעיפים חובה והוסיפו תרגומים בעברית ורוסית.
             </p>
           </div>
-          <Badge variant="secondary" className="whitespace-nowrap">
+          <Badge variant="secondary" className="whitespace-nowrap bg-zinc-800 text-zinc-300 border-zinc-700">
             {items.length} פריטים
           </Badge>
-        </CardHeader>
-        <CardContent className="space-y-2 sm:space-y-3">
+        </div>
+        <div className="p-4 space-y-2 sm:space-y-3">
           {items.length === 0 ? (
-            <p className="rounded-md border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500">
+            <p className="rounded-md border border-dashed border-zinc-700 bg-zinc-800/30 px-3 py-2 text-sm text-zinc-500">
               לא הוגדרו פריטים. הוסיפו פריט חדש כדי להתחיל.
             </p>
           ) : (
@@ -421,13 +420,13 @@ export const StationChecklistDialog = ({
             size="sm"
             onClick={() => handleAddItem(kind)}
             disabled={loading}
-            className="mt-1 w-full justify-center"
+            className="mt-1 w-full justify-center border-zinc-700 bg-zinc-800/50 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100"
           >
             <Plus className="mr-2 h-4 w-4" />
             הוספת פריט
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 
@@ -435,31 +434,31 @@ export const StationChecklistDialog = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         dir="rtl"
-        className="max-w-4xl text-right max-h-[90vh] overflow-hidden p-0 sm:max-h-[80vh] sm:p-6"
+        className="max-w-4xl text-right max-h-[90vh] overflow-hidden p-0 sm:max-h-[80vh] sm:p-6 border-zinc-800 bg-zinc-900"
       >
         <DialogHeader className="px-4 pt-4 sm:px-0 sm:pt-0">
-          <DialogTitle className="flex items-center justify-between gap-2">
+          <DialogTitle className="flex items-center justify-between gap-2 text-zinc-100">
             <span>צ׳קליסטים לתחנה {station.name}</span>
-            <Badge variant="outline" className="flex items-center gap-1">
+            <Badge variant="outline" className="flex items-center gap-1 border-zinc-700 text-zinc-400">
               <ListChecks className="h-4 w-4" />
               {station.code}
             </Badge>
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-3 px-4 sm:px-0">
+        <div className="space-y-3 px-4 sm:px-0 overflow-y-auto max-h-[calc(90vh-180px)] sm:max-h-[calc(80vh-160px)]">
           {error ? (
             <Alert
               variant="destructive"
-              className="border-red-200 bg-red-50 text-right text-sm text-red-700"
+              className="border-red-500/30 bg-red-500/10 text-right text-sm text-red-400"
             >
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           ) : null}
           {success ? (
-            <Alert className="border-emerald-200 bg-emerald-50 text-right text-sm text-emerald-800">
+            <Alert className="border-emerald-500/30 bg-emerald-500/10 text-right text-sm text-emerald-400">
               <div className="flex items-center gap-2">
-                <CheckCircle2 className="h-4 w-4" />
+                <CheckCircle2 className="h-4 w-4 text-emerald-400" />
                 <AlertDescription>{success}</AlertDescription>
               </div>
             </Alert>
@@ -470,16 +469,24 @@ export const StationChecklistDialog = ({
               <Button
                 key={tab.key}
                 type="button"
-                variant={activeTab === tab.key ? "default" : "outline"}
+                variant="outline"
                 size="sm"
                 onClick={() => setActiveTab(tab.key)}
                 aria-label={tab.label}
-                className="flex items-center gap-2"
+                className={`flex items-center gap-2 ${
+                  activeTab === tab.key
+                    ? "bg-amber-500 text-zinc-900 border-amber-500 hover:bg-amber-400 hover:border-amber-400 font-medium"
+                    : "border-zinc-700 bg-zinc-800/50 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100"
+                }`}
               >
                 {tab.label}
                 <Badge
-                  variant={activeTab === tab.key ? "secondary" : "outline"}
-                  className="text-xs"
+                  variant="outline"
+                  className={`text-xs ${
+                    activeTab === tab.key
+                      ? "border-amber-600/50 bg-amber-600/20 text-amber-100"
+                      : "border-zinc-600 text-zinc-400"
+                  }`}
                 >
                   {tab.count}
                 </Badge>
@@ -491,13 +498,14 @@ export const StationChecklistDialog = ({
         </div>
 
         <DialogFooter className="justify-start px-4 pb-4 pt-2 sm:px-0 sm:pb-0">
-          <Button onClick={() => void handleSubmit()} disabled={loading}>
+          <Button onClick={() => void handleSubmit()} disabled={loading} className="bg-amber-500 text-zinc-900 hover:bg-amber-400 font-medium">
             {loading ? "שומר..." : "שמור צ'קליסטים"}
           </Button>
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
             disabled={loading}
+            className="border-zinc-700 bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100"
           >
             ביטול
           </Button>

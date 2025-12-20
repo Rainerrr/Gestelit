@@ -2,10 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, Users, Cpu } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { useAdminGuard } from "@/hooks/useAdminGuard";
@@ -306,9 +305,14 @@ export const ManagementDashboard = () => {
 
   if (hasAccess === null) {
     return (
-      <Card className="flex min-h-[60vh] items-center justify-center border border-slate-200 text-slate-600">
-        טוען הרשאות...
-      </Card>
+      <div className="flex min-h-[60vh] items-center justify-center rounded-xl border border-zinc-800/80 bg-zinc-900/50 text-zinc-400">
+        <div className="flex flex-col items-center gap-3">
+          <div className="relative h-8 w-8">
+            <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-amber-500" />
+          </div>
+          <span>טוען הרשאות...</span>
+        </div>
+      </div>
     );
   }
 
@@ -320,35 +324,49 @@ export const ManagementDashboard = () => {
     <AdminLayout
       header={
         <div className="flex flex-col gap-4 text-right">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="space-y-1 text-right">
-              <p className="text-xs text-slate-500">ניהול</p>
-              <h1 className="text-2xl font-semibold text-slate-900">
-                ניהול עובדים ותחנות
-              </h1>
-              <p className="text-sm text-slate-500">
-                הוספה, עריכה והרשאות של עובדים ומכונות.
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant={activeTab === "workers" ? "default" : "outline"}
+          <div className="space-y-1 text-right">
+            <p className="text-[10px] font-mono text-zinc-600 uppercase tracking-[0.2em]">ניהול</p>
+            <h1 className="text-2xl font-bold text-zinc-100 tracking-tight lg:text-3xl">
+              ניהול עובדים ותחנות
+            </h1>
+            <p className="text-sm text-zinc-500">
+              הוספה, עריכה והרשאות של עובדים ומכונות.
+            </p>
+          </div>
+
+          {/* Prominent Tab Switcher */}
+          <div className="flex justify-center py-3">
+            <div className="inline-flex items-center gap-2 p-2 rounded-2xl border border-zinc-800 bg-zinc-900/80 backdrop-blur-sm shadow-xl shadow-black/20">
+              <button
+                type="button"
                 onClick={() => setActiveTab("workers")}
                 aria-label="עובדים"
+                className={`relative flex items-center gap-3 px-10 py-4 text-lg font-semibold rounded-xl transition-all duration-200 ${
+                  activeTab === "workers"
+                    ? "bg-amber-500 text-zinc-900 shadow-lg shadow-amber-500/25"
+                    : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"
+                }`}
               >
+                <Users className={`h-5 w-5 ${activeTab === "workers" ? "text-zinc-900" : ""}`} />
                 עובדים
-              </Button>
-              <Button
-                variant={activeTab === "stations" ? "default" : "outline"}
+              </button>
+              <button
+                type="button"
                 onClick={() => setActiveTab("stations")}
                 aria-label="תחנות"
+                className={`relative flex items-center gap-3 px-10 py-4 text-lg font-semibold rounded-xl transition-all duration-200 ${
+                  activeTab === "stations"
+                    ? "bg-amber-500 text-zinc-900 shadow-lg shadow-amber-500/25"
+                    : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"
+                }`}
               >
+                <Cpu className={`h-5 w-5 ${activeTab === "stations" ? "text-zinc-900" : ""}`} />
                 תחנות
-              </Button>
+              </button>
             </div>
           </div>
 
-          <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-3">
+          <div className="space-y-3 rounded-xl border border-zinc-800/80 bg-zinc-900/50 backdrop-blur-sm p-4">
             <div className="flex flex-wrap items-center gap-2">
               <Input
                 aria-label="חיפוש"
@@ -359,14 +377,14 @@ export const ManagementDashboard = () => {
                 }
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                className="w-72 max-w-full"
+                className="w-72 max-w-full border-zinc-700 bg-zinc-800/80 text-zinc-100 placeholder:text-zinc-500 focus:ring-amber-500/30 focus:border-amber-500/50"
               />
               <div className="flex flex-wrap items-center gap-2">
                 {activeTab === "workers" ? (
                   <>
                     <Badge
                       variant={departmentFilter === null ? "default" : "outline"}
-                      className="cursor-pointer"
+                      className={`cursor-pointer transition-colors ${departmentFilter === null ? "bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20" : "border-zinc-700 text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-300"}`}
                       onClick={() => setDepartmentFilter(null)}
                     >
                       כל המחלקות
@@ -375,7 +393,7 @@ export const ManagementDashboard = () => {
                       <Badge
                         key={dept}
                         variant={departmentFilter === dept ? "default" : "outline"}
-                        className="cursor-pointer"
+                        className={`cursor-pointer transition-colors ${departmentFilter === dept ? "bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20" : "border-zinc-700 text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-300"}`}
                         onClick={() => setDepartmentFilter(dept)}
                       >
                         {dept}
@@ -386,7 +404,7 @@ export const ManagementDashboard = () => {
                   <>
                     <Badge
                       variant={stationTypeFilter === null ? "default" : "outline"}
-                      className="cursor-pointer"
+                      className={`cursor-pointer transition-colors ${stationTypeFilter === null ? "bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20" : "border-zinc-700 text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-300"}`}
                       onClick={() => setStationTypeFilter(null)}
                     >
                       כל הסוגים
@@ -395,7 +413,7 @@ export const ManagementDashboard = () => {
                       <Badge
                         key={type}
                         variant={stationTypeFilter === type ? "default" : "outline"}
-                        className="cursor-pointer"
+                        className={`cursor-pointer transition-colors ${stationTypeFilter === type ? "bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20" : "border-zinc-700 text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-300"}`}
                         onClick={() => setStationTypeFilter(type)}
                       >
                         {type}
@@ -408,8 +426,11 @@ export const ManagementDashboard = () => {
             <div className="flex flex-wrap gap-1">
               <Button
                 size="sm"
-                variant={startsWith === null ? "default" : "outline"}
+                variant="outline"
                 onClick={() => setStartsWith(null)}
+                className={startsWith === null
+                  ? "bg-amber-500 text-zinc-900 border-amber-500 hover:bg-amber-400 hover:border-amber-400 font-medium"
+                  : "border-zinc-700 bg-zinc-800/50 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100"}
               >
                 כל האותיות
               </Button>
@@ -417,8 +438,11 @@ export const ManagementDashboard = () => {
                 <Button
                   key={letter}
                   size="sm"
-                  variant={startsWith === letter ? "default" : "outline"}
+                  variant="outline"
                   onClick={() => setStartsWith(letter)}
+                  className={startsWith === letter
+                    ? "bg-amber-500 text-zinc-900 border-amber-500 hover:bg-amber-400 hover:border-amber-400 font-medium"
+                    : "border-zinc-700 bg-zinc-800/50 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100"}
                 >
                   {letter}
                 </Button>
@@ -428,18 +452,18 @@ export const ManagementDashboard = () => {
           {bannerError ? (
             <Alert
               variant="destructive"
-              className="border-red-200 bg-red-50 text-right text-sm text-red-700"
+              className="border-red-500/30 bg-red-500/10 text-right text-sm text-red-400"
             >
-              <AlertTitle>שגיאה</AlertTitle>
+              <AlertTitle className="text-red-300">שגיאה</AlertTitle>
               <AlertDescription>{bannerError}</AlertDescription>
             </Alert>
           ) : null}
           {bannerSuccess ? (
-            <Alert className="border-emerald-200 bg-emerald-50 text-right text-sm text-emerald-800">
+            <Alert className="border-emerald-500/30 bg-emerald-500/10 text-right text-sm text-emerald-400">
               <div className="flex items-center gap-2">
-                <CheckCircle2 className="h-4 w-4" />
+                <CheckCircle2 className="h-4 w-4 text-emerald-400" />
                 <div>
-                  <AlertTitle>הצלחה</AlertTitle>
+                  <AlertTitle className="text-emerald-300">הצלחה</AlertTitle>
                   <AlertDescription>{bannerSuccess}</AlertDescription>
                 </div>
               </div>

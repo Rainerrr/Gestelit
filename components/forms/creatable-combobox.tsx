@@ -74,20 +74,20 @@ export const CreatableCombobox = ({
   return (
     <div className="space-y-2">
       <Select value={normalizedValue} onValueChange={handleSelectChange}>
-        <SelectTrigger aria-label={ariaLabel ?? placeholder}>
+        <SelectTrigger aria-label={ariaLabel ?? placeholder} className="border-zinc-700 bg-zinc-800 text-zinc-200">
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
-        <SelectContent>
+        <SelectContent className="border-zinc-700 bg-zinc-800">
           {allowEmpty ? (
-            <SelectItem value={EMPTY_OPTION_VALUE}>{emptyLabel}</SelectItem>
+            <SelectItem value={EMPTY_OPTION_VALUE} className="text-zinc-200 focus:bg-zinc-700">{emptyLabel}</SelectItem>
           ) : null}
           {normalizedOptions.map((option) => (
-            <SelectItem key={option} value={option}>
+            <SelectItem key={option} value={option} className="text-zinc-200 focus:bg-zinc-700">
               {option}
             </SelectItem>
           ))}
           {normalizedOptions.length === 0 && !allowEmpty ? (
-            <SelectItem value={NO_OPTIONS_VALUE} disabled>
+            <SelectItem value={NO_OPTIONS_VALUE} disabled className="text-zinc-500">
               אין אפשרויות
             </SelectItem>
           ) : null}
@@ -101,19 +101,20 @@ export const CreatableCombobox = ({
           value={customValue}
           onChange={(event) => setCustomValue(event.target.value)}
           onKeyDown={handleKeyDown}
-          className="flex-1"
+          className="flex-1 border-zinc-700 bg-zinc-800/80 text-zinc-100 placeholder:text-zinc-500"
         />
         <Button
           type="button"
           variant="outline"
           onClick={handleCreate}
           disabled={!customValue.trim()}
+          className="border-zinc-700 bg-zinc-800/50 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100"
         >
           הוספת חדש
         </Button>
       </div>
       {helperText ? (
-        <p className="text-xs text-slate-500">{helperText}</p>
+        <p className="text-xs text-zinc-500">{helperText}</p>
       ) : null}
     </div>
   );

@@ -1,7 +1,6 @@
 "use client";
 
 import { memo, useMemo, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Bar,
   BarChart,
@@ -15,6 +14,7 @@ import {
   YAxis,
 } from "recharts";
 import type { StatusDictionary } from "@/lib/status";
+import { PieChartIcon, BarChart3 } from "lucide-react";
 import {
   getStatusColorFromDictionary,
 } from "./status-dictionary";
@@ -40,11 +40,12 @@ type StatusChartsProps = {
 };
 
 const tooltipStyle = {
-  backgroundColor: "white",
-  border: "1px solid #e2e8f0",
-  borderRadius: "0.5rem",
-  padding: "0.5rem 0.75rem",
+  backgroundColor: "#18181b",
+  border: "1px solid #27272a",
+  borderRadius: "0.75rem",
+  padding: "0.75rem 1rem",
   textAlign: "right" as const,
+  boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.3)",
 };
 
 const getStatusColor = (
@@ -56,6 +57,28 @@ const throughputColors = {
   good: "#10b981",
   scrap: "#ef4444",
 };
+
+const ChartCard = ({
+  title,
+  icon: Icon,
+  children
+}: {
+  title: string;
+  icon: React.ElementType;
+  children: React.ReactNode
+}) => (
+  <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/50 backdrop-blur-sm overflow-hidden">
+    <div className="flex items-center gap-3 px-5 py-4 border-b border-zinc-800/60">
+      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/10">
+        <Icon className="h-4 w-4 text-amber-400" />
+      </div>
+      <h3 className="text-base font-semibold text-zinc-100">{title}</h3>
+    </div>
+    <div className="p-5">
+      {children}
+    </div>
+  </div>
+);
 
 const StatusChartsComponent = ({
   statusData,
@@ -89,11 +112,27 @@ const StatusChartsComponent = ({
 
   const renderStatusPie = () => {
     if (isLoading) {
-      return <p className="text-sm text-slate-500">טוען סטטוסים...</p>;
+      return (
+        <div className="flex items-center justify-center h-64">
+          <div className="flex flex-col items-center gap-3">
+            <div className="relative h-8 w-8">
+              <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-amber-500" />
+            </div>
+            <p className="text-sm text-zinc-500">טוען סטטוסים...</p>
+          </div>
+        </div>
+      );
     }
 
     if (normalizedStatusData.length === 0) {
-      return <p className="text-sm text-slate-500">אין סטטוסים להצגה.</p>;
+      return (
+        <div className="flex flex-col items-center justify-center h-64">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-zinc-800/50 mb-4">
+            <PieChartIcon className="h-6 w-6 text-zinc-600" />
+          </div>
+          <p className="text-sm text-zinc-400">אין סטטוסים להצגה</p>
+        </div>
+      );
     }
 
     const onPieEnter = (_: unknown, index: number) => {
@@ -109,7 +148,7 @@ const StatusChartsComponent = ({
     return (
       <div className="w-full">
         <div dir="ltr" className="w-full [direction:ltr]">
-          <ResponsiveContainer width="100%" height={240} className="sm:h-[280px]">
+          <ResponsiveContainer width="100%" height={260}>
             <PieChart>
               <Pie
                 data={normalizedStatusData}
@@ -117,9 +156,9 @@ const StatusChartsComponent = ({
                 nameKey="label"
                 cx="50%"
                 cy="50%"
-                innerRadius={60}
-                outerRadius={90}
-                paddingAngle={2}
+                innerRadius={70}
+                outerRadius={100}
+                paddingAngle={3}
                 onMouseEnter={onPieEnter}
                 onMouseLeave={onPieLeave}
                 isAnimationActive
@@ -130,15 +169,19 @@ const StatusChartsComponent = ({
                     key={entry.key ?? entry.label ?? index}
                     fill={getStatusColor(entry.key, dictionary)}
                     style={{
-                      filter: activeIndex === index ? "brightness(1.1)" : activeIndex !== undefined ? "opacity(0.5)" : "none",
+                      filter: activeIndex === index ? "brightness(1.2)" : activeIndex !== undefined ? "opacity(0.4)" : "none",
                       transition: "filter 0.2s ease",
                       cursor: "pointer",
                     }}
+                    stroke="#18181b"
+                    strokeWidth={2}
                   />
                 ))}
               </Pie>
               <Tooltip
                 contentStyle={tooltipStyle}
+                itemStyle={{ color: "#fafafa" }}
+                labelStyle={{ color: "#a1a1aa", marginBottom: "4px" }}
                 formatter={(value: number) => {
                   const percent = total > 0 ? Math.round((value / total) * 100) : 0;
                   return [`${value} (${percent}%)`, ""];
@@ -149,23 +192,25 @@ const StatusChartsComponent = ({
           </ResponsiveContainer>
         </div>
 
-        <div className="mt-4 flex flex-wrap justify-center gap-x-4 gap-y-2 text-xs text-slate-600" dir="rtl">
+        <div className="mt-5 flex flex-wrap justify-center gap-x-5 gap-y-2.5 text-xs" dir="rtl">
           {normalizedStatusData.map((entry, index) => (
-            <div
+            <button
+              type="button"
               key={entry.key ?? entry.label ?? index}
-              className="flex items-center gap-2 cursor-pointer transition-opacity shrink-0"
+              className="flex items-center gap-2 cursor-pointer transition-all duration-200 rounded-lg px-2 py-1 hover:bg-zinc-800/50"
               style={{
-                opacity: activeIndex !== undefined && activeIndex !== index ? 0.5 : 1,
+                opacity: activeIndex !== undefined && activeIndex !== index ? 0.4 : 1,
               }}
               onMouseEnter={() => setActiveIndex(index)}
               onMouseLeave={() => setActiveIndex(undefined)}
             >
               <span
-                className="h-2.5 w-2.5 rounded-full shrink-0"
+                className="h-2.5 w-2.5 rounded-full shrink-0 ring-1 ring-zinc-700"
                 style={{ backgroundColor: getStatusColor(entry.key, dictionary) }}
               />
-              <span>{entry.label}</span>
-            </div>
+              <span className="text-zinc-300">{entry.label}</span>
+              <span className="text-zinc-500 font-mono">({entry.value})</span>
+            </button>
           ))}
         </div>
       </div>
@@ -174,36 +219,58 @@ const StatusChartsComponent = ({
 
   const renderThroughputBars = () => {
     if (isLoading) {
-      return <p className="text-sm text-slate-500">טוען נתוני תפוקה...</p>;
+      return (
+        <div className="flex items-center justify-center h-64">
+          <div className="flex flex-col items-center gap-3">
+            <div className="relative h-8 w-8">
+              <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-amber-500" />
+            </div>
+            <p className="text-sm text-zinc-500">טוען נתוני תפוקה...</p>
+          </div>
+        </div>
+      );
     }
 
     if (normalizedThroughput.length === 0) {
-      return <p className="text-sm text-slate-500">אין נתוני תפוקה להצגה.</p>;
+      return (
+        <div className="flex flex-col items-center justify-center h-64">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-zinc-800/50 mb-4">
+            <BarChart3 className="h-6 w-6 text-zinc-600" />
+          </div>
+          <p className="text-sm text-zinc-400">אין נתוני תפוקה להצגה</p>
+        </div>
+      );
     }
 
     return (
       <div dir="ltr" className="w-full overflow-visible [direction:ltr]">
         <div className="flex justify-center">
-          <ResponsiveContainer width="100%" height={280} className="sm:h-[320px]">
+          <ResponsiveContainer width="100%" height={300}>
             <BarChart
               data={normalizedThroughput}
-              margin={{ top: 12, right: 12, bottom: 24, left: 12 }}
-              barCategoryGap={18}
+              margin={{ top: 16, right: 16, bottom: 28, left: 16 }}
+              barCategoryGap={20}
             >
-              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#27272a" />
               <XAxis
                 dataKey="label"
-                tick={{ fontSize: 11, fill: "#475569" }}
+                tick={{ fontSize: 11, fill: "#71717a" }}
                 interval={0}
+                axisLine={{ stroke: "#27272a" }}
+                tickLine={{ stroke: "#27272a" }}
               />
               <YAxis
                 type="number"
-                tick={{ fontSize: 11, fill: "#475569" }}
+                tick={{ fontSize: 11, fill: "#71717a" }}
                 allowDecimals={false}
+                axisLine={{ stroke: "#27272a" }}
+                tickLine={{ stroke: "#27272a" }}
               />
               <Tooltip
-                cursor={{ fill: "rgba(15, 23, 42, 0.05)" }}
+                cursor={{ fill: "rgba(39, 39, 42, 0.5)" }}
                 contentStyle={tooltipStyle}
+                itemStyle={{ color: "#fafafa" }}
+                labelStyle={{ color: "#a1a1aa", marginBottom: "4px" }}
                 formatter={(value, name) =>
                   [value as number, name === "good" ? "כמות תקינה" : "כמות פסולה"]
                 }
@@ -229,20 +296,20 @@ const StatusChartsComponent = ({
           </ResponsiveContainer>
         </div>
 
-        <div className="mt-3 flex justify-center gap-4 text-xs text-slate-600" dir="rtl">
+        <div className="mt-4 flex justify-center gap-6 text-xs" dir="rtl">
           <div className="flex items-center gap-2">
             <span
-              className="h-2.5 w-2.5 rounded-full shrink-0"
+              className="h-2.5 w-2.5 rounded-full shrink-0 ring-1 ring-zinc-700"
               style={{ backgroundColor: throughputColors.good }}
             />
-            <span>כמות תקינה</span>
+            <span className="text-zinc-300">כמות תקינה</span>
           </div>
           <div className="flex items-center gap-2">
             <span
-              className="h-2.5 w-2.5 rounded-full shrink-0"
+              className="h-2.5 w-2.5 rounded-full shrink-0 ring-1 ring-zinc-700"
               style={{ backgroundColor: throughputColors.scrap }}
             />
-            <span>כמות פסולה</span>
+            <span className="text-zinc-300">כמות פסולה</span>
           </div>
         </div>
       </div>
@@ -250,26 +317,14 @@ const StatusChartsComponent = ({
   };
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 gap-4 lg:gap-6 xl:grid-cols-2">
-        <Card className="overflow-hidden">
-          <CardHeader className="px-4 pb-3 pt-4 sm:px-6 sm:pt-6">
-            <CardTitle className="text-base sm:text-lg">פיזור סטטוסים</CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4 sm:px-6 sm:pb-6">
-            {renderStatusPie()}
-          </CardContent>
-        </Card>
+    <div className="grid grid-cols-1 gap-4 lg:gap-6 xl:grid-cols-2">
+      <ChartCard title="פיזור סטטוסים" icon={PieChartIcon}>
+        {renderStatusPie()}
+      </ChartCard>
 
-        <Card className="overflow-hidden">
-          <CardHeader className="px-4 pb-3 pt-4 sm:px-6 sm:pt-6">
-            <CardTitle className="text-base sm:text-lg">תפוקה לפי תחנה</CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4 sm:px-6 sm:pb-6">
-            {renderThroughputBars()}
-          </CardContent>
-        </Card>
-      </div>
+      <ChartCard title="תפוקה לפי תחנה" icon={BarChart3}>
+        {renderThroughputBars()}
+      </ChartCard>
     </div>
   );
 };

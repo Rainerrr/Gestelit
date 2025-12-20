@@ -13,7 +13,6 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
 import { Plus, Trash2 } from "lucide-react";
 import type {
   Station,
@@ -68,7 +67,7 @@ const ColorDot = ({
     aria-label={`בחר צבע ${hex}`}
     onClick={onSelect}
     className={`h-5 w-5 rounded-full border transition hover:scale-105 ${
-      isActive ? "ring-2 ring-offset-2 ring-sky-400 border-sky-400" : "border-slate-200"
+      isActive ? "ring-2 ring-offset-2 ring-offset-zinc-900 ring-amber-400 border-amber-400" : "border-zinc-600"
     }`}
     style={{ backgroundColor: hex }}
   />
@@ -96,7 +95,7 @@ const ColorDotPicker = ({
       aria-expanded={isOpen}
       onClick={onToggle}
       disabled={disabled}
-      className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white transition hover:scale-105 disabled:opacity-50"
+      className="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-600 bg-zinc-800 transition hover:scale-105 disabled:opacity-50"
     >
       <span
         aria-hidden
@@ -105,7 +104,7 @@ const ColorDotPicker = ({
       />
     </button>
     {isOpen ? (
-      <div className="absolute right-0 top-full z-10 mt-2 grid grid-cols-5 gap-2 rounded-md border border-slate-200 bg-white p-2 shadow-md">
+      <div className="absolute right-0 top-full z-10 mt-2 grid grid-cols-5 gap-2 rounded-md border border-zinc-700 bg-zinc-800 p-2 shadow-md">
         {ALLOWED_STATUS_COLORS.map((hex) => (
           <ColorDot
             key={hex}
@@ -495,15 +494,15 @@ export const StationFormDialog = ({
   return (
     <Dialog open={controlledOpen} onOpenChange={handleDialogOpenChange}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="text-right w-[880px] max-w-5xl">
+      <DialogContent className="text-right w-[880px] max-w-5xl border-zinc-800 bg-zinc-900">
         <DialogHeader>
-          <DialogTitle>{dialogTitle}</DialogTitle>
+          <DialogTitle className="text-zinc-100">{dialogTitle}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           {error && (
             <Alert
               variant="destructive"
-              className="border-red-200 bg-red-50 text-right text-sm text-red-700"
+              className="border-red-500/30 bg-red-500/10 text-right text-sm text-red-400"
             >
               <AlertDescription>{error}</AlertDescription>
             </Alert>
@@ -511,41 +510,43 @@ export const StationFormDialog = ({
           {warningMessage && (
             <Alert
               variant="destructive"
-              className="border-amber-200 bg-amber-50 text-right text-sm text-amber-800"
+              className="border-amber-500/30 bg-amber-500/10 text-right text-sm text-amber-400"
             >
               <AlertDescription>{warningMessage}</AlertDescription>
             </Alert>
           )}
           {successMessage && (
-            <Alert className="border-emerald-200 bg-emerald-50 text-right text-sm text-emerald-800">
+            <Alert className="border-emerald-500/30 bg-emerald-500/10 text-right text-sm text-emerald-400">
               <div className="flex items-center gap-2">
-                <CheckCircle2 className="h-4 w-4" />
+                <CheckCircle2 className="h-4 w-4 text-emerald-400" />
                 <AlertDescription>{successMessage}</AlertDescription>
               </div>
             </Alert>
           )}
           <div className="space-y-2">
-            <Label htmlFor="station_name">שם תחנה</Label>
+            <Label htmlFor="station_name" className="text-zinc-200">שם תחנה</Label>
             <Input
               id="station_name"
               aria-label="שם תחנה"
               placeholder="לדוגמה: מכונת הדפסה A"
               value={name}
               onChange={(event) => setName(event.target.value)}
+              className="border-zinc-700 bg-zinc-800/80 text-zinc-100 placeholder:text-zinc-500"
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="station_code">קוד תחנה</Label>
+            <Label htmlFor="station_code" className="text-zinc-200">קוד תחנה</Label>
             <Input
               id="station_code"
               aria-label="קוד תחנה"
               placeholder="קוד ייחודי"
               value={code}
               onChange={handleCodeChange}
+              className="border-zinc-700 bg-zinc-800/80 text-zinc-100 placeholder:text-zinc-500"
             />
           </div>
           <div className="space-y-2">
-            <Label>סוג תחנה</Label>
+            <Label className="text-zinc-200">סוג תחנה</Label>
           <CreatableCombobox
             value={type}
             onChange={(value) => setType(value as StationType)}
@@ -557,11 +558,11 @@ export const StationFormDialog = ({
             inputId="station_type_input"
           />
           </div>
-          <div className="space-y-3 rounded-lg border border-slate-200 p-3">
+          <div className="space-y-3 rounded-lg border border-zinc-700 bg-zinc-800/50 p-3">
             <div className="flex items-center justify-between">
               <div className="text-right">
-                <p className="text-sm font-medium text-slate-900">סוגי תקלות</p>
-                <p className="text-xs text-slate-500">מוצגות לבחירת תקלה בתחנה זו</p>
+                <p className="text-sm font-medium text-zinc-200">סוגי תקלות</p>
+                <p className="text-xs text-zinc-500">מוצגות לבחירת תקלה בתחנה זו</p>
               </div>
               <Button
                 type="button"
@@ -570,12 +571,13 @@ export const StationFormDialog = ({
                 onClick={handleAddReason}
                 disabled={loading}
                 aria-label="הוספת סיבה"
+                className="border-zinc-600 bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
               >
                 <Plus className="h-4 w-4" />
               </Button>
             </div>
             {stationReasons.length === 0 ? (
-              <p className="rounded-md border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-right text-xs text-slate-500">
+              <p className="rounded-md border border-dashed border-zinc-700 bg-zinc-800/30 px-3 py-2 text-right text-xs text-zinc-500">
                 לא הוגדרו סוגי תקלות. הוסיפו סוג חדש כדי להתחיל.
               </p>
             ) : (
@@ -583,7 +585,7 @@ export const StationFormDialog = ({
                 {stationReasons.map((reason, index) => (
                   <div
                     key={reason.id}
-                    className="flex flex-nowrap items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2"
+                    className="flex flex-nowrap items-center gap-3 rounded-lg border border-zinc-700 bg-zinc-800/80 px-3 py-2"
                   >
                     <Label className="sr-only" htmlFor={`reason-he-${reason.id}`}>
                       תווית בעברית
@@ -598,7 +600,7 @@ export const StationFormDialog = ({
                         }
                         disabled={loading}
                         placeholder="לדוגמה: תקלה בהזנה"
-                        className="h-9 pr-10 pl-3 text-sm text-right"
+                        className="h-9 pr-10 pl-3 text-sm text-right border-zinc-600 bg-zinc-700/80 text-zinc-100 placeholder:text-zinc-500"
                       />
                       <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-lg">
                         🇮🇱
@@ -617,7 +619,7 @@ export const StationFormDialog = ({
                         }
                         disabled={loading}
                         placeholder="Например: проблема подачи"
-                        className="h-9 pr-10 pl-3 text-sm text-right"
+                        className="h-9 pr-10 pl-3 text-sm text-right border-zinc-600 bg-zinc-700/80 text-zinc-100 placeholder:text-zinc-500"
                       />
                       <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-lg">
                         🇷🇺
@@ -630,7 +632,7 @@ export const StationFormDialog = ({
                       aria-label="מחיקת סיבה"
                       onClick={() => handleDeleteReason(index)}
                       disabled={loading}
-                      className="text-rose-600 hover:text-rose-700"
+                      className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
@@ -639,11 +641,11 @@ export const StationFormDialog = ({
               </div>
             )}
           </div>
-          <div className="space-y-3 rounded-lg border border-slate-200 p-3">
+          <div className="space-y-3 rounded-lg border border-zinc-700 bg-zinc-800/50 p-3">
             <div className="flex items-center justify-between">
               <div className="text-right">
-                <p className="text-sm font-medium text-slate-900">סטטוסים לתחנה</p>
-                <p className="text-xs text-slate-500">
+                <p className="text-sm font-medium text-zinc-200">סטטוסים לתחנה</p>
+                <p className="text-xs text-zinc-500">
                   סטטוסים ספציפיים לתחנה זו (סטטוסים גלובליים זמינים כברירת מחדל)
                 </p>
               </div>
@@ -654,6 +656,7 @@ export const StationFormDialog = ({
                 onClick={addEmptyStatus}
               disabled={loading || isLoadingStatuses || isSavingStatuses}
               aria-label="הוספת סטטוס"
+              className="border-zinc-600 bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
               >
               <Plus className="h-4 w-4" />
               </Button>
@@ -661,17 +664,17 @@ export const StationFormDialog = ({
             {statusError ? (
               <Alert
                 variant="destructive"
-                className="border-rose-200 bg-rose-50 text-sm text-rose-700"
+                className="border-red-500/30 bg-red-500/10 text-sm text-red-400"
               >
                 <AlertDescription>{statusError}</AlertDescription>
               </Alert>
             ) : null}
             {isLoadingStatuses ? (
-              <p className="rounded-md border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-right text-xs text-slate-500">
+              <p className="rounded-md border border-dashed border-zinc-700 bg-zinc-800/30 px-3 py-2 text-right text-xs text-zinc-500">
                 טוען סטטוסים...
               </p>
             ) : stationStatuses.length === 0 ? (
-              <p className="rounded-md border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-right text-xs text-slate-500">
+              <p className="rounded-md border border-dashed border-zinc-700 bg-zinc-800/30 px-3 py-2 text-right text-xs text-zinc-500">
                 אין סטטוסים ייעודיים לתחנה זו.
               </p>
             ) : (
@@ -687,7 +690,7 @@ export const StationFormDialog = ({
                     return (
                       <div
                         key={status.id}
-                        className="flex flex-nowrap items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2"
+                        className="flex flex-nowrap items-center gap-3 rounded-lg border border-zinc-700 bg-zinc-800/80 px-3 py-2"
                       >
                         <Label className="sr-only">שם סטטוס</Label>
                         <div className="relative flex-1 min-w-[220px]">
@@ -698,7 +701,7 @@ export const StationFormDialog = ({
                             }
                             disabled={loading || isSavingStatuses}
                             placeholder="לדוגמה: עבודה רגילה"
-                            className="h-9 pr-10 pl-3 text-sm text-right"
+                            className="h-9 pr-10 pl-3 text-sm text-right border-zinc-600 bg-zinc-700/80 text-zinc-100 placeholder:text-zinc-500"
                             aria-label="שם סטטוס"
                           />
                           <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-lg">
@@ -714,7 +717,7 @@ export const StationFormDialog = ({
                             }
                             disabled={loading || isSavingStatuses}
                             placeholder="Например: Работа"
-                            className="h-9 pr-10 pl-3 text-sm text-right"
+                            className="h-9 pr-10 pl-3 text-sm text-right border-zinc-600 bg-zinc-700/80 text-zinc-100 placeholder:text-zinc-500"
                             aria-label="תווית ברוסית"
                           />
                           <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-lg">
@@ -736,7 +739,7 @@ export const StationFormDialog = ({
                           aria-label="מחיקת סטטוס"
                           onClick={() => handleRemoveStatus(status)}
                           disabled={loading || isSavingStatuses}
-                          className="text-rose-600 hover:text-rose-700"
+                          className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -746,22 +749,41 @@ export const StationFormDialog = ({
               </div>
             )}
           </div>
-          <div className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2">
-            <div>
-              <p className="text-sm font-medium text-slate-900">סטטוס</p>
-              <p className="text-xs text-slate-500">פעיל במערכת</p>
+          <div className="space-y-2">
+            <Label className="text-zinc-200">סטטוס</Label>
+            <div className="flex rounded-lg border border-zinc-700 bg-zinc-800/50 p-1">
+              <button
+                type="button"
+                onClick={() => setIsActive(true)}
+                className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-md text-sm font-medium transition-all ${
+                  isActive
+                    ? "bg-emerald-500 text-white shadow-sm"
+                    : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50"
+                }`}
+              >
+                <span className={`w-2 h-2 rounded-full ${isActive ? "bg-white" : "bg-zinc-500"}`} />
+                פעיל
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsActive(false)}
+                className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-md text-sm font-medium transition-all ${
+                  !isActive
+                    ? "bg-zinc-600 text-white shadow-sm"
+                    : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50"
+                }`}
+              >
+                <span className={`w-2 h-2 rounded-full ${!isActive ? "bg-white" : "bg-zinc-500"}`} />
+                לא פעיל
+              </button>
             </div>
-            <Switch
-              checked={isActive}
-              onCheckedChange={setIsActive}
-              aria-label="סטטוס תחנה"
-            />
           </div>
         </div>
         <DialogFooter className="justify-start">
           <Button
             onClick={() => void handleSubmit()}
             disabled={loading || isSavingStatuses}
+            className="bg-amber-500 text-zinc-900 hover:bg-amber-400 font-medium"
           >
             {loading || isSavingStatuses ? "שומר..." : "שמור"}
           </Button>
@@ -769,6 +791,7 @@ export const StationFormDialog = ({
             variant="outline"
             onClick={() => handleDialogOpenChange(false)}
             disabled={loading}
+            className="border-zinc-700 bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100"
           >
             ביטול
           </Button>

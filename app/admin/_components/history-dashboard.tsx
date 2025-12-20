@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { AdminLayout } from "./admin-layout";
 import { HistoryFilters, type HistoryFiltersState } from "./history-filters";
 import {
@@ -32,6 +31,8 @@ import {
   getStatusScopeFromDictionary,
   useStatusDictionary,
 } from "./status-dictionary";
+
+const SESSIONS_PAGE_SIZE = 50;
 
 type Option = { id: string; label: string };
 
@@ -70,6 +71,7 @@ export const HistoryDashboard = () => {
     key: "endedAt",
     direction: "desc",
   });
+  const [sessionsPageIndex, setSessionsPageIndex] = useState(0);
   const stationIds = useMemo(
     () =>
       Array.from(
@@ -121,9 +123,10 @@ export const HistoryDashboard = () => {
           workerId: nextFilters.workerId,
           stationId: nextFilters.stationId,
           jobNumber: nextFilters.jobNumber?.trim(),
-          limit: 120,
+          limit: 500,
         });
         setSessions(data);
+        setSessionsPageIndex(0);
       } catch (error) {
         console.error("[history-dashboard] failed to fetch sessions", error);
         setSessions([]);
@@ -400,6 +403,29 @@ export const HistoryDashboard = () => {
     return list;
   }, [sessions, sort]);
 
+  const sessionsTotalPages = useMemo(
+    () => Math.max(1, Math.ceil(sortedSessions.length / SESSIONS_PAGE_SIZE)),
+    [sortedSessions.length],
+  );
+
+  const paginatedSessions = useMemo(() => {
+    const start = sessionsPageIndex * SESSIONS_PAGE_SIZE;
+    return sortedSessions.slice(start, start + SESSIONS_PAGE_SIZE);
+  }, [sortedSessions, sessionsPageIndex]);
+
+  const handleSessionsPrevPage = () => {
+    setSessionsPageIndex((prev) => Math.max(0, prev - 1));
+  };
+
+  const handleSessionsNextPage = () => {
+    setSessionsPageIndex((prev) => Math.min(sessionsTotalPages - 1, prev + 1));
+  };
+
+  const sessionsPageLabel = useMemo(
+    () => `${sessionsPageIndex + 1} / ${sessionsTotalPages}`,
+    [sessionsPageIndex, sessionsTotalPages],
+  );
+
   const handleToggleRow = (id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -437,7 +463,10 @@ export const HistoryDashboard = () => {
     try {
       const response = await fetch("/api/admin/sessions/delete", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Admin-Password": window.localStorage.getItem("adminPassword") || "",
+        },
         body: JSON.stringify({ ids: Array.from(selectedIds) }),
       });
       if (!response.ok) {
@@ -473,9 +502,9 @@ export const HistoryDashboard = () => {
 
   if (hasAccess === null) {
     return (
-      <Card className="flex min-h-[60vh] items-center justify-center border border-slate-200 text-slate-600">
+      <div className="flex min-h-[60vh] items-center justify-center text-zinc-400">
         טוען נתוני דוחות...
-      </Card>
+      </div>
     );
   }
 
@@ -489,11 +518,11 @@ export const HistoryDashboard = () => {
         <div className="flex flex-col gap-3 text-right">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="space-y-1 text-right">
-              <p className="text-xs text-slate-500">היסטוריה ודוחות</p>
-              <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">
+              <p className="text-xs text-zinc-500">היסטוריה ודוחות</p>
+              <h1 className="text-xl font-semibold text-zinc-100 sm:text-2xl">
                 מעקב עבודות שהושלמו
               </h1>
-              <p className="text-xs text-slate-500 sm:text-sm">
+              <p className="text-xs text-zinc-500 sm:text-sm">
                 פילוח עבודות סגורות, חיפוש לפי עובד, תחנה ופק&quot;ע.
               </p>
             </div>
@@ -501,7 +530,7 @@ export const HistoryDashboard = () => {
               variant="outline"
               onClick={() => setFilters({})}
               aria-label="איפוס מסננים"
-              className="w-full sm:w-auto"
+              className="w-full sm:w-auto border-zinc-700 bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100"
               size="sm"
             >
               איפוס
@@ -519,39 +548,7 @@ export const HistoryDashboard = () => {
           onChange={setFilters}
         />
 
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="text-right">
-              <p className="text-sm text-slate-700">עבודות שהושלמו</p>
-              {deleteError ? (
-                <p className="text-sm text-rose-600">{deleteError}</p>
-              ) : null}
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="destructive"
-                disabled={selectedIds.size === 0 || isDeleting}
-                onClick={handleDeleteSelected}
-                aria-label="מחיקת עבודות שנבחרו"
-              >
-                {isDeleting ? "מוחק..." : "מחיקת נבחרים"}
-              </Button>
-            </div>
-          </div>
-
-          <RecentSessionsTable
-            sessions={sortedSessions}
-            isLoading={isLoading || isStatusesLoading}
-            selectedIds={selectedIds}
-            onToggleRow={handleToggleRow}
-            onToggleAll={handleToggleAll}
-            sortKey={sort.key}
-            sortDirection={sort.direction}
-            onSort={handleSort}
-            dictionary={dictionary}
-          />
-        </div>
-
+        {/* Charts section - moved above table */}
         <HistoryCharts
           statusData={statusData}
           throughputData={throughputData}
@@ -572,6 +569,67 @@ export const HistoryDashboard = () => {
           pageLabel={pageLabel}
           dictionary={dictionary}
         />
+
+        {/* Sessions table section */}
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="text-right">
+              <p className="text-sm text-zinc-300">עבודות שהושלמו</p>
+              <p className="text-xs text-zinc-500">{sessions.length} עבודות</p>
+              {deleteError ? (
+                <p className="text-sm text-red-400">{deleteError}</p>
+              ) : null}
+            </div>
+            <div className="flex items-center gap-3">
+              {/* Pagination controls */}
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleSessionsPrevPage}
+                  disabled={sessionsPageIndex === 0}
+                  className="border-zinc-700 bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-50"
+                >
+                  הקודם
+                </Button>
+                <span className="text-sm text-zinc-400 min-w-[60px] text-center">
+                  {sessionsPageLabel}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleSessionsNextPage}
+                  disabled={sessionsPageIndex >= sessionsTotalPages - 1}
+                  className="border-zinc-700 bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-50"
+                >
+                  הבא
+                </Button>
+              </div>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={selectedIds.size === 0 || isDeleting}
+                onClick={handleDeleteSelected}
+                aria-label="מחיקת עבודות שנבחרו"
+                className="bg-red-600 hover:bg-red-700"
+              >
+                {isDeleting ? "מוחק..." : `מחיקת נבחרים (${selectedIds.size})`}
+              </Button>
+            </div>
+          </div>
+
+          <RecentSessionsTable
+            sessions={paginatedSessions}
+            isLoading={isLoading || isStatusesLoading}
+            selectedIds={selectedIds}
+            onToggleRow={handleToggleRow}
+            onToggleAll={handleToggleAll}
+            sortKey={sort.key}
+            sortDirection={sort.direction}
+            onSort={handleSort}
+            dictionary={dictionary}
+          />
+        </div>
       </div>
     </AdminLayout>
   );

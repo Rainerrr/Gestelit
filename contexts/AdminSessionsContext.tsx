@@ -73,6 +73,7 @@ const sessionChanged = (a: ActiveSession, b: ActiveSession): boolean =>
   a.totalScrap !== b.totalScrap ||
   a.lastStatusChangeAt !== b.lastStatusChangeAt ||
   a.forcedClosedAt !== b.forcedClosedAt ||
+  a.lastSeenAt !== b.lastSeenAt ||
   a.jobId !== b.jobId ||
   a.stationId !== b.stationId ||
   a.workerId !== b.workerId ||

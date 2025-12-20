@@ -1,6 +1,6 @@
 # Gestelit Work Monitor – Architecture Overview
 
-> Updated: 2025‑12‑15  
+> Updated: 2025‑12‑15 (last major update: Status Definitions System, Streaming API, Image Uploads)  
 > Context: Next.js 16 + React 19 (App Router), Tailwind, shadcn/ui, Supabase
 
 ## 1. High-Level Structure
@@ -82,8 +82,10 @@
 **Server-Side Functions**: `lib/data/admin-dashboard.ts` contains the actual data fetching logic using `createServiceSupabase()` (service role client that bypasses RLS).
 
 **Realtime**: 
-- Admin dashboard uses polling (every 5 seconds) instead of realtime subscriptions, since browser client is subject to RLS.
-- `sessions.current_status` mirrors the latest `status_events` row for efficient queries.
+- Admin dashboard supports two modes:
+  - **Polling** (default): Polls `/api/admin/dashboard/active-sessions` every 5 seconds (used when browser client is subject to RLS).
+  - **Streaming** (optional): Uses `/api/admin/dashboard/active-sessions/stream` for Server-Sent Events (SSE) with Supabase Realtime subscription for true real-time updates.
+- `sessions.current_status_id` mirrors the latest `status_events.status_definition_id` for efficient queries.
 
 **UI Components**:
 - `KpiCards`: counts for total active jobs, machines in production, machines stopped/faulted, total good output.
@@ -209,9 +211,11 @@
 - **`jobs`** – job metadata:
   - `id`, `job_number` (unique), `customer_name`, `description`, `planned_quantity`, timestamps.
 - **`sessions`** – active work sessions (links worker/station/job):
-  - `id`, `worker_id`, `station_id`, `job_id`, `status` (active/completed/aborted), `started_at`, `ended_at`, `total_good`, `total_scrap`, `start_checklist_completed`, `end_checklist_completed`, `last_seen_at`, `forced_closed_at`, `current_status`, `last_status_change_at`, `worker_full_name_snapshot`, `worker_code_snapshot`, `station_name_snapshot`, `station_code_snapshot`, timestamps.
+  - `id`, `worker_id`, `station_id`, `job_id`, `status` (active/completed/aborted), `started_at`, `ended_at`, `total_good`, `total_scrap`, `start_checklist_completed`, `end_checklist_completed`, `last_seen_at`, `forced_closed_at`, `current_status_id` (UUID, references `status_definitions.id`), `last_status_change_at`, `worker_full_name_snapshot`, `worker_code_snapshot`, `station_name_snapshot`, `station_code_snapshot`, timestamps.
 - **`status_events`** – timeline of state changes:
-  - `id`, `session_id`, `status` (setup/production/stopped/fault/waiting_client/plate_change), `station_reason_id` (string, references station's `station_reasons` JSON), `note`, `image_url`, `started_at`, `ended_at`, timestamps.
+  - `id`, `session_id`, `status_definition_id` (UUID, references `status_definitions.id`), `station_reason_id` (string, references station's `station_reasons` JSON), `note`, `image_url`, `started_at`, `ended_at`, timestamps.
+- **`status_definitions`** – configurable status definitions (replaces hardcoded enum):
+  - `id` (UUID), `scope` (global/station), `station_id` (nullable, required if scope=station), `label_he`, `label_ru` (nullable), `color_hex` (constrained to 15 allowed palette colors), `created_at`, `updated_at`.
 - **`malfunctions`** – malfunction records:
   - `id`, `station_id`, `station_reason_id` (string), `description`, `image_url`, timestamps.
 - **`worker_stations`** – M2M worker ↔ station assignments:
@@ -223,13 +227,17 @@
 - `station_type`: 'prepress', 'digital_press', 'offset', 'folding', 'cutting', 'binding', 'shrink', 'lamination', 'other'
 - `session_status`: 'active', 'completed', 'aborted'
 - `checklist_kind`: 'start', 'end'
-- `status_event_state`: 'setup', 'production', 'stopped', 'fault', 'waiting_client', 'plate_change'
+- `status_scope`: 'global', 'station' (used in `status_definitions.scope`)
+
+**Note**: The `status_event_state` enum has been replaced by the `status_definitions` table. Status events now reference `status_definition_id` (UUID) instead of enum values. This allows for configurable, station-scoped status definitions.
 
 ### 4.3 Schema Notes
 
 - **Station-scoped reasons**: Each station owns `station_reasons` JSON array. Built-in default: `{ id: "general-malfunction", label_he: "תקלת כללית", label_ru: "Общая неисправность", is_active: true }`. Always included in active reasons list.
 - **Session snapshots**: `worker_full_name_snapshot`, `worker_code_snapshot`, `station_name_snapshot`, `station_code_snapshot` preserve names at session creation for historical accuracy.
-- **Status mirroring**: `sessions.current_status` and `last_status_change_at` mirror the latest `status_events` row for efficient realtime queries (single table subscription).
+- **Status Definitions System**: Status definitions are stored in the `status_definitions` table and can be either global (available to all stations) or station-scoped (specific to a station). When creating a session, the system selects the first global status definition as the initial status. Status events reference `status_definition_id` instead of hardcoded enum values. The "אחר" (Other) status label is reserved for global scope only.
+- **Status mirroring**: `sessions.current_status_id` and `last_status_change_at` mirror the latest `status_events` row for efficient realtime queries (single table subscription). The `current_status_id` references `status_definitions.id`.
+- **Status color palette**: Status definitions are constrained to 15 allowed hex colors: `#10b981`, `#f59e0b`, `#f97316`, `#ef4444`, `#3b82f6`, `#8b5cf6`, `#06b6d4`, `#14b8a6`, `#84cc16`, `#eab308`, `#ec4899`, `#6366f1`, `#0ea5e9`, `#64748b`, `#94a3b8` (default).
 
 ### 4.4 Row Level Security (RLS)
 
@@ -242,7 +250,7 @@ RLS is enabled on all tables to protect against unauthorized direct database acc
 - **Anonymous Access**: Limited to specific read operations:
   - `stations`: Can view active stations only (`is_active = true`).
   - `jobs`: Can read and create jobs (needed for session creation).
-  - `status_definitions`: Can read all status definitions.
+  - `status_definitions`: Can read all status definitions (needed for worker UI to fetch available statuses).
   - `malfunctions`: Can create and read malfunctions.
 - **Workers, Sessions, Status Events**: No anonymous access (service role only).
 
@@ -294,8 +302,9 @@ RLS is enabled on all tables to protect against unauthorized direct database acc
 |-------|--------|---------|-----------|------|
 | `/api/status-events` | POST | Create status event | `startStatusEvent`, closes open event, inserts new, mirrors on `sessions` | `requireSessionOwnership` |
 | `/api/reasons` | GET | Get active reasons for station | `getStationActiveReasons`, requires `?stationId=`, returns station's active reasons | None (public) |
-| `/api/malfunctions` | POST | Create malfunction record | Inserts into `malfunctions` table | None (public) |
+| `/api/malfunctions` | POST | Create malfunction record with optional image | `createMalfunction`, uploads image to Supabase Storage bucket `malfunction-images` if provided | None (public) |
 | `/api/stations` | GET | Get stations for worker | `fetchStationsForWorker`, requires `?workerId=` | `requireWorkerOwnership` |
+| `/api/statuses` | GET | Get active status definitions for station | `fetchActiveStatusDefinitions`, requires `?stationId=`, returns global + station-scoped statuses | None (public) |
 
 ### 5.6 Admin Routes
 
@@ -306,13 +315,19 @@ RLS is enabled on all tables to protect against unauthorized direct database acc
 | `/api/admin/auth/login` | POST | Validate admin password | Checks password against `ADMIN_PASSWORD` env var |
 | `/api/admin/auth/change-password` | POST | Change admin password | Validates current password, returns instructions to update env var |
 | `/api/admin/dashboard/active-sessions` | GET | Get all active sessions | Uses service role, bypasses RLS |
+| `/api/admin/dashboard/active-sessions/stream` | GET | Server-Sent Events stream for active sessions | Real-time SSE stream with Supabase Realtime subscription, sends initial data + updates | `requireAdminPassword` |
 | `/api/admin/dashboard/recent-sessions` | GET | Get completed sessions | Uses service role, supports filters (workerId, stationId, jobNumber, limit) |
 | `/api/admin/dashboard/status-events` | POST | Get status events for sessions | Uses service role, accepts array of session IDs |
 | `/api/admin/dashboard/monthly-throughput` | GET | Get monthly job throughput | Uses service role, supports filters |
 | `/api/admin/workers` | GET, POST | List/create workers | `fetchAllWorkers`, validates uniqueness |
 | `/api/admin/workers/[id]` | PUT, DELETE | Update/delete worker | Soft delete if no active sessions |
+| `/api/admin/workers/[id]/active-session` | GET | Check if worker has active session | Returns `{ hasActiveSession: boolean }` | `requireAdminPassword` |
 | `/api/admin/stations` | GET, POST | List/create stations | `fetchAllStations`, validates uniqueness |
 | `/api/admin/stations/[id]` | PUT, DELETE | Update/delete station | Soft delete if no active sessions |
+| `/api/admin/stations/[id]/active-session` | GET | Check if station has active session | Returns `{ hasActiveSession: boolean }` | `requireAdminPassword` |
+| `/api/admin/status-definitions` | GET, POST | List/create status definitions | `fetchStatusDefinitionsByStationIds`, `createStatusDefinition`, supports `?stationId=` or `?stationIds=` filters | `requireAdminPassword` |
+| `/api/admin/status-definitions/[id]` | PUT, DELETE | Update/delete status definition | `updateStatusDefinition`, `deleteStatusDefinition` (reassigns in-use statuses to "אחר" fallback) | `requireAdminPassword` |
+| `/api/admin/status-definitions/purge` | POST | Purge all station-scoped status definitions | Deletes unused station statuses, optionally reassigns in-use ones to fallback (`?confirm=true&fallback=global` or `?fallbackId=<uuid>`) | `requireAdminPassword` |
 | `/api/admin/worker-stations` | GET, POST, DELETE | Manage worker-station assignments | Prevents duplicates |
 | `/api/admin/departments` | GET, DELETE | List/clear departments | Derived from workers table |
 | `/api/admin/station-types` | GET | Get station type enum values | Returns enum options |
@@ -348,21 +363,24 @@ RLS is enabled on all tables to protect against unauthorized direct database acc
 
 Centralizes Supabase queries for reuse across API routes and edge functions:
 
-- **`sessions.ts`**: `createSession`, `markSessionStarted`, `completeSession`, `updateSessionTotals`, `recordSessionHeartbeat`, `fetchActiveSessionForWorker`, `startStatusEvent` (closes open events, mirrors status).
-- **`admin-dashboard.ts`**: `fetchActiveSessions`, `fetchRecentSessions`, `fetchStatusEventsBySessionIds`, `fetchMonthlyJobThroughput`, `subscribeToActiveSessions`.
+- **`sessions.ts`**: `createSession`, `markSessionStarted`, `completeSession`, `updateSessionTotals`, `recordSessionHeartbeat`, `getGracefulActiveSession`, `abandonActiveSession`, `startStatusEvent` (closes open events, validates status against station definitions, mirrors status), `getInitialStatusId` (selects first global status for new sessions).
+- **`admin-dashboard.ts`**: `fetchActiveSessions`, `fetchActiveSessionById`, `fetchRecentSessions`, `fetchStatusEventsBySessionIds`, `fetchMonthlyJobThroughput`, `subscribeToActiveSessions`.
 - **`admin-management.ts`**: `fetchAllWorkers`, `fetchAllStations`, `fetchWorkerStationAssignments`, `fetchDepartmentList`.
 - **`workers.ts`**: `fetchWorkerByCode`, `listWorkers`.
-- **`stations.ts`**: `fetchStationsForWorker`, `getStationActiveReasons`.
-- **`jobs.ts`**: `getOrCreateJob`.
+- **`stations.ts`**: `fetchStationsForWorker`, `getStationById`, `getStationActiveReasons`.
+- **`jobs.ts`**: `findJobByNumber`, `getOrCreateJob`.
 - **`checklists.ts`**: `fetchChecklist`.
+- **`status-definitions.ts`**: `fetchActiveStatusDefinitions`, `fetchStatusDefinitionsByStationIds`, `createStatusDefinition`, `updateStatusDefinition`, `deleteStatusDefinition` (with fallback reassignment), `ensureGlobalOtherStatus` (ensures "אחר" status exists).
+- **`malfunctions.ts`**: `createMalfunction`.
 
 ### 7.2 Client API Layer (`lib/api/**`)
 
 Browser-side fetch wrappers with consistent error handling:
 
-- **`client.ts`**: Worker-facing APIs (`createJobSessionApi`, `fetchChecklistApi`, `startStatusEventApi`, `updateSessionTotalsApi`, `completeSessionApi`, `createMalfunctionApi`, etc.). Automatically includes `X-Worker-Id` header from `localStorage`.
+- **`client.ts`**: Worker-facing APIs (`createJobSessionApi`, `fetchChecklistApi`, `startStatusEventApi`, `updateSessionTotalsApi`, `completeSessionApi`, `createMalfunctionApi`, `fetchWorkerActiveSessionApi`, etc.). Automatically includes `X-Worker-Id` header from `localStorage`.
 - **`admin-management.ts`**: Admin CRUD APIs (`fetchWorkersAdminApi`, `createWorkerApi`, `updateWorkerApi`, `deleteWorkerApi`, etc.) plus dashboard APIs (`fetchActiveSessionsAdminApi`, `fetchRecentSessionsAdminApi`, `fetchStatusEventsAdminApi`, `fetchMonthlyJobThroughputAdminApi`). Automatically includes `X-Admin-Password` header from `localStorage`.
 - **`auth-helpers.ts`**: Helper functions for managing authentication state in `localStorage` (`getAdminPassword`, `setAdminPassword`, `clearAdminPassword`, `getWorkerCode`, `setWorkerCode`).
+- **`lib/utils/storage.ts`**: Image upload utilities (`uploadImageToStorage`) for Supabase Storage with validation (file type, size limit 5MB).
 
 ### 7.3 Supabase Clients
 
@@ -482,52 +500,75 @@ This provides application-level security even though service role bypasses RLS.
    - `/api/reasons` is station-scoped (`?stationId=`) and returns active station reasons (default included).
    - Admin "סוגי תקלות" list edits station-level reasons; default reason is hidden but injected on save with server-side validation.
 
-6. **Admin Dashboard MVP (Dec 3, 2025)**  
+6. **Status Definitions System (Dec 12, 2025)**
+   - Replaced hardcoded `status_event_state` enum with configurable `status_definitions` table.
+   - Status definitions can be global (available to all stations) or station-scoped (specific to a station).
+   - `status_events.status_definition_id` (UUID) replaces `status_events.status` (enum).
+   - `sessions.current_status_id` (UUID) replaces `sessions.current_status` (string).
+   - Status definitions include Hebrew/Russian labels, color (constrained to 15 allowed palette colors), and scope.
+   - "אחר" (Other) status is reserved for global scope only and serves as fallback when deleting statuses in use.
+   - Admin can create, update, and delete status definitions via `/api/admin/status-definitions`.
+   - Worker UI fetches active status definitions via `/api/statuses?stationId=` (returns global + station-scoped).
+   - When creating a session, system automatically selects the first global status definition as initial status.
+
+7. **Malfunction Image Upload (Dec 2025)**
+   - Malfunctions can now include images uploaded to Supabase Storage bucket `malfunction-images`.
+   - Images are validated (type, max 5MB) and stored with path prefix based on `stationId`.
+   - Image upload handled by `lib/utils/storage.ts` using service role client.
+
+8. **Admin Dashboard Streaming API (Dec 2025)**
+   - Added `/api/admin/dashboard/active-sessions/stream` endpoint for Server-Sent Events (SSE).
+   - Provides real-time updates via Supabase Realtime subscription to `sessions` table.
+   - Sends initial data on connection, then streams insert/update/delete events.
+   - Includes keep-alive heartbeat every 25 seconds.
+   - Alternative to polling for better real-time experience.
+
+9. **Admin Dashboard MVP (Dec 3, 2025)**  
    - Added `/admin` route, RTL layout, KPIs, active sessions table, charts, and recent sessions panel.  
    - Now uses API routes instead of direct Supabase calls (updated Dec 15, 2025).
 
-7. **History Dashboard (Dec 2025)**
+10. **History Dashboard (Dec 2025)**
    - Added `/admin/history` route with filtering, sortable sessions table, status distribution charts, monthly throughput charts, and session timeline dialogs.
    - Bulk delete functionality for selected sessions.
    - Now uses API routes for data fetching (updated Dec 15, 2025).
 
-8. **Admin Management (Dec 2025)**
+11. **Admin Management (Dec 2025)**
    - Added `/admin/manage` route for CRUD operations on workers, stations, worker-station assignments, and departments.
    - Station checklist editing via JSON editor.
    - Department management (derived from workers table).
    - All routes now protected with admin password validation (updated Dec 15, 2025).
 
-9. **Session Timeline (Dec 2025)**
+12. **Session Timeline (Dec 2025)**
    - Visual timeline component with status segments, time ticks, and realtime updates.
    - Collapses rapid status switches for readability.
    - Integrated into admin dashboard and history dashboard via dialogs.
 
-10. **Timer Synchronization**  
+13. **Timer Synchronization**  
     - Worker timer now uses persisted `sessionStartedAt`.  
     - Admin timer uses server-side `started_at` with 1-second updates.
 
-11. **Checklist & Session Start Flow**  
+14. **Checklist & Session Start Flow**  
     - Start checklist submission now:  
       1. Validates client-side that all required checklist items are checked.  
       2. Server marks session officially started via `markSessionStarted` and sets `start_checklist_completed = true` on the `sessions` row.  
       3. Client sets start timestamp and sends default `"stopped"` status event.  
     - No individual checklist answers are persisted; only the fact that the start checklist was completed.
 
-12. **Realtime Status Reliability**  
+15. **Realtime Status Reliability**  
     - Admin dashboard uses polling (every 5 seconds) instead of realtime subscriptions due to RLS restrictions.
     - `status_events` subscription still used for session timeline views.
 
-13. **Force-Close Utility**  
+16. **Force-Close Utility**  
     - `/api/admin/sessions/close-all` to terminate stuck sessions during demos/tests.
     - `/api/admin/sessions/delete` for bulk deletion of completed sessions.
 
-14. **Session Lifecycle Guard**  
+17. **Session Lifecycle Guard**  
     - Workers ping `/api/sessions/heartbeat` every 15 seconds and send `navigator.sendBeacon` on tab close so `last_seen_at` stays updated.  
     - Supabase cron (`close-idle-sessions`) closes sessions not seen for more than 5 minutes, marks `forced_closed_at`, and updates status to `stopped`.  
     - Worker login screen offers "חזרה לעבודה פעילה" dialog with 5-minute timer to resume open work before it auto-closes.  
     - Every status change updates `current_status` and `last_status_change_at` fields on `sessions` table so admin screens receive data through a single channel.
 
-15. **Session Snapshots**
+18. **Session Snapshots**
     - Added snapshot columns (`worker_full_name_snapshot`, `worker_code_snapshot`, `station_name_snapshot`, `station_code_snapshot`) to preserve names at session creation for historical accuracy.
 
 ## 12. Known Issues / Follow-ups
@@ -570,8 +611,10 @@ This provides application-level security even though service role bypasses RLS.
 
 - **Data Flow**:
   - Status events must always close the previous event before opening a new one; use `startStatusEvent` helper.
+  - Status events reference `status_definition_id` (UUID), not enum values. Always validate status is allowed for the station before creating events.
   - Checklist responses are not stored; only completion flags. Don't try to persist individual answers.
-  - Admin dashboard uses polling (5 seconds) instead of realtime subscriptions due to RLS.
+  - Admin dashboard uses polling (5 seconds) by default, but supports SSE streaming via `/api/admin/dashboard/active-sessions/stream` for real-time updates.
+  - When creating sessions, the system automatically selects the first global status definition as the initial status.
 
 ## 14. File Structure Reference
 

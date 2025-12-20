@@ -71,10 +71,12 @@ export async function GET() {
     `[close-idle-sessions] Running cleanup at ${now}, idle threshold: ${idleSince}`,
   );
 
+  // Fetch sessions that are truly active (status='active', no ended_at, no forced_closed_at)
   const { data, error } = await supabase
     .from("sessions")
     .select("id, last_seen_at, started_at")
     .eq("status", "active")
+    .is("ended_at", null)
     .is("forced_closed_at", null);
 
   if (error) {

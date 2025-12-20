@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { fetchStatusEventsBySessionIds } from "@/lib/data/admin-dashboard";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { fetchStatusEventsAdminApi } from "@/lib/api/admin-management";
 import { getBrowserSupabaseClient } from "@/lib/supabase/client";
 import {
   buildStatusDictionary,
@@ -7,6 +7,7 @@ import {
   getStatusLabel,
 } from "@/lib/status";
 import type { StatusDefinition, StatusEventState } from "@/lib/types";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 
 export type TimelineSegment = {
   status: StatusEventState;
@@ -85,6 +86,28 @@ const normalizeSegments = ({
   return items;
 };
 
+const mergeShortSegments = (
+  segments: TimelineSegment[],
+  minDurationMs = 180_000, // 3 minutes
+): TimelineSegment[] => {
+  if (segments.length <= 1) return segments;
+
+  const merged: TimelineSegment[] = [];
+  for (const seg of segments) {
+    const duration = seg.end - seg.start;
+    if (duration < minDurationMs && merged.length > 0) {
+      // Extend previous segment to include this short one
+      merged[merged.length - 1] = {
+        ...merged[merged.length - 1],
+        end: seg.end,
+      };
+    } else {
+      merged.push({ ...seg });
+    }
+  }
+  return merged;
+};
+
 export const useSessionTimeline = ({
   sessionId,
   startedAt,
@@ -112,7 +135,7 @@ export const useSessionTimeline = ({
       setIsLoading(true);
       setError(null);
       try {
-        const fetched = await fetchStatusEventsBySessionIds([targetSessionId]);
+        const { events: fetched } = await fetchStatusEventsAdminApi([targetSessionId]);
         setEvents(
           fetched.map((item) => ({
             status: item.status,
@@ -144,8 +167,16 @@ export const useSessionTimeline = ({
     return () => window.clearInterval(timer);
   }, []);
 
+  // Refs to prevent infinite recursion in channel cleanup
+  const isClosingRef = useRef(false);
+  const channelRef = useRef<RealtimeChannel | null>(null);
+
   useEffect(() => {
     if (!sessionId || !startTs) return;
+
+    // Reset closing flag when effect runs
+    isClosingRef.current = false;
+
     const supabase = getBrowserSupabaseClient();
     const channel = supabase
       .channel(`session-timeline-${sessionId}`)
@@ -158,19 +189,31 @@ export const useSessionTimeline = ({
           filter: `session_id=eq.${sessionId}`,
         },
         () => {
-          void load(sessionId);
+          // Only reload if not closing
+          if (!isClosingRef.current) {
+            void load(sessionId);
+          }
         },
       )
       .subscribe((status, err) => {
         if (err) {
           console.error("[useSessionTimeline] subscription error", err);
-        } else {
-          console.log("[useSessionTimeline] subscription status", status);
         }
       });
 
+    channelRef.current = channel;
+
     return () => {
-      void supabase.removeChannel(channel);
+      // Guard against re-entry and infinite recursion
+      if (isClosingRef.current) return;
+      isClosingRef.current = true;
+
+      const ch = channelRef.current;
+      channelRef.current = null;
+
+      if (ch) {
+        void supabase.removeChannel(ch);
+      }
     };
   }, [load, sessionId, startTs]);
 
@@ -186,7 +229,7 @@ export const useSessionTimeline = ({
       dictionary,
       stationId,
     });
-    if (fromEvents.length > 0) return fromEvents;
+    if (fromEvents.length > 0) return mergeShortSegments(fromEvents);
 
     if (currentStatus) {
       return [

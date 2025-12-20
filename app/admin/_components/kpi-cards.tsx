@@ -1,5 +1,5 @@
 import { memo, useMemo } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Activity, Zap, AlertTriangle, Package } from "lucide-react";
 
 type KpiCardsProps = {
   activeCount: number;
@@ -12,6 +12,88 @@ type KpiCardsProps = {
 const formatNumber = (value: number) =>
   Intl.NumberFormat("he-IL").format(value);
 
+type KpiCardConfig = {
+  label: string;
+  value: number;
+  icon: React.ElementType;
+  color: "amber" | "emerald" | "red" | "blue";
+  suffix?: string;
+};
+
+const colorConfig = {
+  amber: {
+    iconBg: "bg-amber-500/10",
+    iconColor: "text-amber-400",
+    valueBg: "from-amber-500/5 to-transparent",
+    borderHover: "hover:border-amber-500/30",
+    glow: "group-hover:shadow-amber-500/5",
+  },
+  emerald: {
+    iconBg: "bg-emerald-500/10",
+    iconColor: "text-emerald-400",
+    valueBg: "from-emerald-500/5 to-transparent",
+    borderHover: "hover:border-emerald-500/30",
+    glow: "group-hover:shadow-emerald-500/5",
+  },
+  red: {
+    iconBg: "bg-red-500/10",
+    iconColor: "text-red-400",
+    valueBg: "from-red-500/5 to-transparent",
+    borderHover: "hover:border-red-500/30",
+    glow: "group-hover:shadow-red-500/5",
+  },
+  blue: {
+    iconBg: "bg-blue-500/10",
+    iconColor: "text-blue-400",
+    valueBg: "from-blue-500/5 to-transparent",
+    borderHover: "hover:border-blue-500/30",
+    glow: "group-hover:shadow-blue-500/5",
+  },
+};
+
+const KpiCard = ({ label, value, icon: Icon, color, suffix, isLoading }: KpiCardConfig & { isLoading: boolean }) => {
+  const colors = colorConfig[color];
+
+  return (
+    <div
+      className={`group relative overflow-hidden rounded-xl border border-zinc-800/80 bg-zinc-900/50 backdrop-blur-sm p-4 transition-all duration-300 ${colors.borderHover} hover:shadow-xl ${colors.glow}`}
+    >
+      {/* Subtle gradient overlay */}
+      <div className={`absolute inset-0 bg-gradient-to-br ${colors.valueBg} opacity-0 group-hover:opacity-100 transition-opacity duration-300`} />
+
+      <div className="relative">
+        <div className="flex items-start justify-between">
+          <div className="space-y-3">
+            <p className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+              {label}
+            </p>
+            <div className="flex items-baseline gap-1.5">
+              {isLoading ? (
+                <div className="h-9 w-16 animate-pulse rounded bg-zinc-800" />
+              ) : (
+                <>
+                  <span className="text-3xl font-bold text-zinc-100 tabular-nums tracking-tight lg:text-4xl">
+                    {formatNumber(value)}
+                  </span>
+                  {suffix && (
+                    <span className="text-sm text-zinc-500">{suffix}</span>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+          <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${colors.iconBg}`}>
+            <Icon className={`h-5 w-5 ${colors.iconColor}`} />
+          </div>
+        </div>
+
+        {/* Bottom accent line */}
+        <div className="absolute -bottom-4 -left-4 -right-4 h-px bg-gradient-to-r from-transparent via-zinc-700/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+      </div>
+    </div>
+  );
+};
+
 const KpiCardsComponent = ({
   activeCount,
   productionCount,
@@ -19,31 +101,20 @@ const KpiCardsComponent = ({
   totalGood,
   isLoading,
 }: KpiCardsProps) => {
-  const items = useMemo(
+  const items: KpiCardConfig[] = useMemo(
     () => [
-      { label: "תחנות פעילות", value: activeCount },
-      { label: "בסטטוס ייצור", value: productionCount },
-      { label: "עצירות/שיבושים", value: stopCount },
-      { label: "כמות תקינה", value: totalGood },
+      { label: "תחנות פעילות", value: activeCount, icon: Activity, color: "amber" },
+      { label: "בסטטוס ייצור", value: productionCount, icon: Zap, color: "emerald" },
+      { label: "עצירות/שיבושים", value: stopCount, icon: AlertTriangle, color: "red" },
+      { label: "כמות תקינה", value: totalGood, icon: Package, color: "blue" },
     ],
     [activeCount, productionCount, stopCount, totalGood],
   );
 
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:gap-4">
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
       {items.map((item) => (
-        <Card key={item.label}>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs text-slate-500 sm:text-sm">
-              {item.label}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-semibold sm:text-3xl">
-              {isLoading ? "..." : formatNumber(item.value)}
-            </p>
-          </CardContent>
-        </Card>
+        <KpiCard key={item.label} {...item} isLoading={isLoading} />
       ))}
     </div>
   );

@@ -28,8 +28,10 @@ export const useStatusDictionary = (stationIds: string[] = []) => {
     const load = async () => {
       setState((prev) => ({ ...prev, isLoading: true, error: null }));
       try {
+        // Parse stationIds from stationKey to avoid dependency on the array reference
+        const ids = stationKey ? stationKey.split(",") : [];
         const response = await fetchStatusDefinitionsAdminApi(
-          stationIds.length ? { stationIds } : undefined,
+          ids.length ? { stationIds: ids } : undefined,
         );
         if (!active) return;
         setState({
@@ -50,7 +52,7 @@ export const useStatusDictionary = (stationIds: string[] = []) => {
     return () => {
       active = false;
     };
-  }, [stationKey, stationIds]);
+  }, [stationKey]);
 
   const dictionary = useMemo(
     () => buildStatusDictionary(state.statuses),

@@ -22,6 +22,7 @@ export type ActiveSession = {
   totalScrap: number;
   forcedClosedAt: string | null;
   lastEventNote: string | null;
+  lastSeenAt: string | null;
 };
 
 export type CompletedSession = ActiveSession & {
@@ -46,6 +47,7 @@ type RawActiveSession = SessionRow & {
   current_status_id?: StatusEventState | null;
   current_status_code?: StatusEventState | null;
   last_status_change_at: string | null;
+  last_seen_at: string | null;
   jobs: { job_number: string | null } | null;
   stations: { name: string | null; station_type: StationType | null } | null;
   workers: { full_name: string | null } | null;
@@ -67,6 +69,7 @@ const ACTIVE_SESSIONS_SELECT = `
   total_scrap,
   current_status_id,
   last_status_change_at,
+  last_seen_at,
   forced_closed_at,
   worker_full_name_snapshot,
   worker_code_snapshot,
@@ -89,6 +92,7 @@ const LEGACY_ACTIVE_SESSIONS_SELECT = `
   total_scrap,
   current_status_code,
   last_status_change_at,
+  last_seen_at,
   forced_closed_at,
   worker_full_name_snapshot,
   worker_code_snapshot,
@@ -122,6 +126,7 @@ const mapActiveSession = (
   totalScrap: row.total_scrap ?? 0,
   forcedClosedAt: row.forced_closed_at,
   lastEventNote,
+  lastSeenAt: row.last_seen_at,
 });
 
 export const fetchActiveSessions = async (): Promise<ActiveSession[]> => {

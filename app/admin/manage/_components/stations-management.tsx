@@ -10,11 +10,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
 import type { Station, StationChecklistItem } from "@/lib/types";
 import type { StationWithStats } from "@/lib/data/admin-management";
 import { ListChecks, Pencil, Trash2 } from "lucide-react";
@@ -144,157 +141,60 @@ export const StationsManagement = ({
   };
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
+    <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/50 backdrop-blur-sm overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800/60">
         <div>
-          <CardTitle className="text-lg">תחנות</CardTitle>
-          <p className="text-sm text-slate-500">ניהול מכונות והרשאות.</p>
+          <h3 className="text-base font-semibold text-zinc-100">תחנות</h3>
+          <p className="text-sm text-zinc-500">ניהול מכונות והרשאות.</p>
         </div>
         <StationFormDialog
           mode="create"
           stationTypes={normalizedStationTypes}
           onSubmit={handleAdd}
-          trigger={<Button>הוסף תחנה</Button>}
+          trigger={<Button className="bg-amber-500 text-zinc-900 hover:bg-amber-400 font-medium">הוסף תחנה</Button>}
           loading={isSubmitting}
         />
-      </CardHeader>
-      <CardContent>
-        {isLoading ? (
-          <p className="text-sm text-slate-500">טוען תחנות...</p>
-        ) : sortedStations.length === 0 ? (
-          <p className="text-sm text-slate-500">אין תחנות להצגה.</p>
-        ) : (
-          <div className="w-full overflow-x-auto">
-            <Table className="min-w-[880px] text-right [&_td]:px-3 [&_td]:py-3 [&_th]:px-3 [&_th]:py-3">
-              <TableHeader>
-                <TableRow className="h-12">
-                  <TableHead className="whitespace-nowrap text-right">שם</TableHead>
-                  <TableHead className="whitespace-nowrap text-right">קוד</TableHead>
-                  <TableHead className="whitespace-nowrap text-right">סוג</TableHead>
-                  <TableHead className="whitespace-nowrap text-right">עובדים משויכים</TableHead>
-                  <TableHead className="whitespace-nowrap text-right">מצב</TableHead>
-                  <TableHead className="hidden whitespace-nowrap text-right lg:table-cell">
-                    פעולות
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {sortedStations.map(({ station, workerCount }) => (
-                  <TableRow key={station.id} className="h-14">
-                    <TableCell className="whitespace-nowrap font-medium">
-                      <div className="flex items-center justify-between gap-3">
-                        <span>{station.name}</span>
-                        <div className="flex items-center gap-2 lg:hidden">
-                          <Button
-                            variant="secondary"
-                            size="icon"
-                            onClick={() => setChecklistStation(station)}
-                            aria-label="ניהול צ'קליסטים"
-                            disabled={isChecklistSubmitting}
-                          >
-                            <ListChecks className="h-4 w-4" />
-                          </Button>
-                          <StationFormDialog
-                            mode="edit"
-                            station={station}
-                            stationTypes={normalizedStationTypes}
-                            onSubmit={handleEdit}
-                            trigger={
-                              <Button
-                                variant="secondary"
-                                size="icon"
-                                onClick={() => setEditingStation(station)}
-                                aria-label="עריכת תחנה"
-                              >
-                                <Pencil className="h-4 w-4" />
-                              </Button>
-                            }
-                            open={editingStation?.id === station.id}
-                            onOpenChange={(open) =>
-                              setEditingStation(open ? station : null)
-                            }
-                            loading={isSubmitting}
-                          />
-                          <Dialog
-                            open={deleteStationId === station.id}
-                            onOpenChange={(open) =>
-                              handleDeleteDialogOpenChange(open, station.id)
-                            }
-                          >
-                            <DialogTrigger asChild>
-                              <Button
-                                variant="destructive"
-                                size="icon"
-                                disabled={isSubmitting}
-                                aria-label="מחיקת תחנה"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </DialogTrigger>
-                            <DialogContent dir="rtl">
-                              <DialogHeader>
-                                <DialogTitle>האם למחוק את התחנה?</DialogTitle>
-                                <DialogDescription>
-                                  הפעולה תמחק את התחנה לחלוטין ותשמור היסטוריה בסשנים קיימים. לא ניתן לבטל.
-                                </DialogDescription>
-                              </DialogHeader>
-                              {isCheckingDeleteSession ? (
-                                <p className="text-sm text-slate-500">בודק סשנים פעילים...</p>
-                              ) : deleteStationHasActiveSession ? (
-                                <Alert
-                                  variant="destructive"
-                                  className="border-amber-200 bg-amber-50 text-right text-sm text-amber-800"
-                                >
-                                  <AlertDescription>
-                                    לא ניתן למחוק תחנה עם סשן פעיל. יש לסיים את הסשן הפעיל לפני מחיקה.
-                                  </AlertDescription>
-                                </Alert>
-                              ) : null}
-                              <DialogFooter className="justify-start">
-                                <Button
-                                  variant="destructive"
-                                  onClick={() => void handleDelete(station.id)}
-                                  disabled={isSubmitting || deleteStationHasActiveSession || isCheckingDeleteSession}
-                                >
-                                  מחיקה סופית
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  onClick={() => setDeleteStationId(null)}
-                                  disabled={isSubmitting}
-                                >
-                                  ביטול
-                                </Button>
-                              </DialogFooter>
-                            </DialogContent>
-                          </Dialog>
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap">{station.code}</TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      <Badge variant="secondary">{station.station_type}</Badge>
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap">{workerCount}</TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      <div className="flex flex-row-reverse items-center justify-end gap-2">
-                        <span className="text-sm text-slate-600">
-                          {station.is_active ? "פעיל" : "לא פעיל"}
-                        </span>
-                        <Switch checked={station.is_active} disabled aria-readonly />
-                      </div>
-                    </TableCell>
-                    <TableCell className="hidden whitespace-nowrap lg:table-cell">
-                      <div className="flex flex-wrap items-center justify-end gap-2">
+      </div>
+      {isLoading ? (
+        <div className="flex flex-col items-center justify-center py-16 gap-3">
+          <div className="relative h-8 w-8">
+            <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-amber-500" />
+          </div>
+          <p className="text-sm text-zinc-500">טוען תחנות...</p>
+        </div>
+      ) : sortedStations.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 gap-3 text-zinc-500">
+          <p className="text-sm">אין תחנות להצגה.</p>
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-zinc-800/60 bg-zinc-900/80">
+                <th className="px-4 py-3 text-right text-xs font-semibold text-zinc-400 uppercase tracking-wider whitespace-nowrap">שם</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-zinc-400 uppercase tracking-wider whitespace-nowrap">קוד</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-zinc-400 uppercase tracking-wider whitespace-nowrap">סוג</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-zinc-400 uppercase tracking-wider whitespace-nowrap">עובדים</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-zinc-400 uppercase tracking-wider whitespace-nowrap">מצב</th>
+                <th className="hidden lg:table-cell px-4 py-3 text-right text-xs font-semibold text-zinc-400 uppercase tracking-wider whitespace-nowrap">פעולות</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-800/40">
+              {sortedStations.map(({ station, workerCount }) => (
+                <tr key={station.id} className="group hover:bg-zinc-800/50 transition-colors">
+                  <td className="px-4 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="font-medium text-zinc-100">{station.name}</span>
+                      <div className="flex items-center gap-2 lg:hidden">
                         <Button
-                          variant="secondary"
-                          size="sm"
+                          variant="ghost"
+                          size="icon"
                           onClick={() => setChecklistStation(station)}
                           aria-label="ניהול צ'קליסטים"
                           disabled={isChecklistSubmitting}
+                          className="h-8 w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-700"
                         >
                           <ListChecks className="h-4 w-4" />
-                          <span className="sr-only">צ׳קליסטים</span>
                         </Button>
                         <StationFormDialog
                           mode="edit"
@@ -303,50 +203,54 @@ export const StationsManagement = ({
                           onSubmit={handleEdit}
                           trigger={
                             <Button
-                              variant="secondary"
-                              size="sm"
+                              variant="ghost"
+                              size="icon"
                               onClick={() => setEditingStation(station)}
                               aria-label="עריכת תחנה"
+                              className="h-8 w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-700"
                             >
                               <Pencil className="h-4 w-4" />
-                              <span className="sr-only">עריכה</span>
                             </Button>
                           }
                           open={editingStation?.id === station.id}
                           onOpenChange={async (open) => {
                             setEditingStation(open ? station : null);
-                            // Refresh when dialog closes to update the list
                             if (!open && onRefresh) {
                               await onRefresh();
                             }
                           }}
                           loading={isSubmitting}
                         />
-                        <Dialog open={deleteStationId === station.id} onOpenChange={(open) => handleDeleteDialogOpenChange(open, station.id)}>
+                        <Dialog
+                          open={deleteStationId === station.id}
+                          onOpenChange={(open) =>
+                            handleDeleteDialogOpenChange(open, station.id)
+                          }
+                        >
                           <DialogTrigger asChild>
                             <Button
-                              variant="destructive"
-                              size="sm"
+                              variant="ghost"
+                              size="icon"
                               disabled={isSubmitting}
                               aria-label="מחיקת תחנה"
+                              className="h-8 w-8 text-zinc-400 hover:text-red-400 hover:bg-red-500/10"
                             >
                               <Trash2 className="h-4 w-4" />
-                              <span className="sr-only">מחיקה</span>
                             </Button>
                           </DialogTrigger>
-                          <DialogContent dir="rtl">
+                          <DialogContent dir="rtl" className="border-zinc-800 bg-zinc-900">
                             <DialogHeader>
-                              <DialogTitle>האם למחוק את התחנה?</DialogTitle>
-                              <DialogDescription>
+                              <DialogTitle className="text-zinc-100">האם למחוק את התחנה?</DialogTitle>
+                              <DialogDescription className="text-zinc-400">
                                 הפעולה תמחק את התחנה לחלוטין ותשמור היסטוריה בסשנים קיימים. לא ניתן לבטל.
                               </DialogDescription>
                             </DialogHeader>
                             {isCheckingDeleteSession ? (
-                              <p className="text-sm text-slate-500">בודק סשנים פעילים...</p>
+                              <p className="text-sm text-zinc-500">בודק סשנים פעילים...</p>
                             ) : deleteStationHasActiveSession ? (
                               <Alert
                                 variant="destructive"
-                                className="border-amber-200 bg-amber-50 text-right text-sm text-amber-800"
+                                className="border-amber-500/30 bg-amber-500/10 text-right text-sm text-amber-400"
                               >
                                 <AlertDescription>
                                   לא ניתן למחוק תחנה עם סשן פעיל. יש לסיים את הסשן הפעיל לפני מחיקה.
@@ -355,34 +259,142 @@ export const StationsManagement = ({
                             ) : null}
                             <DialogFooter className="justify-start">
                               <Button
-                                variant="destructive"
                                 onClick={() => void handleDelete(station.id)}
                                 disabled={isSubmitting || deleteStationHasActiveSession || isCheckingDeleteSession}
+                                className="bg-red-500 text-white hover:bg-red-600"
                               >
                                 מחיקה סופית
                               </Button>
-                              <Button variant="outline" onClick={() => setDeleteStationId(null)} disabled={isSubmitting}>
+                              <Button
+                                variant="outline"
+                                onClick={() => setDeleteStationId(null)}
+                                disabled={isSubmitting}
+                                className="border-zinc-700 bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100"
+                              >
                                 ביטול
                               </Button>
                             </DialogFooter>
                           </DialogContent>
                         </Dialog>
                       </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-      </CardContent>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="font-mono text-zinc-300">{station.code}</span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <Badge variant="secondary" className="bg-zinc-800 text-zinc-300 border-zinc-700">{station.station_type}</Badge>
+                  </td>
+                  <td className="px-4 py-3 text-zinc-400">{workerCount}</td>
+                  <td className="px-4 py-3">
+                    {station.is_active ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                        פעיל
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-zinc-500/10 border border-zinc-500/30 text-zinc-500">
+                        <span className="w-1.5 h-1.5 rounded-full bg-zinc-500" />
+                        לא פעיל
+                      </span>
+                    )}
+                  </td>
+                  <td className="hidden lg:table-cell px-4 py-3">
+                    <div className="flex items-center justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setChecklistStation(station)}
+                        aria-label="ניהול צ'קליסטים"
+                        disabled={isChecklistSubmitting}
+                        className="h-8 w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-700"
+                      >
+                        <ListChecks className="h-4 w-4" />
+                      </Button>
+                      <StationFormDialog
+                        mode="edit"
+                        station={station}
+                        stationTypes={normalizedStationTypes}
+                        onSubmit={handleEdit}
+                        trigger={
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setEditingStation(station)}
+                            aria-label="עריכת תחנה"
+                            className="h-8 w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-700"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        }
+                        open={editingStation?.id === station.id}
+                        onOpenChange={async (open) => {
+                          setEditingStation(open ? station : null);
+                          if (!open && onRefresh) {
+                            await onRefresh();
+                          }
+                        }}
+                        loading={isSubmitting}
+                      />
+                      <Dialog open={deleteStationId === station.id} onOpenChange={(open) => handleDeleteDialogOpenChange(open, station.id)}>
+                        <DialogTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            disabled={isSubmitting}
+                            aria-label="מחיקת תחנה"
+                            className="h-8 w-8 text-zinc-400 hover:text-red-400 hover:bg-red-500/10"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent dir="rtl" className="border-zinc-800 bg-zinc-900">
+                          <DialogHeader>
+                            <DialogTitle className="text-zinc-100">האם למחוק את התחנה?</DialogTitle>
+                            <DialogDescription className="text-zinc-400">
+                              הפעולה תמחק את התחנה לחלוטין ותשמור היסטוריה בסשנים קיימים. לא ניתן לבטל.
+                            </DialogDescription>
+                          </DialogHeader>
+                          {isCheckingDeleteSession ? (
+                            <p className="text-sm text-zinc-500">בודק סשנים פעילים...</p>
+                          ) : deleteStationHasActiveSession ? (
+                            <Alert
+                              variant="destructive"
+                              className="border-amber-500/30 bg-amber-500/10 text-right text-sm text-amber-400"
+                            >
+                              <AlertDescription>
+                                לא ניתן למחוק תחנה עם סשן פעיל. יש לסיים את הסשן הפעיל לפני מחיקה.
+                              </AlertDescription>
+                            </Alert>
+                          ) : null}
+                          <DialogFooter className="justify-start">
+                            <Button
+                              onClick={() => void handleDelete(station.id)}
+                              disabled={isSubmitting || deleteStationHasActiveSession || isCheckingDeleteSession}
+                              className="bg-red-500 text-white hover:bg-red-600"
+                            >
+                              מחיקה סופית
+                            </Button>
+                            <Button variant="outline" onClick={() => setDeleteStationId(null)} disabled={isSubmitting} className="border-zinc-700 bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100">
+                              ביטול
+                            </Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
       {checklistStation ? (
         <StationChecklistDialog
           station={checklistStation}
           open={Boolean(checklistStation)}
           onOpenChange={async (open) => {
             setChecklistStation(open ? checklistStation : null);
-            // Refresh when dialog closes to update the list
             if (!open && onRefresh) {
               await onRefresh();
             }
@@ -391,7 +403,7 @@ export const StationsManagement = ({
           loading={isChecklistSubmitting}
         />
       ) : null}
-    </Card>
+    </div>
   );
 };
 
