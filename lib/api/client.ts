@@ -195,11 +195,29 @@ export async function abandonSessionApi(
   await handleResponse(response);
 }
 
+export async function validateJobExistsApi(
+  jobNumber: string,
+): Promise<boolean> {
+  try {
+    const response = await fetch(
+      `/api/jobs/validate?jobNumber=${encodeURIComponent(jobNumber)}`,
+    );
+    if (!response.ok) {
+      return false;
+    }
+    const data = await response.json();
+    return data.exists === true;
+  } catch {
+    return false;
+  }
+}
+
 export async function createMalfunctionApi(input: {
   stationId: string;
   stationReasonId?: string;
   description?: string;
   image?: File | null;
+  workerId?: string;
 }): Promise<Malfunction> {
   const formData = new FormData();
   formData.append("stationId", input.stationId);
@@ -211,6 +229,9 @@ export async function createMalfunctionApi(input: {
   }
   if (input.image) {
     formData.append("image", input.image);
+  }
+  if (input.workerId) {
+    formData.append("workerId", input.workerId);
   }
 
   const response = await fetch("/api/malfunctions", {

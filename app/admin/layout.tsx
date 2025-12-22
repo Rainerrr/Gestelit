@@ -11,7 +11,7 @@ export default function AdminLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="fixed inset-0 overflow-auto bg-zinc-950">
+    <div className="fixed inset-0 overflow-auto bg-background">
       {children}
     </div>
   );

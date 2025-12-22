@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ChecklistItemsList } from "@/components/checklists/checklist-items";
 import { FormSection } from "@/components/forms/form-section";
 import { PageHeader } from "@/components/layout/page-header";
+import { BackButton } from "@/components/navigation/back-button";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useTranslation } from "@/hooks/useTranslation";
@@ -160,6 +161,7 @@ export default function OpeningChecklistPage() {
 
   return (
     <>
+      <BackButton href="/job" />
       <PageHeader
         eyebrow={job.job_number}
         title={t("checklist.start.title")}
@@ -173,7 +175,7 @@ export default function OpeningChecklistPage() {
             <Button
               type="submit"
               size="lg"
-              className="min-w-48"
+              className="min-w-48 bg-primary font-medium text-primary-foreground hover:bg-primary/90"
               disabled={!isValid}
             >
               {t("checklist.submit")}
@@ -181,17 +183,17 @@ export default function OpeningChecklistPage() {
           }
         >
           {state.loading ? (
-            <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-right text-sm text-slate-600">
+            <p className="rounded-xl border border-dashed border-border bg-muted/30 p-4 text-right text-sm text-muted-foreground">
               {t("checklist.loading")}
             </p>
           ) : !checklist ? (
-            <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-right text-sm text-slate-600">
+            <p className="rounded-xl border border-dashed border-border bg-muted/30 p-4 text-right text-sm text-muted-foreground">
               {t("checklist.empty")}
             </p>
           ) : (
             <>
-              <div className="mb-4 flex flex-wrap justify-end gap-3 text-xs text-slate-600">
-                <Badge variant="secondary">
+              <div className="mb-4 flex flex-wrap justify-end gap-3 text-xs text-muted-foreground">
+                <Badge variant="secondary" className="border-border bg-secondary text-foreground/80">
                   {`${requiredItems}/${totalItems} ${t("checklist.item.required")}`}
                 </Badge>
               </div>
@@ -206,7 +208,7 @@ export default function OpeningChecklistPage() {
           )}
         </FormSection>
         {submitError ? (
-          <p className="text-right text-sm text-rose-600">{submitError}</p>
+          <p className="mt-4 text-right text-sm text-rose-600 dark:text-rose-400">{submitError}</p>
         ) : null}
       </form>
     </>

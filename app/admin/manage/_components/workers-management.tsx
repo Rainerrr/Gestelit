@@ -117,18 +117,18 @@ export const WorkersManagement = ({
   };
 
   return (
-    <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/50 backdrop-blur-sm overflow-hidden">
-      <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800/60">
+    <div className="rounded-xl border border-border bg-card/50 backdrop-blur-sm overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-border">
         <div>
-          <h3 className="text-base font-semibold text-zinc-100">עובדים</h3>
-          <p className="text-sm text-zinc-500">ניהול עובדים והרשאות תחנה.</p>
+          <h3 className="text-base font-semibold text-foreground">עובדים</h3>
+          <p className="text-sm text-muted-foreground">ניהול עובדים והרשאות תחנה.</p>
         </div>
         <WorkerFormDialog
           mode="create"
           departments={departments}
           onSubmit={handleAdd}
           trigger={
-            <Button className="bg-amber-500 text-zinc-900 hover:bg-amber-400 font-medium">הוסף עובד</Button>
+            <Button className="bg-primary text-primary-foreground hover:bg-primary/90 font-medium">הוסף עובד</Button>
           }
           loading={isSubmitting}
         />
@@ -136,33 +136,33 @@ export const WorkersManagement = ({
       {isLoading ? (
         <div className="flex flex-col items-center justify-center py-16 gap-3">
           <div className="relative h-8 w-8">
-            <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-amber-500" />
+            <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-primary" />
           </div>
-          <p className="text-sm text-zinc-500">טוען עובדים...</p>
+          <p className="text-sm text-muted-foreground">טוען עובדים...</p>
         </div>
       ) : sortedWorkers.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 gap-3 text-zinc-500">
+        <div className="flex flex-col items-center justify-center py-16 gap-3 text-muted-foreground">
           <p className="text-sm">אין עובדים להצגה.</p>
         </div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-zinc-800/60 bg-zinc-900/80">
-                <th className="px-4 py-3 text-right text-xs font-semibold text-zinc-400 uppercase tracking-wider whitespace-nowrap">שם מלא</th>
-                <th className="px-4 py-3 text-right text-xs font-semibold text-zinc-400 uppercase tracking-wider whitespace-nowrap">קוד עובד</th>
-                <th className="px-4 py-3 text-right text-xs font-semibold text-zinc-400 uppercase tracking-wider whitespace-nowrap">מחלקה</th>
-                <th className="px-4 py-3 text-right text-xs font-semibold text-zinc-400 uppercase tracking-wider whitespace-nowrap">תחנות</th>
-                <th className="px-4 py-3 text-right text-xs font-semibold text-zinc-400 uppercase tracking-wider whitespace-nowrap">מצב</th>
-                <th className="hidden lg:table-cell px-4 py-3 text-right text-xs font-semibold text-zinc-400 uppercase tracking-wider whitespace-nowrap">פעולות</th>
+              <tr className="border-b border-border bg-card">
+                <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">שם מלא</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">קוד עובד</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">מחלקה</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">תחנות</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">מצב</th>
+                <th className="hidden lg:table-cell px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">פעולות</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-800/40">
+            <tbody className="divide-y divide-border">
               {sortedWorkers.map(({ worker, stationCount }) => (
-                <tr key={worker.id} className="group hover:bg-zinc-800/50 transition-colors">
+                <tr key={worker.id} className="group hover:bg-accent transition-colors">
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-between gap-3">
-                      <span className="font-medium text-zinc-100">{worker.full_name}</span>
+                      <span className="font-medium text-foreground">{worker.full_name}</span>
                       <div className="flex items-center gap-2 lg:hidden">
                         <WorkerPermissionsDialog
                           worker={worker}
@@ -172,7 +172,7 @@ export const WorkersManagement = ({
                           onRemove={onRemoveStation}
                           onRefresh={onRefresh}
                           trigger={
-                            <Button variant="ghost" size="icon" aria-label="ניהול הרשאות תחנות" className="h-8 w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-700">
+                            <Button variant="ghost" size="icon" aria-label="ניהול הרשאות תחנות" className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted">
                               <KeyRound className="h-4 w-4" />
                             </Button>
                           }
@@ -188,7 +188,7 @@ export const WorkersManagement = ({
                               size="icon"
                               onClick={() => setEditingWorker(worker)}
                               aria-label="עריכת עובד"
-                              className="h-8 w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-700"
+                              className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted"
                             >
                               <Pencil className="h-4 w-4" />
                             </Button>
@@ -212,24 +212,24 @@ export const WorkersManagement = ({
                               size="icon"
                               disabled={isSubmitting}
                               aria-label="מחיקת עובד"
-                              className="h-8 w-8 text-zinc-400 hover:text-red-400 hover:bg-red-500/10"
+                              className="h-8 w-8 text-muted-foreground hover:text-red-400 hover:bg-red-500/10"
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </DialogTrigger>
-                          <DialogContent dir="rtl" className="border-zinc-800 bg-zinc-900">
+                          <DialogContent dir="rtl" className="border-border bg-card">
                             <DialogHeader>
-                              <DialogTitle className="text-zinc-100">האם למחוק את העובד?</DialogTitle>
-                              <DialogDescription className="text-zinc-400">
+                              <DialogTitle className="text-foreground">האם למחוק את העובד?</DialogTitle>
+                              <DialogDescription className="text-muted-foreground">
                                 הפעולה תמחק את העובד לחלוטין ותשמור היסטוריה בסשנים קיימים. לא ניתן לבטל.
                               </DialogDescription>
                             </DialogHeader>
                             {isCheckingDeleteSession ? (
-                              <p className="text-sm text-zinc-500">בודק סשנים פעילים...</p>
+                              <p className="text-sm text-muted-foreground">בודק סשנים פעילים...</p>
                             ) : deleteWorkerHasActiveSession ? (
                               <Alert
                                 variant="destructive"
-                                className="border-amber-500/30 bg-amber-500/10 text-right text-sm text-amber-400"
+                                className="border-primary/30 bg-primary/10 text-right text-sm text-primary"
                               >
                                 <AlertDescription>
                                   לא ניתן למחוק עובד עם סשן פעיל. יש לסיים את הסשן הפעיל לפני מחיקה.
@@ -248,7 +248,7 @@ export const WorkersManagement = ({
                                 variant="outline"
                                 onClick={() => setDeleteWorkerId(null)}
                                 disabled={isSubmitting}
-                                className="border-zinc-700 bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100"
+                                className="border-input bg-secondary text-foreground/80 hover:bg-muted hover:text-foreground"
                               >
                                 ביטול
                               </Button>
@@ -259,16 +259,16 @@ export const WorkersManagement = ({
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <span className="font-mono text-zinc-300">{worker.worker_code}</span>
+                    <span className="font-mono text-foreground/80">{worker.worker_code}</span>
                   </td>
                   <td className="px-4 py-3">
                     {worker.department ? (
-                      <Badge variant="secondary" className="bg-zinc-800 text-zinc-300 border-zinc-700">{worker.department}</Badge>
+                      <Badge variant="secondary" className="bg-secondary text-foreground/80 border-input">{worker.department}</Badge>
                     ) : (
-                      <span className="text-zinc-600">—</span>
+                      <span className="text-muted-foreground">—</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-zinc-400">{stationCount}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{stationCount}</td>
                   <td className="px-4 py-3">
                     {worker.is_active ? (
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
@@ -291,7 +291,7 @@ export const WorkersManagement = ({
                         onAssign={onAssignStation}
                         onRemove={onRemoveStation}
                         trigger={
-                          <Button variant="ghost" size="icon" aria-label="ניהול הרשאות תחנות" className="h-8 w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-700">
+                          <Button variant="ghost" size="icon" aria-label="ניהול הרשאות תחנות" className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted">
                             <KeyRound className="h-4 w-4" />
                           </Button>
                         }
@@ -307,7 +307,7 @@ export const WorkersManagement = ({
                             size="icon"
                             onClick={() => setEditingWorker(worker)}
                             aria-label="עריכת עובד"
-                            className="h-8 w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-700"
+                            className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted"
                           >
                             <Pencil className="h-4 w-4" />
                           </Button>
@@ -328,24 +328,24 @@ export const WorkersManagement = ({
                             size="icon"
                             disabled={isSubmitting}
                             aria-label="מחיקת עובד"
-                            className="h-8 w-8 text-zinc-400 hover:text-red-400 hover:bg-red-500/10"
+                            className="h-8 w-8 text-muted-foreground hover:text-red-400 hover:bg-red-500/10"
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </DialogTrigger>
-                        <DialogContent dir="rtl" className="border-zinc-800 bg-zinc-900">
+                        <DialogContent dir="rtl" className="border-border bg-card">
                           <DialogHeader>
-                            <DialogTitle className="text-zinc-100">האם למחוק את העובד?</DialogTitle>
-                            <DialogDescription className="text-zinc-400">
+                            <DialogTitle className="text-foreground">האם למחוק את העובד?</DialogTitle>
+                            <DialogDescription className="text-muted-foreground">
                               הפעולה תמחק את העובד לחלוטין ותשמור היסטוריה בסשנים קיימים. לא ניתן לבטל.
                             </DialogDescription>
                           </DialogHeader>
                           {isCheckingDeleteSession ? (
-                            <p className="text-sm text-zinc-500">בודק סשנים פעילים...</p>
+                            <p className="text-sm text-muted-foreground">בודק סשנים פעילים...</p>
                           ) : deleteWorkerHasActiveSession ? (
                             <Alert
                               variant="destructive"
-                              className="border-amber-500/30 bg-amber-500/10 text-right text-sm text-amber-400"
+                              className="border-primary/30 bg-primary/10 text-right text-sm text-primary"
                             >
                               <AlertDescription>
                                 לא ניתן למחוק עובד עם סשן פעיל. יש לסיים את הסשן הפעיל לפני מחיקה.
@@ -360,7 +360,7 @@ export const WorkersManagement = ({
                             >
                               מחיקה סופית
                             </Button>
-                            <Button variant="outline" onClick={() => setDeleteWorkerId(null)} disabled={isSubmitting} className="border-zinc-700 bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100">
+                            <Button variant="outline" onClick={() => setDeleteWorkerId(null)} disabled={isSubmitting} className="border-input bg-secondary text-foreground/80 hover:bg-muted hover:text-foreground">
                               ביטול
                             </Button>
                           </DialogFooter>

@@ -44,12 +44,10 @@ const CustomTooltip = ({ segment }: { segment: TimelineSegment }) => {
 
   return (
     <div
-      className="pointer-events-none rounded-lg bg-white overflow-hidden"
+      className="pointer-events-none rounded-lg bg-popover overflow-hidden border border-border shadow-lg"
       style={{
         minWidth: 150,
         direction: "rtl",
-        border: "1px solid #e2e8f0",
-        boxShadow: "0 4px 12px rgba(0, 0, 0, 0.1)",
       }}
     >
       <div
@@ -60,20 +58,20 @@ const CustomTooltip = ({ segment }: { segment: TimelineSegment }) => {
       </div>
       <div className="px-3 py-2 space-y-1.5">
         <div className="flex justify-between items-center text-xs">
-          <span className="text-slate-500">התחלה</span>
-          <span className="text-slate-800 font-medium tabular-nums">
+          <span className="text-muted-foreground">התחלה</span>
+          <span className="text-foreground font-medium tabular-nums">
             {formatTime(segment.start)}
           </span>
         </div>
         <div className="flex justify-between items-center text-xs">
-          <span className="text-slate-500">סיום</span>
-          <span className="text-slate-800 font-medium tabular-nums">
+          <span className="text-muted-foreground">סיום</span>
+          <span className="text-foreground font-medium tabular-nums">
             {formatTime(segment.end)}
           </span>
         </div>
-        <div className="flex justify-between items-center text-xs pt-1 border-t border-slate-100">
-          <span className="text-slate-500">משך</span>
-          <span className="text-slate-900 font-semibold tabular-nums">
+        <div className="flex justify-between items-center text-xs pt-1 border-t border-border">
+          <span className="text-muted-foreground">משך</span>
+          <span className="text-foreground font-semibold tabular-nums">
             {formatDuration(duration)}
           </span>
         </div>
@@ -147,7 +145,7 @@ export const VisSessionTimeline = ({
 
   if (!hasBounds || !startTs || !endTs) {
     return (
-      <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+      <div className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-sm text-primary">
         חסרים נתונים להצגת ציר הזמן.
       </div>
     );
@@ -156,7 +154,7 @@ export const VisSessionTimeline = ({
   return (
     <div ref={containerRef} className="relative" dir="ltr">
       {/* Timeline bar - pill shaped */}
-      <div className="relative h-10 bg-slate-100 rounded-full overflow-hidden shadow-inner">
+      <div className="relative h-10 bg-muted rounded-full overflow-hidden shadow-inner">
         {/* Segments */}
         {segments.map((seg, idx) => {
           const left = getPosition(seg.start);
@@ -233,8 +231,8 @@ export const VisSessionTimeline = ({
               className="absolute top-0 flex flex-col items-center"
               style={{ left: `${position}%`, transform: "translateX(-50%)" }}
             >
-              <div className="w-px h-1.5 bg-slate-300" />
-              <span className="text-[10px] text-slate-500 tabular-nums mt-0.5">
+              <div className="w-px h-1.5 bg-border" />
+              <span className="text-[10px] text-muted-foreground tabular-nums mt-0.5">
                 {formatTime(tick)}
               </span>
             </div>
@@ -257,7 +255,7 @@ export const VisSessionTimeline = ({
       )}
 
       {/* Session time labels - LTR layout: start on left, end on right */}
-      <div className="flex justify-between items-center mt-3 text-xs text-slate-600">
+      <div className="flex justify-between items-center mt-3 text-xs text-muted-foreground">
         <span className="tabular-nums">{formatTime(startTs)}</span>
         {isActive ? (
           <Badge className="bg-emerald-500 text-white text-[10px] px-2 py-0.5 h-5 pointer-events-none">

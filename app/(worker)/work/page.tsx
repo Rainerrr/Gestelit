@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { PageHeader } from "@/components/layout/page-header";
+import { BackButton } from "@/components/navigation/back-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -58,12 +59,12 @@ type StatusVisual = {
 };
 
 const neutralVisual: StatusVisual = {
-  dotColor: "#cbd5e1",
+  dotColor: "#94a3b8",
   highlightBg: "rgba(148, 163, 184, 0.1)",
-  highlightBorder: "#cbd5e1",
-  textColor: "#0f172a",
-  timerBorder: "#e2e8f0",
-  shadow: "0 10px 25px rgba(148,163,184,0.18)",
+  highlightBorder: "#94a3b8",
+  textColor: "#64748b",
+  timerBorder: "#cbd5e1",
+  shadow: "0 4px 12px rgba(0,0,0,0.08)",
 };
 
 const hexToRgba = (hex: string, alpha = 1) => {
@@ -292,12 +293,13 @@ export default function WorkPage() {
 
   return (
     <>
+      <BackButton href="/checklist/start" />
       <PageHeader
         eyebrow={worker.full_name}
         title={t("work.title")}
         subtitle={`${t("common.job")} ${job.job_number}`}
         actions={
-          <Badge variant="secondary" className="text-base">
+          <Badge variant="secondary" className="border-border bg-secondary text-base text-foreground/80">
             {`${t("common.station")}: ${station.name}`}
           </Badge>
         }
@@ -315,12 +317,12 @@ export default function WorkPage() {
             startedAt={sessionStartedAt}
           />
 
-          <Card>
+          <Card className="rounded-xl border border-border bg-card/50 backdrop-blur-sm">
             <CardHeader>
-              <CardTitle className="text-right">
+              <CardTitle className="text-right text-foreground">
                 {t("work.section.status")}
               </CardTitle>
-              <CardDescription className="text-right">
+              <CardDescription className="text-right text-muted-foreground">
                 {t("work.status.instructions")}
               </CardDescription>
             </CardHeader>
@@ -336,10 +338,10 @@ export default function WorkPage() {
                       type="button"
                       variant="outline"
                       className={cn(
-                        "h-auto w-full justify-between rounded-2xl border bg-white p-4 text-base font-semibold transition focus-visible:outline-none focus-visible:ring-2",
+                        "h-auto w-full justify-between rounded-xl border p-4 text-base font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
                         isActive
                           ? "shadow"
-                          : "border-slate-200 text-slate-600 hover:border-primary/40 hover:shadow",
+                          : "border-border bg-white text-foreground hover:border-primary/40 hover:bg-primary/5 dark:bg-secondary dark:text-foreground/80 dark:hover:bg-accent",
                       )}
                       aria-pressed={isActive}
                       style={
@@ -372,129 +374,129 @@ export default function WorkPage() {
                   );
                 })}
                 {isStatusesLoading ? (
-                  <p className="text-sm text-slate-500">טוען סטטוסים...</p>
+                  <p className="text-sm text-muted-foreground">טוען סטטוסים...</p>
                 ) : null}
               </div>
               {statusError ? (
-                <p className="mt-3 text-sm text-rose-600">{statusError}</p>
+                <p className="mt-3 text-sm text-rose-600 dark:text-rose-400">{statusError}</p>
               ) : null}
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="rounded-xl border border-border bg-card/50 backdrop-blur-sm">
             <CardHeader className="text-right">
-              <CardTitle>{t("work.section.production")}</CardTitle>
-              <CardDescription>
+              <CardTitle className="text-foreground">{t("work.section.production")}</CardTitle>
+              <CardDescription className="text-muted-foreground">
                 {t("work.counters.good")} / {t("work.counters.scrap")}
               </CardDescription>
             </CardHeader>
             <CardContent className="grid gap-4 md:grid-cols-2">
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 text-right shadow-sm">
-                <p className="text-sm text-slate-500">
-                  {t("work.counters.good")}
-                </p>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
-                  value={totals.good}
-                  onChange={(event) =>
-                    handleManualCountChange("good", event.target.value)
-                  }
-                  className="mt-3 w-full appearance-none rounded-3xl border border-slate-100 bg-slate-50/80 py-6 text-center text-7xl font-semibold leading-tight text-emerald-600 outline-none transition focus:border-emerald-300 focus:ring-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                />
-                <div className="mt-4 flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleCountDelta("good", -10)}
-                    >
-                      -10
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleCountDelta("good", -1)}
-                    >
-                      -1
-                    </Button>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={() => handleCountDelta("good", 1)}
-                    >
-                      +1
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={() => handleCountDelta("good", 10)}
-                    >
-                      +10
-                    </Button>
-                  </div>
+              <div className="overflow-hidden rounded-xl border border-emerald-600/30 bg-emerald-50 dark:border-emerald-500/20 dark:bg-emerald-500/5">
+                <div className="p-4 pb-3 text-right">
+                  <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">
+                    {t("work.counters.good")}
+                  </p>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    value={totals.good}
+                    onChange={(event) =>
+                      handleManualCountChange("good", event.target.value)
+                    }
+                    className="mt-3 w-full appearance-none rounded-xl border border-emerald-600/30 bg-white py-6 text-center text-7xl font-semibold leading-tight text-emerald-600 outline-none transition focus:border-emerald-600/50 focus:ring-0 dark:border-emerald-500/30 dark:bg-card dark:text-emerald-400 dark:focus:border-emerald-500/50 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  />
+                </div>
+                <div className="flex border-t border-emerald-600/20 bg-emerald-50 dark:border-emerald-500/20 dark:bg-emerald-500/5">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="h-14 flex-1 rounded-none border-l border-emerald-600/20 text-lg font-semibold text-slate-500 hover:bg-emerald-100 hover:text-slate-700 dark:border-emerald-500/20 dark:text-muted-foreground dark:hover:bg-accent dark:hover:text-foreground"
+                    onClick={() => handleCountDelta("good", -10)}
+                  >
+                    -10
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="h-14 flex-1 rounded-none border-l border-emerald-600/20 text-lg font-semibold text-slate-500 hover:bg-emerald-100 hover:text-slate-700 dark:border-emerald-500/20 dark:text-muted-foreground dark:hover:bg-accent dark:hover:text-foreground"
+                    onClick={() => handleCountDelta("good", -1)}
+                  >
+                    -1
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="h-14 flex-1 rounded-none border-l border-emerald-600/20 text-lg font-semibold text-emerald-600 hover:bg-emerald-100 hover:text-emerald-700 dark:border-emerald-500/20 dark:text-emerald-400 dark:hover:bg-emerald-500/20 dark:hover:text-emerald-300"
+                    onClick={() => handleCountDelta("good", 1)}
+                  >
+                    +1
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="h-14 flex-1 rounded-none text-lg font-semibold text-emerald-600 hover:bg-emerald-100 hover:text-emerald-700 dark:text-emerald-400 dark:hover:bg-emerald-500/20 dark:hover:text-emerald-300"
+                    onClick={() => handleCountDelta("good", 10)}
+                  >
+                    +10
+                  </Button>
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 text-right shadow-sm">
-                <p className="text-sm text-slate-500">
-                  {t("work.counters.scrap")}
-                </p>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
-                  value={totals.scrap}
-                  onChange={(event) =>
-                    handleManualCountChange("scrap", event.target.value)
-                  }
-                  className="mt-3 w-full appearance-none rounded-3xl border border-slate-100 bg-slate-50/80 py-6 text-center text-7xl font-semibold leading-tight text-rose-600 outline-none transition focus:border-rose-300 focus:ring-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                />
-                <div className="mt-4 flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleCountDelta("scrap", -10)}
-                    >
-                      -10
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleCountDelta("scrap", -1)}
-                    >
-                      -1
-                    </Button>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={() => handleCountDelta("scrap", 1)}
-                    >
-                      +1
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={() => handleCountDelta("scrap", 10)}
-                    >
-                      +10
-                    </Button>
-                  </div>
+              <div className="overflow-hidden rounded-xl border border-rose-600/30 bg-rose-50 dark:border-rose-500/20 dark:bg-rose-500/5">
+                <div className="p-4 pb-3 text-right">
+                  <p className="text-sm font-medium text-rose-600 dark:text-rose-400">
+                    {t("work.counters.scrap")}
+                  </p>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    value={totals.scrap}
+                    onChange={(event) =>
+                      handleManualCountChange("scrap", event.target.value)
+                    }
+                    className="mt-3 w-full appearance-none rounded-xl border border-rose-600/30 bg-white py-6 text-center text-7xl font-semibold leading-tight text-rose-600 outline-none transition focus:border-rose-600/50 focus:ring-0 dark:border-rose-500/30 dark:bg-card dark:text-rose-400 dark:focus:border-rose-500/50 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  />
+                </div>
+                <div className="flex border-t border-rose-600/20 bg-rose-50 dark:border-rose-500/20 dark:bg-rose-500/5">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="h-14 flex-1 rounded-none border-l border-rose-600/20 text-lg font-semibold text-slate-500 hover:bg-rose-100 hover:text-slate-700 dark:border-rose-500/20 dark:text-muted-foreground dark:hover:bg-accent dark:hover:text-foreground"
+                    onClick={() => handleCountDelta("scrap", -10)}
+                  >
+                    -10
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="h-14 flex-1 rounded-none border-l border-rose-600/20 text-lg font-semibold text-slate-500 hover:bg-rose-100 hover:text-slate-700 dark:border-rose-500/20 dark:text-muted-foreground dark:hover:bg-accent dark:hover:text-foreground"
+                    onClick={() => handleCountDelta("scrap", -1)}
+                  >
+                    -1
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="h-14 flex-1 rounded-none border-l border-rose-600/20 text-lg font-semibold text-rose-600 hover:bg-rose-100 hover:text-rose-700 dark:border-rose-500/20 dark:text-rose-400 dark:hover:bg-rose-500/20 dark:hover:text-rose-300"
+                    onClick={() => handleCountDelta("scrap", 1)}
+                  >
+                    +1
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="h-14 flex-1 rounded-none text-lg font-semibold text-rose-600 hover:bg-rose-100 hover:text-rose-700 dark:text-rose-400 dark:hover:bg-rose-500/20 dark:hover:text-rose-300"
+                    onClick={() => handleCountDelta("scrap", 10)}
+                  >
+                    +10
+                  </Button>
                 </div>
               </div>
             </CardContent>
             {productionError ? (
-              <p className="px-6 pb-4 text-right text-sm text-rose-600">
+              <p className="px-6 pb-4 text-right text-sm text-rose-600 dark:text-rose-400">
                 {productionError}
               </p>
             ) : null}
@@ -502,12 +504,12 @@ export default function WorkPage() {
         </div>
 
         <div className="space-y-6">
-          <Card>
+          <Card className="rounded-xl border border-border bg-card/50 backdrop-blur-sm">
             <CardHeader className="text-right">
-              <CardTitle className="text-right">
+              <CardTitle className="text-right text-foreground">
                 {t("work.section.actions")}
               </CardTitle>
-              <CardDescription className="text-right">
+              <CardDescription className="text-right text-muted-foreground">
                 {t("work.actions.instructions")}
               </CardDescription>
             </CardHeader>
@@ -515,7 +517,7 @@ export default function WorkPage() {
               <Button
                 type="button"
                 variant="outline"
-                className="w-full justify-center border-dashed bg-white"
+                className="w-full justify-center border-dashed border-input bg-secondary/30 text-foreground/80 hover:bg-accent"
                 onClick={() => setFaultDialogOpen(true)}
               >
                 {t("work.actions.reportFault")}
@@ -523,12 +525,12 @@ export default function WorkPage() {
             </CardContent>
           </Card>
 
-          <Card className="border border-rose-200 bg-rose-50/60 shadow-sm">
+          <Card className="rounded-xl border border-rose-600/30 bg-rose-50 dark:border-rose-500/30 dark:bg-rose-500/10">
             <CardHeader className="text-right">
-              <CardTitle className="text-rose-900">
+              <CardTitle className="text-rose-600 dark:text-rose-400">
                 {t("work.actions.finish")}
               </CardTitle>
-              <CardDescription className="text-rose-700">
+              <CardDescription className="text-rose-500 dark:text-rose-300">
                 {t("work.actions.finishWarning")}
               </CardDescription>
             </CardHeader>
@@ -536,7 +538,7 @@ export default function WorkPage() {
               <Button
                 type="button"
                 variant="destructive"
-                className="w-full justify-center"
+                className="w-full justify-center border-0 bg-rose-600 hover:bg-rose-700"
                 onClick={() => setEndSessionDialogOpen(true)}
               >
                 {t("work.actions.finish")}
@@ -547,27 +549,27 @@ export default function WorkPage() {
       </section>
 
       <Dialog open={isFaultDialogOpen} onOpenChange={setFaultDialogOpen}>
-        <DialogContent dir="rtl">
+        <DialogContent dir="rtl" className="border-border bg-card">
           <DialogHeader>
-            <DialogTitle>{t("work.dialog.fault.title")}</DialogTitle>
+            <DialogTitle className="text-foreground">{t("work.dialog.fault.title")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 text-right">
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">
+              <label className="text-sm font-medium text-muted-foreground">
                 {t("work.dialog.fault.reason")}
               </label>
               <Select value={faultReason} onValueChange={setFaultReason}>
-                <SelectTrigger className="justify-between text-right">
+                <SelectTrigger className="justify-between border-input bg-secondary text-right text-foreground">
                   <SelectValue placeholder={t("work.dialog.fault.reason")} />
                 </SelectTrigger>
-                <SelectContent align="end">
+                <SelectContent align="end" className="border-input bg-popover">
                   {reasons.length === 0 ? (
-                    <SelectItem value="empty" disabled>
+                    <SelectItem value="empty" disabled className="text-muted-foreground">
                       {t("checklist.loading")}
                     </SelectItem>
                   ) : (
                     reasons.map((reason) => (
-                      <SelectItem key={reason.id} value={reason.id}>
+                      <SelectItem key={reason.id} value={reason.id} className="text-foreground focus:bg-accent focus:text-accent-foreground">
                         {formatReason(reason)}
                       </SelectItem>
                     ))
@@ -577,20 +579,20 @@ export default function WorkPage() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">
+              <label className="text-sm font-medium text-muted-foreground">
                 {t("work.dialog.fault.note")}
               </label>
               <Textarea
                 placeholder={t("work.dialog.fault.note")}
                 value={faultNote}
                 onChange={(event) => setFaultNote(event.target.value)}
-                className="text-right"
+                className="border-input bg-secondary text-right text-foreground placeholder:text-muted-foreground"
                 rows={3}
               />
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">
+              <label className="text-sm font-medium text-muted-foreground">
                 {t("work.dialog.fault.image")}
               </label>
               <div className="space-y-3">
@@ -598,12 +600,13 @@ export default function WorkPage() {
                   type="file"
                   accept="image/*"
                   aria-label={t("work.dialog.fault.image")}
+                  className="border-input bg-secondary text-foreground file:bg-muted file:text-muted-foreground"
                   onChange={(event) =>
                     handleFaultImageChange(event.target.files?.[0] ?? null)
                   }
                 />
                 {faultImagePreview ? (
-                  <div className="overflow-hidden rounded-xl border border-slate-200">
+                  <div className="overflow-hidden rounded-xl border border-input">
                     <Image
                       src={faultImagePreview}
                       alt={t("work.dialog.fault.image")}
@@ -613,7 +616,7 @@ export default function WorkPage() {
                     />
                   </div>
                 ) : (
-                  <div className="rounded-xl border border-dashed border-slate-300 p-4 text-right text-sm text-slate-500">
+                  <div className="rounded-xl border border-dashed border-input p-4 text-right text-sm text-muted-foreground">
                     {t("work.dialog.fault.imagePlaceholder")}
                   </div>
                 )}
@@ -622,19 +625,21 @@ export default function WorkPage() {
           </div>
           <DialogFooter>
             {faultError ? (
-              <p className="w-full text-right text-sm text-rose-600">
+              <p className="w-full text-right text-sm text-rose-600 dark:text-rose-400">
                 {faultError}
               </p>
             ) : null}
             <Button
               type="button"
               variant="ghost"
+              className="border-input text-foreground/80 hover:bg-accent hover:text-foreground"
               onClick={() => setFaultDialogOpen(false)}
             >
               {t("common.cancel")}
             </Button>
             <Button
               type="button"
+              className="bg-primary font-medium text-primary-foreground hover:bg-primary/90"
               disabled={isFaultSubmitting}
               onClick={async () => {
                 if (!station) return;
@@ -646,6 +651,7 @@ export default function WorkPage() {
                     stationReasonId: faultReason,
                     description: faultNote,
                     image: faultImage,
+                    workerId: worker?.id,
                   });
                   setFaultDialogOpen(false);
                   setFaultReason(undefined);
@@ -667,15 +673,16 @@ export default function WorkPage() {
       </Dialog>
 
       <Dialog open={isEndSessionDialogOpen} onOpenChange={setEndSessionDialogOpen}>
-        <DialogContent dir="rtl">
+        <DialogContent dir="rtl" className="border-border bg-card">
           <DialogHeader>
-            <DialogTitle>{t("work.dialog.finish.title")}</DialogTitle>
-            <CardDescription>{t("work.dialog.finish.description")}</CardDescription>
+            <DialogTitle className="text-foreground">{t("work.dialog.finish.title")}</DialogTitle>
+            <CardDescription className="text-muted-foreground">{t("work.dialog.finish.description")}</CardDescription>
           </DialogHeader>
           <DialogFooter className="flex flex-col gap-2 sm:flex-row sm:justify-end">
             <Button
               type="button"
               variant="ghost"
+              className="border-input text-foreground/80 hover:bg-accent hover:text-foreground"
               onClick={() => setEndSessionDialogOpen(false)}
             >
               {t("common.cancel")}
@@ -683,6 +690,7 @@ export default function WorkPage() {
             <Button
               type="button"
               variant="destructive"
+              className="border-0 bg-rose-600 hover:bg-rose-700"
               onClick={() => {
                 setEndSessionDialogOpen(false);
                 router.push("/checklist/end");
@@ -730,7 +738,7 @@ function WorkTimer({
   return (
     <Card
       className={cn(
-        "border-2 shadow-sm",
+        "rounded-xl border-2 bg-card/50 backdrop-blur-sm",
       )}
       style={{
         borderColor: visual?.timerBorder ?? neutralVisual.timerBorder,
@@ -738,9 +746,9 @@ function WorkTimer({
       }}
     >
       <CardHeader className="space-y-2 text-right">
-        <CardTitle>{title}</CardTitle>
-        <div className="flex items-center justify-between text-xs text-slate-500">
-          <CardDescription className="text-xs text-slate-500">
+        <CardTitle className="text-foreground">{title}</CardTitle>
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <CardDescription className="text-xs text-muted-foreground">
             {sessionId}
           </CardDescription>
           <div className="flex items-center gap-2">
@@ -763,8 +771,8 @@ function WorkTimer({
         </div>
       </CardHeader>
       <CardContent className="flex flex-col gap-2 text-right">
-        <p className="text-sm text-slate-500">{badgeLabel}</p>
-        <p className="text-5xl font-semibold text-slate-900">
+        <p className="text-sm text-muted-foreground">{badgeLabel}</p>
+        <p className="text-5xl font-semibold text-foreground">
           {formatDuration(elapsed)}
         </p>
       </CardContent>

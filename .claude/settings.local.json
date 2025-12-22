@@ -4,7 +4,11 @@
       "Bash(find:*)",
       "Bash(npm run build:*)",
       "Bash(npm run dev:*)",
-      "Skill(frontend-design)"
+      "Skill(frontend-design)",
+      "Bash(npm install:*)",
+      "mcp__plugin_supabase_supabase__list_tables",
+      "mcp__plugin_supabase_supabase__list_projects",
+      "mcp__plugin_supabase_supabase__apply_migration"
     ]
   }
 }

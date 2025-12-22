@@ -26,23 +26,23 @@ export const StationTypeManager = ({
   }
 
   return (
-    <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/50 backdrop-blur-sm overflow-hidden">
-      <div className="px-5 py-4 border-b border-zinc-800/60">
-        <h3 className="text-base font-semibold text-zinc-100">ניהול סוגי תחנות</h3>
+    <div className="rounded-xl border border-border bg-card/50 backdrop-blur-sm overflow-hidden">
+      <div className="px-5 py-4 border-b border-border">
+        <h3 className="text-base font-semibold text-foreground">ניהול סוגי תחנות</h3>
       </div>
       <div className="p-4 flex flex-wrap gap-2">
         {stationTypes.map((type) => (
           <div
             key={type}
-            className="flex items-center gap-2 rounded-full border border-zinc-700 bg-zinc-800/50 px-3 py-1"
+            className="flex items-center gap-2 rounded-full border border-input bg-secondary/50 px-3 py-1"
           >
-            <Badge variant="secondary" className="bg-zinc-700 text-zinc-200 border-zinc-600">{type}</Badge>
+            <Badge variant="secondary" className="bg-muted text-foreground/80 border-input">{type}</Badge>
             <Button
               size="sm"
               variant="ghost"
               onClick={() => void handleClear(type)}
               disabled={loadingKey === type}
-              className="text-zinc-400 hover:text-red-400 hover:bg-transparent"
+              className="text-muted-foreground hover:text-red-400 hover:bg-transparent"
             >
               {loadingKey === type ? "מנקה..." : "הסר"}
             </Button>

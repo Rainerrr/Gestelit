@@ -93,16 +93,16 @@ export const ChangePasswordDialog = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={handleDialogChange}>
-      <DialogContent className="border-zinc-800 bg-zinc-900 text-right sm:max-w-md">
+      <DialogContent className="border-border bg-card text-right sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-xl font-bold text-zinc-100">שינוי סיסמת מנהל</DialogTitle>
-          <DialogDescription className="text-zinc-400">
+          <DialogTitle className="text-xl font-bold text-foreground">שינוי סיסמת מנהל</DialogTitle>
+          <DialogDescription className="text-muted-foreground">
             עדכן את סיסמת המנהל. לאחר השינוי, יש לעדכן את משתנה הסביבה ADMIN_PASSWORD ולהפעיל מחדש את האפליקציה.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="current-password" className="text-zinc-300">סיסמה נוכחית</Label>
+            <Label htmlFor="current-password" className="text-foreground/80">סיסמה נוכחית</Label>
             <Input
               id="current-password"
               type="password"
@@ -112,11 +112,11 @@ export const ChangePasswordDialog = ({
               placeholder="••••"
               autoComplete="current-password"
               disabled={isSubmitting}
-              className="border-zinc-700 bg-zinc-800 text-zinc-100 placeholder:text-zinc-500 focus:border-amber-500 focus:ring-amber-500/20"
+              className="border-input bg-secondary text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-primary/20"
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="new-password" className="text-zinc-300">סיסמה חדשה</Label>
+            <Label htmlFor="new-password" className="text-foreground/80">סיסמה חדשה</Label>
             <Input
               id="new-password"
               type="password"
@@ -126,11 +126,11 @@ export const ChangePasswordDialog = ({
               placeholder="••••"
               autoComplete="new-password"
               disabled={isSubmitting}
-              className="border-zinc-700 bg-zinc-800 text-zinc-100 placeholder:text-zinc-500 focus:border-amber-500 focus:ring-amber-500/20"
+              className="border-input bg-secondary text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-primary/20"
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="confirm-password" className="text-zinc-300">אישור סיסמה</Label>
+            <Label htmlFor="confirm-password" className="text-foreground/80">אישור סיסמה</Label>
             <Input
               id="confirm-password"
               type="password"
@@ -140,7 +140,7 @@ export const ChangePasswordDialog = ({
               placeholder="••••"
               autoComplete="new-password"
               disabled={isSubmitting}
-              className="border-zinc-700 bg-zinc-800 text-zinc-100 placeholder:text-zinc-500 focus:border-amber-500 focus:ring-amber-500/20"
+              className="border-input bg-secondary text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-primary/20"
             />
           </div>
           {error ? (
@@ -152,7 +152,7 @@ export const ChangePasswordDialog = ({
         <DialogFooter className="justify-start">
           <Button
             onClick={handleSubmit}
-            className="min-w-32 bg-amber-500 hover:bg-amber-600 text-zinc-900 font-medium"
+            className="min-w-32 bg-primary hover:bg-primary/90 text-primary-foreground font-medium"
             disabled={isSubmitting}
           >
             {isSubmitting ? "מעדכן..." : "עדכן סיסמה"}

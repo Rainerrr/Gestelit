@@ -3,7 +3,7 @@
 import { memo, useMemo, useSyncExternalStore } from "react";
 import type { KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, Clock, Package, Trash2, Moon } from "lucide-react";
+import { ChevronLeft, Clock, Package, Trash2, CirclePause } from "lucide-react";
 import type { StatusDictionary } from "@/lib/status";
 import {
   useAdminSession,
@@ -80,6 +80,17 @@ const isSessionIdle = (lastSeenAt: string | null, now: number): boolean => {
   return now - lastSeen > IDLE_THRESHOLD_MS;
 };
 
+const formatLastSeenTime = (lastSeenAt: string | null): string => {
+  if (!lastSeenAt) return "";
+  const date = new Date(lastSeenAt);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString("he-IL", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+};
+
 type RowProps = {
   sessionId: string;
   dictionary: StatusDictionary;
@@ -108,6 +119,10 @@ const SessionRow = memo(
       () => (session ? isSessionIdle(session.lastSeenAt, now) : false),
       [session, now],
     );
+    const lastSeenFormatted = useMemo(
+      () => (session ? formatLastSeenTime(session.lastSeenAt) : ""),
+      [session],
+    );
 
     if (!session) {
       return null;
@@ -132,7 +147,7 @@ const SessionRow = memo(
       <div
         role="button"
         tabIndex={0}
-        className="group flex items-center gap-4 px-4 py-3 border-b border-zinc-800/40 cursor-pointer transition-all duration-150 hover:bg-zinc-800/40"
+        className="group flex items-center gap-4 px-4 py-3 border-b border-border cursor-pointer transition-all duration-150 hover:bg-accent"
         aria-label={`תחנה פעילה עבור עבודה ${session.jobNumber}`}
         onClick={() => onNavigate(session.id)}
         onKeyDown={(event) => handleKeyOpen(session.id, event)}
@@ -140,9 +155,21 @@ const SessionRow = memo(
         {/* Station + Status + Idle */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-sm font-bold text-zinc-100">{session.stationName}</span>
+            <span className="text-sm font-bold text-foreground">{session.stationName}</span>
             {isIdle && (
-              <Moon className="h-4 w-4 text-amber-400 shrink-0" aria-label="לא פעיל" />
+              <span
+                className="relative group/idle cursor-default"
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
+              >
+                <CirclePause
+                  className="h-4 w-4 text-amber-500 shrink-0"
+                  aria-label="לא פעיל"
+                />
+                <span className="absolute top-full left-1/2 -translate-x-1/2 mt-1 px-2 py-1 text-xs text-white bg-zinc-800 rounded whitespace-nowrap opacity-0 invisible group-hover/idle:opacity-100 group-hover/idle:visible transition-opacity z-[9999] shadow-lg">
+                  נראה לאחרונה: {lastSeenFormatted}
+                </span>
+              </span>
             )}
           </div>
           <div
@@ -163,20 +190,20 @@ const SessionRow = memo(
 
         {/* Worker + Job */}
         <div className="flex flex-col items-end gap-0.5 min-w-[120px]">
-          <span className="text-sm text-zinc-300">{session.workerName}</span>
+          <span className="text-sm text-foreground/80">{session.workerName}</span>
           <div className="flex items-center gap-1.5">
-            <span className="text-[10px] text-zinc-500">פק״ע:</span>
-            <span className="font-mono text-xs text-amber-500">{session.jobNumber}</span>
+            <span className="text-[10px] text-muted-foreground">פק״ע:</span>
+            <span className="font-mono text-xs text-primary">{session.jobNumber}</span>
           </div>
         </div>
 
         {/* Divider */}
-        <div className="w-px h-8 bg-zinc-700/50" />
+        <div className="w-px h-8 bg-border" />
 
         {/* Time + Quantities */}
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-1.5 text-zinc-400">
-            <Clock className="h-3.5 w-3.5 text-zinc-500" />
+          <div className="flex items-center gap-1.5 text-muted-foreground">
+            <Clock className="h-3.5 w-3.5 text-muted-foreground" />
             <span className="font-mono text-sm tabular-nums">{duration}</span>
           </div>
           <div className="flex items-center gap-1.5">
@@ -190,7 +217,7 @@ const SessionRow = memo(
         </div>
 
         {/* Navigation arrow */}
-        <ChevronLeft className="h-4 w-4 text-zinc-600 opacity-0 group-hover:opacity-100 transition-opacity" />
+        <ChevronLeft className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
       </div>
     );
   },
@@ -212,6 +239,10 @@ const MobileSessionCard = memo(
       () => (session ? isSessionIdle(session.lastSeenAt, now) : false),
       [session, now],
     );
+    const lastSeenFormatted = useMemo(
+      () => (session ? formatLastSeenTime(session.lastSeenAt) : ""),
+      [session],
+    );
 
     if (!session) {
       return null;
@@ -229,7 +260,7 @@ const MobileSessionCard = memo(
       <div
         role="button"
         tabIndex={0}
-        className="group flex items-center gap-3 p-3 border border-zinc-800/60 rounded-lg bg-zinc-900/40 transition-all duration-200 hover:bg-zinc-800/40 hover:border-zinc-700 cursor-pointer"
+        className="group flex items-center gap-3 p-3 border border-border rounded-lg bg-card/50 transition-all duration-200 hover:bg-accent hover:border-border cursor-pointer"
         aria-label={`תחנה פעילה עבור עבודה ${session.jobNumber}`}
         onClick={() => onNavigate(session.id)}
         onKeyDown={(event) => {
@@ -242,9 +273,21 @@ const MobileSessionCard = memo(
         {/* Station + Status + Idle */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-sm font-bold text-zinc-100">{session.stationName}</span>
+            <span className="text-sm font-bold text-foreground">{session.stationName}</span>
             {isIdle && (
-              <Moon className="h-4 w-4 text-amber-400 shrink-0" aria-label="לא פעיל" />
+              <span
+                className="relative group/idle cursor-default"
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
+              >
+                <CirclePause
+                  className="h-4 w-4 text-amber-500 shrink-0"
+                  aria-label="לא פעיל"
+                />
+                <span className="absolute top-full left-1/2 -translate-x-1/2 mt-1 px-2 py-1 text-xs text-white bg-zinc-800 rounded whitespace-nowrap opacity-0 invisible group-hover/idle:opacity-100 group-hover/idle:visible transition-opacity z-[9999] shadow-lg">
+                  נראה לאחרונה: {lastSeenFormatted}
+                </span>
+              </span>
             )}
           </div>
           <div
@@ -265,20 +308,20 @@ const MobileSessionCard = memo(
 
         {/* Worker + Job */}
         <div className="flex flex-col items-end gap-0.5 min-w-[100px]">
-          <span className="text-sm text-zinc-300">{session.workerName}</span>
+          <span className="text-sm text-foreground/80">{session.workerName}</span>
           <div className="flex items-center gap-1.5">
-            <span className="text-[10px] text-zinc-500">פק״ע:</span>
-            <span className="font-mono text-xs text-amber-500">{session.jobNumber}</span>
+            <span className="text-[10px] text-muted-foreground">פק״ע:</span>
+            <span className="font-mono text-xs text-primary">{session.jobNumber}</span>
           </div>
         </div>
 
         {/* Divider */}
-        <div className="w-px h-8 bg-zinc-700/50" />
+        <div className="w-px h-8 bg-border" />
 
         {/* Time + Quantities */}
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1 text-zinc-400">
-            <Clock className="h-3 w-3 text-zinc-500" />
+          <div className="flex items-center gap-1 text-muted-foreground">
+            <Clock className="h-3 w-3 text-muted-foreground" />
             <span className="font-mono text-xs tabular-nums">{duration}</span>
           </div>
           <div className="flex items-center gap-1">
@@ -292,7 +335,7 @@ const MobileSessionCard = memo(
         </div>
 
         {/* Navigation arrow */}
-        <ChevronLeft className="h-4 w-4 text-zinc-600 opacity-0 group-hover:opacity-100 transition-opacity" />
+        <ChevronLeft className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
       </div>
     );
   },
@@ -317,16 +360,16 @@ const ActiveSessionsTableComponent = ({
   };
 
   return (
-    <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/50 backdrop-blur-sm overflow-hidden">
+    <div className="rounded-xl border border-border bg-card/50 backdrop-blur-sm overflow-visible">
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800/60">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-border">
         <div className="flex items-center gap-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/10">
-            <Activity className="h-4 w-4 text-amber-400" />
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
+            <Activity className="h-4 w-4 text-primary" />
           </div>
           <div>
-            <h3 className="text-base font-semibold text-zinc-100">תחנות פעילות</h3>
-            <p className="text-xs text-zinc-500">{sortedSessions.length} תחנות</p>
+            <h3 className="text-base font-semibold text-foreground">תחנות פעילות</h3>
+            <p className="text-xs text-muted-foreground">{sortedSessions.length} תחנות</p>
           </div>
         </div>
       </div>
@@ -336,18 +379,18 @@ const ActiveSessionsTableComponent = ({
         <div className="flex items-center justify-center py-12">
           <div className="flex flex-col items-center gap-3">
             <div className="relative h-8 w-8">
-              <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-amber-500" />
+              <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-primary" />
             </div>
-            <p className="text-sm text-zinc-500">טוען תחנות פעילות...</p>
+            <p className="text-sm text-muted-foreground">טוען תחנות פעילות...</p>
           </div>
         </div>
       ) : sortedSessions.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 px-4">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-zinc-800/50 mb-4">
-            <Activity className="h-6 w-6 text-zinc-600" />
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-muted mb-4">
+            <Activity className="h-6 w-6 text-muted-foreground" />
           </div>
-          <p className="text-sm text-zinc-400 text-center">אין תחנות פעילות כרגע</p>
-          <p className="text-xs text-zinc-600 mt-1">תחנות חדשות יופיעו כאן בזמן אמת</p>
+          <p className="text-sm text-muted-foreground text-center">אין תחנות פעילות כרגע</p>
+          <p className="text-xs text-muted-foreground mt-1">תחנות חדשות יופיעו כאן בזמן אמת</p>
         </div>
       ) : (
         <>

@@ -66,15 +66,15 @@ const SortableRow = ({
     <div
       ref={setNodeRef}
       style={style}
-      className="flex items-start gap-2 rounded-md border border-zinc-700 bg-zinc-800/80 px-2 py-2 shadow-sm sm:gap-3 sm:rounded-lg sm:px-3 sm:py-2"
+      className="flex items-start gap-2 rounded-md border border-input bg-secondary px-2 py-2 shadow-sm sm:gap-3 sm:rounded-lg sm:px-3 sm:py-2"
     >
       <div className="flex w-12 flex-col items-center gap-1 pt-1 sm:w-14 sm:gap-2">
-        <span className="text-base font-semibold text-zinc-100 sm:text-lg">
+        <span className="text-base font-semibold text-foreground sm:text-lg">
           {item.order_index + 1}
         </span>
         <button
           type="button"
-          className="flex h-8 w-8 items-center justify-center rounded-md border border-dashed border-zinc-600 text-zinc-500 transition hover:border-zinc-500 hover:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-amber-500/50 sm:h-9 sm:w-9"
+          className="flex h-8 w-8 items-center justify-center rounded-md border border-dashed border-input text-muted-foreground transition hover:border-input hover:text-foreground/80 focus:outline-none focus:ring-2 focus:ring-primary/50 sm:h-9 sm:w-9"
           aria-label="גרירה לשינוי סדר"
           {...attributes}
           {...listeners}
@@ -84,7 +84,7 @@ const SortableRow = ({
       </div>
       <div className="grid flex-1 grid-cols-1 gap-2 md:grid-cols-2 md:gap-3">
         <div className="space-y-1">
-          <label className="text-xs text-zinc-400" htmlFor={`he-${item.id}`}>
+          <label className="text-xs text-muted-foreground" htmlFor={`he-${item.id}`}>
             תווית בעברית
           </label>
           <Input
@@ -96,11 +96,11 @@ const SortableRow = ({
             }
             disabled={loading}
             placeholder="לדוגמה: בדיקת ניקיון"
-            className="h-10 text-sm border-zinc-600 bg-zinc-700/80 text-zinc-100 placeholder:text-zinc-500"
+            className="h-10 text-sm border-input bg-muted text-foreground placeholder:text-muted-foreground"
           />
         </div>
         <div className="space-y-1">
-          <label className="text-xs text-zinc-400" htmlFor={`ru-${item.id}`}>
+          <label className="text-xs text-muted-foreground" htmlFor={`ru-${item.id}`}>
             תווית ברוסית
           </label>
           <Input
@@ -112,7 +112,7 @@ const SortableRow = ({
             }
             disabled={loading}
             placeholder="Например: проверка чистоты"
-            className="h-10 text-sm border-zinc-600 bg-zinc-700/80 text-zinc-100 placeholder:text-zinc-500"
+            className="h-10 text-sm border-input bg-muted text-foreground placeholder:text-muted-foreground"
           />
         </div>
       </div>
@@ -368,23 +368,23 @@ export const StationChecklistDialog = ({
 
   const renderTab = (kind: ChecklistKind, items: StationChecklistItem[]) => (
     <div className="space-y-3">
-      <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/50 backdrop-blur-sm overflow-hidden">
-        <div className="flex flex-row items-center justify-between gap-3 px-4 py-3 border-b border-zinc-800/60">
+      <div className="rounded-xl border border-border bg-card/50 backdrop-blur-sm overflow-hidden">
+        <div className="flex flex-row items-center justify-between gap-3 px-4 py-3 border-b border-border">
           <div className="space-y-1 text-right">
-            <h4 className="text-base font-semibold text-zinc-100">
+            <h4 className="text-base font-semibold text-foreground">
               {kind === "start" ? "פריטי פתיחה" : "פריטי סגירה"}
             </h4>
-            <p className="text-xs text-zinc-500">
+            <p className="text-xs text-muted-foreground">
               גררו לשינוי סדר, סמנו סעיפים חובה והוסיפו תרגומים בעברית ורוסית.
             </p>
           </div>
-          <Badge variant="secondary" className="whitespace-nowrap bg-zinc-800 text-zinc-300 border-zinc-700">
+          <Badge variant="secondary" className="whitespace-nowrap bg-secondary text-foreground/80 border-input">
             {items.length} פריטים
           </Badge>
         </div>
         <div className="p-4 space-y-2 sm:space-y-3">
           {items.length === 0 ? (
-            <p className="rounded-md border border-dashed border-zinc-700 bg-zinc-800/30 px-3 py-2 text-sm text-zinc-500">
+            <p className="rounded-md border border-dashed border-input bg-muted px-3 py-2 text-sm text-muted-foreground">
               לא הוגדרו פריטים. הוסיפו פריט חדש כדי להתחיל.
             </p>
           ) : (
@@ -420,7 +420,7 @@ export const StationChecklistDialog = ({
             size="sm"
             onClick={() => handleAddItem(kind)}
             disabled={loading}
-            className="mt-1 w-full justify-center border-zinc-700 bg-zinc-800/50 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100"
+            className="mt-1 w-full justify-center border-input bg-secondary/50 text-foreground/80 hover:bg-muted hover:text-foreground"
           >
             <Plus className="mr-2 h-4 w-4" />
             הוספת פריט
@@ -434,12 +434,12 @@ export const StationChecklistDialog = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         dir="rtl"
-        className="max-w-4xl text-right max-h-[90vh] overflow-hidden p-0 sm:max-h-[80vh] sm:p-6 border-zinc-800 bg-zinc-900"
+        className="max-w-4xl text-right max-h-[90vh] overflow-hidden p-0 sm:max-h-[80vh] sm:p-6 border-border bg-card"
       >
         <DialogHeader className="px-4 pt-4 sm:px-0 sm:pt-0">
-          <DialogTitle className="flex items-center justify-between gap-2 text-zinc-100">
+          <DialogTitle className="flex items-center justify-between gap-2 text-foreground">
             <span>צ׳קליסטים לתחנה {station.name}</span>
-            <Badge variant="outline" className="flex items-center gap-1 border-zinc-700 text-zinc-400">
+            <Badge variant="outline" className="flex items-center gap-1 border-input text-muted-foreground">
               <ListChecks className="h-4 w-4" />
               {station.code}
             </Badge>
@@ -475,8 +475,8 @@ export const StationChecklistDialog = ({
                 aria-label={tab.label}
                 className={`flex items-center gap-2 ${
                   activeTab === tab.key
-                    ? "bg-amber-500 text-zinc-900 border-amber-500 hover:bg-amber-400 hover:border-amber-400 font-medium"
-                    : "border-zinc-700 bg-zinc-800/50 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100"
+                    ? "bg-primary text-primary-foreground border-primary hover:bg-primary/90 hover:border-primary font-medium"
+                    : "border-input bg-secondary/50 text-foreground/80 hover:bg-muted hover:text-foreground"
                 }`}
               >
                 {tab.label}
@@ -484,8 +484,8 @@ export const StationChecklistDialog = ({
                   variant="outline"
                   className={`text-xs ${
                     activeTab === tab.key
-                      ? "border-amber-600/50 bg-amber-600/20 text-amber-100"
-                      : "border-zinc-600 text-zinc-400"
+                      ? "border-primary/50 bg-primary/20 text-primary-foreground"
+                      : "border-input text-muted-foreground"
                   }`}
                 >
                   {tab.count}
@@ -498,14 +498,14 @@ export const StationChecklistDialog = ({
         </div>
 
         <DialogFooter className="justify-start px-4 pb-4 pt-2 sm:px-0 sm:pb-0">
-          <Button onClick={() => void handleSubmit()} disabled={loading} className="bg-amber-500 text-zinc-900 hover:bg-amber-400 font-medium">
+          <Button onClick={() => void handleSubmit()} disabled={loading} className="bg-primary text-primary-foreground hover:bg-primary/90 font-medium">
             {loading ? "שומר..." : "שמור צ'קליסטים"}
           </Button>
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
             disabled={loading}
-            className="border-zinc-700 bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100"
+            className="border-input bg-secondary text-foreground/80 hover:bg-muted hover:text-foreground"
           >
             ביטול
           </Button>

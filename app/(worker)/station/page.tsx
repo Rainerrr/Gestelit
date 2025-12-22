@@ -28,6 +28,7 @@ import { abandonSessionApi, fetchStationsApi } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 import type { SessionAbandonReason, Station } from "@/lib/types";
 import type { TranslationKey } from "@/lib/i18n/translations";
+import { BackButton } from "@/components/navigation/back-button";
 
 const formatDuration = (totalSeconds: number) => {
   const safeSeconds = Math.max(0, Math.floor(totalSeconds));
@@ -241,6 +242,7 @@ export default function StationPage() {
 
   return (
     <>
+      <BackButton href="/login" />
       <PageHeader
         eyebrow={worker.full_name}
         title={t("station.title")}
@@ -250,10 +252,10 @@ export default function StationPage() {
       {pendingRecovery ? (
         <Alert
           variant="default"
-          className="max-w-3xl border border-amber-200 bg-amber-50 text-right"
+          className="max-w-3xl border border-primary/30 bg-primary/10 text-right"
         >
-          <AlertTitle>{t("station.resume.bannerTitle")}</AlertTitle>
-          <AlertDescription>
+          <AlertTitle className="text-primary">{t("station.resume.bannerTitle")}</AlertTitle>
+          <AlertDescription className="text-primary/80">
             {t("station.resume.bannerSubtitle")}
           </AlertDescription>
         </Alert>
@@ -264,16 +266,16 @@ export default function StationPage() {
           {Array.from({ length: 3 }).map((_, index) => (
             <div
               key={`skeleton-${index}`}
-              className="h-32 rounded-2xl border border-dashed border-slate-200 bg-slate-50/80"
+              className="h-32 rounded-xl border border-dashed border-border bg-card/50"
             >
-              <div className="h-full w-full animate-pulse rounded-2xl bg-slate-100" />
+              <div className="h-full w-full animate-pulse rounded-xl bg-muted" />
             </div>
           ))}
         </div>
       ) : state.items.length === 0 ? (
-        <Card className="max-w-3xl border border-dashed text-right">
+        <Card className="max-w-3xl border border-dashed border-border bg-card/50 text-right">
           <CardHeader>
-            <CardTitle className="text-lg text-slate-700">
+            <CardTitle className="text-lg text-muted-foreground">
               {state.error ? t("station.error.load") : t("station.empty")}
             </CardTitle>
           </CardHeader>
@@ -294,26 +296,26 @@ export default function StationPage() {
                     setSelectedStation(stationOption.id);
                   }}
                   className={cn(
-                    "rounded-2xl border bg-white p-4 text-right transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
+                    "rounded-xl border border-border bg-card/50 p-4 text-right backdrop-blur-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
                     isSelected
-                      ? "border-primary/80 bg-primary/10 shadow-lg ring-2 ring-primary/20"
-                      : "border-slate-200 hover:border-primary/40 hover:shadow",
+                      ? "border-primary/50 bg-primary/10 ring-2 ring-primary/20"
+                      : "hover:border-primary/40 hover:bg-accent",
                     isRecoveryBlocking ? "cursor-not-allowed opacity-60" : "",
                   )}
                   aria-pressed={isSelected}
                   disabled={isRecoveryBlocking}
                 >
                   <div className="space-y-2">
-                    <p className="text-xl font-semibold text-slate-900">
+                    <p className="text-xl font-semibold text-foreground">
                       {stationOption.name}
                     </p>
-                    <div className="flex items-center justify-between text-xs text-slate-500">
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
                       <span>{typeLabel(stationOption.station_type)}</span>
                       <span
                         aria-hidden
                         className={cn(
                           "inline-flex h-2.5 w-2.5 rounded-full transition",
-                          isSelected ? "bg-primary" : "bg-slate-300",
+                          isSelected ? "bg-primary" : "bg-muted-foreground/50",
                         )}
                       />
                     </div>
@@ -322,23 +324,23 @@ export default function StationPage() {
               );
             })}
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="rounded-xl border border-border bg-card/50 p-4 backdrop-blur-sm">
             <div className="flex flex-col gap-3 text-right md:flex-row md:items-center md:justify-between">
               <div className="space-y-1">
-                <p className="text-sm text-slate-600">
+                <p className="text-sm text-foreground/80">
                   {selectedStationEntity
                     ? `${t("station.selected")} · ${selectedStationEntity.name}`
                     : t("station.subtitle")}
                 </p>
                 {selectedStationEntity ? (
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-muted-foreground">
                     {typeLabel(selectedStationEntity.station_type)}
                   </p>
                 ) : null}
               </div>
               <Button
                 size="lg"
-                className="w-full justify-center sm:w-auto sm:min-w-48"
+                className="w-full justify-center bg-primary font-medium text-primary-foreground hover:bg-primary/90 sm:w-auto sm:min-w-48"
                 disabled={!selectedStation || isRecoveryBlocking}
                 onClick={handleContinue}
               >
@@ -350,41 +352,41 @@ export default function StationPage() {
       )}
 
       <Dialog open={isRecoveryBlocking} onOpenChange={handleDialogClose}>
-        <DialogContent dir="rtl">
+        <DialogContent dir="rtl" className="border-border bg-card">
           <DialogHeader>
-            <DialogTitle>{t("station.resume.title")}</DialogTitle>
-            <DialogDescription>
+            <DialogTitle className="text-foreground">{t("station.resume.title")}</DialogTitle>
+            <DialogDescription className="text-muted-foreground">
               {t("station.resume.subtitle")}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 text-right">
-            <Badge variant="secondary" className="w-full justify-center py-2">
+            <Badge variant="secondary" className="w-full justify-center border-primary/30 bg-primary/10 py-2 text-primary">
               {t("station.resume.countdown", { time: countdownLabel })}
             </Badge>
 
-            <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+            <div className="grid gap-3 rounded-xl border border-border/60 bg-muted/30 p-4">
               <div>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-muted-foreground">
                   {t("station.resume.station")}
                 </p>
-                <p className="text-base font-semibold text-slate-900">
+                <p className="text-base font-semibold text-foreground">
                   {pendingRecovery?.station?.name ??
                     t("station.resume.stationFallback")}
                 </p>
               </div>
               <div>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-muted-foreground">
                   {t("station.resume.job")}
                 </p>
-                <p className="text-base font-semibold text-slate-900">
+                <p className="text-base font-semibold text-foreground">
                   {pendingRecovery?.job?.job_number ??
                     t("station.resume.jobFallback")}
                 </p>
               </div>
-              <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+              <div className="flex items-center justify-between rounded-xl border border-input bg-secondary px-4 py-3 text-sm text-muted-foreground">
                 <span>{t("station.resume.elapsed")}</span>
-                <span className="font-semibold text-slate-900">
+                <span className="font-semibold text-foreground">
                   {elapsedLabel}
                 </span>
               </div>
@@ -392,7 +394,7 @@ export default function StationPage() {
           </div>
 
           {resumeError ? (
-            <p className="text-right text-sm text-rose-600">{resumeError}</p>
+            <p className="text-right text-sm text-rose-600 dark:text-rose-400">{resumeError}</p>
           ) : null}
 
           <DialogFooter className="flex flex-col gap-2 sm:flex-row sm:justify-start">
@@ -401,7 +403,7 @@ export default function StationPage() {
               variant="outline"
               onClick={() => handleDiscardSession()}
               disabled={resumeActionLoading}
-              className="w-full justify-center sm:w-auto"
+              className="w-full justify-center border-input bg-secondary text-foreground/80 hover:bg-accent hover:text-foreground sm:w-auto"
             >
               {resumeActionLoading
                 ? t("station.resume.discarding")
@@ -410,7 +412,7 @@ export default function StationPage() {
             <Button
               type="button"
               onClick={handleResumeSession}
-              className="w-full justify-center sm:w-auto"
+              className="w-full justify-center bg-primary font-medium text-primary-foreground hover:bg-primary/90 sm:w-auto"
               disabled={resumeActionLoading}
             >
               {t("station.resume.resume")}

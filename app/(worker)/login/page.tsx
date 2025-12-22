@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { FormSection } from "@/components/forms/form-section";
 import { LanguageSelect } from "@/components/language/language-select";
 import { PageHeader } from "@/components/layout/page-header";
+import { BackButton } from "@/components/navigation/back-button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -65,6 +66,7 @@ export default function LoginPage() {
 
   return (
     <>
+      <BackButton href="/" />
       <PageHeader
         eyebrow={t("app.tagline")}
         title={t("login.title")}
@@ -78,7 +80,7 @@ export default function LoginPage() {
             <Button
               type="submit"
               size="lg"
-              className="w-full justify-center sm:w-auto sm:min-w-48"
+              className="w-full justify-center bg-primary font-medium text-primary-foreground hover:bg-primary/90 sm:w-auto sm:min-w-48"
             >
               {t("login.submit")}
             </Button>
@@ -86,16 +88,16 @@ export default function LoginPage() {
         >
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="worker">{t("login.workerIdLabel")}</Label>
+              <Label htmlFor="worker" className="text-muted-foreground">{t("login.workerIdLabel")}</Label>
               <Input
                 id="worker"
                 inputMode="numeric"
                 placeholder={t("login.workerIdPlaceholder")}
                 value={workerId}
                 onChange={(event) => setWorkerId(event.target.value)}
-                className="text-right"
+                className="border-border bg-white text-right text-foreground placeholder:text-muted-foreground focus:border-primary/50 focus:ring-primary/30 dark:bg-secondary"
               />
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-muted-foreground">
                 {t("login.subtitle")}
               </p>
             </div>
@@ -106,9 +108,9 @@ export default function LoginPage() {
           </div>
 
           {error ? (
-            <Alert variant="destructive" className="text-right">
-              <AlertTitle>{t("login.title")}</AlertTitle>
-              <AlertDescription>{error}</AlertDescription>
+            <Alert variant="destructive" className="border-rose-600/30 bg-rose-50 text-right dark:border-rose-500/30 dark:bg-rose-500/10">
+              <AlertTitle className="text-rose-700 dark:text-rose-400">{t("login.title")}</AlertTitle>
+              <AlertDescription className="text-rose-600 dark:text-rose-300">{error}</AlertDescription>
             </Alert>
           ) : null}
         </FormSection>

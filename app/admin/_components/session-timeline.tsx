@@ -139,7 +139,7 @@ export const SessionTimeline = ({
 
   if (!hasBounds || !startTs || !endTs) {
     return (
-      <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+      <div className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-sm text-primary">
         חסרים נתונים להצגת ציר הזמן.
       </div>
     );
@@ -147,7 +147,7 @@ export const SessionTimeline = ({
 
   return (
     <div className="space-y-3" dir="ltr">
-      <div className="relative h-36 w-full overflow-visible rounded-md border border-slate-200 bg-white px-3 pt-10 pb-10 shadow-sm">
+      <div className="relative h-36 w-full overflow-visible rounded-md border border-border bg-card px-3 pt-10 pb-10 shadow-sm">
         {/* Status change markers (top) */}
         {changeMarkers.map((marker, idx) => (
           <div
@@ -156,23 +156,23 @@ export const SessionTimeline = ({
             style={{ left: `${toPercent(marker.ts)}%` }}
             aria-label={`שינוי סטטוס ${marker.label}`}
           >
-            <div className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-700 shadow-sm">
+            <div className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-foreground shadow-sm">
               {marker.label}
             </div>
-            <span className="h-10 w-[1px] bg-slate-300" />
+            <span className="h-10 w-[1px] bg-border" />
           </div>
         ))}
 
         {/* Timeline bar area */}
         <div
-          className="absolute left-4 right-4 rounded-sm bg-slate-100"
+          className="absolute left-4 right-4 rounded-sm bg-muted"
           style={{ top: `${barTop}px`, height: `${barHeight}px` }}
         >
           {hasSegments ? (
             mergedSegments.map((segment, index) => (
               <div
                 key={`${segment.status}-${segment.start}-${index}`}
-                className="absolute top-1/2 -translate-y-1/2 rounded-[5px] border border-white/70 shadow-sm"
+                className="absolute top-1/2 -translate-y-1/2 rounded-[5px] border border-background/70 shadow-sm"
                 style={{
                   left: `${toPercent(segment.start)}%`,
                   width: `${Math.max(
@@ -187,7 +187,7 @@ export const SessionTimeline = ({
               />
             ))
           ) : (
-            <div className="flex h-full items-center justify-center text-sm text-slate-500">
+            <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
               אין אירועי סטטוס להצגה
             </div>
           )}
@@ -198,9 +198,9 @@ export const SessionTimeline = ({
               style={{ left: `${toPercent(nowTs)}%`, top: barTop - 10, height: barHeight + 20 }}
               aria-label="עכשיו"
             >
-              <div className="mb-1 text-[12px] font-semibold text-emerald-700">עכשיו</div>
+              <div className="mb-1 text-[12px] font-semibold text-emerald-600 dark:text-emerald-400">עכשיו</div>
               <div className="h-full w-[2px] bg-emerald-500" />
-              <div className="mt-1 text-[11px] text-slate-600">{formatTime(nowTs)}</div>
+              <div className="mt-1 text-[11px] text-muted-foreground">{formatTime(nowTs)}</div>
             </div>
           ) : null}
         </div>
@@ -213,18 +213,18 @@ export const SessionTimeline = ({
             style={{ left: `${toPercent(tick.ts)}%`, top: `${tickTop}px` }}
             aria-hidden="true"
           >
-            <span className="h-8 w-[1px] bg-slate-300" />
-            <div className="h-3 w-3 rounded-full border border-slate-300 bg-white shadow-sm" />
-            <div className="text-[12px] font-medium text-slate-700">{tick.label}</div>
+            <span className="h-8 w-[1px] bg-border" />
+            <div className="h-3 w-3 rounded-full border border-border bg-background shadow-sm" />
+            <div className="text-[12px] font-medium text-foreground">{tick.label}</div>
           </div>
         ))}
       </div>
 
-      <div className="flex items-center justify-between text-sm text-slate-700">
+      <div className="flex items-center justify-between text-sm text-foreground">
         <span className="font-medium">התחלה: {formatTime(startTs)}</span>
         <span>
           {isActive ? (
-            <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
+            <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
               הסתיים בינתיים: עכשיו
             </Badge>
           ) : (

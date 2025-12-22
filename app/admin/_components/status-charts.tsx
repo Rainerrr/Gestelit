@@ -40,12 +40,12 @@ type StatusChartsProps = {
 };
 
 const tooltipStyle = {
-  backgroundColor: "#18181b",
-  border: "1px solid #27272a",
-  borderRadius: "0.75rem",
+  backgroundColor: "hsl(var(--tooltip-bg))",
+  border: "1px solid hsl(var(--tooltip-border))",
+  borderRadius: "0.5rem",
   padding: "0.75rem 1rem",
   textAlign: "right" as const,
-  boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.3)",
+  boxShadow: "0 4px 12px rgba(0, 0, 0, 0.12)",
 };
 
 const getStatusColor = (
@@ -67,12 +67,12 @@ const ChartCard = ({
   icon: React.ElementType;
   children: React.ReactNode
 }) => (
-  <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/50 backdrop-blur-sm overflow-hidden">
-    <div className="flex items-center gap-3 px-5 py-4 border-b border-zinc-800/60">
-      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/10">
-        <Icon className="h-4 w-4 text-amber-400" />
+  <div className="rounded-xl border border-border bg-card/50 backdrop-blur-sm overflow-hidden">
+    <div className="flex items-center gap-3 px-5 py-4 border-b border-border">
+      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
+        <Icon className="h-4 w-4 text-primary" />
       </div>
-      <h3 className="text-base font-semibold text-zinc-100">{title}</h3>
+      <h3 className="text-base font-semibold text-foreground">{title}</h3>
     </div>
     <div className="p-5">
       {children}
@@ -116,9 +116,9 @@ const StatusChartsComponent = ({
         <div className="flex items-center justify-center h-64">
           <div className="flex flex-col items-center gap-3">
             <div className="relative h-8 w-8">
-              <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-amber-500" />
+              <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-primary" />
             </div>
-            <p className="text-sm text-zinc-500">טוען סטטוסים...</p>
+            <p className="text-sm text-muted-foreground">טוען סטטוסים...</p>
           </div>
         </div>
       );
@@ -127,10 +127,10 @@ const StatusChartsComponent = ({
     if (normalizedStatusData.length === 0) {
       return (
         <div className="flex flex-col items-center justify-center h-64">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-zinc-800/50 mb-4">
-            <PieChartIcon className="h-6 w-6 text-zinc-600" />
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-muted mb-4">
+            <PieChartIcon className="h-6 w-6 text-muted-foreground" />
           </div>
-          <p className="text-sm text-zinc-400">אין סטטוסים להצגה</p>
+          <p className="text-sm text-muted-foreground">אין סטטוסים להצגה</p>
         </div>
       );
     }
@@ -173,15 +173,15 @@ const StatusChartsComponent = ({
                       transition: "filter 0.2s ease",
                       cursor: "pointer",
                     }}
-                    stroke="#18181b"
+                    stroke="hsl(var(--card))"
                     strokeWidth={2}
                   />
                 ))}
               </Pie>
               <Tooltip
                 contentStyle={tooltipStyle}
-                itemStyle={{ color: "#fafafa" }}
-                labelStyle={{ color: "#a1a1aa", marginBottom: "4px" }}
+                itemStyle={{ color: "hsl(var(--tooltip-text))" }}
+                labelStyle={{ color: "hsl(var(--tooltip-text-muted))", marginBottom: "4px" }}
                 formatter={(value: number) => {
                   const percent = total > 0 ? Math.round((value / total) * 100) : 0;
                   return [`${value} (${percent}%)`, ""];
@@ -197,7 +197,7 @@ const StatusChartsComponent = ({
             <button
               type="button"
               key={entry.key ?? entry.label ?? index}
-              className="flex items-center gap-2 cursor-pointer transition-all duration-200 rounded-lg px-2 py-1 hover:bg-zinc-800/50"
+              className="flex items-center gap-2 cursor-pointer transition-all duration-200 rounded-lg px-2 py-1 hover:bg-accent"
               style={{
                 opacity: activeIndex !== undefined && activeIndex !== index ? 0.4 : 1,
               }}
@@ -205,11 +205,11 @@ const StatusChartsComponent = ({
               onMouseLeave={() => setActiveIndex(undefined)}
             >
               <span
-                className="h-2.5 w-2.5 rounded-full shrink-0 ring-1 ring-zinc-700"
+                className="h-2.5 w-2.5 rounded-full shrink-0 ring-1 ring-border"
                 style={{ backgroundColor: getStatusColor(entry.key, dictionary) }}
               />
-              <span className="text-zinc-300">{entry.label}</span>
-              <span className="text-zinc-500 font-mono">({entry.value})</span>
+              <span className="text-foreground/80">{entry.label}</span>
+              <span className="text-muted-foreground font-mono">({entry.value})</span>
             </button>
           ))}
         </div>
@@ -223,9 +223,9 @@ const StatusChartsComponent = ({
         <div className="flex items-center justify-center h-64">
           <div className="flex flex-col items-center gap-3">
             <div className="relative h-8 w-8">
-              <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-amber-500" />
+              <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-primary" />
             </div>
-            <p className="text-sm text-zinc-500">טוען נתוני תפוקה...</p>
+            <p className="text-sm text-muted-foreground">טוען נתוני תפוקה...</p>
           </div>
         </div>
       );
@@ -234,10 +234,10 @@ const StatusChartsComponent = ({
     if (normalizedThroughput.length === 0) {
       return (
         <div className="flex flex-col items-center justify-center h-64">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-zinc-800/50 mb-4">
-            <BarChart3 className="h-6 w-6 text-zinc-600" />
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-muted mb-4">
+            <BarChart3 className="h-6 w-6 text-muted-foreground" />
           </div>
-          <p className="text-sm text-zinc-400">אין נתוני תפוקה להצגה</p>
+          <p className="text-sm text-muted-foreground">אין נתוני תפוקה להצגה</p>
         </div>
       );
     }
@@ -251,26 +251,26 @@ const StatusChartsComponent = ({
               margin={{ top: 16, right: 16, bottom: 28, left: 16 }}
               barCategoryGap={20}
             >
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#27272a" />
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--chart-grid))" />
               <XAxis
                 dataKey="label"
-                tick={{ fontSize: 11, fill: "#71717a" }}
+                tick={{ fontSize: 11, fill: "hsl(var(--chart-axis))" }}
                 interval={0}
-                axisLine={{ stroke: "#27272a" }}
-                tickLine={{ stroke: "#27272a" }}
+                axisLine={{ stroke: "hsl(var(--chart-grid))" }}
+                tickLine={{ stroke: "hsl(var(--chart-grid))" }}
               />
               <YAxis
                 type="number"
-                tick={{ fontSize: 11, fill: "#71717a" }}
+                tick={{ fontSize: 11, fill: "hsl(var(--chart-axis))" }}
                 allowDecimals={false}
-                axisLine={{ stroke: "#27272a" }}
-                tickLine={{ stroke: "#27272a" }}
+                axisLine={{ stroke: "hsl(var(--chart-grid))" }}
+                tickLine={{ stroke: "hsl(var(--chart-grid))" }}
               />
               <Tooltip
-                cursor={{ fill: "rgba(39, 39, 42, 0.5)" }}
+                cursor={{ fill: "hsl(var(--muted) / 0.5)" }}
                 contentStyle={tooltipStyle}
-                itemStyle={{ color: "#fafafa" }}
-                labelStyle={{ color: "#a1a1aa", marginBottom: "4px" }}
+                itemStyle={{ color: "hsl(var(--tooltip-text))" }}
+                labelStyle={{ color: "hsl(var(--tooltip-text-muted))", marginBottom: "4px" }}
                 formatter={(value, name) =>
                   [value as number, name === "good" ? "כמות תקינה" : "כמות פסולה"]
                 }
@@ -299,17 +299,17 @@ const StatusChartsComponent = ({
         <div className="mt-4 flex justify-center gap-6 text-xs" dir="rtl">
           <div className="flex items-center gap-2">
             <span
-              className="h-2.5 w-2.5 rounded-full shrink-0 ring-1 ring-zinc-700"
+              className="h-2.5 w-2.5 rounded-full shrink-0 ring-1 ring-border"
               style={{ backgroundColor: throughputColors.good }}
             />
-            <span className="text-zinc-300">כמות תקינה</span>
+            <span className="text-foreground/80">כמות תקינה</span>
           </div>
           <div className="flex items-center gap-2">
             <span
-              className="h-2.5 w-2.5 rounded-full shrink-0 ring-1 ring-zinc-700"
+              className="h-2.5 w-2.5 rounded-full shrink-0 ring-1 ring-border"
               style={{ backgroundColor: throughputColors.scrap }}
             />
-            <span className="text-zinc-300">כמות פסולה</span>
+            <span className="text-foreground/80">כמות פסולה</span>
           </div>
         </div>
       </div>

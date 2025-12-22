@@ -1,5 +1,6 @@
-import type { Station, StatusDefinition, Worker } from "@/lib/types";
+import type { Job, Station, StatusDefinition, Worker } from "@/lib/types";
 import type { StationWithStats, WorkerWithStats } from "@/lib/data/admin-management";
+import type { JobWithStats } from "@/lib/data/jobs";
 import type {
   ActiveSession,
   CompletedSession,
@@ -441,6 +442,113 @@ export async function fetchMonthlyJobThroughputAdminApi(params: {
       headers: createAdminHeaders(),
     },
   );
+  return handleResponse(response);
+}
+
+// ============================================
+// MALFUNCTIONS API FUNCTIONS
+// ============================================
+
+import type { StationWithMalfunctions } from "@/lib/data/malfunctions";
+import type { Malfunction, MalfunctionStatus } from "@/lib/types";
+
+export async function fetchMalfunctionsAdminApi(): Promise<{
+  stations: StationWithMalfunctions[];
+}> {
+  const response = await fetch("/api/admin/malfunctions", {
+    headers: createAdminHeaders(),
+  });
+  return handleResponse(response);
+}
+
+export async function updateMalfunctionStatusAdminApi(
+  id: string,
+  status: MalfunctionStatus,
+  adminNotes?: string,
+): Promise<{ malfunction: Malfunction }> {
+  const response = await fetch(`/api/admin/malfunctions/${id}`, {
+    method: "PATCH",
+    headers: createAdminHeaders(),
+    body: JSON.stringify({ status, adminNotes }),
+  });
+  return handleResponse(response);
+}
+
+export async function fetchOpenMalfunctionsCountApi(): Promise<{ count: number }> {
+  const response = await fetch("/api/admin/malfunctions/count", {
+    headers: createAdminHeaders(),
+  });
+  return handleResponse(response);
+}
+
+// ============================================
+// JOBS MANAGEMENT API FUNCTIONS
+// ============================================
+
+type JobPayload = {
+  job_number: string;
+  customer_name?: string | null;
+  description?: string | null;
+  planned_quantity?: number | null;
+};
+
+type JobUpdatePayload = Partial<Omit<JobPayload, "job_number">>;
+
+export async function fetchJobsAdminApi(params?: {
+  search?: string;
+  status?: "active" | "completed" | "all";
+}): Promise<{ jobs: JobWithStats[] }> {
+  const query = new URLSearchParams();
+  if (params?.search) query.set("search", params.search);
+  if (params?.status) query.set("status", params.status);
+
+  const queryString = query.toString();
+  const response = await fetch(
+    `/api/admin/jobs${queryString ? `?${queryString}` : ""}`,
+    {
+      headers: createAdminHeaders(),
+    },
+  );
+  return handleResponse(response);
+}
+
+export async function createJobAdminApi(
+  payload: JobPayload,
+): Promise<{ job: Job }> {
+  const response = await fetch("/api/admin/jobs", {
+    method: "POST",
+    headers: createAdminHeaders(),
+    body: JSON.stringify(payload),
+  });
+  return handleResponse(response);
+}
+
+export async function updateJobAdminApi(
+  id: string,
+  payload: JobUpdatePayload,
+): Promise<{ job: Job }> {
+  const response = await fetch(`/api/admin/jobs/${id}`, {
+    method: "PUT",
+    headers: createAdminHeaders(),
+    body: JSON.stringify(payload),
+  });
+  return handleResponse(response);
+}
+
+export async function deleteJobAdminApi(id: string): Promise<{ ok: boolean }> {
+  const response = await fetch(`/api/admin/jobs/${id}`, {
+    method: "DELETE",
+    headers: createAdminHeaders(),
+  });
+  return handleResponse(response);
+}
+
+export async function checkJobActiveSessionAdminApi(
+  jobId: string,
+): Promise<{ hasActiveSession: boolean }> {
+  const response = await fetch(`/api/admin/jobs/${jobId}/active-session`, {
+    headers: createAdminHeaders(),
+  });
   return handleResponse(response);
 }
 
