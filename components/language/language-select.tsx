@@ -35,20 +35,20 @@ export function LanguageSelect({
 
   return (
     <div className={cn("space-y-2 text-right", className)}>
-      <Label htmlFor={id} className="text-sm font-medium text-slate-700">
+      <Label htmlFor={id} className="text-sm font-medium text-muted-foreground">
         {resolvedLabel}
       </Label>
       <Select value={language} onValueChange={handleChange}>
         <SelectTrigger
           id={id}
           aria-label={resolvedLabel}
-          className="justify-between text-right"
+          className="justify-between border-border bg-white text-right text-foreground dark:bg-secondary"
         >
           <SelectValue placeholder={resolvedLabel} />
         </SelectTrigger>
-        <SelectContent align="end" className="text-right">
+        <SelectContent align="end" className="border-input bg-popover text-right">
           {Object.entries(supportedLanguages).map(([code, text]) => (
-            <SelectItem key={code} value={code} className="text-right">
+            <SelectItem key={code} value={code} className="text-right text-foreground focus:bg-accent focus:text-accent-foreground">
               {text}
             </SelectItem>
           ))}

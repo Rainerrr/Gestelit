@@ -30,7 +30,7 @@ export default function RootLayout({
   return (
     <html lang="he" dir="rtl" suppressHydrationWarning>
       <body
-        className={`${rubik.variable} ${plexMono.variable} min-h-screen bg-slate-100 text-slate-900 antialiased`}
+        className={`${rubik.variable} ${plexMono.variable} antialiased`}
       >
         <AppProviders>
           <main className="min-h-screen">

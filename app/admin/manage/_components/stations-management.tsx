@@ -141,50 +141,50 @@ export const StationsManagement = ({
   };
 
   return (
-    <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/50 backdrop-blur-sm overflow-hidden">
-      <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800/60">
+    <div className="rounded-xl border border-border bg-card/50 backdrop-blur-sm overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-border">
         <div>
-          <h3 className="text-base font-semibold text-zinc-100">תחנות</h3>
-          <p className="text-sm text-zinc-500">ניהול מכונות והרשאות.</p>
+          <h3 className="text-base font-semibold text-foreground">תחנות</h3>
+          <p className="text-sm text-muted-foreground">ניהול מכונות והרשאות.</p>
         </div>
         <StationFormDialog
           mode="create"
           stationTypes={normalizedStationTypes}
           onSubmit={handleAdd}
-          trigger={<Button className="bg-amber-500 text-zinc-900 hover:bg-amber-400 font-medium">הוסף תחנה</Button>}
+          trigger={<Button className="bg-primary text-primary-foreground hover:bg-primary/90 font-medium">הוסף תחנה</Button>}
           loading={isSubmitting}
         />
       </div>
       {isLoading ? (
         <div className="flex flex-col items-center justify-center py-16 gap-3">
           <div className="relative h-8 w-8">
-            <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-amber-500" />
+            <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-primary" />
           </div>
-          <p className="text-sm text-zinc-500">טוען תחנות...</p>
+          <p className="text-sm text-muted-foreground">טוען תחנות...</p>
         </div>
       ) : sortedStations.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 gap-3 text-zinc-500">
+        <div className="flex flex-col items-center justify-center py-16 gap-3 text-muted-foreground">
           <p className="text-sm">אין תחנות להצגה.</p>
         </div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-zinc-800/60 bg-zinc-900/80">
-                <th className="px-4 py-3 text-right text-xs font-semibold text-zinc-400 uppercase tracking-wider whitespace-nowrap">שם</th>
-                <th className="px-4 py-3 text-right text-xs font-semibold text-zinc-400 uppercase tracking-wider whitespace-nowrap">קוד</th>
-                <th className="px-4 py-3 text-right text-xs font-semibold text-zinc-400 uppercase tracking-wider whitespace-nowrap">סוג</th>
-                <th className="px-4 py-3 text-right text-xs font-semibold text-zinc-400 uppercase tracking-wider whitespace-nowrap">עובדים</th>
-                <th className="px-4 py-3 text-right text-xs font-semibold text-zinc-400 uppercase tracking-wider whitespace-nowrap">מצב</th>
-                <th className="hidden lg:table-cell px-4 py-3 text-right text-xs font-semibold text-zinc-400 uppercase tracking-wider whitespace-nowrap">פעולות</th>
+              <tr className="border-b border-border bg-card">
+                <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">שם</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">קוד</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">סוג</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">עובדים</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">מצב</th>
+                <th className="hidden lg:table-cell px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">פעולות</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-800/40">
+            <tbody className="divide-y divide-border">
               {sortedStations.map(({ station, workerCount }) => (
-                <tr key={station.id} className="group hover:bg-zinc-800/50 transition-colors">
+                <tr key={station.id} className="group hover:bg-accent transition-colors">
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-between gap-3">
-                      <span className="font-medium text-zinc-100">{station.name}</span>
+                      <span className="font-medium text-foreground">{station.name}</span>
                       <div className="flex items-center gap-2 lg:hidden">
                         <Button
                           variant="ghost"
@@ -192,7 +192,7 @@ export const StationsManagement = ({
                           onClick={() => setChecklistStation(station)}
                           aria-label="ניהול צ'קליסטים"
                           disabled={isChecklistSubmitting}
-                          className="h-8 w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-700"
+                          className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted"
                         >
                           <ListChecks className="h-4 w-4" />
                         </Button>
@@ -207,7 +207,7 @@ export const StationsManagement = ({
                               size="icon"
                               onClick={() => setEditingStation(station)}
                               aria-label="עריכת תחנה"
-                              className="h-8 w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-700"
+                              className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted"
                             >
                               <Pencil className="h-4 w-4" />
                             </Button>
@@ -233,24 +233,24 @@ export const StationsManagement = ({
                               size="icon"
                               disabled={isSubmitting}
                               aria-label="מחיקת תחנה"
-                              className="h-8 w-8 text-zinc-400 hover:text-red-400 hover:bg-red-500/10"
+                              className="h-8 w-8 text-muted-foreground hover:text-red-400 hover:bg-red-500/10"
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </DialogTrigger>
-                          <DialogContent dir="rtl" className="border-zinc-800 bg-zinc-900">
+                          <DialogContent dir="rtl" className="border-border bg-card">
                             <DialogHeader>
-                              <DialogTitle className="text-zinc-100">האם למחוק את התחנה?</DialogTitle>
-                              <DialogDescription className="text-zinc-400">
+                              <DialogTitle className="text-foreground">האם למחוק את התחנה?</DialogTitle>
+                              <DialogDescription className="text-muted-foreground">
                                 הפעולה תמחק את התחנה לחלוטין ותשמור היסטוריה בסשנים קיימים. לא ניתן לבטל.
                               </DialogDescription>
                             </DialogHeader>
                             {isCheckingDeleteSession ? (
-                              <p className="text-sm text-zinc-500">בודק סשנים פעילים...</p>
+                              <p className="text-sm text-muted-foreground">בודק סשנים פעילים...</p>
                             ) : deleteStationHasActiveSession ? (
                               <Alert
                                 variant="destructive"
-                                className="border-amber-500/30 bg-amber-500/10 text-right text-sm text-amber-400"
+                                className="border-primary/30 bg-primary/10 text-right text-sm text-primary"
                               >
                                 <AlertDescription>
                                   לא ניתן למחוק תחנה עם סשן פעיל. יש לסיים את הסשן הפעיל לפני מחיקה.
@@ -269,7 +269,7 @@ export const StationsManagement = ({
                                 variant="outline"
                                 onClick={() => setDeleteStationId(null)}
                                 disabled={isSubmitting}
-                                className="border-zinc-700 bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100"
+                                className="border-input bg-secondary text-foreground/80 hover:bg-muted hover:text-foreground"
                               >
                                 ביטול
                               </Button>
@@ -280,12 +280,12 @@ export const StationsManagement = ({
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <span className="font-mono text-zinc-300">{station.code}</span>
+                    <span className="font-mono text-foreground/80">{station.code}</span>
                   </td>
                   <td className="px-4 py-3">
-                    <Badge variant="secondary" className="bg-zinc-800 text-zinc-300 border-zinc-700">{station.station_type}</Badge>
+                    <Badge variant="secondary" className="bg-secondary text-foreground/80 border-input">{station.station_type}</Badge>
                   </td>
-                  <td className="px-4 py-3 text-zinc-400">{workerCount}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{workerCount}</td>
                   <td className="px-4 py-3">
                     {station.is_active ? (
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
@@ -307,7 +307,7 @@ export const StationsManagement = ({
                         onClick={() => setChecklistStation(station)}
                         aria-label="ניהול צ'קליסטים"
                         disabled={isChecklistSubmitting}
-                        className="h-8 w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-700"
+                        className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted"
                       >
                         <ListChecks className="h-4 w-4" />
                       </Button>
@@ -322,7 +322,7 @@ export const StationsManagement = ({
                             size="icon"
                             onClick={() => setEditingStation(station)}
                             aria-label="עריכת תחנה"
-                            className="h-8 w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-700"
+                            className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted"
                           >
                             <Pencil className="h-4 w-4" />
                           </Button>
@@ -343,24 +343,24 @@ export const StationsManagement = ({
                             size="icon"
                             disabled={isSubmitting}
                             aria-label="מחיקת תחנה"
-                            className="h-8 w-8 text-zinc-400 hover:text-red-400 hover:bg-red-500/10"
+                            className="h-8 w-8 text-muted-foreground hover:text-red-400 hover:bg-red-500/10"
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </DialogTrigger>
-                        <DialogContent dir="rtl" className="border-zinc-800 bg-zinc-900">
+                        <DialogContent dir="rtl" className="border-border bg-card">
                           <DialogHeader>
-                            <DialogTitle className="text-zinc-100">האם למחוק את התחנה?</DialogTitle>
-                            <DialogDescription className="text-zinc-400">
+                            <DialogTitle className="text-foreground">האם למחוק את התחנה?</DialogTitle>
+                            <DialogDescription className="text-muted-foreground">
                               הפעולה תמחק את התחנה לחלוטין ותשמור היסטוריה בסשנים קיימים. לא ניתן לבטל.
                             </DialogDescription>
                           </DialogHeader>
                           {isCheckingDeleteSession ? (
-                            <p className="text-sm text-zinc-500">בודק סשנים פעילים...</p>
+                            <p className="text-sm text-muted-foreground">בודק סשנים פעילים...</p>
                           ) : deleteStationHasActiveSession ? (
                             <Alert
                               variant="destructive"
-                              className="border-amber-500/30 bg-amber-500/10 text-right text-sm text-amber-400"
+                              className="border-primary/30 bg-primary/10 text-right text-sm text-primary"
                             >
                               <AlertDescription>
                                 לא ניתן למחוק תחנה עם סשן פעיל. יש לסיים את הסשן הפעיל לפני מחיקה.
@@ -375,7 +375,7 @@ export const StationsManagement = ({
                             >
                               מחיקה סופית
                             </Button>
-                            <Button variant="outline" onClick={() => setDeleteStationId(null)} disabled={isSubmitting} className="border-zinc-700 bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100">
+                            <Button variant="outline" onClick={() => setDeleteStationId(null)} disabled={isSubmitting} className="border-input bg-secondary text-foreground/80 hover:bg-muted hover:text-foreground">
                               ביטול
                             </Button>
                           </DialogFooter>

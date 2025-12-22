@@ -113,24 +113,24 @@ export const WorkerPermissionsDialog = ({
   return (
     <Dialog open={open} onOpenChange={handleDialogOpenChange}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="text-right border-zinc-800 bg-zinc-900">
+      <DialogContent className="text-right border-border bg-card">
         <DialogHeader>
-          <DialogTitle className="text-zinc-100">הרשאות תחנות עבור {worker.full_name}</DialogTitle>
+          <DialogTitle className="text-foreground">הרשאות תחנות עבור {worker.full_name}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3 pr-1 max-h-[50vh] overflow-y-auto">
           {isLoading ? (
-            <p className="text-sm text-zinc-500">טוען הרשאות...</p>
+            <p className="text-sm text-muted-foreground">טוען הרשאות...</p>
           ) : stations.length === 0 ? (
-            <p className="text-sm text-zinc-500">אין תחנות זמינות.</p>
+            <p className="text-sm text-muted-foreground">אין תחנות זמינות.</p>
           ) : (
             stations.map((station) => (
               <label
                 key={station.id}
-                className="flex items-center justify-between rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm cursor-pointer hover:bg-zinc-800 transition-colors"
+                className="flex items-center justify-between rounded-lg border border-input bg-secondary/50 px-3 py-2 text-sm cursor-pointer hover:bg-accent transition-colors"
               >
                 <div className="flex flex-col">
-                  <span className="font-medium text-zinc-100">{station.name}</span>
-                  <span className="text-xs text-zinc-500">{station.code}</span>
+                  <span className="font-medium text-foreground">{station.name}</span>
+                  <span className="text-xs text-muted-foreground">{station.code}</span>
                 </div>
                 <Checkbox
                   checked={selectedIds.has(station.id)}
@@ -138,7 +138,7 @@ export const WorkerPermissionsDialog = ({
                     handleToggle(station.id, Boolean(checked))
                   }
                   aria-label={`הרשאה לתחנה ${station.name}`}
-                  className="border-zinc-600 data-[state=checked]:bg-amber-500 data-[state=checked]:border-amber-500"
+                  className="border-input data-[state=checked]:bg-primary data-[state=checked]:border-primary"
                 />
               </label>
             ))
@@ -161,14 +161,14 @@ export const WorkerPermissionsDialog = ({
           </Alert>
         ) : null}
         <DialogFooter className="justify-start">
-          <Button onClick={() => void handleSave()} disabled={isSaving || isLoading} className="bg-amber-500 text-zinc-900 hover:bg-amber-400 font-medium">
+          <Button onClick={() => void handleSave()} disabled={isSaving || isLoading} className="bg-primary text-primary-foreground hover:bg-primary/90 font-medium">
             {isSaving ? "שומר..." : "שמור הרשאות"}
           </Button>
           <Button
             variant="outline"
             onClick={() => setOpen(false)}
             disabled={isSaving || isLoading}
-            className="border-zinc-700 bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100"
+            className="border-input bg-secondary text-foreground/80 hover:bg-muted hover:text-foreground"
           >
             ביטול
           </Button>

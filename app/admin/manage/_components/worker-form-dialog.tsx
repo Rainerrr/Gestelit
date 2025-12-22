@@ -135,9 +135,9 @@ export const WorkerFormDialog = ({
   return (
     <Dialog open={controlledOpen} onOpenChange={handleDialogOpenChange}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="text-right border-zinc-800 bg-zinc-900">
+      <DialogContent className="text-right border-border bg-card">
         <DialogHeader>
-          <DialogTitle className="text-zinc-100">{dialogTitle}</DialogTitle>
+          <DialogTitle className="text-foreground">{dialogTitle}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           {error && (
@@ -151,7 +151,7 @@ export const WorkerFormDialog = ({
           {warningMessage && (
             <Alert
               variant="destructive"
-              className="border-amber-500/30 bg-amber-500/10 text-right text-sm text-amber-400"
+              className="border-primary/30 bg-primary/10 text-right text-sm text-primary"
             >
               <AlertDescription>{warningMessage}</AlertDescription>
             </Alert>
@@ -165,29 +165,29 @@ export const WorkerFormDialog = ({
             </Alert>
           )}
           <div className="space-y-2">
-            <Label htmlFor="full_name" className="text-zinc-200">שם מלא</Label>
+            <Label htmlFor="full_name" className="text-foreground/80">שם מלא</Label>
             <Input
               id="full_name"
               aria-label="שם מלא"
               placeholder="שם העובד"
               value={fullName}
               onChange={(event) => setFullName(event.target.value)}
-              className="border-zinc-700 bg-zinc-800/80 text-zinc-100 placeholder:text-zinc-500"
+              className="border-input bg-secondary text-foreground placeholder:text-muted-foreground"
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="worker_code" className="text-zinc-200">קוד עובד</Label>
+            <Label htmlFor="worker_code" className="text-foreground/80">קוד עובד</Label>
             <Input
               id="worker_code"
               aria-label="קוד עובד"
               placeholder="קוד ייחודי"
               value={workerCode}
               onChange={(event) => setWorkerCode(event.target.value)}
-              className="border-zinc-700 bg-zinc-800/80 text-zinc-100 placeholder:text-zinc-500"
+              className="border-input bg-secondary text-foreground placeholder:text-muted-foreground"
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="department" className="text-zinc-200">מחלקה</Label>
+            <Label htmlFor="department" className="text-foreground/80">מחלקה</Label>
           <CreatableCombobox
             value={department}
             onChange={setDepartment}
@@ -203,52 +203,52 @@ export const WorkerFormDialog = ({
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label className="text-zinc-200">שפה</Label>
+              <Label className="text-foreground/80">שפה</Label>
               <Select
                 value={language ?? "auto"}
                 onValueChange={(value) =>
                   setLanguage((value || "auto") as SupportedLanguage | "auto")
                 }
               >
-                <SelectTrigger aria-label="בחירת שפה" className="border-zinc-700 bg-zinc-800 text-zinc-200">
+                <SelectTrigger aria-label="בחירת שפה" className="border-input bg-secondary text-foreground/80">
                   <SelectValue placeholder="בחר שפה" />
                 </SelectTrigger>
-                <SelectContent className="border-zinc-700 bg-zinc-800">
-                  <SelectItem value="auto" className="text-zinc-200 focus:bg-zinc-700">אוטומטי</SelectItem>
-                  <SelectItem value="he" className="text-zinc-200 focus:bg-zinc-700">עברית</SelectItem>
-                  <SelectItem value="ru" className="text-zinc-200 focus:bg-zinc-700">רוסית</SelectItem>
+                <SelectContent className="border-input bg-secondary">
+                  <SelectItem value="auto" className="text-foreground/80 focus:bg-muted">אוטומטי</SelectItem>
+                  <SelectItem value="he" className="text-foreground/80 focus:bg-muted">עברית</SelectItem>
+                  <SelectItem value="ru" className="text-foreground/80 focus:bg-muted">רוסית</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label className="text-zinc-200">תפקיד</Label>
+              <Label className="text-foreground/80">תפקיד</Label>
               <Select
                 value={role}
                 onValueChange={(value) => setRole((value || "worker") as WorkerRole)}
               >
-                <SelectTrigger aria-label="בחירת תפקיד" className="border-zinc-700 bg-zinc-800 text-zinc-200">
+                <SelectTrigger aria-label="בחירת תפקיד" className="border-input bg-secondary text-foreground/80">
                   <SelectValue placeholder="בחר תפקיד" />
                 </SelectTrigger>
-                <SelectContent className="border-zinc-700 bg-zinc-800">
-                  <SelectItem value="worker" className="text-zinc-200 focus:bg-zinc-700">עובד</SelectItem>
-                  <SelectItem value="admin" className="text-zinc-200 focus:bg-zinc-700">מנהל</SelectItem>
+                <SelectContent className="border-input bg-secondary">
+                  <SelectItem value="worker" className="text-foreground/80 focus:bg-muted">עובד</SelectItem>
+                  <SelectItem value="admin" className="text-foreground/80 focus:bg-muted">מנהל</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
           <div className="space-y-2">
-            <Label className="text-zinc-200">סטטוס</Label>
-            <div className="flex rounded-lg border border-zinc-700 bg-zinc-800/50 p-1">
+            <Label className="text-foreground/80">סטטוס</Label>
+            <div className="flex rounded-lg border border-input bg-secondary/50 p-1">
               <button
                 type="button"
                 onClick={() => setIsActive(true)}
                 className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-md text-sm font-medium transition-all ${
                   isActive
                     ? "bg-emerald-500 text-white shadow-sm"
-                    : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50"
+                    : "text-muted-foreground hover:text-foreground/80 hover:bg-muted"
                 }`}
               >
-                <span className={`w-2 h-2 rounded-full ${isActive ? "bg-white" : "bg-zinc-500"}`} />
+                <span className={`w-2 h-2 rounded-full ${isActive ? "bg-white" : "bg-muted-foreground"}`} />
                 פעיל
               </button>
               <button
@@ -256,25 +256,25 @@ export const WorkerFormDialog = ({
                 onClick={() => setIsActive(false)}
                 className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-md text-sm font-medium transition-all ${
                   !isActive
-                    ? "bg-zinc-600 text-white shadow-sm"
-                    : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50"
+                    ? "bg-muted text-white shadow-sm"
+                    : "text-muted-foreground hover:text-foreground/80 hover:bg-muted"
                 }`}
               >
-                <span className={`w-2 h-2 rounded-full ${!isActive ? "bg-white" : "bg-zinc-500"}`} />
+                <span className={`w-2 h-2 rounded-full ${!isActive ? "bg-white" : "bg-muted-foreground"}`} />
                 לא פעיל
               </button>
             </div>
           </div>
         </div>
         <DialogFooter className="justify-start">
-          <Button onClick={() => void handleSubmit()} disabled={loading} className="bg-amber-500 text-zinc-900 hover:bg-amber-400 font-medium">
+          <Button onClick={() => void handleSubmit()} disabled={loading} className="bg-primary text-primary-foreground hover:bg-primary/90 font-medium">
             {loading ? "שומר..." : "שמור"}
           </Button>
           <Button
             variant="outline"
             onClick={() => (onOpenChange ?? setLocalOpen)(false)}
             disabled={loading}
-            className="border-zinc-700 bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100"
+            className="border-input bg-secondary text-foreground/80 hover:bg-muted hover:text-foreground"
           >
             ביטול
           </Button>

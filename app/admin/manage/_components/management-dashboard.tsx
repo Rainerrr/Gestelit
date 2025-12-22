@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { CheckCircle2, Users, Cpu } from "lucide-react";
+import { CheckCircle2, Users, Cpu, Briefcase } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,16 +24,23 @@ import {
   removeWorkerStationAdminApi,
   updateStationAdminApi,
   updateWorkerAdminApi,
+  fetchJobsAdminApi,
+  createJobAdminApi,
+  updateJobAdminApi,
+  deleteJobAdminApi,
 } from "@/lib/api/admin-management";
-import type { Station, Worker } from "@/lib/types";
+import type { Job, Station, Worker } from "@/lib/types";
 import type { StationWithStats, WorkerWithStats } from "@/lib/data/admin-management";
+import type { JobWithStats } from "@/lib/data/jobs";
 import { WorkersManagement } from "./workers-management";
 import { StationsManagement } from "./stations-management";
+import { JobsManagement } from "./jobs-management";
 import { DepartmentManager } from "./department-manager";
 import { StationTypeManager } from "./station-type-manager";
 import { AdminLayout } from "../../_components/admin-layout";
 
-type ActiveTab = "workers" | "stations";
+type ActiveTab = "workers" | "stations" | "jobs";
+type JobStatusFilter = "all" | "active" | "completed";
 
 const errorCopy: Record<string, string> = {
   WORKER_CODE_EXISTS: "קוד עובד כבר קיים.",
@@ -44,6 +51,12 @@ const errorCopy: Record<string, string> = {
   ASSIGNMENT_NOT_FOUND: "ההרשאה לא נמצאה.",
   ASSIGNMENT_DELETE_FAILED: "מחיקת ההרשאה נכשלה.",
   STATION_DELETE_FAILED: "לא ניתן למחוק תחנה כרגע.",
+  JOB_NUMBER_EXISTS: "מספר עבודה כבר קיים במערכת.",
+  JOB_HAS_ACTIVE_SESSIONS: "לא ניתן למחוק עבודה עם סשן פעיל.",
+  JOB_NOT_FOUND: "עבודה לא נמצאה.",
+  JOB_CREATE_FAILED: "יצירת עבודה נכשלה.",
+  JOB_UPDATE_FAILED: "עדכון עבודה נכשל.",
+  JOB_DELETE_FAILED: "מחיקת עבודה נכשלה.",
 };
 
 export const ManagementDashboard = () => {
@@ -59,6 +72,9 @@ export const ManagementDashboard = () => {
   const [startsWith, setStartsWith] = useState<string | null>(null);
   const [isLoadingWorkers, setIsLoadingWorkers] = useState<boolean>(true);
   const [isLoadingStations, setIsLoadingStations] = useState<boolean>(true);
+  const [jobs, setJobs] = useState<JobWithStats[]>([]);
+  const [isLoadingJobs, setIsLoadingJobs] = useState<boolean>(true);
+  const [jobStatusFilter, setJobStatusFilter] = useState<JobStatusFilter>("all");
   const [bannerError, setBannerError] = useState<string | null>(null);
   const [bannerSuccess, setBannerSuccess] = useState<string | null>(null);
 
@@ -123,6 +139,22 @@ export const ManagementDashboard = () => {
     }
   }, [friendlyError, search, stationTypeFilter, startsWith]);
 
+  const loadJobs = useCallback(async () => {
+    setIsLoadingJobs(true);
+    setBannerError(null);
+    try {
+      const { jobs: data } = await fetchJobsAdminApi({
+        search: search.trim() || undefined,
+        status: jobStatusFilter,
+      });
+      setJobs(data);
+    } catch (error) {
+      friendlyError(error);
+    } finally {
+      setIsLoadingJobs(false);
+    }
+  }, [friendlyError, search, jobStatusFilter]);
+
   useEffect(() => {
     if (hasAccess !== true) return;
     void loadDepartments();
@@ -139,6 +171,11 @@ export const ManagementDashboard = () => {
     if (hasAccess !== true || activeTab !== "stations") return;
     void loadStations();
   }, [hasAccess, activeTab, loadStations]);
+
+  useEffect(() => {
+    if (hasAccess !== true || activeTab !== "jobs") return;
+    void loadJobs();
+  }, [hasAccess, activeTab, loadJobs]);
 
   const handleAddWorker = async (payload: Partial<Worker>) => {
     setBannerError(null);
@@ -303,12 +340,53 @@ export const ManagementDashboard = () => {
     }
   };
 
+  const handleAddJob = async (payload: Partial<Job>) => {
+    setBannerError(null);
+    try {
+      await createJobAdminApi({
+        job_number: payload.job_number ?? "",
+        customer_name: payload.customer_name ?? null,
+        description: payload.description ?? null,
+        planned_quantity: payload.planned_quantity ?? null,
+      });
+      await loadJobs();
+    } catch (error) {
+      friendlyError(error);
+    }
+  };
+
+  const handleUpdateJob = async (id: string, payload: Partial<Job>) => {
+    setBannerError(null);
+    try {
+      await updateJobAdminApi(id, {
+        customer_name: payload.customer_name,
+        description: payload.description,
+        planned_quantity: payload.planned_quantity,
+      });
+    } catch (error) {
+      friendlyError(error);
+    }
+  };
+
+  const handleDeleteJob = async (id: string) => {
+    setBannerError(null);
+    setBannerSuccess(null);
+    try {
+      await deleteJobAdminApi(id);
+      setBannerSuccess("העבודה נמחקה בהצלחה.");
+      await loadJobs();
+      setTimeout(() => setBannerSuccess(null), 5000);
+    } catch (error) {
+      friendlyError(error);
+    }
+  };
+
   if (hasAccess === null) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center rounded-xl border border-zinc-800/80 bg-zinc-900/50 text-zinc-400">
+      <div className="flex min-h-[60vh] items-center justify-center rounded-xl border border-border bg-card/50 text-muted-foreground">
         <div className="flex flex-col items-center gap-3">
           <div className="relative h-8 w-8">
-            <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-amber-500" />
+            <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-primary" />
           </div>
           <span>טוען הרשאות...</span>
         </div>
@@ -325,29 +403,29 @@ export const ManagementDashboard = () => {
       header={
         <div className="flex flex-col gap-4 text-right">
           <div className="space-y-1 text-right">
-            <p className="text-[10px] font-mono text-zinc-600 uppercase tracking-[0.2em]">ניהול</p>
-            <h1 className="text-2xl font-bold text-zinc-100 tracking-tight lg:text-3xl">
+            <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-[0.2em]">ניהול</p>
+            <h1 className="text-2xl font-bold text-foreground tracking-tight lg:text-3xl">
               ניהול עובדים ותחנות
             </h1>
-            <p className="text-sm text-zinc-500">
+            <p className="text-sm text-muted-foreground">
               הוספה, עריכה והרשאות של עובדים ומכונות.
             </p>
           </div>
 
           {/* Prominent Tab Switcher */}
           <div className="flex justify-center py-3">
-            <div className="inline-flex items-center gap-2 p-2 rounded-2xl border border-zinc-800 bg-zinc-900/80 backdrop-blur-sm shadow-xl shadow-black/20">
+            <div className="inline-flex items-center gap-2 p-2 rounded-2xl border border-border bg-card backdrop-blur-sm shadow-xl shadow-black/20">
               <button
                 type="button"
                 onClick={() => setActiveTab("workers")}
                 aria-label="עובדים"
                 className={`relative flex items-center gap-3 px-10 py-4 text-lg font-semibold rounded-xl transition-all duration-200 ${
                   activeTab === "workers"
-                    ? "bg-amber-500 text-zinc-900 shadow-lg shadow-amber-500/25"
-                    : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"
+                    ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25"
+                    : "text-muted-foreground hover:text-foreground hover:bg-accent"
                 }`}
               >
-                <Users className={`h-5 w-5 ${activeTab === "workers" ? "text-zinc-900" : ""}`} />
+                <Users className={`h-5 w-5 ${activeTab === "workers" ? "text-primary-foreground" : ""}`} />
                 עובדים
               </button>
               <button
@@ -356,35 +434,50 @@ export const ManagementDashboard = () => {
                 aria-label="תחנות"
                 className={`relative flex items-center gap-3 px-10 py-4 text-lg font-semibold rounded-xl transition-all duration-200 ${
                   activeTab === "stations"
-                    ? "bg-amber-500 text-zinc-900 shadow-lg shadow-amber-500/25"
-                    : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"
+                    ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25"
+                    : "text-muted-foreground hover:text-foreground hover:bg-accent"
                 }`}
               >
-                <Cpu className={`h-5 w-5 ${activeTab === "stations" ? "text-zinc-900" : ""}`} />
+                <Cpu className={`h-5 w-5 ${activeTab === "stations" ? "text-primary-foreground" : ""}`} />
                 תחנות
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("jobs")}
+                aria-label="עבודות"
+                className={`relative flex items-center gap-3 px-10 py-4 text-lg font-semibold rounded-xl transition-all duration-200 ${
+                  activeTab === "jobs"
+                    ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25"
+                    : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                }`}
+              >
+                <Briefcase className={`h-5 w-5 ${activeTab === "jobs" ? "text-primary-foreground" : ""}`} />
+                עבודות
               </button>
             </div>
           </div>
 
-          <div className="space-y-3 rounded-xl border border-zinc-800/80 bg-zinc-900/50 backdrop-blur-sm p-4">
+          <div className="space-y-3 rounded-xl border border-border bg-card/50 backdrop-blur-sm p-4">
             <div className="flex flex-wrap items-center gap-2">
               <Input
                 aria-label="חיפוש"
                 placeholder={
                   activeTab === "workers"
                     ? "חיפוש עובד לפי שם או קוד"
-                    : "חיפוש תחנה לפי שם או קוד"
+                    : activeTab === "stations"
+                      ? "חיפוש תחנה לפי שם או קוד"
+                      : "חיפוש עבודה לפי מספר או לקוח"
                 }
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                className="w-72 max-w-full border-zinc-700 bg-zinc-800/80 text-zinc-100 placeholder:text-zinc-500 focus:ring-amber-500/30 focus:border-amber-500/50"
+                className="w-72 max-w-full border-input bg-secondary text-foreground placeholder:text-muted-foreground focus:ring-primary/30 focus:border-primary/50"
               />
               <div className="flex flex-wrap items-center gap-2">
                 {activeTab === "workers" ? (
                   <>
                     <Badge
                       variant={departmentFilter === null ? "default" : "outline"}
-                      className={`cursor-pointer transition-colors ${departmentFilter === null ? "bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20" : "border-zinc-700 text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-300"}`}
+                      className={`cursor-pointer transition-colors ${departmentFilter === null ? "bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20" : "border-input text-muted-foreground hover:bg-accent hover:text-foreground/80"}`}
                       onClick={() => setDepartmentFilter(null)}
                     >
                       כל המחלקות
@@ -393,18 +486,18 @@ export const ManagementDashboard = () => {
                       <Badge
                         key={dept}
                         variant={departmentFilter === dept ? "default" : "outline"}
-                        className={`cursor-pointer transition-colors ${departmentFilter === dept ? "bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20" : "border-zinc-700 text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-300"}`}
+                        className={`cursor-pointer transition-colors ${departmentFilter === dept ? "bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20" : "border-input text-muted-foreground hover:bg-accent hover:text-foreground/80"}`}
                         onClick={() => setDepartmentFilter(dept)}
                       >
                         {dept}
                       </Badge>
                     ))}
                   </>
-                ) : (
+                ) : activeTab === "stations" ? (
                   <>
                     <Badge
                       variant={stationTypeFilter === null ? "default" : "outline"}
-                      className={`cursor-pointer transition-colors ${stationTypeFilter === null ? "bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20" : "border-zinc-700 text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-300"}`}
+                      className={`cursor-pointer transition-colors ${stationTypeFilter === null ? "bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20" : "border-input text-muted-foreground hover:bg-accent hover:text-foreground/80"}`}
                       onClick={() => setStationTypeFilter(null)}
                     >
                       כל הסוגים
@@ -413,41 +506,67 @@ export const ManagementDashboard = () => {
                       <Badge
                         key={type}
                         variant={stationTypeFilter === type ? "default" : "outline"}
-                        className={`cursor-pointer transition-colors ${stationTypeFilter === type ? "bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20" : "border-zinc-700 text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-300"}`}
+                        className={`cursor-pointer transition-colors ${stationTypeFilter === type ? "bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20" : "border-input text-muted-foreground hover:bg-accent hover:text-foreground/80"}`}
                         onClick={() => setStationTypeFilter(type)}
                       >
                         {type}
                       </Badge>
                     ))}
                   </>
+                ) : (
+                  <>
+                    <Badge
+                      variant={jobStatusFilter === "all" ? "default" : "outline"}
+                      className={`cursor-pointer transition-colors ${jobStatusFilter === "all" ? "bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20" : "border-input text-muted-foreground hover:bg-accent hover:text-foreground/80"}`}
+                      onClick={() => setJobStatusFilter("all")}
+                    >
+                      כל העבודות
+                    </Badge>
+                    <Badge
+                      variant={jobStatusFilter === "active" ? "default" : "outline"}
+                      className={`cursor-pointer transition-colors ${jobStatusFilter === "active" ? "bg-blue-500/10 border border-blue-500/20 text-blue-400 hover:bg-blue-500/20" : "border-input text-muted-foreground hover:bg-accent hover:text-foreground/80"}`}
+                      onClick={() => setJobStatusFilter("active")}
+                    >
+                      בתהליך
+                    </Badge>
+                    <Badge
+                      variant={jobStatusFilter === "completed" ? "default" : "outline"}
+                      className={`cursor-pointer transition-colors ${jobStatusFilter === "completed" ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20" : "border-input text-muted-foreground hover:bg-accent hover:text-foreground/80"}`}
+                      onClick={() => setJobStatusFilter("completed")}
+                    >
+                      הושלמו
+                    </Badge>
+                  </>
                 )}
               </div>
             </div>
-            <div className="flex flex-wrap gap-1">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setStartsWith(null)}
-                className={startsWith === null
-                  ? "bg-amber-500 text-zinc-900 border-amber-500 hover:bg-amber-400 hover:border-amber-400 font-medium"
-                  : "border-zinc-700 bg-zinc-800/50 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100"}
-              >
-                כל האותיות
-              </Button>
-              {hebrewLetters.map((letter) => (
+            {activeTab !== "jobs" && (
+              <div className="flex flex-wrap gap-1">
                 <Button
-                  key={letter}
                   size="sm"
                   variant="outline"
-                  onClick={() => setStartsWith(letter)}
-                  className={startsWith === letter
-                    ? "bg-amber-500 text-zinc-900 border-amber-500 hover:bg-amber-400 hover:border-amber-400 font-medium"
-                    : "border-zinc-700 bg-zinc-800/50 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100"}
+                  onClick={() => setStartsWith(null)}
+                  className={startsWith === null
+                    ? "bg-primary text-primary-foreground border-primary hover:bg-primary/90 hover:border-primary font-medium"
+                    : "border-input bg-secondary/50 text-foreground/80 hover:bg-muted hover:text-foreground"}
                 >
-                  {letter}
+                  כל האותיות
                 </Button>
-              ))}
-            </div>
+                {hebrewLetters.map((letter) => (
+                  <Button
+                    key={letter}
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setStartsWith(letter)}
+                    className={startsWith === letter
+                      ? "bg-primary text-primary-foreground border-primary hover:bg-primary/90 hover:border-primary font-medium"
+                      : "border-input bg-secondary/50 text-foreground/80 hover:bg-muted hover:text-foreground"}
+                  >
+                    {letter}
+                  </Button>
+                ))}
+              </div>
+            )}
           </div>
           {bannerError ? (
             <Alert
@@ -496,26 +615,33 @@ export const ManagementDashboard = () => {
               onClear={handleClearDepartment}
             />
           </>
-        ) : (
-          <StationsManagement
-            stations={stations}
-            isLoading={isLoadingStations}
-            onAdd={handleAddStation}
-            onEdit={handleUpdateStation}
-            onDelete={handleDeleteStation}
-            onEditChecklists={handleUpdateStationChecklists}
-            stationTypes={stationTypes}
-            onRefresh={async () => {
-              await Promise.all([loadStations(), loadStationTypes()]);
-            }}
-          />
-        )}
-        {activeTab === "stations" ? (
+        ) : activeTab === "stations" ? (
           <>
+            <StationsManagement
+              stations={stations}
+              isLoading={isLoadingStations}
+              onAdd={handleAddStation}
+              onEdit={handleUpdateStation}
+              onDelete={handleDeleteStation}
+              onEditChecklists={handleUpdateStationChecklists}
+              stationTypes={stationTypes}
+              onRefresh={async () => {
+                await Promise.all([loadStations(), loadStationTypes()]);
+              }}
+            />
             <Separator />
             <StationTypeManager stationTypes={stationTypes} onClear={handleClearStationType} />
           </>
-        ) : null}
+        ) : (
+          <JobsManagement
+            jobs={jobs}
+            isLoading={isLoadingJobs}
+            onAdd={handleAddJob}
+            onEdit={handleUpdateJob}
+            onDelete={handleDeleteJob}
+            onRefresh={loadJobs}
+          />
+        )}
       </div>
     </AdminLayout>
   );

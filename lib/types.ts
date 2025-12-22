@@ -94,14 +94,26 @@ export interface StationReason {
   is_active: boolean;
 }
 
+export type MalfunctionStatus = "open" | "known" | "solved";
+
 export interface Malfunction {
   id: string;
   station_id: string;
   station_reason_id?: string | null;
   description?: string | null;
   image_url?: string | null;
+  status: MalfunctionStatus;
+  reported_by_worker_id?: string | null;
+  status_changed_at?: string | null;
+  status_changed_by?: string | null;
+  admin_notes?: string | null;
   created_at?: string;
   updated_at?: string;
+}
+
+export interface MalfunctionWithDetails extends Malfunction {
+  station?: Station | null;
+  reporter?: Pick<Worker, "id" | "full_name" | "worker_code"> | null;
 }
 
 export interface StationChecklistItem {

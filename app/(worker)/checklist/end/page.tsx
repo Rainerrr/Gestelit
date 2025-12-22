@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ChecklistItemsList } from "@/components/checklists/checklist-items";
 import { FormSection } from "@/components/forms/form-section";
 import { PageHeader } from "@/components/layout/page-header";
+import { BackButton } from "@/components/navigation/back-button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -153,6 +154,7 @@ export default function ClosingChecklistPage() {
 
   return (
     <>
+      <BackButton href="/work" />
       <PageHeader
         eyebrow={job.job_number}
         title={t("checklist.end.title")}
@@ -166,7 +168,7 @@ export default function ClosingChecklistPage() {
             <Button
               type="submit"
               size="lg"
-              className="min-w-48"
+              className="min-w-48 bg-primary font-medium text-primary-foreground hover:bg-primary/90"
               disabled={!isValid || isSubmitted}
             >
               {t("checklist.submit")}
@@ -174,17 +176,17 @@ export default function ClosingChecklistPage() {
           }
         >
           {state.loading ? (
-            <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-right text-sm text-slate-600">
+            <p className="rounded-xl border border-dashed border-border bg-muted/30 p-4 text-right text-sm text-muted-foreground">
               {t("checklist.loading")}
             </p>
           ) : !checklist ? (
-            <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-right text-sm text-slate-600">
+            <p className="rounded-xl border border-dashed border-border bg-muted/30 p-4 text-right text-sm text-muted-foreground">
               {t("checklist.empty")}
             </p>
           ) : (
             <>
-              <div className="mb-4 flex flex-wrap justify-end gap-3 text-xs text-slate-600">
-                <Badge variant="secondary">
+              <div className="mb-4 flex flex-wrap justify-end gap-3 text-xs text-muted-foreground">
+                <Badge variant="secondary" className="border-border bg-secondary text-foreground/80">
                   {`${requiredItems}/${totalItems} ${t("checklist.item.required")}`}
                 </Badge>
               </div>
@@ -201,14 +203,14 @@ export default function ClosingChecklistPage() {
         </FormSection>
 
         {submitError ? (
-          <p className="text-right text-sm text-rose-600">{submitError}</p>
+          <p className="text-right text-sm text-rose-600 dark:text-rose-400">{submitError}</p>
         ) : null}
 
         {isSubmitted ? (
-          <Alert className="text-right">
-            <AlertTitle>{t("summary.completed")}</AlertTitle>
+          <Alert className="border-emerald-600/30 bg-emerald-50 text-right dark:border-emerald-500/30 dark:bg-emerald-500/10">
+            <AlertTitle className="text-emerald-700 dark:text-emerald-400">{t("summary.completed")}</AlertTitle>
             <AlertDescription className="mt-2">
-              <Button onClick={handleReturnToStations}>
+              <Button onClick={handleReturnToStations} className="bg-primary font-medium text-primary-foreground hover:bg-primary/90">
                 {t("summary.newSession")}
               </Button>
             </AlertDescription>

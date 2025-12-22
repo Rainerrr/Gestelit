@@ -4,13 +4,14 @@ import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FormSection } from "@/components/forms/form-section";
 import { PageHeader } from "@/components/layout/page-header";
+import { BackButton } from "@/components/navigation/back-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useWorkerSession } from "@/contexts/WorkerSessionContext";
-import { createJobSessionApi } from "@/lib/api/client";
+import { createJobSessionApi, validateJobExistsApi } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 
 export default function JobPage() {
@@ -46,6 +47,14 @@ export default function JobPage() {
 
     setIsSubmitting(true);
     try {
+      // Validate that job exists before creating session
+      const jobExists = await validateJobExistsApi(trimmed);
+      if (!jobExists) {
+        setError(t("job.error.notFound"));
+        setIsSubmitting(false);
+        return;
+      }
+
       const { job, session } = await createJobSessionApi(
         worker.id,
         station.id,
@@ -70,12 +79,13 @@ export default function JobPage() {
 
   return (
     <>
+      <BackButton href="/station" />
       <PageHeader
         eyebrow={worker.full_name}
         title={t("job.title")}
         subtitle={t("job.subtitle")}
         actions={
-          <Badge variant="secondary">
+          <Badge variant="secondary" className="border-border bg-secondary text-foreground/80">
             {`${t("common.station")}: ${station.name}`}
           </Badge>
         }
@@ -88,7 +98,7 @@ export default function JobPage() {
             <Button
               type="submit"
               size="lg"
-              className="w-full justify-center sm:w-auto sm:min-w-48"
+              className="w-full justify-center bg-primary font-medium text-primary-foreground hover:bg-primary/90 sm:w-auto sm:min-w-48"
               disabled={isSubmitting}
             >
               {t("job.submit")}
@@ -96,21 +106,21 @@ export default function JobPage() {
           }
         >
           <div className="space-y-2">
-            <Label htmlFor="jobNumber">{t("job.numberLabel")}</Label>
+            <Label htmlFor="jobNumber" className="text-muted-foreground">{t("job.numberLabel")}</Label>
             <Input
               id="jobNumber"
               placeholder={t("job.numberPlaceholder")}
               value={jobNumber}
               onChange={(event) => setJobNumber(event.target.value)}
               className={cn(
-                "text-right",
-                error ? "border-rose-500 focus-visible:ring-rose-500" : "",
+                "border-border bg-white text-right text-foreground placeholder:text-muted-foreground focus:border-primary/50 focus:ring-primary/30 dark:bg-secondary",
+                error ? "border-rose-600/50 focus-visible:ring-rose-600/30 dark:border-rose-500/50 dark:focus-visible:ring-rose-500/30" : "",
               )}
             />
             <div className="flex items-center justify-between text-xs">
-              <p className="text-slate-500">{t("job.subtitle")}</p>
+              <p className="text-muted-foreground">{t("job.subtitle")}</p>
               {error ? (
-                <span className="text-rose-600">{error}</span>
+                <span className="text-rose-600 dark:text-rose-400">{error}</span>
               ) : null}
             </div>
           </div>

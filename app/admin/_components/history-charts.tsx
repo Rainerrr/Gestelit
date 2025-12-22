@@ -51,15 +51,15 @@ type HistoryChartsProps = {
   dictionary: StatusDictionary;
 };
 
-const darkTooltipStyle = {
-  backgroundColor: "#18181b",
-  border: "1px solid #3f3f46",
+const tooltipStyle = {
+  backgroundColor: "hsl(var(--tooltip-bg))",
+  border: "1px solid hsl(var(--tooltip-border))",
   borderRadius: "0.5rem",
   padding: "0.625rem 0.875rem",
   textAlign: "right" as const,
-  color: "#fafafa",
+  color: "hsl(var(--tooltip-text))",
   fontSize: "0.8125rem",
-  boxShadow: "0 10px 25px rgba(0,0,0,0.4)",
+  boxShadow: "0 4px 12px rgba(0, 0, 0, 0.12)",
 };
 
 const getStatusColor = (
@@ -105,9 +105,9 @@ export const HistoryCharts = ({
         <div className="flex items-center justify-center h-[260px]">
           <div className="flex flex-col items-center gap-3">
             <div className="relative h-8 w-8">
-              <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-amber-500" />
+              <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-primary" />
             </div>
-            <p className="text-sm text-zinc-500">טוען נתונים...</p>
+            <p className="text-sm text-muted-foreground">טוען נתונים...</p>
           </div>
         </div>
       );
@@ -125,7 +125,7 @@ export const HistoryCharts = ({
 
     if (normalized.length === 0) {
       return (
-        <div className="flex flex-col items-center justify-center h-[260px] text-zinc-500">
+        <div className="flex flex-col items-center justify-center h-[260px] text-muted-foreground">
           <PieIcon className="h-10 w-10 mb-3 opacity-30" />
           <p className="text-sm">אין נתונים להצגה</p>
         </div>
@@ -173,7 +173,9 @@ export const HistoryCharts = ({
                 ))}
               </Pie>
               <Tooltip
-                contentStyle={darkTooltipStyle}
+                contentStyle={tooltipStyle}
+                itemStyle={{ color: "hsl(var(--tooltip-text))" }}
+                labelStyle={{ color: "hsl(var(--tooltip-text-muted))" }}
                 formatter={(value: number) => {
                   const percent = total > 0 ? Math.round((value / total) * 100) : 0;
                   return [`${formatDuration(value)} (${percent}%)`, ""];
@@ -206,7 +208,7 @@ export const HistoryCharts = ({
                   backgroundColor: getStatusColor(entry.key, dictionary),
                 }}
               />
-              <span className="text-zinc-400">{entry.label}</span>
+              <span className="text-muted-foreground">{entry.label}</span>
             </div>
           ))}
         </div>
@@ -220,9 +222,9 @@ export const HistoryCharts = ({
         <div className="flex items-center justify-center h-[280px]">
           <div className="flex flex-col items-center gap-3">
             <div className="relative h-8 w-8">
-              <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-amber-500" />
+              <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-primary" />
             </div>
-            <p className="text-sm text-zinc-500">טוען נתונים...</p>
+            <p className="text-sm text-muted-foreground">טוען נתונים...</p>
           </div>
         </div>
       );
@@ -230,7 +232,7 @@ export const HistoryCharts = ({
 
     if (throughputData.length === 0) {
       return (
-        <div className="flex flex-col items-center justify-center h-[280px] text-zinc-500">
+        <div className="flex flex-col items-center justify-center h-[280px] text-muted-foreground">
           <BarChart3 className="h-10 w-10 mb-3 opacity-30" />
           <p className="text-sm">אין נתוני פק״ע בחודש זה</p>
         </div>
@@ -255,27 +257,29 @@ export const HistoryCharts = ({
               barCategoryGap={16}
             >
               <CartesianGrid
-                strokeDasharray="0"
-                stroke="#27272a"
+                strokeDasharray="3 3"
+                stroke="hsl(var(--chart-grid))"
                 vertical={false}
               />
               <XAxis
                 dataKey="label"
-                tick={{ fontSize: 11, fill: "#71717a" }}
-                axisLine={{ stroke: "#3f3f46" }}
+                tick={{ fontSize: 11, fill: "hsl(var(--chart-axis))" }}
+                axisLine={{ stroke: "hsl(var(--chart-grid))" }}
                 tickLine={false}
                 interval={0}
               />
               <YAxis
                 type="number"
-                tick={{ fontSize: 11, fill: "#71717a" }}
+                tick={{ fontSize: 11, fill: "hsl(var(--chart-axis))" }}
                 axisLine={false}
                 tickLine={false}
                 allowDecimals={false}
               />
               <Tooltip
-                cursor={{ fill: "rgba(245, 158, 11, 0.05)" }}
-                contentStyle={darkTooltipStyle}
+                cursor={{ fill: "hsl(var(--muted) / 0.5)" }}
+                contentStyle={tooltipStyle}
+                itemStyle={{ color: "hsl(var(--tooltip-text))" }}
+                labelStyle={{ color: "hsl(var(--tooltip-text-muted))" }}
                 formatter={(value, _name, entry) => {
                   const dataKey = (entry && "dataKey" in entry ? entry.dataKey : undefined) as
                     | string
@@ -313,7 +317,7 @@ export const HistoryCharts = ({
                 name="מתוכנן"
                 stroke={throughputColors.planned}
                 strokeWidth={2}
-                dot={{ r: 3, fill: "#18181b", strokeWidth: 2, stroke: throughputColors.planned }}
+                dot={{ r: 3, fill: "hsl(var(--card))", strokeWidth: 2, stroke: throughputColors.planned }}
                 activeDot={{ r: 5, fill: throughputColors.planned }}
               />
             </ComposedChart>
@@ -330,21 +334,21 @@ export const HistoryCharts = ({
               className="h-2.5 w-2.5 rounded shrink-0"
               style={{ backgroundColor: throughputColors.good }}
             />
-            <span className="text-zinc-400">תקין</span>
+            <span className="text-muted-foreground">תקין</span>
           </div>
           <div className="flex items-center gap-2">
             <span
               className="h-2.5 w-2.5 rounded shrink-0"
               style={{ backgroundColor: throughputColors.scrap }}
             />
-            <span className="text-zinc-400">פסול</span>
+            <span className="text-muted-foreground">פסול</span>
           </div>
           <div className="flex items-center gap-2">
             <span
               className="h-0.5 w-4 rounded shrink-0"
               style={{ backgroundColor: throughputColors.planned }}
             />
-            <span className="text-zinc-400">מתוכנן</span>
+            <span className="text-muted-foreground">מתוכנן</span>
           </div>
         </div>
 
@@ -356,11 +360,11 @@ export const HistoryCharts = ({
             onClick={onPrevPage}
             disabled={!canPrevPage}
             aria-label="סט הקודם"
-            className="h-7 w-7 p-0 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 disabled:opacity-30"
+            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-30"
           >
             <ChevronRight className="h-4 w-4" />
           </Button>
-          <span className="text-xs text-zinc-500 min-w-[50px] text-center font-mono">
+          <span className="text-xs text-muted-foreground min-w-[50px] text-center font-mono">
             {pageLabel}
           </span>
           <Button
@@ -369,7 +373,7 @@ export const HistoryCharts = ({
             onClick={onNextPage}
             disabled={!canNextPage}
             aria-label="סט הבא"
-            className="h-7 w-7 p-0 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 disabled:opacity-30"
+            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-30"
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
@@ -381,15 +385,15 @@ export const HistoryCharts = ({
   return (
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
       {/* Status Distribution Card */}
-      <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/50 backdrop-blur-sm overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800/60">
+      <div className="rounded-xl border border-border bg-card/50 backdrop-blur-sm overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
           <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-800">
-              <PieIcon className="h-4 w-4 text-zinc-400" />
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted">
+              <PieIcon className="h-4 w-4 text-muted-foreground" />
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-zinc-100">התפלגות סטטוסים</h3>
-              <p className="text-xs text-zinc-500">זמן בכל סטטוס</p>
+              <h3 className="text-sm font-semibold text-foreground">התפלגות סטטוסים</h3>
+              <p className="text-xs text-muted-foreground">זמן בכל סטטוס</p>
             </div>
           </div>
         </div>
@@ -399,15 +403,15 @@ export const HistoryCharts = ({
       </div>
 
       {/* Throughput Card */}
-      <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/50 backdrop-blur-sm overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800/60">
+      <div className="rounded-xl border border-border bg-card/50 backdrop-blur-sm overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
           <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-800">
-              <BarChart3 className="h-4 w-4 text-zinc-400" />
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted">
+              <BarChart3 className="h-4 w-4 text-muted-foreground" />
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-zinc-100">תפוקה לפי פק״ע</h3>
-              <p className="text-xs text-zinc-500">כמויות בחודש הנבחר</p>
+              <h3 className="text-sm font-semibold text-foreground">תפוקה לפי פק״ע</h3>
+              <p className="text-xs text-muted-foreground">כמויות בחודש הנבחר</p>
             </div>
           </div>
           {/* Month Navigation */}
@@ -417,11 +421,11 @@ export const HistoryCharts = ({
               size="sm"
               aria-label="חודש הבא"
               onClick={onNextMonth}
-              className="h-7 w-7 p-0 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"
+              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground hover:bg-accent"
             >
               <ChevronRight className="h-4 w-4" />
             </Button>
-            <span className="text-xs text-zinc-300 min-w-[80px] text-center font-medium">
+            <span className="text-xs text-foreground/80 min-w-[80px] text-center font-medium">
               {monthLabel}
             </span>
             <Button
@@ -429,7 +433,7 @@ export const HistoryCharts = ({
               size="sm"
               aria-label="חודש קודם"
               onClick={onPrevMonth}
-              className="h-7 w-7 p-0 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"
+              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground hover:bg-accent"
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>

@@ -28,17 +28,17 @@ export function ChecklistItemsList({
           <li
             key={item.id}
             className={cn(
-              "rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm",
+              "rounded-xl border border-border bg-card/50 px-4 py-3 backdrop-blur-sm",
               item.is_required ? "ring-1 ring-primary/30" : "",
             )}
           >
             <label className="flex w-full cursor-pointer items-center justify-between gap-4 text-right">
               <div className="space-y-1 text-right">
-                <p className="font-medium text-slate-900">{getLabel(item)}</p>
+                <p className="font-medium text-foreground">{getLabel(item)}</p>
                 {item.is_required ? (
                   <Badge
                     variant="outline"
-                    className="border-primary bg-primary/5 text-primary"
+                    className="border-primary/30 bg-primary/10 text-primary"
                   >
                     {requiredLabel}
                   </Badge>

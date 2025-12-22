@@ -66,11 +66,11 @@ export const HistoryFilters = ({
   };
 
   return (
-    <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/50 backdrop-blur-sm overflow-hidden">
+    <div className="rounded-xl border border-border bg-card/50 backdrop-blur-sm overflow-hidden">
       {/* Search bar - most prominent */}
-      <div className="p-4 border-b border-zinc-800/60">
+      <div className="p-4 border-b border-border">
         <div className="relative">
-          <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
+          <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             aria-label='חיפוש פק"ע'
             placeholder='חיפוש לפי מספר פק"ע...'
@@ -78,13 +78,13 @@ export const HistoryFilters = ({
             onChange={(event) =>
               handleJobNumberChange(event.target.value || undefined)
             }
-            className="pr-10 text-right h-11 text-base border-zinc-700 bg-zinc-800/80 text-zinc-100 placeholder:text-zinc-500 focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500/50"
+            className="pr-10 text-right h-11 text-base border-input bg-secondary text-foreground placeholder:text-muted-foreground focus:ring-2 focus:ring-primary/30 focus:border-primary/50"
           />
           {value.jobNumber && (
             <button
               type="button"
               onClick={() => handleJobNumberChange(undefined)}
-              className="absolute left-3 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-zinc-700 text-zinc-500 hover:text-zinc-300 transition-colors"
+              className="absolute left-3 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
               aria-label="נקה חיפוש"
             >
               <X className="h-4 w-4" />
@@ -97,8 +97,8 @@ export const HistoryFilters = ({
       <div className="p-4 flex flex-wrap items-center gap-3">
         {/* Worker filter */}
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-800 shrink-0">
-            <User className="h-4 w-4 text-zinc-400" />
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted shrink-0">
+            <User className="h-4 w-4 text-muted-foreground" />
           </div>
           <Select
             value={value.workerId ?? ALL_VALUE}
@@ -108,16 +108,16 @@ export const HistoryFilters = ({
           >
             <SelectTrigger
               aria-label="סינון לפי עובד"
-              className="w-[160px] border-zinc-700 bg-zinc-800 text-zinc-200 focus:ring-amber-500/30 h-9"
+              className="w-[160px] border-input bg-secondary text-foreground focus:ring-primary/30 h-9"
             >
               <SelectValue placeholder="כל העובדים" />
             </SelectTrigger>
-            <SelectContent className="border-zinc-700 bg-zinc-800 max-h-[280px]">
-              <SelectItem value={ALL_VALUE} className="text-zinc-200 focus:bg-zinc-700">
+            <SelectContent className="border-input bg-popover max-h-[280px]">
+              <SelectItem value={ALL_VALUE} className="text-foreground focus:bg-accent">
                 כל העובדים
               </SelectItem>
               {workers.map((worker) => (
-                <SelectItem key={worker.id} value={worker.id} className="text-zinc-200 focus:bg-zinc-700">
+                <SelectItem key={worker.id} value={worker.id} className="text-foreground focus:bg-accent">
                   {worker.label}
                 </SelectItem>
               ))}
@@ -126,12 +126,12 @@ export const HistoryFilters = ({
         </div>
 
         {/* Divider */}
-        <div className="h-6 w-px bg-zinc-700/50 hidden sm:block" />
+        <div className="h-6 w-px bg-border hidden sm:block" />
 
         {/* Station filter */}
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-800 shrink-0">
-            <MapPin className="h-4 w-4 text-zinc-400" />
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted shrink-0">
+            <MapPin className="h-4 w-4 text-muted-foreground" />
           </div>
           <Select
             value={value.stationId ?? ALL_VALUE}
@@ -141,16 +141,16 @@ export const HistoryFilters = ({
           >
             <SelectTrigger
               aria-label="סינון לפי תחנה"
-              className="w-[160px] border-zinc-700 bg-zinc-800 text-zinc-200 focus:ring-amber-500/30 h-9"
+              className="w-[160px] border-input bg-secondary text-foreground focus:ring-primary/30 h-9"
             >
               <SelectValue placeholder="כל התחנות" />
             </SelectTrigger>
-            <SelectContent className="border-zinc-700 bg-zinc-800 max-h-[280px]">
-              <SelectItem value={ALL_VALUE} className="text-zinc-200 focus:bg-zinc-700">
+            <SelectContent className="border-input bg-popover max-h-[280px]">
+              <SelectItem value={ALL_VALUE} className="text-foreground focus:bg-accent">
                 כל התחנות
               </SelectItem>
               {stations.map((station) => (
-                <SelectItem key={station.id} value={station.id} className="text-zinc-200 focus:bg-zinc-700">
+                <SelectItem key={station.id} value={station.id} className="text-foreground focus:bg-accent">
                   {station.label}
                 </SelectItem>
               ))}
@@ -159,12 +159,12 @@ export const HistoryFilters = ({
         </div>
 
         {/* Divider */}
-        <div className="h-6 w-px bg-zinc-700/50 hidden sm:block" />
+        <div className="h-6 w-px bg-border hidden sm:block" />
 
         {/* Job number dropdown (quick select from existing) */}
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-800 shrink-0">
-            <FileText className="h-4 w-4 text-zinc-400" />
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted shrink-0">
+            <FileText className="h-4 w-4 text-muted-foreground" />
           </div>
           <Select
             value={value.jobNumber ?? ALL_VALUE}
@@ -174,16 +174,16 @@ export const HistoryFilters = ({
           >
             <SelectTrigger
               aria-label='בחירת פק"ע'
-              className="w-[140px] border-zinc-700 bg-zinc-800 text-zinc-200 focus:ring-amber-500/30 h-9"
+              className="w-[140px] border-input bg-secondary text-foreground focus:ring-primary/30 h-9"
             >
               <SelectValue placeholder='בחר פק"ע' />
             </SelectTrigger>
-            <SelectContent className="border-zinc-700 bg-zinc-800 max-h-[280px]">
-              <SelectItem value={ALL_VALUE} className="text-zinc-200 focus:bg-zinc-700">
+            <SelectContent className="border-input bg-popover max-h-[280px]">
+              <SelectItem value={ALL_VALUE} className="text-foreground focus:bg-accent">
                 כל הפק״עים
               </SelectItem>
               {sortedJobNumbers.map((job) => (
-                <SelectItem key={job} value={job} className="text-zinc-200 focus:bg-zinc-700 font-mono">
+                <SelectItem key={job} value={job} className="text-foreground focus:bg-accent font-mono">
                   {job}
                 </SelectItem>
               ))}
@@ -201,7 +201,7 @@ export const HistoryFilters = ({
             size="sm"
             onClick={handleClear}
             aria-label="ניקוי מסננים"
-            className="text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 gap-2"
+            className="text-muted-foreground hover:text-foreground hover:bg-accent gap-2"
           >
             <X className="h-4 w-4" />
             <span>נקה ({activeFiltersCount})</span>
@@ -216,7 +216,7 @@ export const HistoryFilters = ({
             <button
               type="button"
               onClick={() => handleWorkerChange(undefined)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-medium hover:bg-amber-500/20 transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/30 text-primary text-xs font-medium hover:bg-primary/20 transition-colors"
             >
               <User className="h-3 w-3" />
               <span>{getWorkerLabel()}</span>
@@ -227,7 +227,7 @@ export const HistoryFilters = ({
             <button
               type="button"
               onClick={() => handleStationChange(undefined)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-medium hover:bg-amber-500/20 transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/30 text-primary text-xs font-medium hover:bg-primary/20 transition-colors"
             >
               <MapPin className="h-3 w-3" />
               <span>{getStationLabel()}</span>
@@ -238,7 +238,7 @@ export const HistoryFilters = ({
             <button
               type="button"
               onClick={() => handleJobNumberChange(undefined)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-medium hover:bg-amber-500/20 transition-colors font-mono"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/30 text-primary text-xs font-medium hover:bg-primary/20 transition-colors font-mono"
             >
               <FileText className="h-3 w-3" />
               <span>{value.jobNumber}</span>

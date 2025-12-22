@@ -180,7 +180,7 @@ const ConnectionIndicator = () => {
         )}
         <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${config.color}`} />
       </div>
-      <span className="text-xs font-medium text-zinc-400 font-mono tracking-wide">{config.label}</span>
+      <span className="text-xs font-medium text-muted-foreground font-mono tracking-wide">{config.label}</span>
     </div>
   );
 };
@@ -234,13 +234,13 @@ const AdminDashboardContent = () => {
 
   if (hasAccess === null) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-950">
+      <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
           <div className="relative h-12 w-12">
-            <div className="absolute inset-0 rounded-full border-2 border-amber-500/20" />
-            <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-amber-500" />
+            <div className="absolute inset-0 rounded-full border-2 border-primary/20" />
+            <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-primary" />
           </div>
-          <p className="font-mono text-sm text-zinc-500 tracking-wider">טוען נתונים...</p>
+          <p className="font-mono text-sm text-muted-foreground tracking-wider">טוען נתונים...</p>
         </div>
       </div>
     );
@@ -259,12 +259,12 @@ const AdminDashboardContent = () => {
               <div className="space-y-2">
                 <div className="flex items-center gap-3">
                   <ConnectionIndicator />
-                  <span className="text-[10px] font-mono text-zinc-600 uppercase tracking-[0.2em]">לוח בקרה בזמן אמת</span>
+                  <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-[0.2em]">לוח בקרה בזמן אמת</span>
                 </div>
-                <h1 className="text-2xl font-bold text-zinc-100 tracking-tight lg:text-3xl">
+                <h1 className="text-2xl font-bold text-foreground tracking-tight lg:text-3xl">
                   מסך ניהול — תחנות פעילות
                 </h1>
-                <p className="text-sm text-zinc-500 max-w-xl">
+                <p className="text-sm text-muted-foreground max-w-xl">
                   התמונה מתעדכנת בתדירות גבוהה, ללא ריענון מלא של העמוד.
                 </p>
               </div>
@@ -280,7 +280,7 @@ const AdminDashboardContent = () => {
                 <Button
                   variant="outline"
                   asChild
-                  className="w-full sm:w-auto border-zinc-700 bg-zinc-800/50 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 hover:border-zinc-600"
+                  className="w-full sm:w-auto border-input bg-secondary text-foreground/80 hover:bg-accent hover:text-foreground"
                   size="sm"
                 >
                   <Link href="/">חזרה למסך הבית</Link>
@@ -288,9 +288,9 @@ const AdminDashboardContent = () => {
               </div>
             </div>
             {resetResult ? (
-              <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2.5">
-                <div className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                <p className="text-sm font-medium text-amber-200">{resetResult}</p>
+              <div className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/10 px-4 py-2.5">
+                <div className="h-1.5 w-1.5 rounded-full bg-primary" />
+                <p className="text-sm font-medium text-primary">{resetResult}</p>
               </div>
             ) : null}
           </div>
@@ -307,10 +307,10 @@ const AdminDashboardContent = () => {
       </AdminLayout>
 
       <Dialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
-        <DialogContent className="border-zinc-800 bg-zinc-900 text-right sm:max-w-md">
+        <DialogContent className="border-border bg-card text-right sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-xl font-bold text-zinc-100">לסגור את כל התחנות הפעילות?</DialogTitle>
-            <DialogDescription className="text-zinc-400">
+            <DialogTitle className="text-xl font-bold text-foreground">לסגור את כל התחנות הפעילות?</DialogTitle>
+            <DialogDescription className="text-muted-foreground">
               פעולה זו תסגור את כל הסשנים הפעילים ותעדכן את הדשבורד.
             </DialogDescription>
           </DialogHeader>
@@ -326,7 +326,7 @@ const AdminDashboardContent = () => {
             <Button
               variant="outline"
               onClick={() => setResetDialogOpen(false)}
-              className="border-zinc-700 bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100"
+              className="border-input bg-secondary text-foreground/80 hover:bg-accent hover:text-foreground"
             >
               ביטול
             </Button>

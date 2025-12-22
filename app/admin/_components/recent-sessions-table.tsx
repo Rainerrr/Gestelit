@@ -95,12 +95,12 @@ const columns: { key: SortKey; label: string; hideOnMobile?: boolean; align?: "c
 
 const SortIcon = ({ active, direction }: { active: boolean; direction?: "asc" | "desc" }) => {
   if (!active) {
-    return <ChevronsUpDown className="h-3.5 w-3.5 text-zinc-600" />;
+    return <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground" />;
   }
   return direction === "asc" ? (
-    <ChevronUp className="h-3.5 w-3.5 text-amber-500" />
+    <ChevronUp className="h-3.5 w-3.5 text-primary" />
   ) : (
-    <ChevronDown className="h-3.5 w-3.5 text-amber-500" />
+    <ChevronDown className="h-3.5 w-3.5 text-primary" />
   );
 };
 
@@ -141,12 +141,12 @@ export const RecentSessionsTable = ({
 
   if (isLoading) {
     return (
-      <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/50 backdrop-blur-sm overflow-hidden">
+      <div className="rounded-xl border border-border bg-card/50 backdrop-blur-sm overflow-hidden">
         <div className="flex flex-col items-center justify-center py-16 gap-3">
           <div className="relative h-8 w-8">
-            <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-amber-500" />
+            <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-primary" />
           </div>
-          <p className="text-sm text-zinc-500">טוען נתונים...</p>
+          <p className="text-sm text-muted-foreground">טוען נתונים...</p>
         </div>
       </div>
     );
@@ -154,8 +154,8 @@ export const RecentSessionsTable = ({
 
   if (sessions.length === 0) {
     return (
-      <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/50 backdrop-blur-sm overflow-hidden">
-        <div className="flex flex-col items-center justify-center py-16 gap-3 text-zinc-500">
+      <div className="rounded-xl border border-border bg-card/50 backdrop-blur-sm overflow-hidden">
+        <div className="flex flex-col items-center justify-center py-16 gap-3 text-muted-foreground">
           <Package className="h-10 w-10 opacity-30" />
           <p className="text-sm">אין עבודות שהושלמו</p>
         </div>
@@ -164,12 +164,12 @@ export const RecentSessionsTable = ({
   }
 
   return (
-    <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/50 backdrop-blur-sm overflow-hidden">
+    <div className="rounded-xl border border-border bg-card/50 backdrop-blur-sm overflow-hidden">
       {/* Desktop Table */}
       <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-zinc-800/60 bg-zinc-900/80">
+            <tr className="border-b border-border bg-card/80">
               {selectionEnabled && (
                 <th className="w-12 px-4 py-3 text-right">
                   <Checkbox
@@ -181,7 +181,7 @@ export const RecentSessionsTable = ({
                     }}
                     onCheckedChange={(checked) => onToggleAll?.(checked === true)}
                     aria-label="בחירת כל העבודות"
-                    className="border-zinc-600 data-[state=checked]:bg-amber-500 data-[state=checked]:border-amber-500"
+                    className="border-input data-[state=checked]:bg-primary data-[state=checked]:border-primary"
                   />
                 </th>
               )}
@@ -191,7 +191,7 @@ export const RecentSessionsTable = ({
                   <th
                     key={column.key}
                     className={cn(
-                      "px-4 py-3 text-xs font-semibold text-zinc-400 uppercase tracking-wider whitespace-nowrap",
+                      "px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap",
                       column.align === "center" ? "text-center" : "text-right"
                     )}
                   >
@@ -200,9 +200,9 @@ export const RecentSessionsTable = ({
                       onClick={() => onSort?.(column.key)}
                       className={cn(
                         "inline-flex items-center gap-1.5 rounded-md px-2 py-1 -mx-2 transition-colors",
-                        "hover:bg-zinc-800 hover:text-zinc-200",
-                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50",
-                        isSorted && "text-amber-400"
+                        "hover:bg-accent hover:text-foreground",
+                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
+                        isSorted && "text-primary"
                       )}
                     >
                       <span>{column.label}</span>
@@ -214,7 +214,7 @@ export const RecentSessionsTable = ({
               <th className="w-10 px-4 py-3" />
             </tr>
           </thead>
-          <tbody className="divide-y divide-zinc-800/40">
+          <tbody className="divide-y divide-border">
             {sessions.map((session) => {
               const isSelected = selectedIds?.has(session.id);
               const statusInfo = getSessionStatusInfo(session, dictionary);
@@ -227,8 +227,8 @@ export const RecentSessionsTable = ({
                   className={cn(
                     "group cursor-pointer transition-colors",
                     isSelected
-                      ? "bg-amber-500/10 hover:bg-amber-500/15"
-                      : "hover:bg-zinc-800/50"
+                      ? "bg-primary/10 hover:bg-primary/15"
+                      : "hover:bg-accent"
                   )}
                   role="button"
                   tabIndex={0}
@@ -242,31 +242,31 @@ export const RecentSessionsTable = ({
                         checked={isSelected}
                         onCheckedChange={() => onToggleRow?.(session.id)}
                         aria-label="בחירת עבודה"
-                        className="border-zinc-600 data-[state=checked]:bg-amber-500 data-[state=checked]:border-amber-500"
+                        className="border-input data-[state=checked]:bg-primary data-[state=checked]:border-primary"
                       />
                     </td>
                   )}
                   <td className="px-4 py-3">
-                    <span className="font-mono font-semibold text-amber-400">
+                    <span className="font-mono font-semibold text-primary">
                       {session.jobNumber}
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <span className="font-medium text-zinc-100">
+                    <span className="font-medium text-foreground">
                       {session.stationName}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-zinc-400">
+                  <td className="px-4 py-3 text-muted-foreground">
                     {session.workerName}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-col items-start">
-                      <span className="text-zinc-300 font-medium">{time}</span>
-                      <span className="text-xs text-zinc-500">{date}</span>
+                      <span className="text-foreground/80 font-medium">{time}</span>
+                      <span className="text-xs text-muted-foreground">{date}</span>
                     </div>
                   </td>
                   <td className="px-4 py-3 text-center">
-                    <div className="inline-flex items-center gap-1 text-zinc-400">
+                    <div className="inline-flex items-center gap-1 text-muted-foreground">
                       <Clock className="h-3.5 w-3.5 opacity-50" />
                       <span className="font-mono text-xs">
                         {formatDuration(session.durationSeconds)}
@@ -284,7 +284,7 @@ export const RecentSessionsTable = ({
                         {session.totalScrap}
                       </span>
                     ) : (
-                      <span className="text-zinc-600">—</span>
+                      <span className="text-muted-foreground">—</span>
                     )}
                   </td>
                   <td className="px-4 py-3">
@@ -304,7 +304,7 @@ export const RecentSessionsTable = ({
                     </div>
                   </td>
                   <td className="w-10 px-4 py-3">
-                    <ExternalLink className="h-4 w-4 text-zinc-600 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <ExternalLink className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                   </td>
                 </tr>
               );
@@ -314,10 +314,10 @@ export const RecentSessionsTable = ({
       </div>
 
       {/* Mobile Card List */}
-      <div className="md:hidden divide-y divide-zinc-800/40">
+      <div className="md:hidden divide-y divide-border">
         {/* Mobile header with select all */}
         {selectionEnabled && (
-          <div className="flex items-center gap-3 px-4 py-3 bg-zinc-900/80 border-b border-zinc-800/60">
+          <div className="flex items-center gap-3 px-4 py-3 bg-card/80 border-b border-border">
             <Checkbox
               checked={allSelected}
               ref={(el) => {
@@ -327,9 +327,9 @@ export const RecentSessionsTable = ({
               }}
               onCheckedChange={(checked) => onToggleAll?.(checked === true)}
               aria-label="בחירת כל העבודות"
-              className="border-zinc-600 data-[state=checked]:bg-amber-500 data-[state=checked]:border-amber-500"
+              className="border-input data-[state=checked]:bg-primary data-[state=checked]:border-primary"
             />
-            <span className="text-xs text-zinc-500">בחר הכל</span>
+            <span className="text-xs text-muted-foreground">בחר הכל</span>
           </div>
         )}
 
@@ -343,8 +343,8 @@ export const RecentSessionsTable = ({
             <div
               key={session.id}
               className={cn(
-                "p-4 cursor-pointer transition-colors active:bg-zinc-800/60",
-                isSelected ? "bg-amber-500/10" : "hover:bg-zinc-800/40"
+                "p-4 cursor-pointer transition-colors active:bg-accent",
+                isSelected ? "bg-primary/10" : "hover:bg-accent"
               )}
               role="button"
               tabIndex={0}
@@ -360,7 +360,7 @@ export const RecentSessionsTable = ({
                       checked={isSelected}
                       onCheckedChange={() => onToggleRow?.(session.id)}
                       aria-label="בחירת עבודה"
-                      className="border-zinc-600 data-[state=checked]:bg-amber-500 data-[state=checked]:border-amber-500"
+                      className="border-input data-[state=checked]:bg-primary data-[state=checked]:border-primary"
                     />
                   </div>
                 )}
@@ -371,15 +371,15 @@ export const RecentSessionsTable = ({
                   <div className="flex items-start justify-between gap-2">
                     <div className="space-y-0.5">
                       <div className="flex items-center gap-2">
-                        <span className="font-mono font-bold text-amber-400">
+                        <span className="font-mono font-bold text-primary">
                           {session.jobNumber}
                         </span>
-                        <span className="text-zinc-600">•</span>
-                        <span className="font-medium text-zinc-100 truncate">
+                        <span className="text-muted-foreground">•</span>
+                        <span className="font-medium text-foreground truncate">
                           {session.stationName}
                         </span>
                       </div>
-                      <p className="text-sm text-zinc-500">{session.workerName}</p>
+                      <p className="text-sm text-muted-foreground">{session.workerName}</p>
                     </div>
                     <div
                       className="shrink-0 inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium"
@@ -399,13 +399,13 @@ export const RecentSessionsTable = ({
 
                   {/* Bottom row: Metrics */}
                   <div className="flex items-center gap-4 text-xs">
-                    <div className="flex items-center gap-1.5 text-zinc-500">
+                    <div className="flex items-center gap-1.5 text-muted-foreground">
                       <Clock className="h-3.5 w-3.5" />
                       <span>{time}</span>
-                      <span className="text-zinc-600">{date}</span>
+                      <span className="text-muted-foreground">{date}</span>
                     </div>
-                    <div className="flex items-center gap-1.5 text-zinc-500">
-                      <span className="text-zinc-600">משך:</span>
+                    <div className="flex items-center gap-1.5 text-muted-foreground">
+                      <span className="text-muted-foreground">משך:</span>
                       <span className="font-mono">{formatDuration(session.durationSeconds)}</span>
                     </div>
                     <div className="flex items-center gap-2 mr-auto">

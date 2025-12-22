@@ -21,20 +21,20 @@ export function FormSection({
   footer,
 }: FormSectionProps) {
   return (
-    <Card className="border border-slate-200 bg-white shadow-sm">
+    <Card className="rounded-xl border border-border bg-card/50 backdrop-blur-sm">
       <CardHeader className="space-y-1 text-right">
-        <CardTitle className="text-lg font-semibold text-slate-900">
+        <CardTitle className="text-lg font-semibold text-card-foreground">
           {title}
         </CardTitle>
         {description ? (
-          <CardDescription className="text-slate-600">
+          <CardDescription className="text-muted-foreground">
             {description}
           </CardDescription>
         ) : null}
       </CardHeader>
       <CardContent className="space-y-4 text-right">{children}</CardContent>
       {footer ? (
-        <div className="border-t border-slate-100 bg-slate-50/60 p-6 text-right">
+        <div className="border-t border-border/60 bg-muted/30 p-6 text-right">
           {footer}
         </div>
       ) : null}

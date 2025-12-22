@@ -14,6 +14,7 @@ export async function POST(request: Request) {
     formData.get("stationReasonId") ?? formData.get("reasonId");
   const description = formData.get("description");
   const image = formData.get("image");
+  const workerId = formData.get("workerId");
 
   if (!stationId || typeof stationId !== "string") {
     return NextResponse.json({ error: "MISSING_STATION_ID" }, { status: 400 });
@@ -48,6 +49,10 @@ export async function POST(request: Request) {
           ? description
           : null,
       image_url: imageUrl,
+      reported_by_worker_id:
+        typeof workerId === "string" && workerId.trim().length > 0
+          ? workerId
+          : null,
     });
 
     return NextResponse.json({ malfunction });

@@ -502,7 +502,7 @@ export const HistoryDashboard = () => {
 
   if (hasAccess === null) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center text-zinc-400">
+      <div className="flex min-h-[60vh] items-center justify-center text-muted-foreground">
         טוען נתוני דוחות...
       </div>
     );
@@ -518,11 +518,11 @@ export const HistoryDashboard = () => {
         <div className="flex flex-col gap-3 text-right">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="space-y-1 text-right">
-              <p className="text-xs text-zinc-500">היסטוריה ודוחות</p>
-              <h1 className="text-xl font-semibold text-zinc-100 sm:text-2xl">
+              <p className="text-xs text-muted-foreground">היסטוריה ודוחות</p>
+              <h1 className="text-xl font-semibold text-foreground sm:text-2xl">
                 מעקב עבודות שהושלמו
               </h1>
-              <p className="text-xs text-zinc-500 sm:text-sm">
+              <p className="text-xs text-muted-foreground sm:text-sm">
                 פילוח עבודות סגורות, חיפוש לפי עובד, תחנה ופק&quot;ע.
               </p>
             </div>
@@ -530,7 +530,7 @@ export const HistoryDashboard = () => {
               variant="outline"
               onClick={() => setFilters({})}
               aria-label="איפוס מסננים"
-              className="w-full sm:w-auto border-zinc-700 bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100"
+              className="w-full sm:w-auto border-input bg-secondary text-foreground/80 hover:bg-accent hover:text-foreground"
               size="sm"
             >
               איפוס
@@ -574,8 +574,8 @@ export const HistoryDashboard = () => {
         <div className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="text-right">
-              <p className="text-sm text-zinc-300">עבודות שהושלמו</p>
-              <p className="text-xs text-zinc-500">{sessions.length} עבודות</p>
+              <p className="text-sm text-foreground/80">עבודות שהושלמו</p>
+              <p className="text-xs text-muted-foreground">{sessions.length} עבודות</p>
               {deleteError ? (
                 <p className="text-sm text-red-400">{deleteError}</p>
               ) : null}
@@ -588,11 +588,11 @@ export const HistoryDashboard = () => {
                   size="sm"
                   onClick={handleSessionsPrevPage}
                   disabled={sessionsPageIndex === 0}
-                  className="border-zinc-700 bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-50"
+                  className="border-input bg-secondary text-foreground/80 hover:bg-accent hover:text-foreground disabled:opacity-50"
                 >
                   הקודם
                 </Button>
-                <span className="text-sm text-zinc-400 min-w-[60px] text-center">
+                <span className="text-sm text-muted-foreground min-w-[60px] text-center">
                   {sessionsPageLabel}
                 </span>
                 <Button
@@ -600,7 +600,7 @@ export const HistoryDashboard = () => {
                   size="sm"
                   onClick={handleSessionsNextPage}
                   disabled={sessionsPageIndex >= sessionsTotalPages - 1}
-                  className="border-zinc-700 bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-50"
+                  className="border-input bg-secondary text-foreground/80 hover:bg-accent hover:text-foreground disabled:opacity-50"
                 >
                   הבא
                 </Button>

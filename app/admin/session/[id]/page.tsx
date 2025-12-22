@@ -112,7 +112,7 @@ export default function SessionDetailPage({ params }: Props) {
   const renderStatusBadge = (status: StatusEventState | null | undefined) => {
     if (!status) {
       return (
-        <Badge variant="secondary" className="bg-slate-100 text-slate-600">
+        <Badge variant="secondary" className="border-input bg-secondary text-muted-foreground">
           ללא סטטוס
         </Badge>
       );
@@ -138,8 +138,8 @@ export default function SessionDetailPage({ params }: Props) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
         <div className="text-center">
-          <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-slate-600" />
-          <p className="text-sm text-slate-500">טוען פרטי עבודה...</p>
+          <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-4 border-border border-t-primary" />
+          <p className="text-sm text-muted-foreground">טוען פרטי עבודה...</p>
         </div>
       </div>
     );
@@ -148,16 +148,16 @@ export default function SessionDetailPage({ params }: Props) {
   if (error || !session) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
-        <Card className="w-full max-w-md">
+        <Card className="w-full max-w-md border-border bg-card/50">
           <CardContent className="pt-6 text-center">
-            <AlertTriangle className="mx-auto mb-4 h-12 w-12 text-amber-500" />
-            <h2 className="mb-2 text-lg font-semibold">שגיאה בטעינת העבודה</h2>
-            <p className="mb-4 text-sm text-slate-500">
+            <AlertTriangle className="mx-auto mb-4 h-12 w-12 text-primary" />
+            <h2 className="mb-2 text-lg font-semibold text-foreground">שגיאה בטעינת העבודה</h2>
+            <p className="mb-4 text-sm text-muted-foreground">
               {error === "SESSION_NOT_FOUND"
                 ? "העבודה לא נמצאה במערכת"
                 : "אירעה שגיאה בטעינת פרטי העבודה"}
             </p>
-            <Button onClick={() => router.back()} variant="outline">
+            <Button onClick={() => router.back()} variant="outline" className="border-input bg-secondary text-foreground/80 hover:bg-accent hover:text-foreground">
               <ArrowRight className="ml-2 h-4 w-4" />
               חזרה
             </Button>
@@ -171,47 +171,47 @@ export default function SessionDetailPage({ params }: Props) {
     <div className="space-y-6 p-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <Button onClick={() => router.back()} variant="ghost" size="sm">
+        <Button onClick={() => router.back()} variant="ghost" size="sm" className="text-muted-foreground hover:bg-accent hover:text-foreground">
           <ArrowRight className="ml-2 h-4 w-4" />
           חזרה
         </Button>
-        <h1 className="text-xl font-bold text-slate-900">
+        <h1 className="text-xl font-bold text-foreground">
           עבודה #{session.jobNumber}
         </h1>
         <div className="w-[80px]" /> {/* Spacer for alignment */}
       </div>
 
       {/* Session Info Card */}
-      <Card>
+      <Card className="border-border bg-card/50">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-lg">פרטי עבודה</CardTitle>
+            <CardTitle className="text-lg text-foreground">פרטי עבודה</CardTitle>
             {isActive ? (
-              <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">
+              <Badge className="border-emerald-500/30 bg-emerald-500/10 text-emerald-400">
                 פעילה
               </Badge>
             ) : (
-              <Badge variant="secondary">הושלמה</Badge>
+              <Badge variant="secondary" className="border-input bg-secondary text-foreground/80">הושלמה</Badge>
             )}
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
             <div>
-              <p className="text-xs text-slate-500">תחנה</p>
-              <p className="font-medium text-slate-900">{session.stationName}</p>
+              <p className="text-xs text-muted-foreground">תחנה</p>
+              <p className="font-medium text-foreground">{session.stationName}</p>
             </div>
             <div>
-              <p className="text-xs text-slate-500">עובד</p>
-              <p className="font-medium text-slate-900">{session.workerName}</p>
+              <p className="text-xs text-muted-foreground">עובד</p>
+              <p className="font-medium text-foreground">{session.workerName}</p>
             </div>
             <div>
-              <p className="text-xs text-slate-500">סטטוס נוכחי</p>
+              <p className="text-xs text-muted-foreground">סטטוס נוכחי</p>
               <div className="mt-1">{renderStatusBadge(session.currentStatus)}</div>
             </div>
             <div>
-              <p className="text-xs text-slate-500">משך</p>
-              <p className="font-medium text-slate-900">
+              <p className="text-xs text-muted-foreground">משך</p>
+              <p className="font-medium text-foreground">
                 {formatDuration(
                   isActive
                     ? Math.floor((Date.now() - new Date(session.startedAt).getTime()) / 1000)
@@ -221,18 +221,18 @@ export default function SessionDetailPage({ params }: Props) {
             </div>
           </div>
 
-          <Separator />
+          <Separator className="bg-border" />
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <p className="text-xs text-slate-500">התחלה</p>
-              <p className="font-medium text-slate-900">
+              <p className="text-xs text-muted-foreground">התחלה</p>
+              <p className="font-medium text-foreground">
                 {formatDateTime(session.startedAt)}
               </p>
             </div>
             <div>
-              <p className="text-xs text-slate-500">סיום</p>
-              <p className="font-medium text-slate-900">
+              <p className="text-xs text-muted-foreground">סיום</p>
+              <p className="font-medium text-foreground">
                 {session.endedAt ? formatDateTime(session.endedAt) : "עדיין פעילה"}
               </p>
             </div>
@@ -241,20 +241,20 @@ export default function SessionDetailPage({ params }: Props) {
       </Card>
 
       {/* Timeline Card */}
-      <Card>
+      <Card className="border-border bg-card/50">
         <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <Clock className="h-5 w-5 text-slate-500" />
+          <CardTitle className="flex items-center gap-2 text-lg text-foreground">
+            <Clock className="h-5 w-5 text-muted-foreground" />
             ציר זמן סטטוסים
           </CardTitle>
         </CardHeader>
         <CardContent>
           {timeline.isLoading ? (
             <div className="flex h-[140px] items-center justify-center">
-              <p className="text-sm text-slate-500">טוען ציר זמן...</p>
+              <p className="text-sm text-muted-foreground">טוען ציר זמן...</p>
             </div>
           ) : timeline.error ? (
-            <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+            <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-400">
               {timeline.error}
             </div>
           ) : (
@@ -272,10 +272,10 @@ export default function SessionDetailPage({ params }: Props) {
       </Card>
 
       {/* Production Stats Card */}
-      <Card>
+      <Card className="border-border bg-card/50">
         <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <Package className="h-5 w-5 text-slate-500" />
+          <CardTitle className="flex items-center gap-2 text-lg text-foreground">
+            <Package className="h-5 w-5 text-muted-foreground" />
             תפוקה
           </CardTitle>
         </CardHeader>
@@ -295,30 +295,32 @@ export default function SessionDetailPage({ params }: Props) {
                     margin={{ top: 20, right: 20, bottom: 20, left: 20 }}
                     barCategoryGap={40}
                   >
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#3f3f46" />
                     <XAxis
                       dataKey="name"
-                      tick={{ fontSize: 11, fill: "#475569" }}
-                      axisLine={{ stroke: "#e2e8f0" }}
+                      tick={{ fontSize: 11, fill: "#a1a1aa" }}
+                      axisLine={{ stroke: "#3f3f46" }}
                       tickLine={false}
                     />
                     <YAxis
                       type="number"
-                      tick={{ fontSize: 11, fill: "#475569" }}
+                      tick={{ fontSize: 11, fill: "#a1a1aa" }}
                       allowDecimals={false}
-                      axisLine={{ stroke: "#e2e8f0" }}
+                      axisLine={{ stroke: "#3f3f46" }}
                       tickLine={false}
                     />
                     <Tooltip
-                      cursor={{ fill: "rgba(15, 23, 42, 0.05)" }}
+                      cursor={{ fill: "rgba(255, 255, 255, 0.05)" }}
                       contentStyle={{
-                        backgroundColor: "white",
-                        border: "1px solid #e2e8f0",
+                        backgroundColor: "#18181b",
+                        border: "1px solid #3f3f46",
                         borderRadius: "0.5rem",
                         padding: "0.5rem 0.75rem",
                         textAlign: "right",
                         direction: "rtl",
                       }}
+                      labelStyle={{ color: "#a1a1aa" }}
+                      itemStyle={{ color: "#f4f4f5" }}
                       formatter={(value: number, name: string) => {
                         const label = name === "good" ? "טוב" : "פסול";
                         return [value, label];
@@ -327,13 +329,13 @@ export default function SessionDetailPage({ params }: Props) {
                     {session.plannedQuantity != null && session.plannedQuantity > 0 && (
                       <ReferenceLine
                         y={session.plannedQuantity}
-                        stroke="#0f172a"
+                        stroke="#f59e0b"
                         strokeWidth={2}
                         strokeDasharray="4 4"
                         label={{
                           value: `מתוכנן: ${session.plannedQuantity}`,
                           position: "right",
-                          fill: "#0f172a",
+                          fill: "#f59e0b",
                           fontSize: 11,
                           fontWeight: 500,
                         }}
@@ -358,14 +360,14 @@ export default function SessionDetailPage({ params }: Props) {
               </div>
 
               {/* Legend */}
-              <div className="flex flex-wrap items-center justify-center gap-6 text-xs text-slate-600">
+              <div className="flex flex-wrap items-center justify-center gap-6 text-xs text-muted-foreground">
                 <div className="flex items-center gap-2">
                   <span
                     className="h-2.5 w-2.5 rounded-full shrink-0"
                     style={{ backgroundColor: "#10b981" }}
                   />
                   <span>טוב</span>
-                  <span className="font-semibold text-slate-900">{session.totalGood}</span>
+                  <span className="font-semibold text-foreground">{session.totalGood}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <span
@@ -373,23 +375,23 @@ export default function SessionDetailPage({ params }: Props) {
                     style={{ backgroundColor: "#ef4444" }}
                   />
                   <span>פסול</span>
-                  <span className="font-semibold text-slate-900">{session.totalScrap}</span>
+                  <span className="font-semibold text-foreground">{session.totalScrap}</span>
                 </div>
                 {session.plannedQuantity != null && session.plannedQuantity > 0 && (
                   <div className="flex items-center gap-2">
                     <span
                       className="h-0.5 w-4 rounded-sm shrink-0"
-                      style={{ backgroundColor: "#0f172a" }}
+                      style={{ backgroundColor: "#f59e0b" }}
                     />
                     <span>כמות מתוכננת</span>
-                    <span className="font-semibold text-slate-900">{session.plannedQuantity}</span>
+                    <span className="font-semibold text-foreground">{session.plannedQuantity}</span>
                   </div>
                 )}
               </div>
             </div>
           ) : (
-            <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-6 text-center">
-              <p className="text-sm text-slate-500">אין נתוני תפוקה</p>
+            <div className="rounded-lg border border-border bg-muted/30 px-4 py-6 text-center">
+              <p className="text-sm text-muted-foreground">אין נתוני תפוקה</p>
             </div>
           )}
         </CardContent>
