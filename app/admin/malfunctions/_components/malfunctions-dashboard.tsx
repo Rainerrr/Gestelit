@@ -84,8 +84,14 @@ export const MalfunctionsDashboard = () => {
   return (
     <AdminLayout
       header={
-        <div className="flex flex-col gap-5">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex flex-col gap-4 text-right">
+          {/* Mobile simplified title */}
+          <div className="flex items-center gap-3 lg:hidden">
+            <AlertTriangle className="h-5 w-5 text-primary" />
+            <h1 className="text-xl font-bold text-foreground">תקלות</h1>
+          </div>
+          {/* Desktop full header */}
+          <div className="hidden lg:flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="space-y-2">
               <div className="flex items-center gap-3">
                 <Wrench className="h-5 w-5 text-primary" />
@@ -111,51 +117,42 @@ export const MalfunctionsDashboard = () => {
                 <RefreshCw className={`h-4 w-4 ml-2 ${isRefreshing ? "animate-spin" : ""}`} />
                 רענון
               </Button>
-              <Button
-                variant="outline"
-                asChild
-                className="w-full sm:w-auto border-input bg-secondary text-foreground/80 hover:bg-accent hover:text-foreground"
-                size="sm"
-              >
-                <Link href="/">חזרה למסך הבית</Link>
-              </Button>
-            </div>
-          </div>
-
-          {/* Summary cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="flex items-center gap-4 rounded-xl border border-border bg-card/50 px-5 py-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-red-500/10 border border-red-500/20">
-                <AlertTriangle className="h-6 w-6 text-red-400" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-foreground">{totalOpen}</p>
-                <p className="text-xs text-muted-foreground">תקלות חדשות</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-4 rounded-xl border border-border bg-card/50 px-5 py-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-amber-500/10 border border-amber-500/20">
-                <Eye className="h-6 w-6 text-amber-400" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-foreground">{totalKnown}</p>
-                <p className="text-xs text-muted-foreground">בטיפול</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-4 rounded-xl border border-border bg-card/50 px-5 py-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 border border-primary/20">
-                <Wrench className="h-6 w-6 text-primary" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-foreground">{stations.length}</p>
-                <p className="text-xs text-muted-foreground">תחנות עם תקלות</p>
-              </div>
             </div>
           </div>
         </div>
       }
     >
       <div className="space-y-4">
+        {/* Summary cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="flex items-center gap-4 rounded-xl border border-border bg-card/50 px-5 py-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-red-500/10 border border-red-500/20">
+              <AlertTriangle className="h-6 w-6 text-red-400" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-foreground">{totalOpen}</p>
+              <p className="text-xs text-muted-foreground">תקלות חדשות</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-4 rounded-xl border border-border bg-card/50 px-5 py-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-amber-500/10 border border-amber-500/20">
+              <Eye className="h-6 w-6 text-amber-400" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-foreground">{totalKnown}</p>
+              <p className="text-xs text-muted-foreground">בטיפול</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-4 rounded-xl border border-border bg-card/50 px-5 py-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 border border-primary/20">
+              <Wrench className="h-6 w-6 text-primary" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-foreground">{stations.length}</p>
+              <p className="text-xs text-muted-foreground">תחנות עם תקלות</p>
+            </div>
+          </div>
+        </div>
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-20 gap-4">
             <div className="relative h-10 w-10">

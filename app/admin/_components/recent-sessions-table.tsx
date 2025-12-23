@@ -10,7 +10,7 @@ import {
 } from "./status-dictionary";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
-import { ChevronUp, ChevronDown, ChevronsUpDown, Clock, Package, AlertTriangle, ExternalLink } from "lucide-react";
+import { ChevronUp, ChevronDown, ChevronsUpDown, Clock, Package, ExternalLink } from "lucide-react";
 
 const getStatusStyle = (hex: string) => ({
   bg: `rgba(${parseInt(hex.slice(1, 3), 16)}, ${parseInt(hex.slice(3, 5), 16)}, ${parseInt(hex.slice(5, 7), 16)}, 0.12)`,
@@ -343,28 +343,43 @@ export const RecentSessionsTable = ({
             <div
               key={session.id}
               className={cn(
-                "p-4 cursor-pointer transition-colors active:bg-accent",
+                "flex transition-colors",
                 isSelected ? "bg-primary/10" : "hover:bg-accent"
               )}
-              role="button"
-              tabIndex={0}
-              aria-label={`ציר זמן לפק\"ע ${session.jobNumber}`}
-              onClick={() => handleNavigate(session.id)}
-              onKeyDown={(event) => handleRowKeyOpen(session.id, event)}
             >
-              <div className="flex items-start gap-3">
-                {/* Checkbox */}
-                {selectionEnabled && (
-                  <div className="pt-0.5" onClick={(e) => e.stopPropagation()}>
-                    <Checkbox
-                      checked={isSelected}
-                      onCheckedChange={() => onToggleRow?.(session.id)}
-                      aria-label="בחירת עבודה"
-                      className="border-input data-[state=checked]:bg-primary data-[state=checked]:border-primary"
-                    />
-                  </div>
-                )}
+              {/* Checkbox zone - separate from clickable content */}
+              {selectionEnabled && (
+                <div
+                  className="flex items-center justify-center w-16 shrink-0 border-l border-border/50 cursor-pointer active:bg-accent/50"
+                  onClick={() => onToggleRow?.(session.id)}
+                  role="button"
+                  tabIndex={0}
+                  aria-label="בחירת עבודה"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onToggleRow?.(session.id);
+                    }
+                  }}
+                >
+                  <Checkbox
+                    checked={isSelected}
+                    onCheckedChange={() => onToggleRow?.(session.id)}
+                    aria-label="בחירת עבודה"
+                    className="h-6 w-6 border-2 border-input data-[state=checked]:bg-primary data-[state=checked]:border-primary pointer-events-none"
+                  />
+                </div>
+              )}
 
+              {/* Clickable content area */}
+              <div
+                className="flex-1 p-4 cursor-pointer active:bg-accent"
+                role="button"
+                tabIndex={0}
+                aria-label={`ציר זמן לפק\"ע ${session.jobNumber}`}
+                onClick={() => handleNavigate(session.id)}
+                onKeyDown={(event) => handleRowKeyOpen(session.id, event)}
+              >
                 {/* Content */}
                 <div className="flex-1 min-w-0 space-y-2">
                   {/* Top row: Job + Station + Status */}
