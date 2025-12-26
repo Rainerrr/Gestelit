@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ChevronDown, ChevronUp, Clock, User, AlertTriangle, Eye, CheckCircle2, X, ZoomIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -39,6 +39,7 @@ type MalfunctionCardProps = {
   stationReasons: StationReason[] | null | undefined;
   onStatusChange: (id: string, status: MalfunctionStatus) => Promise<void>;
   isUpdating: boolean;
+  isHighlighted?: boolean;
 };
 
 export const MalfunctionCard = ({
@@ -46,9 +47,22 @@ export const MalfunctionCard = ({
   stationReasons,
   onStatusChange,
   isUpdating,
+  isHighlighted = false,
 }: MalfunctionCardProps) => {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(isHighlighted);
   const [imageOpen, setImageOpen] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  // Scroll into view and apply highlight effect when highlighted
+  useEffect(() => {
+    if (isHighlighted && cardRef.current) {
+      // Small delay to ensure the card is rendered and expanded
+      const timer = setTimeout(() => {
+        cardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [isHighlighted]);
 
   const reasonLabel = getReasonLabel(stationReasons, malfunction.station_reason_id);
 
@@ -78,7 +92,15 @@ export const MalfunctionCard = ({
   };
 
   return (
-    <div className="border border-border/60 rounded-lg bg-card/30 overflow-hidden transition-all duration-200 hover:border-border">
+    <div
+      ref={cardRef}
+      className={cn(
+        "border rounded-lg bg-card/30 overflow-hidden transition-all duration-200 hover:border-border",
+        isHighlighted
+          ? "border-primary/50 ring-2 ring-primary/20 bg-primary/5"
+          : "border-border/60"
+      )}
+    >
       {/* Header row - always visible */}
       <button
         type="button"

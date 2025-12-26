@@ -1,7 +1,12 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import {
+  isAdminLoggedIn,
+  validateAdminSession,
+  clearAdminLoggedIn,
+} from "@/lib/api/auth-helpers";
 
 const ADMIN_STORAGE_KEY = "isAdmin";
 
@@ -29,16 +34,61 @@ const subscribe = (callback: () => void) => {
 
 export const useAdminGuard = () => {
   const router = useRouter();
-  const hasAccess = useSyncExternalStore(subscribe, getSnapshot, () => false);
+  const clientHasAccess = useSyncExternalStore(subscribe, getSnapshot, () => false);
+  const [isValidating, setIsValidating] = useState(true);
+  const [serverValidated, setServerValidated] = useState(false);
 
+  // Validate session with server on mount
   useEffect(() => {
-    if (!hasAccess) {
+    let mounted = true;
+
+    const validate = async () => {
+      // First check client-side flag
+      if (!isAdminLoggedIn()) {
+        if (mounted) {
+          setIsValidating(false);
+          setServerValidated(false);
+        }
+        return;
+      }
+
+      // Validate with server (this also refreshes the cookie)
+      const isValid = await validateAdminSession();
+
+      if (mounted) {
+        setServerValidated(isValid);
+        setIsValidating(false);
+
+        if (!isValid) {
+          // Server says session is invalid, clear client state
+          clearAdminLoggedIn();
+        }
+      }
+    };
+
+    void validate();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // Redirect if not authenticated (after validation completes)
+  useEffect(() => {
+    if (!isValidating && !serverValidated) {
       router.replace("/");
     }
-  }, [hasAccess, router]);
+  }, [isValidating, serverValidated, router]);
 
-  return { hasAccess };
+  // Also redirect if client state changes (e.g., logout in another tab)
+  useEffect(() => {
+    if (!isValidating && !clientHasAccess) {
+      router.replace("/");
+    }
+  }, [clientHasAccess, isValidating, router]);
+
+  return {
+    hasAccess: !isValidating && serverValidated && clientHasAccess,
+    isValidating,
+  };
 };
-
-
-

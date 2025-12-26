@@ -3,7 +3,17 @@
 import { memo, useMemo, useSyncExternalStore } from "react";
 import type { KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, Clock, Package, Trash2, CirclePause } from "lucide-react";
+import {
+  ChevronLeft,
+  Clock,
+  Package,
+  Trash2,
+  CirclePause,
+  AlertOctagon,
+  AlertTriangle,
+  TrendingDown,
+  Settings,
+} from "lucide-react";
 import type { StatusDictionary } from "@/lib/status";
 import {
   useAdminSession,
@@ -14,6 +24,14 @@ import {
   getStatusColorFromDictionary,
   getStatusLabelFromDictionary,
 } from "./status-dictionary";
+import { calculateSessionFlags, hasAnyFlag } from "@/lib/utils/session-flags";
+import { SESSION_FLAG_LABELS } from "@/lib/config/session-flags";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 type ActiveSessionsTableProps = {
   dictionary: StatusDictionary;
@@ -115,6 +133,12 @@ const SessionRow = memo(
       () => (session ? getDurationLabel(session.startedAt, now) : "-"),
       [session, now],
     );
+    const durationSeconds = useMemo(() => {
+      if (!session) return 0;
+      const start = new Date(session.startedAt).getTime();
+      if (Number.isNaN(start)) return 0;
+      return Math.max(0, Math.floor((now - start) / 1000));
+    }, [session, now]);
     const isIdle = useMemo(
       () => (session ? isSessionIdle(session.lastSeenAt, now) : false),
       [session, now],
@@ -123,6 +147,14 @@ const SessionRow = memo(
       () => (session ? formatLastSeenTime(session.lastSeenAt) : ""),
       [session],
     );
+    const flags = useMemo(() => {
+      if (!session) return null;
+      return calculateSessionFlags(
+        { totalGood: session.totalGood, totalScrap: session.totalScrap, durationSeconds },
+        session.stoppageTimeSeconds ?? 0,
+        session.setupTimeSeconds ?? 0,
+      );
+    }, [session, durationSeconds]);
 
     if (!session) {
       return null;
@@ -143,6 +175,10 @@ const SessionRow = memo(
       : "ללא סטטוס";
     const statusStyle = getStatusStyle(statusHex);
 
+    const hasMalfunctions = session.malfunctionCount > 0;
+    const hasPerformanceFlags = flags && hasAnyFlag(flags);
+    const hasAnyFlags = hasMalfunctions || isIdle || hasPerformanceFlags;
+
     return (
       <div
         role="button"
@@ -152,25 +188,10 @@ const SessionRow = memo(
         onClick={() => onNavigate(session.id)}
         onKeyDown={(event) => handleKeyOpen(session.id, event)}
       >
-        {/* Station + Status + Idle */}
+        {/* Station + Status */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <span className="text-sm font-bold text-foreground">{session.stationName}</span>
-            {isIdle && (
-              <span
-                className="relative group/idle cursor-default"
-                onClick={(e) => e.stopPropagation()}
-                onKeyDown={(e) => e.stopPropagation()}
-              >
-                <CirclePause
-                  className="h-4 w-4 text-amber-500 shrink-0"
-                  aria-label="לא פעיל"
-                />
-                <span className="absolute top-full left-1/2 -translate-x-1/2 mt-1 px-2 py-1 text-xs text-white bg-zinc-800 rounded whitespace-nowrap opacity-0 invisible group-hover/idle:opacity-100 group-hover/idle:visible transition-opacity z-[9999] shadow-lg">
-                  נראה לאחרונה: {lastSeenFormatted}
-                </span>
-              </span>
-            )}
           </div>
           <div
             className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-semibold"
@@ -197,7 +218,113 @@ const SessionRow = memo(
           </div>
         </div>
 
-        {/* Divider */}
+        {/* Divider before flags */}
+        <div className="w-px h-8 bg-border" />
+
+        {/* Flags section */}
+        <TooltipProvider delayDuration={200}>
+          <div className="flex items-center justify-center gap-1.5 min-w-[80px] flex-wrap">
+            {hasMalfunctions && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className="cursor-default shrink-0"
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                  >
+                    <AlertOctagon className="h-3.5 w-3.5 text-red-500" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  {session.malfunctionCount} דיווחי תקלה
+                </TooltipContent>
+              </Tooltip>
+            )}
+            {isIdle && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className="cursor-default shrink-0"
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                  >
+                    <CirclePause className="h-3.5 w-3.5 text-amber-500" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  נראה לאחרונה: {lastSeenFormatted}
+                </TooltipContent>
+              </Tooltip>
+            )}
+            {flags?.highStoppage && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className="cursor-default shrink-0"
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                  >
+                    <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  {SESSION_FLAG_LABELS.high_stoppage}
+                </TooltipContent>
+              </Tooltip>
+            )}
+            {flags?.highSetup && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className="cursor-default shrink-0"
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                  >
+                    <Settings className="h-3.5 w-3.5 text-blue-500" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  {SESSION_FLAG_LABELS.high_setup}
+                </TooltipContent>
+              </Tooltip>
+            )}
+            {flags?.highScrap && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className="cursor-default shrink-0"
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                  >
+                    <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  {SESSION_FLAG_LABELS.high_scrap}
+                </TooltipContent>
+              </Tooltip>
+            )}
+            {flags?.lowProduction && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className="cursor-default shrink-0"
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                  >
+                    <TrendingDown className="h-3.5 w-3.5 text-amber-500" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  {SESSION_FLAG_LABELS.low_production}
+                </TooltipContent>
+              </Tooltip>
+            )}
+            {!hasAnyFlags && <span className="text-muted-foreground/30">—</span>}
+          </div>
+        </TooltipProvider>
+
+        {/* Divider after flags */}
         <div className="w-px h-8 bg-border" />
 
         {/* Time + Quantities */}
@@ -235,6 +362,12 @@ const MobileSessionCard = memo(
       () => (session ? getDurationLabel(session.startedAt, now) : "-"),
       [session, now],
     );
+    const durationSeconds = useMemo(() => {
+      if (!session) return 0;
+      const start = new Date(session.startedAt).getTime();
+      if (Number.isNaN(start)) return 0;
+      return Math.max(0, Math.floor((now - start) / 1000));
+    }, [session, now]);
     const isIdle = useMemo(
       () => (session ? isSessionIdle(session.lastSeenAt, now) : false),
       [session, now],
@@ -243,6 +376,14 @@ const MobileSessionCard = memo(
       () => (session ? formatLastSeenTime(session.lastSeenAt) : ""),
       [session],
     );
+    const flags = useMemo(() => {
+      if (!session) return null;
+      return calculateSessionFlags(
+        { totalGood: session.totalGood, totalScrap: session.totalScrap, durationSeconds },
+        session.stoppageTimeSeconds ?? 0,
+        session.setupTimeSeconds ?? 0,
+      );
+    }, [session, durationSeconds]);
 
     if (!session) {
       return null;
@@ -255,6 +396,10 @@ const MobileSessionCard = memo(
       ? getStatusLabelFromDictionary(session.currentStatus, dictionary, session.stationId)
       : "ללא סטטוס";
     const statusStyle = getStatusStyle(statusHex);
+
+    const hasMalfunctions = session.malfunctionCount > 0;
+    const hasPerformanceFlags = flags && hasAnyFlag(flags);
+    const hasAnyFlags = hasMalfunctions || isIdle || hasPerformanceFlags;
 
     return (
       <div
@@ -270,25 +415,10 @@ const MobileSessionCard = memo(
           }
         }}
       >
-        {/* Station + Status + Idle */}
+        {/* Station + Status */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <span className="text-sm font-bold text-foreground">{session.stationName}</span>
-            {isIdle && (
-              <span
-                className="relative group/idle cursor-default"
-                onClick={(e) => e.stopPropagation()}
-                onKeyDown={(e) => e.stopPropagation()}
-              >
-                <CirclePause
-                  className="h-4 w-4 text-amber-500 shrink-0"
-                  aria-label="לא פעיל"
-                />
-                <span className="absolute top-full left-1/2 -translate-x-1/2 mt-1 px-2 py-1 text-xs text-white bg-zinc-800 rounded whitespace-nowrap opacity-0 invisible group-hover/idle:opacity-100 group-hover/idle:visible transition-opacity z-[9999] shadow-lg">
-                  נראה לאחרונה: {lastSeenFormatted}
-                </span>
-              </span>
-            )}
           </div>
           <div
             className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-semibold"
@@ -315,7 +445,113 @@ const MobileSessionCard = memo(
           </div>
         </div>
 
-        {/* Divider */}
+        {/* Divider before flags */}
+        <div className="w-px h-8 bg-border" />
+
+        {/* Flags section */}
+        <TooltipProvider delayDuration={200}>
+          <div className="flex items-center justify-center gap-1 min-w-[60px] flex-wrap">
+            {hasMalfunctions && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className="cursor-default shrink-0"
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                  >
+                    <AlertOctagon className="h-3.5 w-3.5 text-red-500" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  {session.malfunctionCount} דיווחי תקלה
+                </TooltipContent>
+              </Tooltip>
+            )}
+            {isIdle && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className="cursor-default shrink-0"
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                  >
+                    <CirclePause className="h-3.5 w-3.5 text-amber-500" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  נראה לאחרונה: {lastSeenFormatted}
+                </TooltipContent>
+              </Tooltip>
+            )}
+            {flags?.highStoppage && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className="cursor-default shrink-0"
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                  >
+                    <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  {SESSION_FLAG_LABELS.high_stoppage}
+                </TooltipContent>
+              </Tooltip>
+            )}
+            {flags?.highSetup && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className="cursor-default shrink-0"
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                  >
+                    <Settings className="h-3.5 w-3.5 text-blue-500" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  {SESSION_FLAG_LABELS.high_setup}
+                </TooltipContent>
+              </Tooltip>
+            )}
+            {flags?.highScrap && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className="cursor-default shrink-0"
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                  >
+                    <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  {SESSION_FLAG_LABELS.high_scrap}
+                </TooltipContent>
+              </Tooltip>
+            )}
+            {flags?.lowProduction && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className="cursor-default shrink-0"
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                  >
+                    <TrendingDown className="h-3.5 w-3.5 text-amber-500" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  {SESSION_FLAG_LABELS.low_production}
+                </TooltipContent>
+              </Tooltip>
+            )}
+            {!hasAnyFlags && <span className="text-muted-foreground/30">—</span>}
+          </div>
+        </TooltipProvider>
+
+        {/* Divider after flags */}
         <div className="w-px h-8 bg-border" />
 
         {/* Time + Quantities */}

@@ -137,6 +137,7 @@ export async function startStatusEventApi(options: {
   stationReasonId?: string | null;
   note?: string | null;
   imageUrl?: string | null;
+  malfunctionId?: string | null;
 }) {
   const response = await fetch("/api/status-events", {
     method: "POST",
@@ -147,6 +148,7 @@ export async function startStatusEventApi(options: {
       stationReasonId: options.stationReasonId,
       note: options.note,
       imageUrl: options.imageUrl,
+      malfunctionId: options.malfunctionId,
     }),
   });
   await handleResponse(response);
@@ -218,6 +220,7 @@ export async function createMalfunctionApi(input: {
   description?: string;
   image?: File | null;
   workerId?: string;
+  sessionId?: string;
 }): Promise<Malfunction> {
   const formData = new FormData();
   formData.append("stationId", input.stationId);
@@ -232,6 +235,9 @@ export async function createMalfunctionApi(input: {
   }
   if (input.workerId) {
     formData.append("workerId", input.workerId);
+  }
+  if (input.sessionId) {
+    formData.append("sessionId", input.sessionId);
   }
 
   const response = await fetch("/api/malfunctions", {

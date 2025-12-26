@@ -8,8 +8,11 @@ import { HistoryFilters, type HistoryFiltersState } from "./history-filters";
 import {
   HistoryCharts,
   type StatusSummary,
-  type ThroughputSummary,
 } from "./history-charts";
+import {
+  ThroughputChart,
+  type ThroughputSummary,
+} from "./throughput-chart";
 import { RecentSessionsTable } from "./recent-sessions-table";
 import { useAdminGuard } from "@/hooks/useAdminGuard";
 import {
@@ -157,15 +160,12 @@ export const HistoryDashboard = () => {
   }, []);
 
   const loadMonthlyJobs = useCallback(
-    async (targetMonth: { year: number; month: number }, nextFilters: HistoryFiltersState) => {
+    async (targetMonth: { year: number; month: number }) => {
       setIsLoadingJobs(true);
       try {
         const { throughput: items } = await fetchMonthlyJobThroughputAdminApi({
           year: targetMonth.year,
           month: targetMonth.month,
-          workerId: nextFilters.workerId,
-          stationId: nextFilters.stationId,
-          jobNumber: nextFilters.jobNumber?.trim(),
         });
         setMonthlyJobs(items);
         setPageIndex(0);
@@ -197,8 +197,8 @@ export const HistoryDashboard = () => {
 
   useEffect(() => {
     if (hasAccess !== true) return;
-    void loadMonthlyJobs(monthCursor, filters);
-  }, [hasAccess, monthCursor, filters, loadMonthlyJobs]);
+    void loadMonthlyJobs(monthCursor);
+  }, [hasAccess, monthCursor, loadMonthlyJobs]);
 
   useEffect(() => {
     setSelectedIds((prev) => {
@@ -547,25 +547,10 @@ export const HistoryDashboard = () => {
       }
     >
       <div className="space-y-6">
-        <HistoryFilters
-          workers={workers}
-          stations={stations}
-          jobNumbers={jobNumbers}
-          value={filters}
-          onChange={setFilters}
-        />
-
-        {/* Charts section - moved above table */}
-        <HistoryCharts
-          statusData={statusData}
+        {/* Throughput chart - above filters, independent of filtering */}
+        <ThroughputChart
           throughputData={throughputData}
-          isLoading={
-            isLoading ||
-            isLoadingFilters ||
-            isLoadingStatusEvents ||
-            isLoadingJobs ||
-            isStatusesLoading
-          }
+          isLoading={isLoadingJobs}
           monthLabel={monthLabel}
           onPrevMonth={handlePrevMonth}
           onNextMonth={handleNextMonth}
@@ -574,6 +559,25 @@ export const HistoryDashboard = () => {
           onPrevPage={handlePrevPage}
           onNextPage={handleNextPage}
           pageLabel={pageLabel}
+        />
+
+        <HistoryFilters
+          workers={workers}
+          stations={stations}
+          jobNumbers={jobNumbers}
+          value={filters}
+          onChange={setFilters}
+        />
+
+        {/* Status distribution chart - affected by filters */}
+        <HistoryCharts
+          statusData={statusData}
+          isLoading={
+            isLoading ||
+            isLoadingFilters ||
+            isLoadingStatusEvents ||
+            isStatusesLoading
+          }
           dictionary={dictionary}
         />
 

@@ -11,7 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { fetchActiveSessionsAdminApi } from "@/lib/api/admin-management";
-import { getAdminPassword } from "@/lib/api/auth-helpers";
+import { isAdminLoggedIn } from "@/lib/api/auth-helpers";
 import type { ActiveSession } from "@/lib/data/admin-dashboard";
 
 type ConnectionState = "connecting" | "connected" | "disconnected" | "error";
@@ -379,6 +379,13 @@ export function AdminSessionsProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    // Don't try to connect if client-side says not logged in
+    if (!isAdminLoggedIn()) {
+      setConnectionState("error");
+      setInitialLoading(false);
+      return;
+    }
+
     stopPolling();
     if (backoffTimeoutRef.current) {
       window.clearTimeout(backoffTimeoutRef.current);
@@ -386,18 +393,18 @@ export function AdminSessionsProvider({ children }: { children: ReactNode }) {
     }
     disconnectStream();
 
-    const password = getAdminPassword();
+    // SSE with credentials - cookies are sent automatically with withCredentials
     const url = new URL(
       "/api/admin/dashboard/active-sessions/stream",
       window.location.origin,
     );
-    if (password) {
-      url.searchParams.set("password", password);
-    }
 
     setConnectionState("connecting");
 
-    const eventSource = new EventSource(url.toString());
+    // EventSource with credentials to include cookies
+    const eventSource = new EventSource(url.toString(), {
+      withCredentials: true,
+    });
     eventSourceRef.current = eventSource;
 
     eventSource.onopen = () => {
@@ -410,6 +417,14 @@ export function AdminSessionsProvider({ children }: { children: ReactNode }) {
     eventSource.onerror = () => {
       eventSource.close();
       eventSourceRef.current = null;
+
+      // Don't retry if client says not logged in
+      if (!isAdminLoggedIn()) {
+        setConnectionState("error");
+        setInitialLoading(false);
+        return;
+      }
+
       if (retryRef.current >= MAX_RETRIES) {
         setConnectionState("error");
         startPolling();

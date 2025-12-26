@@ -10,7 +10,30 @@ import {
 } from "./status-dictionary";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
-import { ChevronUp, ChevronDown, ChevronsUpDown, Clock, Package, ExternalLink } from "lucide-react";
+import {
+  ChevronUp,
+  ChevronDown,
+  ChevronsUpDown,
+  Clock,
+  Package,
+  ExternalLink,
+  AlertTriangle,
+  Trash2,
+  TrendingDown,
+  AlertOctagon,
+  Settings,
+} from "lucide-react";
+import {
+  calculateSessionFlags,
+  hasAnyFlag,
+} from "@/lib/utils/session-flags";
+import { SESSION_FLAG_LABELS } from "@/lib/config/session-flags";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 const getStatusStyle = (hex: string) => ({
   bg: `rgba(${parseInt(hex.slice(1, 3), 16)}, ${parseInt(hex.slice(3, 5), 16)}, ${parseInt(hex.slice(5, 7), 16)}, 0.12)`,
@@ -82,7 +105,7 @@ const formatDateTime = (value: string) => {
   return { time, date: dateStr };
 };
 
-const columns: { key: SortKey; label: string; hideOnMobile?: boolean; align?: "center" }[] = [
+const columns: { key: SortKey | "flags"; label: string; hideOnMobile?: boolean; align?: "center"; sortable?: boolean }[] = [
   { key: "jobNumber", label: 'פק"ע' },
   { key: "stationName", label: "תחנה" },
   { key: "workerName", label: "עובד", hideOnMobile: true },
@@ -90,6 +113,7 @@ const columns: { key: SortKey; label: string; hideOnMobile?: boolean; align?: "c
   { key: "durationSeconds", label: "משך", align: "center" },
   { key: "totalGood", label: "תקין", align: "center" },
   { key: "totalScrap", label: "פסול", align: "center" },
+  { key: "flags", label: "חריגים", align: "center", sortable: false },
   { key: "status", label: "סטטוס" },
 ];
 
@@ -101,6 +125,82 @@ const SortIcon = ({ active, direction }: { active: boolean; direction?: "asc" | 
     <ChevronUp className="h-3.5 w-3.5 text-primary" />
   ) : (
     <ChevronDown className="h-3.5 w-3.5 text-primary" />
+  );
+};
+
+const SessionFlagIcons = ({ session, showPlaceholder = false }: { session: CompletedSession; showPlaceholder?: boolean }) => {
+  const flags = calculateSessionFlags(session, session.stoppageTimeSeconds, session.setupTimeSeconds);
+  const hasMalfunctions = session.malfunctionCount > 0;
+
+  if (!hasAnyFlag(flags) && !hasMalfunctions) {
+    return showPlaceholder ? <span className="text-muted-foreground/30">—</span> : null;
+  }
+
+  return (
+    <TooltipProvider delayDuration={200}>
+      <div className="inline-flex items-center justify-center gap-1.5 flex-wrap">
+        {hasMalfunctions && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="shrink-0">
+                <AlertOctagon className="h-3.5 w-3.5 text-red-500" />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="text-xs">
+              {session.malfunctionCount} דיווחי תקלה
+            </TooltipContent>
+          </Tooltip>
+        )}
+        {flags.highStoppage && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="shrink-0">
+                <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="text-xs">
+              {SESSION_FLAG_LABELS.high_stoppage}
+            </TooltipContent>
+          </Tooltip>
+        )}
+        {flags.highSetup && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="shrink-0">
+                <Settings className="h-3.5 w-3.5 text-blue-500" />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="text-xs">
+              {SESSION_FLAG_LABELS.high_setup}
+            </TooltipContent>
+          </Tooltip>
+        )}
+        {flags.highScrap && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="shrink-0">
+                <Trash2 className="h-3.5 w-3.5 text-red-500" />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="text-xs">
+              {SESSION_FLAG_LABELS.high_scrap}
+            </TooltipContent>
+          </Tooltip>
+        )}
+        {flags.lowProduction && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="shrink-0">
+                <TrendingDown className="h-3.5 w-3.5 text-amber-500" />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="text-xs">
+              {SESSION_FLAG_LABELS.low_production}
+            </TooltipContent>
+          </Tooltip>
+        )}
+      </div>
+    </TooltipProvider>
   );
 };
 
@@ -186,6 +286,7 @@ export const RecentSessionsTable = ({
                 </th>
               )}
               {columns.map((column) => {
+                const isSortable = column.sortable !== false && column.key !== "flags";
                 const isSorted = sortKey === column.key;
                 return (
                   <th
@@ -195,19 +296,23 @@ export const RecentSessionsTable = ({
                       column.align === "center" ? "text-center" : "text-right"
                     )}
                   >
-                    <button
-                      type="button"
-                      onClick={() => onSort?.(column.key)}
-                      className={cn(
-                        "inline-flex items-center gap-1.5 rounded-md px-2 py-1 -mx-2 transition-colors",
-                        "hover:bg-accent hover:text-foreground",
-                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
-                        isSorted && "text-primary"
-                      )}
-                    >
+                    {isSortable ? (
+                      <button
+                        type="button"
+                        onClick={() => onSort?.(column.key as SortKey)}
+                        className={cn(
+                          "inline-flex items-center gap-1.5 rounded-md px-2 py-1 -mx-2 transition-colors",
+                          "hover:bg-accent hover:text-foreground",
+                          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
+                          isSorted && "text-primary"
+                        )}
+                      >
+                        <span>{column.label}</span>
+                        <SortIcon active={isSorted} direction={sortDirection} />
+                      </button>
+                    ) : (
                       <span>{column.label}</span>
-                      <SortIcon active={isSorted} direction={sortDirection} />
-                    </button>
+                    )}
                   </th>
                 );
               })}
@@ -286,6 +391,9 @@ export const RecentSessionsTable = ({
                     ) : (
                       <span className="text-muted-foreground">—</span>
                     )}
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <SessionFlagIcons session={session} showPlaceholder />
                   </td>
                   <td className="px-4 py-3">
                     <div
@@ -412,7 +520,7 @@ export const RecentSessionsTable = ({
                     </div>
                   </div>
 
-                  {/* Bottom row: Metrics */}
+                  {/* Bottom row: Metrics + Flags */}
                   <div className="flex items-center gap-4 text-xs">
                     <div className="flex items-center gap-1.5 text-muted-foreground">
                       <Clock className="h-3.5 w-3.5" />
@@ -423,7 +531,7 @@ export const RecentSessionsTable = ({
                       <span className="text-muted-foreground">משך:</span>
                       <span className="font-mono">{formatDuration(session.durationSeconds)}</span>
                     </div>
-                    <div className="flex items-center gap-2 mr-auto">
+                    <div className="flex items-center gap-2">
                       <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-500/15 font-mono text-xs font-semibold text-emerald-400">
                         {session.totalGood}
                       </span>
@@ -432,6 +540,10 @@ export const RecentSessionsTable = ({
                           {session.totalScrap}
                         </span>
                       )}
+                    </div>
+                    {/* Flags at the end */}
+                    <div className="mr-auto">
+                      <SessionFlagIcons session={session} />
                     </div>
                   </div>
                 </div>

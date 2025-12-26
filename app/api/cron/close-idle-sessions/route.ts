@@ -14,7 +14,7 @@ const resolveStoppedStatusId = async (
 ) => {
   const { data, error } = await supabase
     .from("status_definitions")
-    .select("id, label_he, scope, created_at")
+    .select("id, machine_state, scope, created_at")
     .order("created_at", { ascending: true });
 
   if (error || !data || data.length === 0) {
@@ -22,9 +22,8 @@ const resolveStoppedStatusId = async (
     return null;
   }
 
-  const preferred =
-    data.find((item) => (item.label_he ?? "").includes("עצירה")) ??
-    data.find((item) => (item.label_he ?? "").toLowerCase().includes("stop"));
+  // Find a stoppage status by machine_state (language-agnostic approach)
+  const preferred = data.find((item) => item.machine_state === "stoppage");
 
   return (preferred ?? data[0]).id;
 };

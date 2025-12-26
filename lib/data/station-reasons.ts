@@ -1,6 +1,7 @@
 import type { StationReason } from "@/lib/types";
 
 export const GENERAL_STATION_REASON_ID = "general-malfunction";
+export const GENERAL_REPORT_REASON_ID = "general-report";
 
 export const GENERAL_STATION_REASON: StationReason = {
   id: GENERAL_STATION_REASON_ID,
@@ -8,6 +9,18 @@ export const GENERAL_STATION_REASON: StationReason = {
   label_ru: "Общая неисправность",
   is_active: true,
 };
+
+export const GENERAL_REPORT_REASON: StationReason = {
+  id: GENERAL_REPORT_REASON_ID,
+  label_he: "דיווח כללי",
+  label_ru: "Общий отчёт",
+  is_active: true,
+};
+
+export const DEFAULT_REASONS: StationReason[] = [
+  GENERAL_STATION_REASON,
+  GENERAL_REPORT_REASON,
+];
 
 const generateReasonId = () => {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -51,16 +64,20 @@ export const mergeStationReasonsWithDefault = (
     .filter(Boolean) as StationReason[];
 
   const merged = dedupeById([
-    { ...GENERAL_STATION_REASON },
+    ...DEFAULT_REASONS,
     ...normalized,
   ]);
 
-  // Ensure the default keeps canonical labels even if already present
-  return merged.map((reason) =>
-    reason.id === GENERAL_STATION_REASON_ID
-      ? { ...GENERAL_STATION_REASON }
-      : reason,
-  );
+  // Ensure the defaults keep canonical labels even if already present
+  return merged.map((reason) => {
+    if (reason.id === GENERAL_STATION_REASON_ID) {
+      return { ...GENERAL_STATION_REASON };
+    }
+    if (reason.id === GENERAL_REPORT_REASON_ID) {
+      return { ...GENERAL_REPORT_REASON };
+    }
+    return reason;
+  });
 };
 
 export const getActiveStationReasons = (

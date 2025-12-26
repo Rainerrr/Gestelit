@@ -2,7 +2,7 @@
 
 import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Clock, Package, AlertTriangle } from "lucide-react";
+import { ArrowRight, Clock, Package, AlertTriangle, Trash2, TrendingDown, Settings, AlertOctagon, ChevronDown, ChevronUp, User, ZoomIn, X, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,9 +24,19 @@ import {
   getStatusLabelFromDictionary,
   useStatusDictionary,
 } from "../../_components/status-dictionary";
-import { getAdminPassword } from "@/lib/api/auth-helpers";
-import type { SessionDetail } from "@/app/api/admin/dashboard/session/[id]/route";
-import type { StatusEventState } from "@/lib/types";
+import { useAdminGuard } from "@/hooks/useAdminGuard";
+import type { SessionDetail, SessionMalfunction } from "@/app/api/admin/dashboard/session/[id]/route";
+import type { StatusEventState, StationReason } from "@/lib/types";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { getReasonLabel } from "@/lib/data/malfunctions";
+import {
+  calculateSessionFlags,
+  hasAnyFlag,
+} from "@/lib/utils/session-flags";
+import {
+  SESSION_FLAG_THRESHOLDS,
+  SESSION_FLAG_LABELS,
+} from "@/lib/config/session-flags";
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -52,26 +62,212 @@ const formatDuration = (seconds: number) => {
   return `${minutes}:${String(secs).padStart(2, "0")}`;
 };
 
+const formatMinutes = (seconds: number) => {
+  const mins = Math.floor(seconds / 60);
+  return `${mins} דק׳`;
+};
+
+const formatProductionRate = (totalGood: number, activeTimeSeconds: number) => {
+  if (activeTimeSeconds <= 0) return "0";
+  const rate = totalGood / (activeTimeSeconds / 3600);
+  return rate.toFixed(1);
+};
+
+const formatRelativeTime = (dateStr: string): string => {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffSeconds = Math.floor(diffMs / 1000);
+  const diffMinutes = Math.floor(diffSeconds / 60);
+  const diffHours = Math.floor(diffMinutes / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffMinutes < 1) return "עכשיו";
+  if (diffMinutes < 60) return `לפני ${diffMinutes} דקות`;
+  if (diffHours < 24) return `לפני ${diffHours} שעות`;
+  if (diffDays === 1) return "אתמול";
+  if (diffDays < 7) return `לפני ${diffDays} ימים`;
+
+  return new Intl.DateTimeFormat("he-IL", {
+    day: "2-digit",
+    month: "2-digit",
+  }).format(date);
+};
+
+type MalfunctionCardProps = {
+  malfunction: SessionMalfunction;
+  stationReasons: StationReason[] | null | undefined;
+};
+
+const SessionMalfunctionCard = ({ malfunction, stationReasons }: MalfunctionCardProps) => {
+  const [expanded, setExpanded] = useState(false);
+  const [imageOpen, setImageOpen] = useState(false);
+
+  const reasonLabel = getReasonLabel(stationReasons, malfunction.stationReasonId);
+
+  const statusConfig = {
+    open: {
+      label: "חדש",
+      color: "bg-red-500/10 border-red-500/30 text-red-400",
+    },
+    known: {
+      label: "בטיפול",
+      color: "bg-amber-500/10 border-amber-500/30 text-amber-400",
+    },
+    solved: {
+      label: "נפתר",
+      color: "bg-emerald-500/10 border-emerald-500/30 text-emerald-400",
+    },
+  };
+
+  const config = statusConfig[malfunction.status];
+
+  return (
+    <div className="border border-border/60 rounded-lg bg-card/30 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between gap-3 px-4 py-3 text-right hover:bg-accent/30 transition-colors"
+      >
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border shrink-0 ${config.color}`}>
+            <AlertOctagon className="h-3 w-3" />
+            {config.label}
+          </span>
+
+          {reasonLabel && (
+            <span className="text-sm text-foreground font-medium truncate">
+              {reasonLabel}
+            </span>
+          )}
+
+          <span className="text-xs text-muted-foreground flex items-center gap-1 shrink-0">
+            <Clock className="h-3 w-3" />
+            {malfunction.createdAt ? formatRelativeTime(malfunction.createdAt) : "—"}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          {malfunction.imageUrl && (
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-primary/30 text-primary">
+              תמונה
+            </Badge>
+          )}
+          {expanded ? (
+            <ChevronUp className="h-4 w-4 text-muted-foreground" />
+          ) : (
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          )}
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="border-t border-border/40 px-4 py-4 space-y-4 bg-card/20">
+          {malfunction.description && (
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">תיאור</p>
+              <p className="text-sm text-foreground/90 whitespace-pre-wrap leading-relaxed">
+                {malfunction.description}
+              </p>
+            </div>
+          )}
+
+          {malfunction.reporterName && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <User className="h-3.5 w-3.5" />
+              <span>דווח על ידי:</span>
+              <span className="text-foreground font-medium">{malfunction.reporterName}</span>
+              {malfunction.reporterCode && (
+                <span className="text-xs font-mono text-muted-foreground/70">
+                  ({malfunction.reporterCode})
+                </span>
+              )}
+            </div>
+          )}
+
+          {malfunction.imageUrl && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">תמונה מצורפת</p>
+              <button
+                type="button"
+                onClick={() => setImageOpen(true)}
+                className="relative group rounded-lg overflow-hidden border border-border/60 hover:border-primary/50 transition-all"
+              >
+                <img
+                  src={malfunction.imageUrl}
+                  alt="תמונת תקלה"
+                  className="max-h-48 w-auto object-contain bg-black/20"
+                />
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">
+                  <ZoomIn className="h-8 w-8 text-white drop-shadow-lg" />
+                </div>
+              </button>
+            </div>
+          )}
+
+          {/* Link to malfunction management */}
+          <div className="pt-2 border-t border-border/40">
+            <Button
+              variant="outline"
+              size="sm"
+              asChild
+              className="h-8 text-xs border-primary/30 text-primary hover:bg-primary/10 hover:text-primary"
+            >
+              <a href={`/admin/malfunctions?highlight=${malfunction.id}`}>
+                <ExternalLink className="h-3.5 w-3.5 ml-1.5" />
+                הצג בניהול תקלות
+              </a>
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <Dialog open={imageOpen} onOpenChange={setImageOpen}>
+        <DialogContent className="max-w-4xl w-auto p-0 bg-black/95 border-border overflow-hidden">
+          <DialogTitle className="sr-only">תמונת תקלה</DialogTitle>
+          <button
+            type="button"
+            onClick={() => setImageOpen(false)}
+            className="absolute top-3 left-3 z-10 p-2 rounded-full bg-black/50 hover:bg-black/70 text-white transition-colors"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          {malfunction.imageUrl && (
+            <img
+              src={malfunction.imageUrl}
+              alt="תמונת תקלה"
+              className="max-h-[85vh] max-w-full w-auto h-auto object-contain"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};
+
 export default function SessionDetailPage({ params }: Props) {
   const { id: sessionId } = use(params);
   const router = useRouter();
 
+  // Apply admin guard to check session validity and track activity
+  const { hasAccess } = useAdminGuard();
+
   const [session, setSession] = useState<SessionDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [stationReasons, setStationReasons] = useState<StationReason[] | null>(null);
 
   // Fetch session details
   useEffect(() => {
+    if (!hasAccess) return;
+
     const fetchSession = async () => {
       setIsLoading(true);
       setError(null);
 
       try {
-        const password = getAdminPassword();
         const response = await fetch(`/api/admin/dashboard/session/${sessionId}`, {
-          headers: {
-            "X-Admin-Password": password ?? "",
-          },
+          credentials: "include", // Include cookies
         });
 
         if (!response.ok) {
@@ -90,12 +286,33 @@ export default function SessionDetailPage({ params }: Props) {
     };
 
     void fetchSession();
-  }, [sessionId]);
+  }, [sessionId, hasAccess]);
 
   // Load status dictionary for this station
   const { dictionary, statuses } = useStatusDictionary(
     session?.stationId ? [session.stationId] : [],
   );
+
+  // Fetch station_reasons for malfunction labels
+  useEffect(() => {
+    if (!session?.stationId) return;
+
+    const fetchStationReasons = async () => {
+      try {
+        const response = await fetch(`/api/admin/stations/${session.stationId}`, {
+          credentials: "include", // Include cookies
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setStationReasons(data.station?.station_reasons ?? null);
+        }
+      } catch (err) {
+        console.error("[session-page] Failed to fetch station reasons", err);
+      }
+    };
+
+    void fetchStationReasons();
+  }, [session?.stationId]);
 
   // Load timeline data
   const timeline = useSessionTimeline({
@@ -180,6 +397,75 @@ export default function SessionDetailPage({ params }: Props) {
         </h1>
         <div className="w-[80px]" /> {/* Spacer for alignment */}
       </div>
+
+      {/* Performance Flags Banner */}
+      {(() => {
+        const flags = calculateSessionFlags(session, session.stoppageTimeSeconds, session.setupTimeSeconds);
+        if (!hasAnyFlag(flags)) return null;
+
+        const activeTimeSeconds = Math.max(0, session.durationSeconds - session.stoppageTimeSeconds - session.setupTimeSeconds);
+
+        return (
+          <Card className="border-amber-500/30 bg-amber-500/5">
+            <CardContent className="py-4">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+                <div className="space-y-3 flex-1">
+                  <p className="text-sm font-medium text-amber-400">
+                    נמצאו בעיות ביצועים בעבודה זו
+                  </p>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    {flags.highStoppage && (
+                      <div className="flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2">
+                        <AlertTriangle className="h-4 w-4 text-amber-500" />
+                        <div className="text-xs">
+                          <p className="font-medium text-amber-400">{SESSION_FLAG_LABELS.high_stoppage}</p>
+                          <p className="text-muted-foreground">
+                            {formatMinutes(session.stoppageTimeSeconds)} (סף: {formatMinutes(SESSION_FLAG_THRESHOLDS.stoppageTimeSeconds)})
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    {flags.highSetup && (
+                      <div className="flex items-center gap-2 rounded-lg border border-blue-500/20 bg-blue-500/10 px-3 py-2">
+                        <Settings className="h-4 w-4 text-blue-500" />
+                        <div className="text-xs">
+                          <p className="font-medium text-blue-400">{SESSION_FLAG_LABELS.high_setup}</p>
+                          <p className="text-muted-foreground">
+                            {formatMinutes(session.setupTimeSeconds)} (סף: {formatMinutes(SESSION_FLAG_THRESHOLDS.setupTimeSeconds)})
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    {flags.highScrap && (
+                      <div className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2">
+                        <Trash2 className="h-4 w-4 text-red-500" />
+                        <div className="text-xs">
+                          <p className="font-medium text-red-400">{SESSION_FLAG_LABELS.high_scrap}</p>
+                          <p className="text-muted-foreground">
+                            {session.totalScrap} פסולים (סף: {SESSION_FLAG_THRESHOLDS.maxScrap})
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    {flags.lowProduction && (
+                      <div className="flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2">
+                        <TrendingDown className="h-4 w-4 text-amber-500" />
+                        <div className="text-xs">
+                          <p className="font-medium text-amber-400">{SESSION_FLAG_LABELS.low_production}</p>
+                          <p className="text-muted-foreground">
+                            {formatProductionRate(session.totalGood, activeTimeSeconds)}/שעה (סף: {SESSION_FLAG_THRESHOLDS.minGoodPerHour})
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       {/* Session Info Card */}
       <Card className="border-border bg-card/50">
@@ -270,6 +556,30 @@ export default function SessionDetailPage({ params }: Props) {
           )}
         </CardContent>
       </Card>
+
+      {/* Malfunctions Card - only show if there are malfunctions */}
+      {session.malfunctions && session.malfunctions.length > 0 && (
+        <Card className="border-border bg-card/50">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-lg text-foreground">
+              <AlertOctagon className="h-5 w-5 text-red-500" />
+              דיווחי תקלה
+              <Badge variant="secondary" className="mr-2 text-xs">
+                {session.malfunctions.length}
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {session.malfunctions.map((malfunction) => (
+              <SessionMalfunctionCard
+                key={malfunction.id}
+                malfunction={malfunction}
+                stationReasons={stationReasons}
+              />
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Production Stats Card */}
       <Card className="border-border bg-card/50">

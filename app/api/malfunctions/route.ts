@@ -15,6 +15,7 @@ export async function POST(request: Request) {
   const description = formData.get("description");
   const image = formData.get("image");
   const workerId = formData.get("workerId");
+  const sessionId = formData.get("sessionId");
 
   if (!stationId || typeof stationId !== "string") {
     return NextResponse.json({ error: "MISSING_STATION_ID" }, { status: 400 });
@@ -52,6 +53,10 @@ export async function POST(request: Request) {
       reported_by_worker_id:
         typeof workerId === "string" && workerId.trim().length > 0
           ? workerId
+          : null,
+      session_id:
+        typeof sessionId === "string" && sessionId.trim().length > 0
+          ? sessionId
           : null,
     });
 

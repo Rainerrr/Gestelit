@@ -37,6 +37,7 @@ import { StationsManagement } from "./stations-management";
 import { JobsManagement } from "./jobs-management";
 import { DepartmentManager } from "./department-manager";
 import { StationTypeManager } from "./station-type-manager";
+import { GlobalStatusesManagement } from "./global-statuses-management";
 import { AdminLayout } from "../../_components/admin-layout";
 
 type ActiveTab = "workers" | "stations" | "jobs";
@@ -641,6 +642,8 @@ export const ManagementDashboard = () => {
             />
             <Separator />
             <StationTypeManager stationTypes={stationTypes} onClear={handleClearStationType} />
+            <Separator />
+            <GlobalStatusesManagement />
           </>
         ) : (
           <JobsManagement
