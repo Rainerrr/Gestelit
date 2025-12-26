@@ -16,6 +16,7 @@ export type TimelineSegment = {
   label: string;
   colorHex: string;
   dotClass: string;
+  requiresMalfunctionReport?: boolean;
 };
 
 type UseSessionTimelineArgs = {
@@ -43,7 +44,12 @@ const parseDate = (value?: string | null): number | null => {
   return Number.isNaN(ts) ? null : ts;
 };
 
-type RawEvent = { status: StatusEventState; startedAt: string; endedAt: string | null };
+type RawEvent = {
+  status: StatusEventState;
+  startedAt: string;
+  endedAt: string | null;
+  requiresMalfunctionReport?: boolean;
+};
 
 const normalizeSegments = ({
   events,
@@ -79,6 +85,7 @@ const normalizeSegments = ({
         label: getStatusLabel(item.status, dictionary, stationId),
         colorHex,
         dotClass: "bg-slate-400",
+        requiresMalfunctionReport: item.requiresMalfunctionReport,
       } satisfies TimelineSegment;
     })
     .filter(Boolean) as TimelineSegment[];
@@ -95,7 +102,13 @@ const mergeShortSegments = (
   const merged: TimelineSegment[] = [];
   for (const seg of segments) {
     const duration = seg.end - seg.start;
-    if (duration < minDurationMs && merged.length > 0) {
+    // Never merge segments that require malfunction reports - they're important to show
+    const shouldMerge =
+      duration < minDurationMs &&
+      merged.length > 0 &&
+      !seg.requiresMalfunctionReport;
+
+    if (shouldMerge) {
       // Extend previous segment to include this short one
       merged[merged.length - 1] = {
         ...merged[merged.length - 1],
@@ -141,6 +154,7 @@ export const useSessionTimeline = ({
             status: item.status,
             startedAt: item.startedAt,
             endedAt: item.endedAt,
+            requiresMalfunctionReport: item.requiresMalfunctionReport,
           })),
         );
       } catch (err) {

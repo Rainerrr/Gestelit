@@ -137,11 +137,9 @@ export default function OpeningChecklistPage() {
         setSessionStartedAt(session.started_at);
       }
       const statuses = await fetchStationStatusesApi(station.id);
+      // Find a stoppage status by machine_state (language-agnostic approach)
       const stoppedStatus =
-        statuses.find((item) => (item.label_he ?? "").includes("עצירה")) ??
-        statuses.find((item) =>
-          (item.label_he ?? "").toLowerCase().includes("stop"),
-        ) ??
+        statuses.find((item) => item.machine_state === "stoppage") ??
         statuses.find((item) => item.scope === "global") ??
         statuses[0];
 

@@ -1,5 +1,6 @@
-﻿import { createServiceSupabase } from "@/lib/supabase/client";
+import { createServiceSupabase } from "@/lib/supabase/client";
 import type {
+  MachineState,
   SessionStatus,
   StationType,
   StatusEventState,
@@ -23,11 +24,16 @@ export type ActiveSession = {
   forcedClosedAt: string | null;
   lastEventNote: string | null;
   lastSeenAt: string | null;
+  malfunctionCount: number;
+  stoppageTimeSeconds: number;
+  setupTimeSeconds: number;
 };
 
 export type CompletedSession = ActiveSession & {
   endedAt: string;
   durationSeconds: number;
+  stoppageTimeSeconds: number;
+  setupTimeSeconds: number;
 };
 
 type SessionRow = {
@@ -106,6 +112,9 @@ const LEGACY_ACTIVE_SESSIONS_SELECT = `
 const mapActiveSession = (
   row: RawActiveSession,
   lastEventNote: string | null = null,
+  malfunctionCount: number = 0,
+  stoppageTimeSeconds: number = 0,
+  setupTimeSeconds: number = 0,
 ): ActiveSession => ({
   id: row.id,
   jobId: row.job_id,
@@ -127,7 +136,41 @@ const mapActiveSession = (
   forcedClosedAt: row.forced_closed_at,
   lastEventNote,
   lastSeenAt: row.last_seen_at,
+  malfunctionCount,
+  stoppageTimeSeconds,
+  setupTimeSeconds,
 });
+
+/**
+ * Fetch malfunction counts for multiple sessions
+ * Counts malfunctions linked via session_id FK
+ */
+export const fetchMalfunctionCountsBySessionIds = async (
+  sessionIds: string[],
+): Promise<Map<string, number>> => {
+  if (sessionIds.length === 0) {
+    return new Map();
+  }
+
+  const supabase = createServiceSupabase();
+  const { data, error } = await supabase
+    .from("malfunctions")
+    .select("session_id")
+    .in("session_id", sessionIds);
+
+  if (error) {
+    console.error("[admin-dashboard] Failed to fetch malfunction counts", error);
+    return new Map();
+  }
+
+  const countMap = new Map<string, number>();
+  for (const row of data ?? []) {
+    if (row.session_id) {
+      countMap.set(row.session_id, (countMap.get(row.session_id) ?? 0) + 1);
+    }
+  }
+  return countMap;
+};
 
 export const fetchActiveSessions = async (): Promise<ActiveSession[]> => {
   const supabase = createServiceSupabase();
@@ -167,7 +210,23 @@ export const fetchActiveSessions = async (): Promise<ActiveSession[]> => {
     rows.map((r) => ({ id: r.id, status: r.status, ended_at: r.ended_at })),
   );
 
-  return rows.map((row) => mapActiveSession(row));
+  // Fetch malfunction counts, stoppage times, and setup times for all sessions (in parallel)
+  const sessionIds = rows.map((row) => row.id);
+  const [malfunctionCounts, stoppageTimes, setupTimes] = await Promise.all([
+    fetchMalfunctionCountsBySessionIds(sessionIds),
+    fetchStoppageTimeBySessionIds(sessionIds),
+    fetchSetupTimeBySessionIds(sessionIds),
+  ]);
+
+  return rows.map((row) =>
+    mapActiveSession(
+      row,
+      null,
+      malfunctionCounts.get(row.id) ?? 0,
+      stoppageTimes.get(row.id) ?? 0,
+      setupTimes.get(row.id) ?? 0,
+    ),
+  );
 };
 
 export const fetchActiveSessionById = async (
@@ -212,7 +271,20 @@ export const fetchActiveSessionById = async (
     return null;
   }
 
-  return mapActiveSession(row);
+  // Fetch malfunction count, stoppage time, and setup time for this session (in parallel)
+  const [malfunctionCounts, stoppageTimes, setupTimes] = await Promise.all([
+    fetchMalfunctionCountsBySessionIds([row.id]),
+    fetchStoppageTimeBySessionIds([row.id]),
+    fetchSetupTimeBySessionIds([row.id]),
+  ]);
+
+  return mapActiveSession(
+    row,
+    null,
+    malfunctionCounts.get(row.id) ?? 0,
+    stoppageTimes.get(row.id) ?? 0,
+    setupTimes.get(row.id) ?? 0,
+  );
 };
 
 // Note: Realtime subscriptions need browser client, but this is only used client-side
@@ -273,6 +345,82 @@ const fetchLastEventNote = async (sessionId: string): Promise<string | null> => 
   return data.note;
 };
 
+/**
+ * Generic function to fetch total time spent in specific machine states for sessions.
+ * @param sessionIds - Array of session IDs to calculate time for
+ * @param machineStates - Array of machine states to filter by (e.g., ['stoppage'], ['setup'])
+ * @returns Map of sessionId -> total seconds spent in the specified states
+ */
+const fetchMachineStateTimeBySessionIds = async (
+  sessionIds: string[],
+  machineStates: MachineState[],
+): Promise<Map<string, number>> => {
+  if (sessionIds.length === 0 || machineStates.length === 0) {
+    return new Map();
+  }
+
+  const supabase = createServiceSupabase();
+
+  // Fetch status events with their status definition's machine_state
+  const { data, error } = await supabase
+    .from("status_events")
+    .select(`
+      session_id,
+      started_at,
+      ended_at,
+      status_definitions!inner(machine_state)
+    `)
+    .in("session_id", sessionIds)
+    .in("status_definitions.machine_state", machineStates);
+
+  if (error) {
+    console.error(`[admin-dashboard] Failed to fetch ${machineStates.join("/")} events`, error);
+    return new Map();
+  }
+
+  type MachineStateEventRow = {
+    session_id: string;
+    started_at: string;
+    ended_at: string | null;
+    status_definitions: { machine_state: MachineState } | null;
+  };
+
+  const rows = (data as unknown as MachineStateEventRow[]) ?? [];
+  const timeMap = new Map<string, number>();
+
+  const nowTs = Date.now();
+
+  rows.forEach((row) => {
+    if (!row.status_definitions?.machine_state) {
+      return;
+    }
+
+    const startTs = new Date(row.started_at).getTime();
+    const endTs = row.ended_at ? new Date(row.ended_at).getTime() : nowTs;
+    const durationMs = Math.max(0, endTs - startTs);
+    const durationSeconds = Math.floor(durationMs / 1000);
+
+    const current = timeMap.get(row.session_id) ?? 0;
+    timeMap.set(row.session_id, current + durationSeconds);
+  });
+
+  return timeMap;
+};
+
+/**
+ * Fetch stoppage time for multiple sessions.
+ * Convenience wrapper for fetchMachineStateTimeBySessionIds.
+ */
+const fetchStoppageTimeBySessionIds = (sessionIds: string[]) =>
+  fetchMachineStateTimeBySessionIds(sessionIds, ["stoppage"]);
+
+/**
+ * Fetch setup time for multiple sessions.
+ * Convenience wrapper for fetchMachineStateTimeBySessionIds.
+ */
+const fetchSetupTimeBySessionIds = (sessionIds: string[]) =>
+  fetchMachineStateTimeBySessionIds(sessionIds, ["setup"]);
+
 type FetchRecentSessionsArgs = {
   workerId?: string;
   stationId?: string;
@@ -313,10 +461,19 @@ export const fetchRecentSessions = async (
 
   const rows = (data as unknown as RawActiveSession[]) ?? [];
 
+  // Fetch stoppage, setup times and malfunction counts for all sessions (in parallel)
+  const sessionIds = rows.map((row) => row.id);
+  const [stoppageMap, setupMap, malfunctionCountMap] = await Promise.all([
+    fetchStoppageTimeBySessionIds(sessionIds),
+    fetchSetupTimeBySessionIds(sessionIds),
+    fetchMalfunctionCountsBySessionIds(sessionIds),
+  ]);
+
   const sessionsWithNotes = await Promise.all(
     rows.map(async (row) => {
       const lastEventNote = await fetchLastEventNote(row.id);
-      const base = mapActiveSession(row, lastEventNote);
+      const malfunctionCount = malfunctionCountMap.get(row.id) ?? 0;
+      const base = mapActiveSession(row, lastEventNote, malfunctionCount);
       const endedAt = row.ended_at ?? row.started_at;
       const durationSeconds = Math.max(
         0,
@@ -325,11 +482,15 @@ export const fetchRecentSessions = async (
             1000,
         ),
       );
+      const stoppageTimeSeconds = stoppageMap.get(row.id) ?? 0;
+      const setupTimeSeconds = setupMap.get(row.id) ?? 0;
 
       return {
         ...base,
         endedAt,
         durationSeconds,
+        stoppageTimeSeconds,
+        setupTimeSeconds,
       };
     }),
   );
@@ -344,6 +505,7 @@ type StatusEventRow = {
   started_at: string;
   ended_at: string | null;
   sessions?: { station_id: string | null } | null;
+  status_definitions?: { requires_malfunction_report: boolean } | null;
 };
 
 export type SessionStatusEvent = {
@@ -352,6 +514,7 @@ export type SessionStatusEvent = {
   stationId: string | null;
   startedAt: string;
   endedAt: string | null;
+  requiresMalfunctionReport: boolean;
 };
 
 export const fetchStatusEventsBySessionIds = async (
@@ -370,7 +533,7 @@ export const fetchStatusEventsBySessionIds = async (
       .order("started_at", { ascending: true });
 
   const { data, error } = await runQuery(
-    "session_id, status_definition_id, started_at, ended_at, sessions!inner(station_id)",
+    "session_id, status_definition_id, started_at, ended_at, sessions!inner(station_id), status_definitions(requires_malfunction_report)",
   );
 
   let rows = (data as unknown as StatusEventRow[]) ?? null;
@@ -400,6 +563,7 @@ export const fetchStatusEventsBySessionIds = async (
     stationId: row.sessions?.station_id ?? null,
     startedAt: row.started_at,
     endedAt: row.ended_at,
+    requiresMalfunctionReport: row.status_definitions?.requires_malfunction_report ?? false,
   }));
 };
 

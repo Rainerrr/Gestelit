@@ -15,6 +15,8 @@ import {
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { ChangePasswordDialog } from "./change-password-dialog";
 import { fetchOpenMalfunctionsCountApi } from "@/lib/api/admin-management";
+import { useScrollDirection } from "@/hooks/useScrollDirection";
+import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
 
 type AdminLayoutProps = {
@@ -34,6 +36,7 @@ export const AdminLayout = ({ children, header }: AdminLayoutProps) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [openMalfunctionsCount, setOpenMalfunctionsCount] = useState(0);
+  const { scrollDirection, isAtTop } = useScrollDirection();
 
   const fetchMalfunctionsCount = useCallback(async () => {
     try {
@@ -194,13 +197,21 @@ export const AdminLayout = ({ children, header }: AdminLayoutProps) => {
 
         {/* Main Content */}
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="shrink-0 border-b border-border/60 bg-card/30 backdrop-blur-sm px-4 py-5 sm:px-6 lg:px-8">
+          <header
+            className={cn(
+              "shrink-0 border-b border-border/60 bg-card/80 backdrop-blur-sm px-4 py-5 sm:px-6 lg:px-8",
+              "sticky top-0 z-40 transform transition-transform duration-300",
+              scrollDirection === "down" && !isAtTop
+                ? "-translate-y-full lg:translate-y-0"
+                : "translate-y-0"
+            )}
+          >
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1 pr-12 lg:pr-0">{header}</div>
             </div>
           </header>
 
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+          <div className="flex min-h-0 flex-1 flex-col">
             <div className="flex-1 p-4 sm:p-6 lg:p-8">
               {children}
             </div>

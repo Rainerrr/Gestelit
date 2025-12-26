@@ -21,7 +21,7 @@ const IDLE_THRESHOLD_MS = 5 * 60 * 1000;
 type SessionRow = { id: string; last_seen_at: string | null; started_at: string };
 type StatusDefinitionRow = {
   id: string;
-  label_he: string | null;
+  machine_state: string | null;
   scope: string | null;
   created_at?: string | null;
 };
@@ -29,7 +29,7 @@ type StatusDefinitionRow = {
 const resolveStoppedStatusId = async () => {
   const { data, error } = await supabase
     .from("status_definitions")
-    .select("id, label_he, scope, created_at")
+    .select("id, machine_state, scope, created_at")
     .order("created_at", { ascending: true });
 
   const items = (data as StatusDefinitionRow[]) ?? [];
@@ -39,9 +39,8 @@ const resolveStoppedStatusId = async () => {
     return null;
   }
 
-  const preferred =
-    items.find((item) => (item.label_he ?? "").includes("עצירה")) ??
-    items.find((item) => (item.label_he ?? "").toLowerCase().includes("stop"));
+  // Find a stoppage status by machine_state (language-agnostic approach)
+  const preferred = items.find((item) => item.machine_state === "stoppage");
 
   return (preferred ?? items[0]).id;
 };

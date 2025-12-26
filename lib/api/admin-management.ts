@@ -7,7 +7,7 @@ import type {
   SessionStatusEvent,
   JobThroughput,
 } from "@/lib/data/admin-dashboard";
-import { getAdminPassword } from "./auth-helpers";
+import { clearAdminLoggedIn } from "./auth-helpers";
 
 type WorkerPayload = {
   worker_code: string;
@@ -36,6 +36,8 @@ type StatusDefinitionPayload = {
   label_he: string;
   label_ru?: string | null;
   color_hex: string;
+  machine_state: StatusDefinition["machine_state"];
+  requires_malfunction_report?: boolean;
 };
 type StatusDefinitionUpdatePayload = Partial<StatusDefinitionPayload>;
 
@@ -48,38 +50,36 @@ async function handleResponse<T>(response: Response): Promise<T> {
         : typeof payload.message === "string"
           ? payload.message
           : "REQUEST_FAILED";
-    
-    // If unauthorized, clear admin credentials
+
+    // On 401, clear client-side admin state and redirect
     if (response.status === 401 || payload.error === "UNAUTHORIZED") {
       if (typeof window !== "undefined") {
-        window.localStorage.removeItem("adminPassword");
-        window.localStorage.removeItem("isAdmin");
-        // Redirect to home if we're on an admin page
+        clearAdminLoggedIn();
         if (window.location.pathname.startsWith("/admin")) {
           window.location.href = "/";
         }
       }
     }
-    
+
     throw new Error(message);
   }
+
   return response.json();
 }
 
 /**
- * Create headers with admin password
+ * Create request options for admin API calls
+ * Uses credentials: "include" to send cookies automatically
  */
-function createAdminHeaders(): HeadersInit {
-  const headers: HeadersInit = {
-    "Content-Type": "application/json",
+function createAdminRequestInit(init?: RequestInit): RequestInit {
+  return {
+    ...init,
+    credentials: "include", // Include cookies in requests
+    headers: {
+      "Content-Type": "application/json",
+      ...init?.headers,
+    },
   };
-  
-  const adminPassword = getAdminPassword();
-  if (adminPassword) {
-    headers["X-Admin-Password"] = adminPassword;
-  }
-  
-  return headers;
 }
 
 export async function fetchWorkersAdminApi(params?: {
@@ -92,20 +92,23 @@ export async function fetchWorkersAdminApi(params?: {
   if (params?.search) query.set("search", params.search);
   if (params?.startsWith) query.set("startsWith", params.startsWith);
 
-  const response = await fetch(`/api/admin/workers?${query.toString()}`, {
-    headers: createAdminHeaders(),
-  });
+  const response = await fetch(
+    `/api/admin/workers?${query.toString()}`,
+    createAdminRequestInit()
+  );
   return handleResponse(response);
 }
 
 export async function createWorkerAdminApi(
   payload: WorkerPayload,
 ): Promise<{ worker: Worker }> {
-  const response = await fetch("/api/admin/workers", {
-    method: "POST",
-    headers: createAdminHeaders(),
-    body: JSON.stringify(payload),
-  });
+  const response = await fetch(
+    "/api/admin/workers",
+    createAdminRequestInit({
+      method: "POST",
+      body: JSON.stringify(payload),
+    })
+  );
   return handleResponse(response);
 }
 
@@ -113,21 +116,23 @@ export async function updateWorkerAdminApi(
   id: string,
   payload: WorkerUpdatePayload,
 ): Promise<{ worker: Worker }> {
-  const response = await fetch(`/api/admin/workers/${id}`, {
-    method: "PUT",
-    headers: createAdminHeaders(),
-    body: JSON.stringify(payload),
-  });
+  const response = await fetch(
+    `/api/admin/workers/${id}`,
+    createAdminRequestInit({
+      method: "PUT",
+      body: JSON.stringify(payload),
+    })
+  );
   return handleResponse(response);
 }
 
 export async function deleteWorkerAdminApi(
   id: string,
 ): Promise<{ ok: boolean }> {
-  const response = await fetch(`/api/admin/workers/${id}`, {
-    method: "DELETE",
-    headers: createAdminHeaders(),
-  });
+  const response = await fetch(
+    `/api/admin/workers/${id}`,
+    createAdminRequestInit({ method: "DELETE" })
+  );
   return handleResponse(response);
 }
 
@@ -144,20 +149,23 @@ export async function fetchStationsAdminApi(params?: {
   if (params?.startsWith) query.set("startsWith", params.startsWith);
 
   const queryString = query.toString();
-  const response = await fetch(`/api/admin/stations${queryString ? `?${queryString}` : ""}`, {
-    headers: createAdminHeaders(),
-  });
+  const response = await fetch(
+    `/api/admin/stations${queryString ? `?${queryString}` : ""}`,
+    createAdminRequestInit()
+  );
   return handleResponse(response);
 }
 
 export async function createStationAdminApi(
   payload: StationPayload,
 ): Promise<{ station: Station }> {
-  const response = await fetch("/api/admin/stations", {
-    method: "POST",
-    headers: createAdminHeaders(),
-    body: JSON.stringify(payload),
-  });
+  const response = await fetch(
+    "/api/admin/stations",
+    createAdminRequestInit({
+      method: "POST",
+      body: JSON.stringify(payload),
+    })
+  );
   return handleResponse(response);
 }
 
@@ -165,30 +173,30 @@ export async function updateStationAdminApi(
   id: string,
   payload: StationUpdatePayload,
 ): Promise<{ station: Station }> {
-  const response = await fetch(`/api/admin/stations/${id}`, {
-    method: "PUT",
-    headers: createAdminHeaders(),
-    body: JSON.stringify(payload),
-  });
+  const response = await fetch(
+    `/api/admin/stations/${id}`,
+    createAdminRequestInit({
+      method: "PUT",
+      body: JSON.stringify(payload),
+    })
+  );
   return handleResponse(response);
 }
 
 export async function deleteStationAdminApi(
   id: string,
 ): Promise<{ ok: boolean }> {
-  const response = await fetch(`/api/admin/stations/${id}`, {
-    method: "DELETE",
-    headers: createAdminHeaders(),
-  });
+  const response = await fetch(
+    `/api/admin/stations/${id}`,
+    createAdminRequestInit({ method: "DELETE" })
+  );
   return handleResponse(response);
 }
 
 export async function fetchWorkerAssignmentsAdminApi(workerId: string) {
   const response = await fetch(
     `/api/admin/worker-stations?workerId=${encodeURIComponent(workerId)}`,
-    {
-      headers: createAdminHeaders(),
-    },
+    createAdminRequestInit()
   );
   return handleResponse<{ stations: Station[] }>(response);
 }
@@ -197,11 +205,13 @@ export async function assignWorkerStationAdminApi(
   workerId: string,
   stationId: string,
 ): Promise<{ ok: boolean }> {
-  const response = await fetch("/api/admin/worker-stations", {
-    method: "POST",
-    headers: createAdminHeaders(),
-    body: JSON.stringify({ workerId, stationId }),
-  });
+  const response = await fetch(
+    "/api/admin/worker-stations",
+    createAdminRequestInit({
+      method: "POST",
+      body: JSON.stringify({ workerId, stationId }),
+    })
+  );
   return handleResponse(response);
 }
 
@@ -209,47 +219,55 @@ export async function removeWorkerStationAdminApi(
   workerId: string,
   stationId: string,
 ): Promise<{ ok: boolean }> {
-  const response = await fetch("/api/admin/worker-stations", {
-    method: "DELETE",
-    headers: createAdminHeaders(),
-    body: JSON.stringify({ workerId, stationId }),
-  });
+  const response = await fetch(
+    "/api/admin/worker-stations",
+    createAdminRequestInit({
+      method: "DELETE",
+      body: JSON.stringify({ workerId, stationId }),
+    })
+  );
   return handleResponse(response);
 }
 
 export async function fetchDepartmentsAdminApi(): Promise<{
   departments: string[];
 }> {
-  const response = await fetch("/api/admin/departments", {
-    headers: createAdminHeaders(),
-  });
+  const response = await fetch(
+    "/api/admin/departments",
+    createAdminRequestInit()
+  );
   return handleResponse(response);
 }
 
 export async function clearDepartmentAdminApi(department: string): Promise<{ ok: boolean }> {
-  const response = await fetch("/api/admin/departments", {
-    method: "DELETE",
-    headers: createAdminHeaders(),
-    body: JSON.stringify({ department }),
-  });
+  const response = await fetch(
+    "/api/admin/departments",
+    createAdminRequestInit({
+      method: "DELETE",
+      body: JSON.stringify({ department }),
+    })
+  );
   return handleResponse(response);
 }
 
 export async function fetchStationTypesAdminApi(): Promise<{
   stationTypes: string[];
 }> {
-  const response = await fetch("/api/admin/station-types", {
-    headers: createAdminHeaders(),
-  });
+  const response = await fetch(
+    "/api/admin/station-types",
+    createAdminRequestInit()
+  );
   return handleResponse(response);
 }
 
 export async function clearStationTypeAdminApi(stationType: string): Promise<{ ok: boolean }> {
-  const response = await fetch("/api/admin/station-types", {
-    method: "DELETE",
-    headers: createAdminHeaders(),
-    body: JSON.stringify({ station_type: stationType }),
-  });
+  const response = await fetch(
+    "/api/admin/station-types",
+    createAdminRequestInit({
+      method: "DELETE",
+      body: JSON.stringify({ station_type: stationType }),
+    })
+  );
   return handleResponse(response);
 }
 
@@ -265,9 +283,7 @@ export async function fetchStatusDefinitionsAdminApi(params?: {
   const qs = query.toString();
   const response = await fetch(
     `/api/admin/status-definitions${qs ? `?${qs}` : ""}`,
-    {
-      headers: createAdminHeaders(),
-    },
+    createAdminRequestInit()
   );
   return handleResponse(response);
 }
@@ -275,11 +291,13 @@ export async function fetchStatusDefinitionsAdminApi(params?: {
 export async function createStatusDefinitionAdminApi(
   payload: StatusDefinitionPayload,
 ): Promise<{ status: StatusDefinition }> {
-  const response = await fetch("/api/admin/status-definitions", {
-    method: "POST",
-    headers: createAdminHeaders(),
-    body: JSON.stringify(payload),
-  });
+  const response = await fetch(
+    "/api/admin/status-definitions",
+    createAdminRequestInit({
+      method: "POST",
+      body: JSON.stringify(payload),
+    })
+  );
   return handleResponse(response);
 }
 
@@ -290,26 +308,13 @@ export async function updateStatusDefinitionAdminApi(
   if (!id) {
     throw new Error("MISSING_STATUS_ID");
   }
-  // #region agent log
-  fetch("http://127.0.0.1:7242/ingest/e9e360f1-cac8-4774-88a3-e97a664d1472", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      sessionId: "debug-session",
-      runId: "initial",
-      hypothesisId: "H2",
-      location: "lib/api/admin-management.ts:updateStatusDefinitionAdminApi:start",
-      message: "api update status",
-      data: { id, payload, url: `/api/admin/status-definitions/${id}` },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
-  const response = await fetch(`/api/admin/status-definitions/${id}`, {
-    method: "PUT",
-    headers: createAdminHeaders(),
-    body: JSON.stringify(payload),
-  });
+  const response = await fetch(
+    `/api/admin/status-definitions/${id}`,
+    createAdminRequestInit({
+      method: "PUT",
+      body: JSON.stringify(payload),
+    })
+  );
   return handleResponse(response);
 }
 
@@ -319,25 +324,10 @@ export async function deleteStatusDefinitionAdminApi(
   if (!id) {
     throw new Error("MISSING_STATUS_ID");
   }
-  // #region agent log
-  fetch("http://127.0.0.1:7242/ingest/e9e360f1-cac8-4774-88a3-e97a664d1472", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      sessionId: "debug-session",
-      runId: "initial",
-      hypothesisId: "H3",
-      location: "lib/api/admin-management.ts:deleteStatusDefinitionAdminApi:start",
-      message: "api delete status",
-      data: { id, url: `/api/admin/status-definitions/${id}` },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
-  const response = await fetch(`/api/admin/status-definitions/${id}`, {
-    method: "DELETE",
-    headers: createAdminHeaders(),
-  });
+  const response = await fetch(
+    `/api/admin/status-definitions/${id}`,
+    createAdminRequestInit({ method: "DELETE" })
+  );
   return handleResponse(response);
 }
 
@@ -346,9 +336,7 @@ export async function checkWorkerActiveSessionAdminApi(
 ): Promise<{ hasActiveSession: boolean }> {
   const response = await fetch(
     `/api/admin/workers/${workerId}/active-session`,
-    {
-      headers: createAdminHeaders(),
-    },
+    createAdminRequestInit()
   );
   return handleResponse(response);
 }
@@ -358,9 +346,7 @@ export async function checkStationActiveSessionAdminApi(
 ): Promise<{ hasActiveSession: boolean }> {
   const response = await fetch(
     `/api/admin/stations/${stationId}/active-session`,
-    {
-      headers: createAdminHeaders(),
-    },
+    createAdminRequestInit()
   );
   return handleResponse(response);
 }
@@ -369,11 +355,13 @@ export async function changeAdminPasswordApi(
   currentPassword: string,
   newPassword: string,
 ): Promise<{ success: boolean; message?: string }> {
-  const response = await fetch("/api/admin/auth/change-password", {
-    method: "POST",
-    headers: createAdminHeaders(),
-    body: JSON.stringify({ currentPassword, newPassword }),
-  });
+  const response = await fetch(
+    "/api/admin/auth/change-password",
+    createAdminRequestInit({
+      method: "POST",
+      body: JSON.stringify({ currentPassword, newPassword }),
+    })
+  );
   return handleResponse(response);
 }
 
@@ -384,9 +372,10 @@ export async function changeAdminPasswordApi(
 export async function fetchActiveSessionsAdminApi(): Promise<{
   sessions: ActiveSession[];
 }> {
-  const response = await fetch("/api/admin/dashboard/active-sessions", {
-    headers: createAdminHeaders(),
-  });
+  const response = await fetch(
+    "/api/admin/dashboard/active-sessions",
+    createAdminRequestInit()
+  );
   return handleResponse(response);
 }
 
@@ -404,9 +393,7 @@ export async function fetchRecentSessionsAdminApi(params?: {
 
   const response = await fetch(
     `/api/admin/dashboard/recent-sessions?${query.toString()}`,
-    {
-      headers: createAdminHeaders(),
-    },
+    createAdminRequestInit()
   );
   return handleResponse(response);
 }
@@ -414,11 +401,13 @@ export async function fetchRecentSessionsAdminApi(params?: {
 export async function fetchStatusEventsAdminApi(
   sessionIds: string[],
 ): Promise<{ events: SessionStatusEvent[] }> {
-  const response = await fetch("/api/admin/dashboard/status-events", {
-    method: "POST",
-    headers: createAdminHeaders(),
-    body: JSON.stringify({ sessionIds }),
-  });
+  const response = await fetch(
+    "/api/admin/dashboard/status-events",
+    createAdminRequestInit({
+      method: "POST",
+      body: JSON.stringify({ sessionIds }),
+    })
+  );
   return handleResponse(response);
 }
 
@@ -438,9 +427,7 @@ export async function fetchMonthlyJobThroughputAdminApi(params: {
 
   const response = await fetch(
     `/api/admin/dashboard/monthly-throughput?${query.toString()}`,
-    {
-      headers: createAdminHeaders(),
-    },
+    createAdminRequestInit()
   );
   return handleResponse(response);
 }
@@ -449,15 +436,23 @@ export async function fetchMonthlyJobThroughputAdminApi(params: {
 // MALFUNCTIONS API FUNCTIONS
 // ============================================
 
-import type { StationWithMalfunctions } from "@/lib/data/malfunctions";
+import type { StationWithMalfunctions, StationWithArchivedMalfunctions } from "@/lib/data/malfunctions";
 import type { Malfunction, MalfunctionStatus } from "@/lib/types";
 
-export async function fetchMalfunctionsAdminApi(): Promise<{
+export async function fetchMalfunctionsAdminApi(params?: {
+  includeArchived?: boolean;
+}): Promise<{
   stations: StationWithMalfunctions[];
+  archived?: StationWithArchivedMalfunctions[];
 }> {
-  const response = await fetch("/api/admin/malfunctions", {
-    headers: createAdminHeaders(),
-  });
+  const query = new URLSearchParams();
+  if (params?.includeArchived) query.set("archived", "true");
+
+  const queryString = query.toString();
+  const response = await fetch(
+    `/api/admin/malfunctions${queryString ? `?${queryString}` : ""}`,
+    createAdminRequestInit()
+  );
   return handleResponse(response);
 }
 
@@ -466,18 +461,21 @@ export async function updateMalfunctionStatusAdminApi(
   status: MalfunctionStatus,
   adminNotes?: string,
 ): Promise<{ malfunction: Malfunction }> {
-  const response = await fetch(`/api/admin/malfunctions/${id}`, {
-    method: "PATCH",
-    headers: createAdminHeaders(),
-    body: JSON.stringify({ status, adminNotes }),
-  });
+  const response = await fetch(
+    `/api/admin/malfunctions/${id}`,
+    createAdminRequestInit({
+      method: "PATCH",
+      body: JSON.stringify({ status, adminNotes }),
+    })
+  );
   return handleResponse(response);
 }
 
 export async function fetchOpenMalfunctionsCountApi(): Promise<{ count: number }> {
-  const response = await fetch("/api/admin/malfunctions/count", {
-    headers: createAdminHeaders(),
-  });
+  const response = await fetch(
+    "/api/admin/malfunctions/count",
+    createAdminRequestInit()
+  );
   return handleResponse(response);
 }
 
@@ -505,9 +503,7 @@ export async function fetchJobsAdminApi(params?: {
   const queryString = query.toString();
   const response = await fetch(
     `/api/admin/jobs${queryString ? `?${queryString}` : ""}`,
-    {
-      headers: createAdminHeaders(),
-    },
+    createAdminRequestInit()
   );
   return handleResponse(response);
 }
@@ -515,11 +511,13 @@ export async function fetchJobsAdminApi(params?: {
 export async function createJobAdminApi(
   payload: JobPayload,
 ): Promise<{ job: Job }> {
-  const response = await fetch("/api/admin/jobs", {
-    method: "POST",
-    headers: createAdminHeaders(),
-    body: JSON.stringify(payload),
-  });
+  const response = await fetch(
+    "/api/admin/jobs",
+    createAdminRequestInit({
+      method: "POST",
+      body: JSON.stringify(payload),
+    })
+  );
   return handleResponse(response);
 }
 
@@ -527,28 +525,31 @@ export async function updateJobAdminApi(
   id: string,
   payload: JobUpdatePayload,
 ): Promise<{ job: Job }> {
-  const response = await fetch(`/api/admin/jobs/${id}`, {
-    method: "PUT",
-    headers: createAdminHeaders(),
-    body: JSON.stringify(payload),
-  });
+  const response = await fetch(
+    `/api/admin/jobs/${id}`,
+    createAdminRequestInit({
+      method: "PUT",
+      body: JSON.stringify(payload),
+    })
+  );
   return handleResponse(response);
 }
 
 export async function deleteJobAdminApi(id: string): Promise<{ ok: boolean }> {
-  const response = await fetch(`/api/admin/jobs/${id}`, {
-    method: "DELETE",
-    headers: createAdminHeaders(),
-  });
+  const response = await fetch(
+    `/api/admin/jobs/${id}`,
+    createAdminRequestInit({ method: "DELETE" })
+  );
   return handleResponse(response);
 }
 
 export async function checkJobActiveSessionAdminApi(
   jobId: string,
 ): Promise<{ hasActiveSession: boolean }> {
-  const response = await fetch(`/api/admin/jobs/${jobId}/active-session`, {
-    headers: createAdminHeaders(),
-  });
+  const response = await fetch(
+    `/api/admin/jobs/${jobId}/active-session`,
+    createAdminRequestInit()
+  );
   return handleResponse(response);
 }
 

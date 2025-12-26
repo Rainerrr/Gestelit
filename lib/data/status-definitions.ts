@@ -1,6 +1,6 @@
 import { isValidStatusColor } from "@/lib/status";
 import { createServiceSupabase } from "@/lib/supabase/client";
-import type { StatusDefinition, StatusScope } from "@/lib/types";
+import type { MachineState, StatusDefinition, StatusScope } from "@/lib/types";
 
 type StatusDefinitionInput = {
   scope: StatusScope;
@@ -8,19 +8,69 @@ type StatusDefinitionInput = {
   label_he: string;
   label_ru?: string | null;
   color_hex?: string;
+  machine_state?: MachineState;
+  requires_malfunction_report?: boolean;
 };
 
-const RESERVED_OTHER_LABEL_HE = "אחר";
-const RESERVED_OTHER_LABEL_RU = "Другое";
-const RESERVED_OTHER_COLOR = "#94a3b8";
+// Protected status definitions - these cannot be edited or deleted
+// They are identified by their Hebrew labels and have fixed configurations
+type ProtectedStatusConfig = {
+  label_he: string;
+  label_ru: string;
+  color_hex: string;
+  machine_state: MachineState;
+  requires_malfunction_report: boolean;
+};
+
+const PROTECTED_STATUSES: Record<string, ProtectedStatusConfig> = {
+  other: {
+    label_he: "אחר",
+    label_ru: "Другое",
+    color_hex: "#94a3b8",
+    machine_state: "stoppage",
+    requires_malfunction_report: false,
+  },
+  production: {
+    label_he: "ייצור",
+    label_ru: "Производство",
+    color_hex: "#10b981",
+    machine_state: "production",
+    requires_malfunction_report: false,
+  },
+  malfunction: {
+    label_he: "תקלה",
+    label_ru: "Неисправность",
+    color_hex: "#ef4444",
+    machine_state: "stoppage",
+    requires_malfunction_report: true,
+  },
+};
+
+const PROTECTED_LABELS_HE = Object.values(PROTECTED_STATUSES).map(s => s.label_he);
+
+function isProtectedStatus(labelHe: string): boolean {
+  return PROTECTED_LABELS_HE.includes(labelHe);
+}
+
+function getProtectedStatusByLabel(labelHe: string): ProtectedStatusConfig | undefined {
+  return Object.values(PROTECTED_STATUSES).find(s => s.label_he === labelHe);
+}
 
 const isValidHex = (value: string): boolean =>
   /^#([0-9a-fA-F]{6})$/.test(value.trim());
 
+const VALID_MACHINE_STATES: MachineState[] = ["production", "setup", "stoppage"];
+
+type NormalizedPayload = StatusDefinitionInput & {
+  label_ru: string | null;
+  color_hex: string;
+  requires_malfunction_report: boolean;
+};
+
 const normalizePayload = (
   payload: StatusDefinitionInput,
   requireStation: boolean,
-): StatusDefinitionInput => {
+): NormalizedPayload => {
   const labelHe = payload.label_he.trim();
   if (!labelHe) {
     throw new Error("STATUS_LABEL_HE_REQUIRED");
@@ -30,12 +80,19 @@ const normalizePayload = (
     throw new Error("STATUS_COLOR_INVALID_NOT_ALLOWED");
   }
 
-  if (payload.scope === "station" && payload.label_he.trim() === RESERVED_OTHER_LABEL_HE) {
-    throw new Error("STATUS_OTHER_RESERVED_GLOBAL_ONLY");
+  // Protected statuses can only be global, not station-scoped
+  if (payload.scope === "station" && isProtectedStatus(labelHe)) {
+    throw new Error("STATUS_PROTECTED_GLOBAL_ONLY");
   }
 
   if (requireStation && !payload.station_id) {
     throw new Error("STATUS_STATION_REQUIRED");
+  }
+
+  // Validate machine_state - default to 'production' if not set (for backward compatibility during migration)
+  const machineState = payload.machine_state ?? "production";
+  if (!VALID_MACHINE_STATES.includes(machineState)) {
+    throw new Error("STATUS_MACHINE_STATE_INVALID");
   }
 
   return {
@@ -43,16 +100,20 @@ const normalizePayload = (
     label_he: labelHe,
     label_ru: payload.label_ru?.trim() ?? null,
     color_hex: color,
+    machine_state: machineState,
+    requires_malfunction_report: payload.requires_malfunction_report ?? false,
   };
 };
 
 async function ensureGlobalOtherStatus(): Promise<StatusDefinition> {
   const supabase = createServiceSupabase();
+  const otherConfig = PROTECTED_STATUSES.other;
+
   const { data: existing, error: fetchError } = await supabase
     .from("status_definitions")
     .select("*")
     .eq("scope", "global")
-    .eq("label_he", RESERVED_OTHER_LABEL_HE)
+    .eq("label_he", otherConfig.label_he)
     .is("station_id", null)
     .limit(1)
     .maybeSingle();
@@ -70,9 +131,11 @@ async function ensureGlobalOtherStatus(): Promise<StatusDefinition> {
     .insert({
       scope: "global",
       station_id: null,
-      label_he: RESERVED_OTHER_LABEL_HE,
-      label_ru: RESERVED_OTHER_LABEL_RU,
-      color_hex: RESERVED_OTHER_COLOR,
+      label_he: otherConfig.label_he,
+      label_ru: otherConfig.label_ru,
+      color_hex: otherConfig.color_hex,
+      machine_state: otherConfig.machine_state,
+      requires_malfunction_report: otherConfig.requires_malfunction_report,
     })
     .select("*")
     .single();
@@ -224,6 +287,13 @@ export async function updateStatusDefinition(
     throw new Error(currentError?.message ?? "STATUS_NOT_FOUND");
   }
 
+  const currentStatus = current as StatusDefinition;
+
+  // Protected statuses cannot be edited
+  if (isProtectedStatus(currentStatus.label_he)) {
+    throw new Error("STATUS_EDIT_FORBIDDEN_PROTECTED");
+  }
+
   const normalized = normalizePayload(
     {
       ...(current as StatusDefinition),
@@ -318,8 +388,9 @@ export async function deleteStatusDefinition(id: string): Promise<void> {
     throw new Error(fetchTargetError?.message ?? "STATUS_NOT_FOUND");
   }
 
-  if (target.label_he === RESERVED_OTHER_LABEL_HE) {
-    throw new Error("STATUS_DELETE_FORBIDDEN_RESERVED");
+  // Protected statuses cannot be deleted
+  if (isProtectedStatus(target.label_he)) {
+    throw new Error("STATUS_DELETE_FORBIDDEN_PROTECTED");
   }
 
   const fallback = await ensureGlobalOtherStatus();
@@ -410,3 +481,5 @@ export async function deleteStatusDefinition(id: string): Promise<void> {
   // #endregion
 }
 
+// Export for UI to check if a status is protected (non-editable/non-deletable)
+export { isProtectedStatus, PROTECTED_LABELS_HE };

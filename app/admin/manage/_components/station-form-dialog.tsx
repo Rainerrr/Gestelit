@@ -13,14 +13,14 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, CheckCircle2 } from "lucide-react";
 import type {
+  MachineState,
   Station,
   StationReason,
   StationType,
   StatusDefinition,
 } from "@/lib/types";
-import { ALLOWED_STATUS_COLORS } from "@/lib/status";
 import {
   GENERAL_STATION_REASON,
   GENERAL_STATION_REASON_ID,
@@ -33,7 +33,7 @@ import {
   fetchStatusDefinitionsAdminApi,
   updateStatusDefinitionAdminApi,
 } from "@/lib/api/admin-management";
-import { CheckCircle2 } from "lucide-react";
+import { StatusCard } from "./status-card";
 
 type StationFormDialogProps = {
   mode: "create" | "edit";
@@ -52,71 +52,6 @@ const generateReasonId = () => {
   }
   return `reason-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 };
-
-const ColorDot = ({
-  hex,
-  isActive,
-  onSelect,
-}: {
-  hex: string;
-  isActive: boolean;
-  onSelect: () => void;
-}) => (
-  <button
-    type="button"
-    aria-label={`בחר צבע ${hex}`}
-    onClick={onSelect}
-    className={`h-5 w-5 rounded-full border transition hover:scale-105 ${
-      isActive ? "ring-2 ring-offset-2 ring-offset-background ring-primary border-primary" : "border-input"
-    }`}
-    style={{ backgroundColor: hex }}
-  />
-);
-
-const ColorDotPicker = ({
-  value,
-  isOpen,
-  onToggle,
-  onSelect,
-  label,
-  disabled = false,
-}: {
-  value: string;
-  isOpen: boolean;
-  onToggle: () => void;
-  onSelect: (hex: string) => void;
-  label: string;
-  disabled?: boolean;
-}) => (
-  <div className="relative">
-    <button
-      type="button"
-      aria-label={`בחירת צבע עבור ${label || "סטטוס"}`}
-      aria-expanded={isOpen}
-      onClick={onToggle}
-      disabled={disabled}
-      className="flex h-9 w-9 items-center justify-center rounded-full border border-input bg-secondary transition hover:scale-105 disabled:opacity-50"
-    >
-      <span
-        aria-hidden
-        className="h-3 w-3 rounded-full"
-        style={{ backgroundColor: value }}
-      />
-    </button>
-    {isOpen ? (
-      <div className="absolute right-0 top-full z-10 mt-2 grid grid-cols-5 gap-2 rounded-md border border-input bg-secondary p-2 shadow-md">
-        {ALLOWED_STATUS_COLORS.map((hex) => (
-          <ColorDot
-            key={hex}
-            hex={hex}
-            isActive={value === hex}
-            onSelect={() => onSelect(hex)}
-          />
-        ))}
-      </div>
-    ) : null}
-  </div>
-);
 
 export const StationFormDialog = ({
   mode,
@@ -198,31 +133,6 @@ export const StationFormDialog = ({
       const { statuses } = await fetchStatusDefinitionsAdminApi({
         stationId,
       });
-      // #region agent log
-      fetch("http://127.0.0.1:7242/ingest/e9e360f1-cac8-4774-88a3-e97a664d1472", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId: "debug-session",
-          runId: "initial",
-          hypothesisId: "H4",
-          location: "station-form-dialog:loadStatuses",
-          message: "loaded statuses",
-          data: {
-            stationId,
-            count: statuses?.length ?? 0,
-            ids: (statuses ?? []).map((s) => s.id),
-            items: (statuses ?? []).map((s) => ({
-              id: s.id,
-              scope: s.scope,
-              station_id: s.station_id,
-              label_he: s.label_he,
-            })),
-          },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
       setStationStatuses(
         (statuses ?? []).filter((item) => item.scope === "station"),
       );
@@ -403,6 +313,8 @@ export const StationFormDialog = ({
         label_he: "",
         label_ru: "",
         color_hex: "#0ea5e9",
+        machine_state: "production" as MachineState,
+        requires_malfunction_report: false,
         created_at: new Date().toISOString(),
       },
     ]);
@@ -414,18 +326,35 @@ export const StationFormDialog = ({
       | "label_he"
       | "label_ru"
       | "color_hex"
-      | "station_id",
-    value: string | boolean | number,
+      | "machine_state"
+      | "requires_malfunction_report",
+    value: string | boolean,
   ) => {
     setStationStatuses((prev) =>
-      prev.map((status) =>
-        status.id === id
-          ? {
-              ...status,
-              [key]: value,
-            }
-          : status,
-      ),
+      prev.map((status) => {
+        if (status.id !== id) return status;
+
+        // If changing machine_state away from "stoppage", reset requires_malfunction_report
+        if (key === "machine_state" && value !== "stoppage") {
+          return {
+            ...status,
+            machine_state: value as MachineState,
+            requires_malfunction_report: false,
+          };
+        }
+
+        if (key === "machine_state") {
+          return {
+            ...status,
+            machine_state: value as MachineState,
+          };
+        }
+
+        return {
+          ...status,
+          [key]: value,
+        };
+      }),
     );
   };
 
@@ -466,6 +395,8 @@ export const StationFormDialog = ({
         label_he: status.label_he.trim(),
         label_ru: status.label_ru?.trim() ?? "",
         color_hex: status.color_hex ?? "#0ea5e9",
+        machine_state: status.machine_state ?? "production",
+        requires_malfunction_report: status.requires_malfunction_report ?? false,
       };
 
       if (status.id.startsWith("temp-")) {
@@ -494,7 +425,7 @@ export const StationFormDialog = ({
   return (
     <Dialog open={controlledOpen} onOpenChange={handleDialogOpenChange}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="text-right w-[880px] max-w-5xl border-border bg-card">
+      <DialogContent className="text-right w-full sm:w-[90vw] sm:max-w-2xl max-h-[90vh] overflow-y-auto border-border bg-card">
         <DialogHeader>
           <DialogTitle className="text-foreground">{dialogTitle}</DialogTitle>
         </DialogHeader>
@@ -523,8 +454,10 @@ export const StationFormDialog = ({
               </div>
             </Alert>
           )}
-          <div className="space-y-2">
-            <Label htmlFor="station_name" className="text-foreground/80">שם תחנה</Label>
+
+          {/* Station Name */}
+          <div className="space-y-1.5">
+            <Label htmlFor="station_name" className="text-foreground/80 text-sm">שם תחנה</Label>
             <Input
               id="station_name"
               aria-label="שם תחנה"
@@ -534,8 +467,10 @@ export const StationFormDialog = ({
               className="border-input bg-secondary text-foreground placeholder:text-muted-foreground"
             />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="station_code" className="text-foreground/80">קוד תחנה</Label>
+
+          {/* Station Code */}
+          <div className="space-y-1.5">
+            <Label htmlFor="station_code" className="text-foreground/80 text-sm">קוד תחנה</Label>
             <Input
               id="station_code"
               aria-label="קוד תחנה"
@@ -545,20 +480,24 @@ export const StationFormDialog = ({
               className="border-input bg-secondary text-foreground placeholder:text-muted-foreground"
             />
           </div>
-          <div className="space-y-2">
-            <Label className="text-foreground/80">סוג תחנה</Label>
-          <CreatableCombobox
-            value={type}
-            onChange={(value) => setType(value as StationType)}
-            options={availableStationTypes}
-            placeholder="בחר או הוסף סוג תחנה"
-            ariaLabel="בחירת סוג תחנה"
-            inputPlaceholder="שם סוג תחנה חדש"
-            helperText="בחרו סוג קיים או הוסיפו סוג חדש"
-            inputId="station_type_input"
-          />
+
+          {/* Station Type */}
+          <div className="space-y-1.5">
+            <Label className="text-foreground/80 text-sm">סוג תחנה</Label>
+            <CreatableCombobox
+              value={type}
+              onChange={(value) => setType(value as StationType)}
+              options={availableStationTypes}
+              placeholder="בחר או הוסף סוג תחנה"
+              ariaLabel="בחירת סוג תחנה"
+              inputPlaceholder="שם סוג תחנה חדש"
+              helperText="בחרו סוג קיים או הוסיפו סוג חדש"
+              inputId="station_type_input"
+            />
           </div>
-          <div className="space-y-3 rounded-lg border border-input bg-secondary/50 p-3">
+
+          {/* Station Reasons */}
+          <div className="space-y-2 rounded-lg border border-input bg-secondary/30 p-3">
             <div className="flex items-center justify-between">
               <div className="text-right">
                 <p className="text-sm font-medium text-foreground/80">סוגי תקלות</p>
@@ -567,219 +506,164 @@ export const StationFormDialog = ({
               <Button
                 type="button"
                 variant="outline"
-                size="icon"
+                size="sm"
                 onClick={handleAddReason}
                 disabled={loading}
                 aria-label="הוספת סיבה"
-                className="border-input bg-secondary text-foreground/80 hover:bg-muted"
+                className="h-7 border-input bg-secondary text-foreground/80 hover:bg-muted"
               >
-                <Plus className="h-4 w-4" />
+                <Plus className="h-3.5 w-3.5 ml-1" />
+                <span className="text-xs">הוסף</span>
               </Button>
             </div>
             {stationReasons.length === 0 ? (
-              <p className="rounded-md border border-dashed border-input bg-muted px-3 py-2 text-right text-xs text-muted-foreground">
-                לא הוגדרו סוגי תקלות. הוסיפו סוג חדש כדי להתחיל.
+              <p className="rounded-md border border-dashed border-input bg-muted/30 px-3 py-2 text-center text-xs text-muted-foreground">
+                לא הוגדרו סוגי תקלות.
               </p>
             ) : (
-              <div className="space-y-2 pr-1">
+              <div className="space-y-1.5">
                 {stationReasons.map((reason, index) => (
                   <div
                     key={reason.id}
-                    className="flex flex-nowrap items-center gap-3 rounded-lg border border-input bg-secondary px-3 py-2"
+                    className="flex items-center gap-2 rounded-md border border-input bg-secondary/50 p-2"
                   >
-                    <Label className="sr-only" htmlFor={`reason-he-${reason.id}`}>
-                      תווית בעברית
-                    </Label>
-                    <div className="relative flex-1 min-w-[220px]">
+                    <div className="relative flex-1 min-w-0">
                       <Input
                         id={`reason-he-${reason.id}`}
-                        aria-label={`תווית בעברית לסיבה ${index + 1}`}
                         value={reason.label_he}
-                        onChange={(event) =>
-                          handleUpdateReason(index, "label_he", event.target.value)
-                        }
+                        onChange={(e) => handleUpdateReason(index, "label_he", e.target.value)}
                         disabled={loading}
-                        placeholder="לדוגמה: תקלה בהזנה"
-                        className="h-9 pr-10 pl-3 text-sm text-right border-input bg-muted text-foreground placeholder:text-muted-foreground"
+                        placeholder="תווית בעברית"
+                        className="h-8 pr-7 text-xs text-right border-input bg-muted/50"
                       />
-                      <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-lg">
-                        🇮🇱
+                      <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] opacity-50">
+                        HE
                       </span>
                     </div>
-                    <Label className="sr-only" htmlFor={`reason-ru-${reason.id}`}>
-                      תווית ברוסית
-                    </Label>
-                    <div className="relative flex-1 min-w-[220px]">
+                    <div className="relative flex-1 min-w-0">
                       <Input
                         id={`reason-ru-${reason.id}`}
-                        aria-label={`תווית ברוסית לסיבה ${index + 1}`}
                         value={reason.label_ru}
-                        onChange={(event) =>
-                          handleUpdateReason(index, "label_ru", event.target.value)
-                        }
+                        onChange={(e) => handleUpdateReason(index, "label_ru", e.target.value)}
                         disabled={loading}
-                        placeholder="Например: проблема подачи"
-                        className="h-9 pr-10 pl-3 text-sm text-right border-input bg-muted text-foreground placeholder:text-muted-foreground"
+                        placeholder="Название"
+                        className="h-8 pr-7 text-xs text-right border-input bg-muted/50"
                       />
-                      <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-lg">
-                        🇷🇺
+                      <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] opacity-50">
+                        RU
                       </span>
                     </div>
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon"
-                      aria-label="מחיקת סיבה"
                       onClick={() => handleDeleteReason(index)}
                       disabled={loading}
-                      className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                      className="h-7 w-7 shrink-0 text-muted-foreground hover:text-red-400 hover:bg-red-500/10"
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </div>
                 ))}
               </div>
             )}
           </div>
-          <div className="space-y-3 rounded-lg border border-input bg-secondary/50 p-3">
+
+          {/* Station Statuses */}
+          <div className="space-y-2 rounded-lg border border-input bg-secondary/30 p-3">
             <div className="flex items-center justify-between">
               <div className="text-right">
                 <p className="text-sm font-medium text-foreground/80">סטטוסים לתחנה</p>
                 <p className="text-xs text-muted-foreground">
-                  סטטוסים ספציפיים לתחנה זו (סטטוסים גלובליים זמינים כברירת מחדל)
+                  סטטוסים ספציפיים לתחנה זו
                 </p>
               </div>
               <Button
                 type="button"
-              variant="outline"
-              size="icon"
+                variant="outline"
+                size="sm"
                 onClick={addEmptyStatus}
-              disabled={loading || isLoadingStatuses || isSavingStatuses}
-              aria-label="הוספת סטטוס"
-              className="border-input bg-secondary text-foreground/80 hover:bg-muted"
+                disabled={loading || isLoadingStatuses || isSavingStatuses}
+                aria-label="הוספת סטטוס"
+                className="h-7 border-input bg-secondary text-foreground/80 hover:bg-muted"
               >
-              <Plus className="h-4 w-4" />
+                <Plus className="h-3.5 w-3.5 ml-1" />
+                <span className="text-xs">הוסף</span>
               </Button>
             </div>
-            {statusError ? (
+            {statusError && (
               <Alert
                 variant="destructive"
-                className="border-red-500/30 bg-red-500/10 text-sm text-red-400"
+                className="border-red-500/30 bg-red-500/10 text-xs text-red-400"
               >
                 <AlertDescription>{statusError}</AlertDescription>
               </Alert>
-            ) : null}
+            )}
             {isLoadingStatuses ? (
-              <p className="rounded-md border border-dashed border-input bg-muted px-3 py-2 text-right text-xs text-muted-foreground">
+              <p className="rounded-md border border-dashed border-input bg-muted/30 px-3 py-2 text-center text-xs text-muted-foreground">
                 טוען סטטוסים...
               </p>
             ) : stationStatuses.length === 0 ? (
-              <p className="rounded-md border border-dashed border-input bg-muted px-3 py-2 text-right text-xs text-muted-foreground">
+              <p className="rounded-md border border-dashed border-input bg-muted/30 px-3 py-2 text-center text-xs text-muted-foreground">
                 אין סטטוסים ייעודיים לתחנה זו.
               </p>
             ) : (
-              <div className="space-y-2 pr-1">
+              <div className="space-y-1.5">
                 {stationStatuses
                   .sort(
                     (a, b) =>
                       new Date(a.created_at ?? 0).getTime() -
                       new Date(b.created_at ?? 0).getTime(),
                   )
-                  .map((status) => {
-                    const isColorPickerOpen = activeColorPickerId === status.id;
-                    return (
-                      <div
-                        key={status.id}
-                        className="flex flex-nowrap items-center gap-3 rounded-lg border border-input bg-secondary px-3 py-2"
-                      >
-                        <Label className="sr-only">שם סטטוס</Label>
-                        <div className="relative flex-1 min-w-[220px]">
-                          <Input
-                            value={status.label_he}
-                            onChange={(event) =>
-                              updateStatusField(status.id, "label_he", event.target.value)
-                            }
-                            disabled={loading || isSavingStatuses}
-                            placeholder="לדוגמה: עבודה רגילה"
-                            className="h-9 pr-10 pl-3 text-sm text-right border-input bg-muted text-foreground placeholder:text-muted-foreground"
-                            aria-label="שם סטטוס"
-                          />
-                          <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-lg">
-                            🇮🇱
-                          </span>
-                        </div>
-                        <Label className="sr-only">תווית ברוסית</Label>
-                        <div className="relative flex-1 min-w-[220px]">
-                          <Input
-                            value={status.label_ru ?? ""}
-                            onChange={(event) =>
-                              updateStatusField(status.id, "label_ru", event.target.value)
-                            }
-                            disabled={loading || isSavingStatuses}
-                            placeholder="Например: Работа"
-                            className="h-9 pr-10 pl-3 text-sm text-right border-input bg-muted text-foreground placeholder:text-muted-foreground"
-                            aria-label="תווית ברוסית"
-                          />
-                          <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-lg">
-                            🇷🇺
-                          </span>
-                        </div>
-                        <ColorDotPicker
-                          value={status.color_hex ?? "#0ea5e9"}
-                          isOpen={isColorPickerOpen}
-                          onToggle={() => handleToggleColorPicker(status.id)}
-                          onSelect={(hex) => handleSelectColor(status.id, hex)}
-                          label={status.label_he || "סטטוס"}
-                          disabled={loading || isSavingStatuses}
-                        />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          aria-label="מחיקת סטטוס"
-                          onClick={() => handleRemoveStatus(status)}
-                          disabled={loading || isSavingStatuses}
-                          className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    );
-                  })}
+                  .map((status) => (
+                    <StatusCard
+                      key={status.id}
+                      status={status}
+                      onUpdateField={updateStatusField}
+                      onRemove={handleRemoveStatus}
+                      isColorPickerOpen={activeColorPickerId === status.id}
+                      onToggleColorPicker={() => handleToggleColorPicker(status.id)}
+                      onSelectColor={(hex) => handleSelectColor(status.id, hex)}
+                      disabled={loading || isSavingStatuses}
+                      compact
+                    />
+                  ))}
               </div>
             )}
           </div>
-          <div className="space-y-2">
-            <Label className="text-foreground/80">סטטוס</Label>
-            <div className="flex rounded-lg border border-input bg-secondary/50 p-1">
+
+          {/* Active/Inactive Toggle */}
+          <div className="space-y-1.5">
+            <Label className="text-foreground/80 text-sm">סטטוס תחנה</Label>
+            <div className="flex rounded-lg border border-input bg-secondary/30 p-1">
               <button
                 type="button"
                 onClick={() => setIsActive(true)}
-                className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-md text-sm font-medium transition-all ${
+                className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all ${
                   isActive
                     ? "bg-emerald-500 text-white shadow-sm"
                     : "text-muted-foreground hover:text-foreground/80 hover:bg-muted"
                 }`}
               >
-                <span className={`w-2 h-2 rounded-full ${isActive ? "bg-white" : "bg-muted-foreground"}`} />
+                <span className={`w-1.5 h-1.5 rounded-full ${isActive ? "bg-white" : "bg-muted-foreground"}`} />
                 פעיל
               </button>
               <button
                 type="button"
                 onClick={() => setIsActive(false)}
-                className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-md text-sm font-medium transition-all ${
+                className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all ${
                   !isActive
                     ? "bg-muted text-white shadow-sm"
                     : "text-muted-foreground hover:text-foreground/80 hover:bg-muted"
                 }`}
               >
-                <span className={`w-2 h-2 rounded-full ${!isActive ? "bg-white" : "bg-muted-foreground"}`} />
+                <span className={`w-1.5 h-1.5 rounded-full ${!isActive ? "bg-white" : "bg-muted-foreground"}`} />
                 לא פעיל
               </button>
             </div>
           </div>
         </div>
-        <DialogFooter className="justify-start">
+        <DialogFooter className="justify-start gap-2 mt-4">
           <Button
             onClick={() => void handleSubmit()}
             disabled={loading || isSavingStatuses}

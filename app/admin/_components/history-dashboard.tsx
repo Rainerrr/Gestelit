@@ -1,14 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { History } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AdminLayout } from "./admin-layout";
 import { HistoryFilters, type HistoryFiltersState } from "./history-filters";
 import {
   HistoryCharts,
   type StatusSummary,
-  type ThroughputSummary,
 } from "./history-charts";
+import {
+  ThroughputChart,
+  type ThroughputSummary,
+} from "./throughput-chart";
 import { RecentSessionsTable } from "./recent-sessions-table";
 import { useAdminGuard } from "@/hooks/useAdminGuard";
 import {
@@ -156,15 +160,12 @@ export const HistoryDashboard = () => {
   }, []);
 
   const loadMonthlyJobs = useCallback(
-    async (targetMonth: { year: number; month: number }, nextFilters: HistoryFiltersState) => {
+    async (targetMonth: { year: number; month: number }) => {
       setIsLoadingJobs(true);
       try {
         const { throughput: items } = await fetchMonthlyJobThroughputAdminApi({
           year: targetMonth.year,
           month: targetMonth.month,
-          workerId: nextFilters.workerId,
-          stationId: nextFilters.stationId,
-          jobNumber: nextFilters.jobNumber?.trim(),
         });
         setMonthlyJobs(items);
         setPageIndex(0);
@@ -196,8 +197,8 @@ export const HistoryDashboard = () => {
 
   useEffect(() => {
     if (hasAccess !== true) return;
-    void loadMonthlyJobs(monthCursor, filters);
-  }, [hasAccess, monthCursor, filters, loadMonthlyJobs]);
+    void loadMonthlyJobs(monthCursor);
+  }, [hasAccess, monthCursor, loadMonthlyJobs]);
 
   useEffect(() => {
     setSelectedIds((prev) => {
@@ -516,7 +517,13 @@ export const HistoryDashboard = () => {
     <AdminLayout
       header={
         <div className="flex flex-col gap-3 text-right">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          {/* Mobile simplified title */}
+          <div className="flex items-center gap-3 lg:hidden">
+            <History className="h-5 w-5 text-primary" />
+            <h1 className="text-xl font-bold text-foreground">היסטוריה</h1>
+          </div>
+          {/* Desktop full header */}
+          <div className="hidden lg:flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="space-y-1 text-right">
               <p className="text-xs text-muted-foreground">היסטוריה ודוחות</p>
               <h1 className="text-xl font-semibold text-foreground sm:text-2xl">
@@ -540,25 +547,10 @@ export const HistoryDashboard = () => {
       }
     >
       <div className="space-y-6">
-        <HistoryFilters
-          workers={workers}
-          stations={stations}
-          jobNumbers={jobNumbers}
-          value={filters}
-          onChange={setFilters}
-        />
-
-        {/* Charts section - moved above table */}
-        <HistoryCharts
-          statusData={statusData}
+        {/* Throughput chart - above filters, independent of filtering */}
+        <ThroughputChart
           throughputData={throughputData}
-          isLoading={
-            isLoading ||
-            isLoadingFilters ||
-            isLoadingStatusEvents ||
-            isLoadingJobs ||
-            isStatusesLoading
-          }
+          isLoading={isLoadingJobs}
           monthLabel={monthLabel}
           onPrevMonth={handlePrevMonth}
           onNextMonth={handleNextMonth}
@@ -567,6 +559,25 @@ export const HistoryDashboard = () => {
           onPrevPage={handlePrevPage}
           onNextPage={handleNextPage}
           pageLabel={pageLabel}
+        />
+
+        <HistoryFilters
+          workers={workers}
+          stations={stations}
+          jobNumbers={jobNumbers}
+          value={filters}
+          onChange={setFilters}
+        />
+
+        {/* Status distribution chart - affected by filters */}
+        <HistoryCharts
+          statusData={statusData}
+          isLoading={
+            isLoading ||
+            isLoadingFilters ||
+            isLoadingStatusEvents ||
+            isStatusesLoading
+          }
           dictionary={dictionary}
         />
 

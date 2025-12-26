@@ -8,7 +8,8 @@
       "Bash(npm install:*)",
       "mcp__plugin_supabase_supabase__list_tables",
       "mcp__plugin_supabase_supabase__list_projects",
-      "mcp__plugin_supabase_supabase__apply_migration"
+      "mcp__plugin_supabase_supabase__apply_migration",
+      "Bash(npx supabase:*)"
     ]
   }
 }

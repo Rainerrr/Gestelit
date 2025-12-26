@@ -44,7 +44,7 @@ import {
   getStatusLabel,
 } from "@/lib/status";
 import { cn } from "@/lib/utils";
-import type { StationReason } from "@/lib/types";
+import type { StationReason, StatusDefinition } from "@/lib/types";
 import { useSessionHeartbeat } from "@/hooks/useSessionHeartbeat";
 import { fetchStationStatusesApi } from "@/lib/api/client";
 import { useRef } from "react";
@@ -127,6 +127,7 @@ export default function WorkPage() {
   const [faultImagePreview, setFaultImagePreview] = useState<string | null>(null);
   const [isFaultSubmitting, setIsFaultSubmitting] = useState(false);
   const [isFaultDialogOpen, setFaultDialogOpen] = useState(false);
+  const [pendingStatusId, setPendingStatusId] = useState<string | null>(null);
   const [isEndSessionDialogOpen, setEndSessionDialogOpen] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [productionError, setProductionError] = useState<string | null>(null);
@@ -204,6 +205,15 @@ export default function WorkPage() {
     return [...globals, ...stationSpecific];
   }, [dictionary, station?.id]);
 
+  const getStatusDefinition = (statusId: string): StatusDefinition | undefined => {
+    const global = dictionary.global.get(statusId);
+    if (global) return global;
+    if (station?.id) {
+      return dictionary.station.get(station.id)?.get(statusId);
+    }
+    return undefined;
+  };
+
   if (!worker || !station || !job || !sessionId) {
     return null;
   }
@@ -219,16 +229,27 @@ export default function WorkPage() {
       : "#94a3b8",
   );
 
-  const handleStatusChange = async (statusId: string) => {
+  const handleStatusChange = async (statusId: string, malfunctionId?: string) => {
     if (!sessionId || currentStatus === statusId) {
       return;
     }
+
+    // Check if this status requires a malfunction report
+    const statusDef = getStatusDefinition(statusId);
+    if (statusDef?.requires_malfunction_report && !malfunctionId) {
+      // Store the pending status and open the malfunction dialog
+      setPendingStatusId(statusId);
+      setFaultDialogOpen(true);
+      return;
+    }
+
     setStatusError(null);
     setCurrentStatus(statusId);
     try {
       await startStatusEventApi({
         sessionId,
         statusDefinitionId: statusId,
+        malfunctionId,
       });
     } catch {
       setStatusError(t("work.error.status"));
@@ -633,7 +654,10 @@ export default function WorkPage() {
               type="button"
               variant="ghost"
               className="border-input text-foreground/80 hover:bg-accent hover:text-foreground"
-              onClick={() => setFaultDialogOpen(false)}
+              onClick={() => {
+                setFaultDialogOpen(false);
+                setPendingStatusId(null);
+              }}
             >
               {t("common.cancel")}
             </Button>
@@ -646,17 +670,25 @@ export default function WorkPage() {
                 setFaultError(null);
                 setIsFaultSubmitting(true);
                 try {
-                  await createMalfunctionApi({
+                  const malfunction = await createMalfunctionApi({
                     stationId: station.id,
                     stationReasonId: faultReason,
                     description: faultNote,
                     image: faultImage,
                     workerId: worker?.id,
+                    sessionId: sessionId,
                   });
                   setFaultDialogOpen(false);
                   setFaultReason(undefined);
                   setFaultNote("");
                   handleFaultImageChange(null);
+
+                  // If there's a pending status change that required malfunction report,
+                  // now complete the status change with the malfunction ID
+                  if (pendingStatusId) {
+                    await handleStatusChange(pendingStatusId, malfunction.id);
+                    setPendingStatusId(null);
+                  }
                 } catch {
                   setFaultError(t("work.error.fault"));
                 } finally {
@@ -666,7 +698,9 @@ export default function WorkPage() {
             >
               {isFaultSubmitting
                 ? `${t("work.dialog.fault.submit")}...`
-                : t("work.dialog.fault.submit")}
+                : pendingStatusId
+                  ? t("work.dialog.fault.submitAndChangeStatus")
+                  : t("work.dialog.fault.submit")}
             </Button>
           </DialogFooter>
         </DialogContent>

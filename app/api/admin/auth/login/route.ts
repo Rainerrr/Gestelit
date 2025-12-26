@@ -3,6 +3,7 @@ import {
   requireAdminPassword,
   createErrorResponse,
 } from "@/lib/auth/permissions";
+import { createResponseWithSession } from "@/lib/auth/admin-session";
 
 type LoginPayload = {
   password: string;
@@ -32,8 +33,8 @@ export async function POST(request: Request) {
     // This will throw if password is invalid
     await requireAdminPassword(mockRequest);
 
-    // Password is valid
-    return NextResponse.json({ success: true });
+    // Password is valid - set session cookie and return success
+    return createResponseWithSession({ success: true });
   } catch (error) {
     return createErrorResponse(error);
   }

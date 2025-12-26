@@ -3,7 +3,7 @@ import {
   deleteStatusDefinition,
   updateStatusDefinition,
 } from "@/lib/data/status-definitions";
-import type { StatusScope } from "@/lib/types";
+import type { MachineState, StatusScope } from "@/lib/types";
 import {
   requireAdminPassword,
   createErrorResponse,
@@ -15,6 +15,8 @@ type StatusUpdatePayload = {
   label_he?: string;
   label_ru?: string | null;
   color_hex?: string;
+  machine_state?: MachineState;
+  requires_malfunction_report?: boolean;
 };
 
 type StatusDefinitionRouteContext = { params: Promise<{ id: string }> };

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { CheckCircle2, Users, Cpu, Briefcase } from "lucide-react";
+import { CheckCircle2, Users, Cpu, Briefcase, Wrench } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,6 +37,7 @@ import { StationsManagement } from "./stations-management";
 import { JobsManagement } from "./jobs-management";
 import { DepartmentManager } from "./department-manager";
 import { StationTypeManager } from "./station-type-manager";
+import { GlobalStatusesManagement } from "./global-statuses-management";
 import { AdminLayout } from "../../_components/admin-layout";
 
 type ActiveTab = "workers" | "stations" | "jobs";
@@ -402,7 +403,13 @@ export const ManagementDashboard = () => {
     <AdminLayout
       header={
         <div className="flex flex-col gap-4 text-right">
-          <div className="space-y-1 text-right">
+          {/* Mobile simplified title */}
+          <div className="flex items-center gap-3 lg:hidden">
+            <Wrench className="h-5 w-5 text-primary" />
+            <h1 className="text-xl font-bold text-foreground">ניהול</h1>
+          </div>
+          {/* Desktop full header */}
+          <div className="hidden lg:block space-y-1 text-right">
             <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-[0.2em]">ניהול</p>
             <h1 className="text-2xl font-bold text-foreground tracking-tight lg:text-3xl">
               ניהול עובדים ותחנות
@@ -411,187 +418,191 @@ export const ManagementDashboard = () => {
               הוספה, עריכה והרשאות של עובדים ומכונות.
             </p>
           </div>
-
-          {/* Prominent Tab Switcher */}
-          <div className="flex justify-center py-3">
-            <div className="inline-flex items-center gap-2 p-2 rounded-2xl border border-border bg-card backdrop-blur-sm shadow-xl shadow-black/20">
-              <button
-                type="button"
-                onClick={() => setActiveTab("workers")}
-                aria-label="עובדים"
-                className={`relative flex items-center gap-3 px-10 py-4 text-lg font-semibold rounded-xl transition-all duration-200 ${
-                  activeTab === "workers"
-                    ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25"
-                    : "text-muted-foreground hover:text-foreground hover:bg-accent"
-                }`}
-              >
-                <Users className={`h-5 w-5 ${activeTab === "workers" ? "text-primary-foreground" : ""}`} />
-                עובדים
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab("stations")}
-                aria-label="תחנות"
-                className={`relative flex items-center gap-3 px-10 py-4 text-lg font-semibold rounded-xl transition-all duration-200 ${
-                  activeTab === "stations"
-                    ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25"
-                    : "text-muted-foreground hover:text-foreground hover:bg-accent"
-                }`}
-              >
-                <Cpu className={`h-5 w-5 ${activeTab === "stations" ? "text-primary-foreground" : ""}`} />
-                תחנות
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab("jobs")}
-                aria-label="עבודות"
-                className={`relative flex items-center gap-3 px-10 py-4 text-lg font-semibold rounded-xl transition-all duration-200 ${
-                  activeTab === "jobs"
-                    ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25"
-                    : "text-muted-foreground hover:text-foreground hover:bg-accent"
-                }`}
-              >
-                <Briefcase className={`h-5 w-5 ${activeTab === "jobs" ? "text-primary-foreground" : ""}`} />
-                עבודות
-              </button>
-            </div>
-          </div>
-
-          <div className="space-y-3 rounded-xl border border-border bg-card/50 backdrop-blur-sm p-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <Input
-                aria-label="חיפוש"
-                placeholder={
-                  activeTab === "workers"
-                    ? "חיפוש עובד לפי שם או קוד"
-                    : activeTab === "stations"
-                      ? "חיפוש תחנה לפי שם או קוד"
-                      : "חיפוש עבודה לפי מספר או לקוח"
-                }
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                className="w-72 max-w-full border-input bg-secondary text-foreground placeholder:text-muted-foreground focus:ring-primary/30 focus:border-primary/50"
-              />
-              <div className="flex flex-wrap items-center gap-2">
-                {activeTab === "workers" ? (
-                  <>
-                    <Badge
-                      variant={departmentFilter === null ? "default" : "outline"}
-                      className={`cursor-pointer transition-colors ${departmentFilter === null ? "bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20" : "border-input text-muted-foreground hover:bg-accent hover:text-foreground/80"}`}
-                      onClick={() => setDepartmentFilter(null)}
-                    >
-                      כל המחלקות
-                    </Badge>
-                    {departments.map((dept) => (
-                      <Badge
-                        key={dept}
-                        variant={departmentFilter === dept ? "default" : "outline"}
-                        className={`cursor-pointer transition-colors ${departmentFilter === dept ? "bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20" : "border-input text-muted-foreground hover:bg-accent hover:text-foreground/80"}`}
-                        onClick={() => setDepartmentFilter(dept)}
-                      >
-                        {dept}
-                      </Badge>
-                    ))}
-                  </>
-                ) : activeTab === "stations" ? (
-                  <>
-                    <Badge
-                      variant={stationTypeFilter === null ? "default" : "outline"}
-                      className={`cursor-pointer transition-colors ${stationTypeFilter === null ? "bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20" : "border-input text-muted-foreground hover:bg-accent hover:text-foreground/80"}`}
-                      onClick={() => setStationTypeFilter(null)}
-                    >
-                      כל הסוגים
-                    </Badge>
-                    {stationTypes.map((type) => (
-                      <Badge
-                        key={type}
-                        variant={stationTypeFilter === type ? "default" : "outline"}
-                        className={`cursor-pointer transition-colors ${stationTypeFilter === type ? "bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20" : "border-input text-muted-foreground hover:bg-accent hover:text-foreground/80"}`}
-                        onClick={() => setStationTypeFilter(type)}
-                      >
-                        {type}
-                      </Badge>
-                    ))}
-                  </>
-                ) : (
-                  <>
-                    <Badge
-                      variant={jobStatusFilter === "all" ? "default" : "outline"}
-                      className={`cursor-pointer transition-colors ${jobStatusFilter === "all" ? "bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20" : "border-input text-muted-foreground hover:bg-accent hover:text-foreground/80"}`}
-                      onClick={() => setJobStatusFilter("all")}
-                    >
-                      כל העבודות
-                    </Badge>
-                    <Badge
-                      variant={jobStatusFilter === "active" ? "default" : "outline"}
-                      className={`cursor-pointer transition-colors ${jobStatusFilter === "active" ? "bg-blue-500/10 border border-blue-500/20 text-blue-400 hover:bg-blue-500/20" : "border-input text-muted-foreground hover:bg-accent hover:text-foreground/80"}`}
-                      onClick={() => setJobStatusFilter("active")}
-                    >
-                      בתהליך
-                    </Badge>
-                    <Badge
-                      variant={jobStatusFilter === "completed" ? "default" : "outline"}
-                      className={`cursor-pointer transition-colors ${jobStatusFilter === "completed" ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20" : "border-input text-muted-foreground hover:bg-accent hover:text-foreground/80"}`}
-                      onClick={() => setJobStatusFilter("completed")}
-                    >
-                      הושלמו
-                    </Badge>
-                  </>
-                )}
-              </div>
-            </div>
-            {activeTab !== "jobs" && (
-              <div className="flex flex-wrap gap-1">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setStartsWith(null)}
-                  className={startsWith === null
-                    ? "bg-primary text-primary-foreground border-primary hover:bg-primary/90 hover:border-primary font-medium"
-                    : "border-input bg-secondary/50 text-foreground/80 hover:bg-muted hover:text-foreground"}
-                >
-                  כל האותיות
-                </Button>
-                {hebrewLetters.map((letter) => (
-                  <Button
-                    key={letter}
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setStartsWith(letter)}
-                    className={startsWith === letter
-                      ? "bg-primary text-primary-foreground border-primary hover:bg-primary/90 hover:border-primary font-medium"
-                      : "border-input bg-secondary/50 text-foreground/80 hover:bg-muted hover:text-foreground"}
-                  >
-                    {letter}
-                  </Button>
-                ))}
-              </div>
-            )}
-          </div>
-          {bannerError ? (
-            <Alert
-              variant="destructive"
-              className="border-red-500/30 bg-red-500/10 text-right text-sm text-red-400"
-            >
-              <AlertTitle className="text-red-300">שגיאה</AlertTitle>
-              <AlertDescription>{bannerError}</AlertDescription>
-            </Alert>
-          ) : null}
-          {bannerSuccess ? (
-            <Alert className="border-emerald-500/30 bg-emerald-500/10 text-right text-sm text-emerald-400">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                <div>
-                  <AlertTitle className="text-emerald-300">הצלחה</AlertTitle>
-                  <AlertDescription>{bannerSuccess}</AlertDescription>
-                </div>
-              </div>
-            </Alert>
-          ) : null}
         </div>
       }
     >
       <div className="space-y-4">
+        {/* Tab Switcher */}
+        <div className="flex justify-center">
+          <div className="inline-flex items-center gap-1 p-1.5 rounded-xl border border-border bg-card backdrop-blur-sm shadow-xl shadow-black/20 sm:gap-2 sm:p-2 sm:rounded-2xl">
+            <button
+              type="button"
+              onClick={() => setActiveTab("workers")}
+              aria-label="עובדים"
+              className={`relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold rounded-lg transition-all duration-200 sm:gap-3 sm:px-8 sm:py-3.5 sm:text-base sm:rounded-xl ${
+                activeTab === "workers"
+                  ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25"
+                  : "text-muted-foreground hover:text-foreground hover:bg-accent"
+              }`}
+            >
+              <Users className={`h-4 w-4 sm:h-5 sm:w-5 ${activeTab === "workers" ? "text-primary-foreground" : ""}`} />
+              <span className="hidden xs:inline sm:inline">עובדים</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("stations")}
+              aria-label="תחנות"
+              className={`relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold rounded-lg transition-all duration-200 sm:gap-3 sm:px-8 sm:py-3.5 sm:text-base sm:rounded-xl ${
+                activeTab === "stations"
+                  ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25"
+                  : "text-muted-foreground hover:text-foreground hover:bg-accent"
+              }`}
+            >
+              <Cpu className={`h-4 w-4 sm:h-5 sm:w-5 ${activeTab === "stations" ? "text-primary-foreground" : ""}`} />
+              <span className="hidden xs:inline sm:inline">תחנות</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("jobs")}
+              aria-label="עבודות"
+              className={`relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold rounded-lg transition-all duration-200 sm:gap-3 sm:px-8 sm:py-3.5 sm:text-base sm:rounded-xl ${
+                activeTab === "jobs"
+                  ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25"
+                  : "text-muted-foreground hover:text-foreground hover:bg-accent"
+              }`}
+            >
+              <Briefcase className={`h-4 w-4 sm:h-5 sm:w-5 ${activeTab === "jobs" ? "text-primary-foreground" : ""}`} />
+              <span className="hidden xs:inline sm:inline">עבודות</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Filters */}
+        <div className="space-y-3 rounded-xl border border-border bg-card/50 backdrop-blur-sm p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
+            <Input
+              aria-label="חיפוש"
+              placeholder={
+                activeTab === "workers"
+                  ? "חיפוש עובד לפי שם או קוד"
+                  : activeTab === "stations"
+                    ? "חיפוש תחנה לפי שם או קוד"
+                    : "חיפוש עבודה לפי מספר או לקוח"
+              }
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              className="w-full sm:w-72 border-input bg-secondary text-foreground placeholder:text-muted-foreground focus:ring-primary/30 focus:border-primary/50"
+            />
+            <div className="flex flex-wrap items-center gap-2">
+              {activeTab === "workers" ? (
+                <>
+                  <Badge
+                    variant={departmentFilter === null ? "default" : "outline"}
+                    className={`cursor-pointer transition-colors py-1.5 px-3 min-h-[36px] flex items-center ${departmentFilter === null ? "bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20" : "border-input text-muted-foreground hover:bg-accent hover:text-foreground/80"}`}
+                    onClick={() => setDepartmentFilter(null)}
+                  >
+                    כל המחלקות
+                  </Badge>
+                  {departments.map((dept) => (
+                    <Badge
+                      key={dept}
+                      variant={departmentFilter === dept ? "default" : "outline"}
+                      className={`cursor-pointer transition-colors py-1.5 px-3 min-h-[36px] flex items-center ${departmentFilter === dept ? "bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20" : "border-input text-muted-foreground hover:bg-accent hover:text-foreground/80"}`}
+                      onClick={() => setDepartmentFilter(dept)}
+                    >
+                      {dept}
+                    </Badge>
+                  ))}
+                </>
+              ) : activeTab === "stations" ? (
+                <>
+                  <Badge
+                    variant={stationTypeFilter === null ? "default" : "outline"}
+                    className={`cursor-pointer transition-colors py-1.5 px-3 min-h-[36px] flex items-center ${stationTypeFilter === null ? "bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20" : "border-input text-muted-foreground hover:bg-accent hover:text-foreground/80"}`}
+                    onClick={() => setStationTypeFilter(null)}
+                  >
+                    כל הסוגים
+                  </Badge>
+                  {stationTypes.map((type) => (
+                    <Badge
+                      key={type}
+                      variant={stationTypeFilter === type ? "default" : "outline"}
+                      className={`cursor-pointer transition-colors py-1.5 px-3 min-h-[36px] flex items-center ${stationTypeFilter === type ? "bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20" : "border-input text-muted-foreground hover:bg-accent hover:text-foreground/80"}`}
+                      onClick={() => setStationTypeFilter(type)}
+                    >
+                      {type}
+                    </Badge>
+                  ))}
+                </>
+              ) : (
+                <>
+                  <Badge
+                    variant={jobStatusFilter === "all" ? "default" : "outline"}
+                    className={`cursor-pointer transition-colors py-1.5 px-3 min-h-[36px] flex items-center ${jobStatusFilter === "all" ? "bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20" : "border-input text-muted-foreground hover:bg-accent hover:text-foreground/80"}`}
+                    onClick={() => setJobStatusFilter("all")}
+                  >
+                    כל העבודות
+                  </Badge>
+                  <Badge
+                    variant={jobStatusFilter === "active" ? "default" : "outline"}
+                    className={`cursor-pointer transition-colors py-1.5 px-3 min-h-[36px] flex items-center ${jobStatusFilter === "active" ? "bg-blue-500/10 border border-blue-500/20 text-blue-400 hover:bg-blue-500/20" : "border-input text-muted-foreground hover:bg-accent hover:text-foreground/80"}`}
+                    onClick={() => setJobStatusFilter("active")}
+                  >
+                    בתהליך
+                  </Badge>
+                  <Badge
+                    variant={jobStatusFilter === "completed" ? "default" : "outline"}
+                    className={`cursor-pointer transition-colors py-1.5 px-3 min-h-[36px] flex items-center ${jobStatusFilter === "completed" ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20" : "border-input text-muted-foreground hover:bg-accent hover:text-foreground/80"}`}
+                    onClick={() => setJobStatusFilter("completed")}
+                  >
+                    הושלמו
+                  </Badge>
+                </>
+              )}
+            </div>
+          </div>
+          {activeTab !== "jobs" && (
+            <div className="hidden sm:flex flex-wrap gap-1">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setStartsWith(null)}
+                className={startsWith === null
+                  ? "bg-primary text-primary-foreground border-primary hover:bg-primary/90 hover:border-primary font-medium"
+                  : "border-input bg-secondary/50 text-foreground/80 hover:bg-muted hover:text-foreground"}
+              >
+                כל האותיות
+              </Button>
+              {hebrewLetters.map((letter) => (
+                <Button
+                  key={letter}
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setStartsWith(letter)}
+                  className={startsWith === letter
+                    ? "bg-primary text-primary-foreground border-primary hover:bg-primary/90 hover:border-primary font-medium"
+                    : "border-input bg-secondary/50 text-foreground/80 hover:bg-muted hover:text-foreground"}
+                >
+                  {letter}
+                </Button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Alerts */}
+        {bannerError ? (
+          <Alert
+            variant="destructive"
+            className="border-red-500/30 bg-red-500/10 text-right text-sm text-red-400"
+          >
+            <AlertTitle className="text-red-300">שגיאה</AlertTitle>
+            <AlertDescription>{bannerError}</AlertDescription>
+          </Alert>
+        ) : null}
+        {bannerSuccess ? (
+          <Alert className="border-emerald-500/30 bg-emerald-500/10 text-right text-sm text-emerald-400">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+              <div>
+                <AlertTitle className="text-emerald-300">הצלחה</AlertTitle>
+                <AlertDescription>{bannerSuccess}</AlertDescription>
+              </div>
+            </div>
+          </Alert>
+        ) : null}
+
+        {/* Content */}
         {activeTab === "workers" ? (
           <>
             <WorkersManagement
@@ -631,6 +642,8 @@ export const ManagementDashboard = () => {
             />
             <Separator />
             <StationTypeManager stationTypes={stationTypes} onClear={handleClearStationType} />
+            <Separator />
+            <GlobalStatusesManagement />
           </>
         ) : (
           <JobsManagement

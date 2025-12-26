@@ -24,13 +24,10 @@ type SessionPayload = {
 
 async function getStoppedStatusId(): Promise<string> {
   const definitions = await fetchActiveStatusDefinitions();
-  const stopped =
-    definitions.find(
-      (item) =>
-        item.label_he === "עצירה" ||
-        item.label_ru === "Остановка" ||
-        item.label_he === "עצור",
-    ) ?? definitions[0];
+  // Find a stoppage status by machine_state (language-agnostic approach)
+  const stopped = definitions.find(
+    (item) => item.machine_state === "stoppage",
+  ) ?? definitions[0];
 
   if (!stopped) {
     throw new Error("STOPPED_STATUS_NOT_FOUND");
@@ -268,6 +265,7 @@ type StatusEventPayload = {
   note?: string | null;
   image_url?: string | null;
   started_at?: string;
+  malfunction_id?: string | null;
 };
 
 const assertStatusAllowedForSession = async (
@@ -315,6 +313,7 @@ export async function startStatusEvent(
       image_url: payload.image_url,
       status_definition_id: payload.status_definition_id,
       started_at: startedAt,
+      malfunction_id: payload.malfunction_id,
     })
     .select("*")
     .single();

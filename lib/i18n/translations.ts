@@ -431,6 +431,10 @@ export const translations = {
     he: "שמירת דיווח",
     ru: "Сохранить отчёт",
   },
+  "work.dialog.fault.submitAndChangeStatus": {
+    he: "דווח והחלף סטטוס",
+    ru: "Отправить и изменить статус",
+  },
   "work.dialog.finish.title": {
     he: "לאשר סיום משמרת?",
     ru: "Завершить смену?",

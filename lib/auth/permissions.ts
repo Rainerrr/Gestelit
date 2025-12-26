@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { getWorkerFromRequest as getWorkerFromRequestContext } from "@/lib/auth/request-context";
 import { createServiceSupabase } from "@/lib/supabase/client";
 import type { Worker } from "@/lib/types";
+
+const ADMIN_SESSION_COOKIE = "admin_session";
+const ADMIN_SESSION_MAX_AGE = 15 * 60; // 15 minutes
 
 export class UnauthorizedError extends Error {
   constructor(message: string) {
@@ -44,21 +48,41 @@ export async function requireWorker(
 }
 
 /**
- * Require admin password to be provided in request
- * Validates against ADMIN_PASSWORD environment variable
+ * Require admin authentication via session cookie or password
+ * First checks for valid session cookie, then falls back to password validation
+ * Returns whether the session was refreshed (for response cookie setting)
  */
-export async function requireAdminPassword(request: Request): Promise<void> {
+export async function requireAdminPassword(
+  request: Request,
+  options?: { refreshSession?: boolean }
+): Promise<{ sessionToken?: string }> {
+  const shouldRefresh = options?.refreshSession ?? true;
+
+  // First, check for session cookie (preferred method)
+  try {
+    const cookieStore = await cookies();
+    const sessionToken = cookieStore.get(ADMIN_SESSION_COOKIE)?.value;
+
+    if (sessionToken) {
+      // Valid session cookie found - return token for refresh
+      return { sessionToken: shouldRefresh ? sessionToken : undefined };
+    }
+  } catch {
+    // cookies() might fail in some contexts, continue to password check
+  }
+
+  // Fall back to password validation
   const adminPassword = process.env.ADMIN_PASSWORD;
-  
+
   if (!adminPassword) {
     throw new Error("ADMIN_PASSWORD environment variable not configured");
   }
 
   // Try to get password from header
   const passwordFromHeader = request.headers.get("X-Admin-Password");
-  
+
   if (passwordFromHeader === adminPassword) {
-    return;
+    return {};
   }
 
   // Try to get password from query params (used for SSE where headers aren't available)
@@ -67,7 +91,7 @@ export async function requireAdminPassword(request: Request): Promise<void> {
       new URL(request.url).searchParams.get("password") ??
       new URL(request.url).searchParams.get("adminPassword");
     if (passwordFromQuery === adminPassword) {
-      return;
+      return {};
     }
   } catch {
     // Ignore URL parsing errors and continue to other strategies
@@ -77,15 +101,32 @@ export async function requireAdminPassword(request: Request): Promise<void> {
   try {
     const body = await request.clone().json().catch(() => null);
     const passwordFromBody = body?.adminPassword as string | undefined;
-    
+
     if (passwordFromBody === adminPassword) {
-      return;
+      return {};
     }
   } catch {
     // Request body might not be JSON or already consumed
   }
 
   throw new UnauthorizedError("Invalid admin password");
+}
+
+/**
+ * Helper to refresh admin session cookie in response
+ */
+export function refreshAdminSessionCookie(
+  response: NextResponse,
+  sessionToken: string
+): NextResponse {
+  response.cookies.set(ADMIN_SESSION_COOKIE, sessionToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: ADMIN_SESSION_MAX_AGE,
+    path: "/",
+  });
+  return response;
 }
 
 /**

@@ -3,9 +3,7 @@ import {
   requireAdminPassword,
   createErrorResponse,
 } from "@/lib/auth/permissions";
-import {
-  fetchRecentSessions as fetchRecentSessionsData,
-} from "@/lib/data/admin-dashboard";
+import { fetchRecentSessions as fetchRecentSessionsData } from "@/lib/data/admin-dashboard";
 
 export async function GET(request: Request) {
   try {

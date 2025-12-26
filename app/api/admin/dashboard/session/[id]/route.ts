@@ -8,7 +8,19 @@ import type {
   SessionStatus,
   StationType,
   StatusEventState,
+  MalfunctionStatus,
 } from "@/lib/types";
+
+export type SessionMalfunction = {
+  id: string;
+  stationReasonId: string | null;
+  description: string | null;
+  imageUrl: string | null;
+  status: MalfunctionStatus;
+  createdAt: string;
+  reporterName: string | null;
+  reporterCode: string | null;
+};
 
 export type SessionDetail = {
   id: string;
@@ -29,6 +41,9 @@ export type SessionDetail = {
   plannedQuantity: number | null;
   forcedClosedAt: string | null;
   durationSeconds: number;
+  stoppageTimeSeconds: number;
+  setupTimeSeconds: number;
+  malfunctions: SessionMalfunction[];
 };
 
 type RawSession = {
@@ -118,6 +133,94 @@ export async function GET(
     const startTime = new Date(row.started_at).getTime();
     const durationSeconds = Math.max(0, Math.floor((endTime - startTime) / 1000));
 
+    // Calculate stoppage and setup time for this session using machine_state
+    const { data: stoppageData } = await supabase
+      .from("status_events")
+      .select(`
+        started_at,
+        ended_at,
+        status_definitions!inner(machine_state)
+      `)
+      .eq("session_id", sessionId)
+      .eq("status_definitions.machine_state", "stoppage");
+
+    const { data: setupData } = await supabase
+      .from("status_events")
+      .select(`
+        started_at,
+        ended_at,
+        status_definitions!inner(machine_state)
+      `)
+      .eq("session_id", sessionId)
+      .eq("status_definitions.machine_state", "setup");
+
+    type MachineStateEventRow = {
+      started_at: string;
+      ended_at: string | null;
+      status_definitions: { machine_state: string } | null;
+    };
+
+    const nowTs = Date.now();
+
+    const calculateMachineStateTime = (rows: MachineStateEventRow[], state: string): number => {
+      let totalSeconds = 0;
+      rows.forEach((row) => {
+        if (row.status_definitions?.machine_state !== state) {
+          return;
+        }
+        const startTs = new Date(row.started_at).getTime();
+        const endTs = row.ended_at
+          ? new Date(row.ended_at).getTime()
+          : nowTs;
+        const durationMs = Math.max(0, endTs - startTs);
+        totalSeconds += Math.floor(durationMs / 1000);
+      });
+      return totalSeconds;
+    };
+
+    const stoppageRows = (stoppageData as unknown as MachineStateEventRow[]) ?? [];
+    const setupRows = (setupData as unknown as MachineStateEventRow[]) ?? [];
+    const stoppageTimeSeconds = calculateMachineStateTime(stoppageRows, "stoppage");
+    const setupTimeSeconds = calculateMachineStateTime(setupRows, "setup");
+
+    // Fetch malfunctions linked to this session
+    type RawMalfunction = {
+      id: string;
+      station_reason_id: string | null;
+      description: string | null;
+      image_url: string | null;
+      status: MalfunctionStatus;
+      created_at: string;
+      workers: { full_name: string | null; worker_code: string | null } | null;
+    };
+
+    const { data: malfunctionsData } = await supabase
+      .from("malfunctions")
+      .select(`
+        id,
+        station_reason_id,
+        description,
+        image_url,
+        status,
+        created_at,
+        workers:reported_by_worker_id(full_name, worker_code)
+      `)
+      .eq("session_id", sessionId)
+      .order("created_at", { ascending: false });
+
+    const malfunctions: SessionMalfunction[] = (
+      (malfunctionsData as unknown as RawMalfunction[]) ?? []
+    ).map((m) => ({
+      id: m.id,
+      stationReasonId: m.station_reason_id,
+      description: m.description,
+      imageUrl: m.image_url,
+      status: m.status,
+      createdAt: m.created_at,
+      reporterName: m.workers?.full_name ?? null,
+      reporterCode: m.workers?.worker_code ?? null,
+    }));
+
     const session: SessionDetail = {
       id: row.id,
       jobId: row.job_id,
@@ -137,6 +240,9 @@ export async function GET(
       plannedQuantity: row.jobs?.planned_quantity ?? null,
       forcedClosedAt: row.forced_closed_at,
       durationSeconds,
+      stoppageTimeSeconds,
+      setupTimeSeconds,
+      malfunctions,
     };
 
     return NextResponse.json({ session });

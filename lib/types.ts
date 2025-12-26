@@ -5,6 +5,7 @@ export type StationType = string;
 export type SessionStatus = "active" | "completed" | "aborted";
 export type ChecklistKind = "start" | "end";
 export type StatusScope = "global" | "station";
+export type MachineState = "production" | "setup" | "stoppage";
 export type StatusCode = string; // status_definition.id
 export type StatusEventState = StatusCode;
 export type SessionAbandonReason = "worker_choice" | "expired";
@@ -83,6 +84,7 @@ export interface StatusEvent {
   station_reason_id?: string | null;
   note?: string | null;
   image_url?: string | null;
+  malfunction_id?: string | null;
   started_at: string;
   ended_at?: string | null;
 }
@@ -104,6 +106,7 @@ export interface Malfunction {
   image_url?: string | null;
   status: MalfunctionStatus;
   reported_by_worker_id?: string | null;
+  session_id?: string | null;
   status_changed_at?: string | null;
   status_changed_by?: string | null;
   admin_notes?: string | null;
@@ -136,6 +139,8 @@ export interface StatusDefinition {
   label_he: string;
   label_ru?: string | null;
   color_hex: string;
+  machine_state: MachineState;
+  requires_malfunction_report?: boolean;
   created_at?: string;
   updated_at?: string;
 }
