@@ -425,7 +425,7 @@ export const StationFormDialog = ({
   return (
     <Dialog open={controlledOpen} onOpenChange={handleDialogOpenChange}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="text-right w-full sm:w-[90vw] sm:max-w-2xl max-h-[90vh] overflow-y-auto border-border bg-card">
+      <DialogContent className="text-right sm:max-w-2xl border-border bg-card">
         <DialogHeader>
           <DialogTitle className="text-foreground">{dialogTitle}</DialogTitle>
         </DialogHeader>
