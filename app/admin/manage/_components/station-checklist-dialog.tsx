@@ -434,19 +434,19 @@ export const StationChecklistDialog = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         dir="rtl"
-        className="max-w-4xl text-right max-h-[90vh] overflow-hidden p-0 sm:max-h-[80vh] sm:p-6 border-border bg-card"
+        className="sm:max-w-4xl text-right border-border bg-card"
       >
-        <DialogHeader className="px-4 pt-4 sm:px-0 sm:pt-0">
+        <DialogHeader>
           <DialogTitle className="flex items-center justify-between gap-2 text-foreground">
-            <span>צ׳קליסטים לתחנה {station.name}</span>
-            <Badge variant="outline" className="flex items-center gap-1 border-input text-muted-foreground">
+            <span className="truncate">צ׳קליסטים לתחנה {station.name}</span>
+            <Badge variant="outline" className="flex items-center gap-1 border-input text-muted-foreground shrink-0">
               <ListChecks className="h-4 w-4" />
               {station.code}
             </Badge>
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-3 px-4 sm:px-0 overflow-y-auto max-h-[calc(90vh-180px)] sm:max-h-[calc(80vh-160px)]">
+        <div className="space-y-3">
           {error ? (
             <Alert
               variant="destructive"
@@ -464,7 +464,7 @@ export const StationChecklistDialog = ({
             </Alert>
           ) : null}
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             {tabMeta.map((tab) => (
               <Button
                 key={tab.key}
@@ -497,7 +497,7 @@ export const StationChecklistDialog = ({
           {activeTab === "start" ? renderTab("start", startItems) : renderTab("end", endItems)}
         </div>
 
-        <DialogFooter className="justify-start px-4 pb-4 pt-2 sm:px-0 sm:pb-0">
+        <DialogFooter>
           <Button onClick={() => void handleSubmit()} disabled={loading} className="bg-primary text-primary-foreground hover:bg-primary/90 font-medium">
             {loading ? "שומר..." : "שמור צ'קליסטים"}
           </Button>

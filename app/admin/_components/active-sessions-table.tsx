@@ -405,7 +405,7 @@ const MobileSessionCard = memo(
       <div
         role="button"
         tabIndex={0}
-        className="group flex items-center gap-3 p-3 border border-border rounded-lg bg-card/50 transition-all duration-200 hover:bg-accent hover:border-border cursor-pointer"
+        className="group p-3 border border-border rounded-lg bg-card/50 transition-all duration-200 hover:bg-accent active:bg-accent cursor-pointer"
         aria-label={`תחנה פעילה עבור עבודה ${session.jobNumber}`}
         onClick={() => onNavigate(session.id)}
         onKeyDown={(event) => {
@@ -415,13 +415,25 @@ const MobileSessionCard = memo(
           }
         }}
       >
-        {/* Station + Status */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-sm font-bold text-foreground">{session.stationName}</span>
+        {/* Top row: Station name */}
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-base font-bold text-foreground">{session.stationName}</span>
+          <ChevronLeft className="h-4 w-4 text-muted-foreground" />
+        </div>
+
+        {/* Second row: Worker name + Job number */}
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-sm text-foreground/80">{session.workerName}</span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">פק״ע:</span>
+            <span className="font-mono text-sm text-primary font-medium">{session.jobNumber}</span>
           </div>
+        </div>
+
+        {/* Third row: Status badge + Flags */}
+        <div className="flex items-center justify-between mb-3">
           <div
-            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-semibold"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold"
             style={{
               backgroundColor: statusStyle.bg,
               borderWidth: '1px',
@@ -429,149 +441,132 @@ const MobileSessionCard = memo(
             }}
           >
             <span
-              className="w-1.5 h-1.5 rounded-full"
+              className="w-2 h-2 rounded-full"
               style={{ backgroundColor: statusStyle.dot }}
             />
             <span style={{ color: statusStyle.text }}>{statusLabel}</span>
           </div>
+
+          {/* Flags */}
+          <TooltipProvider delayDuration={200}>
+            <div className="flex items-center gap-2">
+              {hasMalfunctions && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      className="cursor-default"
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
+                    >
+                      <AlertOctagon className="h-4 w-4 text-red-500" />
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">
+                    {session.malfunctionCount} דיווחי תקלה
+                  </TooltipContent>
+                </Tooltip>
+              )}
+              {isIdle && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      className="cursor-default"
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
+                    >
+                      <CirclePause className="h-4 w-4 text-amber-500" />
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">
+                    נראה לאחרונה: {lastSeenFormatted}
+                  </TooltipContent>
+                </Tooltip>
+              )}
+              {flags?.highStoppage && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      className="cursor-default"
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
+                    >
+                      <AlertTriangle className="h-4 w-4 text-amber-500" />
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">
+                    {SESSION_FLAG_LABELS.high_stoppage}
+                  </TooltipContent>
+                </Tooltip>
+              )}
+              {flags?.highSetup && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      className="cursor-default"
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
+                    >
+                      <Settings className="h-4 w-4 text-blue-500" />
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">
+                    {SESSION_FLAG_LABELS.high_setup}
+                  </TooltipContent>
+                </Tooltip>
+              )}
+              {flags?.highScrap && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      className="cursor-default"
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
+                    >
+                      <Trash2 className="h-4 w-4 text-red-500" />
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">
+                    {SESSION_FLAG_LABELS.high_scrap}
+                  </TooltipContent>
+                </Tooltip>
+              )}
+              {flags?.lowProduction && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      className="cursor-default"
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
+                    >
+                      <TrendingDown className="h-4 w-4 text-amber-500" />
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">
+                    {SESSION_FLAG_LABELS.low_production}
+                  </TooltipContent>
+                </Tooltip>
+              )}
+            </div>
+          </TooltipProvider>
         </div>
 
-        {/* Worker + Job */}
-        <div className="flex flex-col items-end gap-0.5 min-w-[100px]">
-          <span className="text-sm text-foreground/80">{session.workerName}</span>
-          <div className="flex items-center gap-1.5">
-            <span className="text-[10px] text-muted-foreground">פק״ע:</span>
-            <span className="font-mono text-xs text-primary">{session.jobNumber}</span>
+        {/* Bottom row: Time + Quantities in a stats bar */}
+        <div className="flex items-center justify-between pt-2 border-t border-border/50">
+          <div className="flex items-center gap-1.5 text-muted-foreground">
+            <Clock className="h-4 w-4" />
+            <span className="font-mono text-sm tabular-nums">{duration}</span>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <Package className="h-4 w-4 text-emerald-500" />
+              <span className="font-mono text-sm tabular-nums text-emerald-400 font-medium">{session.totalGood}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Trash2 className="h-4 w-4 text-red-500" />
+              <span className="font-mono text-sm tabular-nums text-red-400 font-medium">{session.totalScrap}</span>
+            </div>
           </div>
         </div>
-
-        {/* Divider before flags */}
-        <div className="w-px h-8 bg-border" />
-
-        {/* Flags section */}
-        <TooltipProvider delayDuration={200}>
-          <div className="flex items-center justify-center gap-1 min-w-[60px] flex-wrap">
-            {hasMalfunctions && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span
-                    className="cursor-default shrink-0"
-                    onClick={(e) => e.stopPropagation()}
-                    onKeyDown={(e) => e.stopPropagation()}
-                  >
-                    <AlertOctagon className="h-3.5 w-3.5 text-red-500" />
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">
-                  {session.malfunctionCount} דיווחי תקלה
-                </TooltipContent>
-              </Tooltip>
-            )}
-            {isIdle && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span
-                    className="cursor-default shrink-0"
-                    onClick={(e) => e.stopPropagation()}
-                    onKeyDown={(e) => e.stopPropagation()}
-                  >
-                    <CirclePause className="h-3.5 w-3.5 text-amber-500" />
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">
-                  נראה לאחרונה: {lastSeenFormatted}
-                </TooltipContent>
-              </Tooltip>
-            )}
-            {flags?.highStoppage && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span
-                    className="cursor-default shrink-0"
-                    onClick={(e) => e.stopPropagation()}
-                    onKeyDown={(e) => e.stopPropagation()}
-                  >
-                    <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">
-                  {SESSION_FLAG_LABELS.high_stoppage}
-                </TooltipContent>
-              </Tooltip>
-            )}
-            {flags?.highSetup && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span
-                    className="cursor-default shrink-0"
-                    onClick={(e) => e.stopPropagation()}
-                    onKeyDown={(e) => e.stopPropagation()}
-                  >
-                    <Settings className="h-3.5 w-3.5 text-blue-500" />
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">
-                  {SESSION_FLAG_LABELS.high_setup}
-                </TooltipContent>
-              </Tooltip>
-            )}
-            {flags?.highScrap && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span
-                    className="cursor-default shrink-0"
-                    onClick={(e) => e.stopPropagation()}
-                    onKeyDown={(e) => e.stopPropagation()}
-                  >
-                    <Trash2 className="h-3.5 w-3.5 text-red-500" />
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">
-                  {SESSION_FLAG_LABELS.high_scrap}
-                </TooltipContent>
-              </Tooltip>
-            )}
-            {flags?.lowProduction && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span
-                    className="cursor-default shrink-0"
-                    onClick={(e) => e.stopPropagation()}
-                    onKeyDown={(e) => e.stopPropagation()}
-                  >
-                    <TrendingDown className="h-3.5 w-3.5 text-amber-500" />
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">
-                  {SESSION_FLAG_LABELS.low_production}
-                </TooltipContent>
-              </Tooltip>
-            )}
-            {!hasAnyFlags && <span className="text-muted-foreground/30">—</span>}
-          </div>
-        </TooltipProvider>
-
-        {/* Divider after flags */}
-        <div className="w-px h-8 bg-border" />
-
-        {/* Time + Quantities */}
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1 text-muted-foreground">
-            <Clock className="h-3 w-3 text-muted-foreground" />
-            <span className="font-mono text-xs tabular-nums">{duration}</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <Package className="h-3 w-3 text-emerald-500" />
-            <span className="font-mono text-xs tabular-nums text-emerald-400">{session.totalGood}</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <Trash2 className="h-3 w-3 text-red-500" />
-            <span className="font-mono text-xs tabular-nums text-red-400">{session.totalScrap}</span>
-          </div>
-        </div>
-
-        {/* Navigation arrow */}
-        <ChevronLeft className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
       </div>
     );
   },

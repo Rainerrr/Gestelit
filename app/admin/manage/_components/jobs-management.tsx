@@ -180,7 +180,7 @@ export const JobsManagement = ({
                 <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
                   מצב
                 </th>
-                <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
+                <th className="hidden lg:table-cell px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
                   פעולות
                 </th>
               </tr>
@@ -194,9 +194,108 @@ export const JobsManagement = ({
                     className="group hover:bg-accent transition-colors"
                   >
                     <td className="px-4 py-3">
-                      <span className="font-mono font-medium text-foreground">
-                        {jobWithStats.job.job_number}
-                      </span>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="font-mono font-medium text-foreground">
+                          {jobWithStats.job.job_number}
+                        </span>
+                        <div className="flex items-center gap-2 lg:hidden">
+                          <JobFormDialog
+                            mode="edit"
+                            job={jobWithStats.job}
+                            onSubmit={handleEdit}
+                            trigger={
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => setEditingJob(jobWithStats.job)}
+                                aria-label="עריכת עבודה"
+                                className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted"
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                            }
+                            open={editingJob?.id === jobWithStats.job.id}
+                            onOpenChange={async (open) => {
+                              setEditingJob(open ? jobWithStats.job : null);
+                              if (!open && onRefresh) {
+                                await onRefresh();
+                              }
+                            }}
+                            loading={isSubmitting}
+                          />
+                          <Dialog
+                            open={deleteJobId === jobWithStats.job.id}
+                            onOpenChange={(open) =>
+                              handleDeleteDialogOpenChange(
+                                open,
+                                jobWithStats.job.id,
+                              )
+                            }
+                          >
+                            <DialogTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                disabled={isSubmitting}
+                                aria-label="מחיקת עבודה"
+                                className="h-8 w-8 text-muted-foreground hover:text-red-400 hover:bg-red-500/10"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent dir="rtl" className="border-border bg-card">
+                              <DialogHeader>
+                                <DialogTitle className="text-foreground">
+                                  האם למחוק את העבודה?
+                                </DialogTitle>
+                                <DialogDescription className="text-muted-foreground">
+                                  הפעולה תמחק את העבודה לחלוטין. סשנים קיימים
+                                  ישמרו אך לא יהיו משויכים לעבודה זו. לא ניתן
+                                  לבטל.
+                                </DialogDescription>
+                              </DialogHeader>
+                              {isCheckingDeleteSession ? (
+                                <p className="text-sm text-muted-foreground">
+                                  בודק סשנים פעילים...
+                                </p>
+                              ) : deleteJobHasActiveSession ? (
+                                <Alert
+                                  variant="destructive"
+                                  className="border-primary/30 bg-primary/10 text-right text-sm text-primary"
+                                >
+                                  <AlertDescription>
+                                    לא ניתן למחוק עבודה עם סשן פעיל. יש לסיים את
+                                    הסשן הפעיל לפני מחיקה.
+                                  </AlertDescription>
+                                </Alert>
+                              ) : null}
+                              <DialogFooter className="justify-start">
+                                <Button
+                                  onClick={() =>
+                                    void handleDelete(jobWithStats.job.id)
+                                  }
+                                  disabled={
+                                    isSubmitting ||
+                                    deleteJobHasActiveSession ||
+                                    isCheckingDeleteSession
+                                  }
+                                  className="bg-red-500 text-white hover:bg-red-600"
+                                >
+                                  מחיקה סופית
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  onClick={() => setDeleteJobId(null)}
+                                  disabled={isSubmitting}
+                                  className="border-input bg-secondary text-foreground/80 hover:bg-muted hover:text-foreground"
+                                >
+                                  ביטול
+                                </Button>
+                              </DialogFooter>
+                            </DialogContent>
+                          </Dialog>
+                        </div>
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       {jobWithStats.job.customer_name ? (
@@ -267,7 +366,7 @@ export const JobsManagement = ({
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="hidden lg:table-cell px-4 py-3">
                       <div className="flex items-center justify-end gap-1">
                         <JobFormDialog
                           mode="edit"
