@@ -141,6 +141,7 @@ export interface StatusDefinition {
   color_hex: string;
   machine_state: MachineState;
   requires_malfunction_report?: boolean;
+  is_protected?: boolean;
   created_at?: string;
   updated_at?: string;
 }

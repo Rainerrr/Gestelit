@@ -13,7 +13,7 @@ type StatusDefinitionInput = {
 };
 
 // Protected status definitions - these cannot be edited or deleted
-// They are identified by their Hebrew labels and have fixed configurations
+// They are identified by the is_protected column in the database
 type ProtectedStatusConfig = {
   label_he: string;
   label_ru: string;
@@ -48,8 +48,15 @@ const PROTECTED_STATUSES: Record<string, ProtectedStatusConfig> = {
 
 const PROTECTED_LABELS_HE = Object.values(PROTECTED_STATUSES).map(s => s.label_he);
 
+// Legacy function for backward compatibility - checks Hebrew labels
+// Prefer using is_protected column from database when available
 function isProtectedStatus(labelHe: string): boolean {
   return PROTECTED_LABELS_HE.includes(labelHe);
+}
+
+// Check if a status definition is protected using the database column
+function isProtectedByColumn(status: StatusDefinition): boolean {
+  return status.is_protected === true;
 }
 
 function getProtectedStatusByLabel(labelHe: string): ProtectedStatusConfig | undefined {
@@ -136,6 +143,7 @@ async function ensureGlobalOtherStatus(): Promise<StatusDefinition> {
       color_hex: otherConfig.color_hex,
       machine_state: otherConfig.machine_state,
       requires_malfunction_report: otherConfig.requires_malfunction_report,
+      is_protected: true,
     })
     .select("*")
     .single();
@@ -197,21 +205,6 @@ export async function createStatusDefinition(
   payload: StatusDefinitionInput,
 ): Promise<StatusDefinition> {
   const supabase = createServiceSupabase();
-  // #region agent log
-  fetch("http://127.0.0.1:7242/ingest/e9e360f1-cac8-4774-88a3-e97a664d1472", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      sessionId: "debug-session",
-      runId: "initial",
-      hypothesisId: "H1",
-      location: "lib/data/status-definitions.ts:createStatusDefinition:before",
-      message: "create status request",
-      data: { payload },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
   const body = normalizePayload(payload, payload.scope === "station");
 
   const { data, error } = await supabase
@@ -221,39 +214,9 @@ export async function createStatusDefinition(
     .single();
 
   if (error || !data) {
-    // #region agent log
-    fetch("http://127.0.0.1:7242/ingest/e9e360f1-cac8-4774-88a3-e97a664d1472", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sessionId: "debug-session",
-        runId: "initial",
-        hypothesisId: "H1",
-        location: "lib/data/status-definitions.ts:createStatusDefinition:error",
-        message: "create status failed",
-        data: { error: error?.message, payload: body },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     throw new Error(error?.message ?? "CREATE_STATUS_FAILED");
   }
 
-  // #region agent log
-  fetch("http://127.0.0.1:7242/ingest/e9e360f1-cac8-4774-88a3-e97a664d1472", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      sessionId: "debug-session",
-      runId: "initial",
-      hypothesisId: "H1",
-      location: "lib/data/status-definitions.ts:createStatusDefinition:success",
-      message: "create status success",
-      data: { id: (data as StatusDefinition).id, scope: (data as StatusDefinition).scope },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
   return data as StatusDefinition;
 }
 
@@ -262,21 +225,6 @@ export async function updateStatusDefinition(
   payload: Partial<StatusDefinitionInput>,
 ): Promise<StatusDefinition> {
   const supabase = createServiceSupabase();
-  // #region agent log
-  fetch("http://127.0.0.1:7242/ingest/e9e360f1-cac8-4774-88a3-e97a664d1472", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      sessionId: "debug-session",
-      runId: "initial",
-      hypothesisId: "H2",
-      location: "lib/data/status-definitions.ts:updateStatusDefinition:start",
-      message: "update status request",
-      data: { id, payload },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
   const { data: current, error: currentError } = await supabase
     .from("status_definitions")
     .select("*")
@@ -289,8 +237,8 @@ export async function updateStatusDefinition(
 
   const currentStatus = current as StatusDefinition;
 
-  // Protected statuses cannot be edited
-  if (isProtectedStatus(currentStatus.label_he)) {
+  // Protected statuses cannot be edited - check database column first, fall back to label check
+  if (isProtectedByColumn(currentStatus) || isProtectedStatus(currentStatus.label_he)) {
     throw new Error("STATUS_EDIT_FORBIDDEN_PROTECTED");
   }
 
@@ -302,21 +250,6 @@ export async function updateStatusDefinition(
     (payload.scope ?? (current as StatusDefinition).scope) === "station",
   );
 
-  // #region agent log
-  fetch("http://127.0.0.1:7242/ingest/e9e360f1-cac8-4774-88a3-e97a664d1472", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      sessionId: "debug-session",
-      runId: "initial",
-      hypothesisId: "H2",
-      location: "lib/data/status-definitions.ts:updateStatusDefinition:normalized",
-      message: "normalized payload",
-      data: { id, normalized },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
   const { data, error } = await supabase
     .from("status_definitions")
     .update(normalized)
@@ -325,59 +258,14 @@ export async function updateStatusDefinition(
     .maybeSingle();
 
   if (error || !data) {
-    // #region agent log
-    fetch("http://127.0.0.1:7242/ingest/e9e360f1-cac8-4774-88a3-e97a664d1472", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sessionId: "debug-session",
-        runId: "initial",
-        hypothesisId: "H2",
-        location: "lib/data/status-definitions.ts:updateStatusDefinition:error",
-        message: "update status failed",
-        data: { id, error: error?.message, normalized },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     throw new Error(error?.message ?? "UPDATE_STATUS_FAILED");
   }
 
-  // #region agent log
-  fetch("http://127.0.0.1:7242/ingest/e9e360f1-cac8-4774-88a3-e97a664d1472", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      sessionId: "debug-session",
-      runId: "initial",
-      hypothesisId: "H2",
-      location: "lib/data/status-definitions.ts:updateStatusDefinition:success",
-      message: "update status success",
-      data: { id, scope: (data as StatusDefinition).scope },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
   return data as StatusDefinition;
 }
 
 export async function deleteStatusDefinition(id: string): Promise<void> {
   const supabase = createServiceSupabase();
-  // #region agent log
-  fetch("http://127.0.0.1:7242/ingest/e9e360f1-cac8-4774-88a3-e97a664d1472", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      sessionId: "debug-session",
-      runId: "initial",
-      hypothesisId: "H3",
-      location: "lib/data/status-definitions.ts:deleteStatusDefinition:start",
-      message: "delete status request",
-      data: { id },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
   const { data: target, error: fetchTargetError } = await supabase
     .from("status_definitions")
     .select("*")
@@ -388,13 +276,14 @@ export async function deleteStatusDefinition(id: string): Promise<void> {
     throw new Error(fetchTargetError?.message ?? "STATUS_NOT_FOUND");
   }
 
-  // Protected statuses cannot be deleted
-  if (isProtectedStatus(target.label_he)) {
+  const targetStatus = target as StatusDefinition;
+
+  // Protected statuses cannot be deleted - check database column first, fall back to label check
+  if (isProtectedByColumn(targetStatus) || isProtectedStatus(targetStatus.label_he)) {
     throw new Error("STATUS_DELETE_FORBIDDEN_PROTECTED");
   }
 
   const fallback = await ensureGlobalOtherStatus();
-
   const fallbackId = fallback.id;
 
   const { error: reassignEventsError } = await supabase
@@ -403,21 +292,6 @@ export async function deleteStatusDefinition(id: string): Promise<void> {
     .eq("status_definition_id", id);
 
   if (reassignEventsError) {
-    // #region agent log
-    fetch("http://127.0.0.1:7242/ingest/e9e360f1-cac8-4774-88a3-e97a664d1472", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sessionId: "debug-session",
-        runId: "initial",
-        hypothesisId: "H3",
-        location: "lib/data/status-definitions.ts:deleteStatusDefinition:error",
-        message: "delete status failed",
-        data: { id, error: reassignEventsError.message, phase: "reassign_events" },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     throw new Error(reassignEventsError.message);
   }
 
@@ -427,58 +301,13 @@ export async function deleteStatusDefinition(id: string): Promise<void> {
     .eq("current_status_id", id);
 
   if (reassignSessionsError) {
-    // #region agent log
-    fetch("http://127.0.0.1:7242/ingest/e9e360f1-cac8-4774-88a3-e97a664d1472", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sessionId: "debug-session",
-        runId: "initial",
-        hypothesisId: "H3",
-        location: "lib/data/status-definitions.ts:deleteStatusDefinition:error",
-        message: "delete status failed",
-        data: { id, error: reassignSessionsError.message, phase: "reassign_sessions" },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     throw new Error(reassignSessionsError.message);
   }
 
   const { error } = await supabase.from("status_definitions").delete().eq("id", id);
   if (error) {
-    // #region agent log
-    fetch("http://127.0.0.1:7242/ingest/e9e360f1-cac8-4774-88a3-e97a664d1472", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sessionId: "debug-session",
-        runId: "initial",
-        hypothesisId: "H3",
-        location: "lib/data/status-definitions.ts:deleteStatusDefinition:error",
-        message: "delete status failed",
-        data: { id, error: error.message, phase: "delete" },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     throw new Error(error.message);
   }
-  // #region agent log
-  fetch("http://127.0.0.1:7242/ingest/e9e360f1-cac8-4774-88a3-e97a664d1472", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      sessionId: "debug-session",
-      runId: "initial",
-      hypothesisId: "H3",
-      location: "lib/data/status-definitions.ts:deleteStatusDefinition:success",
-      message: "delete status success",
-      data: { id, reassignedTo: fallbackId },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
 }
 
 // Export for UI to check if a status is protected (non-editable/non-deletable)
