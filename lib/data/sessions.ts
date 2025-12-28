@@ -15,6 +15,22 @@ import type {
 
 const SESSION_GRACE_MS = 5 * 60 * 1000;
 
+/**
+ * Get current UTC timestamp in milliseconds.
+ * Always use this for time comparisons to avoid timezone drift.
+ */
+function utcNow(): number {
+  return Date.now(); // Date.now() is always UTC
+}
+
+/**
+ * Parse an ISO timestamp string to UTC milliseconds.
+ * Supabase TIMESTAMPTZ columns return ISO strings with timezone info.
+ */
+function parseUtcMs(isoString: string): number {
+  return new Date(isoString).getTime();
+}
+
 type SessionPayload = {
   worker_id: string;
   station_id: string;
@@ -68,20 +84,20 @@ export async function closeActiveSessionsForWorker(
   const stoppedId = await getStoppedStatusId();
 
   for (const session of activeSessions) {
-    // Close open status events
-    await supabase
-      .from("status_events")
-      .update({ ended_at: timestamp })
-      .eq("session_id", session.id)
-      .is("ended_at", null);
-
-    // Create final stopped status event
-    await supabase.from("status_events").insert({
-      session_id: session.id,
-      status_definition_id: stoppedId,
-      note: "replaced-by-new-session",
-      started_at: timestamp,
+    // Use atomic database function to create final status event
+    // This closes open events and mirrors to sessions in a single transaction
+    const { error: statusError } = await supabase.rpc("create_status_event_atomic", {
+      p_session_id: session.id,
+      p_status_definition_id: stoppedId,
+      p_station_reason_id: null,
+      p_note: "replaced-by-new-session",
+      p_image_url: null,
+      p_malfunction_id: null,
     });
+
+    if (statusError) {
+      continue; // Skip this session if status event creation fails
+    }
 
     // Close the session
     const { error: updateError } = await supabase
@@ -90,8 +106,6 @@ export async function closeActiveSessionsForWorker(
         status: "completed" as SessionStatus,
         ended_at: timestamp,
         forced_closed_at: timestamp,
-        current_status_id: stoppedId,
-        last_status_change_at: timestamp,
       })
       .eq("id", session.id);
 
@@ -245,19 +259,6 @@ export async function markEndChecklistCompleted(
   return data as Session;
 }
 
-async function closeOpenStatusEvents(sessionId: string) {
-  const supabase = createServiceSupabase();
-  const { error } = await supabase
-    .from("status_events")
-    .update({ ended_at: new Date().toISOString() })
-    .is("ended_at", null)
-    .eq("session_id", sessionId);
-
-  if (error) {
-    throw new Error(`Failed to close open status events: ${error.message}`);
-  }
-}
-
 type StatusEventPayload = {
   session_id: string;
   status_definition_id: StatusEventState;
@@ -301,39 +302,23 @@ export async function startStatusEvent(
     payload.session_id,
     payload.status_definition_id,
   );
-  await closeOpenStatusEvents(payload.session_id);
+
   const supabase = createServiceSupabase();
-  const startedAt = payload.started_at ?? new Date().toISOString();
-  const { data, error } = await supabase
-    .from("status_events")
-    .insert({
-      session_id: payload.session_id,
-      station_reason_id: payload.station_reason_id,
-      note: payload.note,
-      image_url: payload.image_url,
-      status_definition_id: payload.status_definition_id,
-      started_at: startedAt,
-      malfunction_id: payload.malfunction_id,
-    })
-    .select("*")
-    .single();
+
+  // Use atomic database function to eliminate race conditions
+  // This function closes open events, inserts new event, and mirrors to sessions
+  // all in a single transaction
+  const { data, error } = await supabase.rpc("create_status_event_atomic", {
+    p_session_id: payload.session_id,
+    p_status_definition_id: payload.status_definition_id,
+    p_station_reason_id: payload.station_reason_id ?? null,
+    p_note: payload.note ?? null,
+    p_image_url: payload.image_url ?? null,
+    p_malfunction_id: payload.malfunction_id ?? null,
+  });
 
   if (error) {
     throw new Error(`Failed to create status event: ${error.message}`);
-  }
-
-  const { error: sessionError } = await supabase
-    .from("sessions")
-    .update({
-      current_status_id: payload.status_definition_id,
-      last_status_change_at: startedAt,
-    })
-    .eq("id", payload.session_id);
-
-  if (sessionError) {
-    throw new Error(
-      `Failed to mirror status on session: ${sessionError.message}`,
-    );
   }
 
   return data as StatusEvent;
@@ -447,11 +432,13 @@ export async function getGracefulActiveSession(
 
   const row = data as unknown as WorkerActiveSessionRow;
   const lastSeenSource = row.last_seen_at ?? row.started_at;
-  const graceExpiresAt = new Date(
-    new Date(lastSeenSource).getTime() + SESSION_GRACE_MS,
-  ).toISOString();
 
-  if (Date.now() >= new Date(graceExpiresAt).getTime()) {
+  // Use explicit UTC comparison to avoid timezone drift
+  const lastSeenUtcMs = parseUtcMs(lastSeenSource);
+  const graceExpiresAtMs = lastSeenUtcMs + SESSION_GRACE_MS;
+  const graceExpiresAt = new Date(graceExpiresAtMs).toISOString();
+
+  if (utcNow() >= graceExpiresAtMs) {
     await abandonActiveSession(row.id, "expired");
     return null;
   }
@@ -470,21 +457,21 @@ export async function abandonActiveSession(
   const supabase = createServiceSupabase();
   const timestamp = new Date().toISOString();
 
-  await closeOpenStatusEvents(sessionId);
-
   const note =
     reason === "worker_choice" ? "worker-abandon" : "grace-window-expired";
 
   const stoppedId = await getStoppedStatusId();
 
-  const { error: statusError } = await supabase
-    .from("status_events")
-    .insert({
-      session_id: sessionId,
-      status_definition_id: stoppedId,
-      note,
-      started_at: timestamp,
-    });
+  // Use atomic database function to create the final status event
+  // This closes open events and mirrors to sessions in a single transaction
+  const { error: statusError } = await supabase.rpc("create_status_event_atomic", {
+    p_session_id: sessionId,
+    p_status_definition_id: stoppedId,
+    p_station_reason_id: null,
+    p_note: note,
+    p_image_url: null,
+    p_malfunction_id: null,
+  });
 
   if (statusError) {
     throw new Error(
@@ -492,14 +479,13 @@ export async function abandonActiveSession(
     );
   }
 
+  // Update session status to completed (separate from status event)
   const { error: sessionError } = await supabase
     .from("sessions")
     .update({
       status: "completed" satisfies SessionStatus,
       ended_at: timestamp,
       forced_closed_at: timestamp,
-      current_status_id: stoppedId,
-      last_status_change_at: timestamp,
     })
     .eq("id", sessionId);
 
