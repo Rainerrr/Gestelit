@@ -8,15 +8,15 @@ import type {
   SessionStatus,
   StationType,
   StatusEventState,
-  MalfunctionStatus,
+  MalfunctionReportStatus,
 } from "@/lib/types";
 
-export type SessionMalfunction = {
+export type SessionMalfunctionReport = {
   id: string;
   stationReasonId: string | null;
   description: string | null;
   imageUrl: string | null;
-  status: MalfunctionStatus;
+  status: MalfunctionReportStatus;
   createdAt: string;
   reporterName: string | null;
   reporterCode: string | null;
@@ -43,7 +43,7 @@ export type SessionDetail = {
   durationSeconds: number;
   stoppageTimeSeconds: number;
   setupTimeSeconds: number;
-  malfunctions: SessionMalfunction[];
+  malfunctions: SessionMalfunctionReport[];
 };
 
 type RawSession = {
@@ -183,19 +183,19 @@ export async function GET(
     const stoppageTimeSeconds = calculateMachineStateTime(stoppageRows, "stoppage");
     const setupTimeSeconds = calculateMachineStateTime(setupRows, "setup");
 
-    // Fetch malfunctions linked to this session
-    type RawMalfunction = {
+    // Fetch malfunction reports linked to this session
+    type RawMalfunctionReport = {
       id: string;
       station_reason_id: string | null;
       description: string | null;
       image_url: string | null;
-      status: MalfunctionStatus;
+      status: MalfunctionReportStatus;
       created_at: string;
       workers: { full_name: string | null; worker_code: string | null } | null;
     };
 
     const { data: malfunctionsData } = await supabase
-      .from("malfunctions")
+      .from("reports")
       .select(`
         id,
         station_reason_id,
@@ -206,10 +206,11 @@ export async function GET(
         workers:reported_by_worker_id(full_name, worker_code)
       `)
       .eq("session_id", sessionId)
+      .eq("type", "malfunction")
       .order("created_at", { ascending: false });
 
-    const malfunctions: SessionMalfunction[] = (
-      (malfunctionsData as unknown as RawMalfunction[]) ?? []
+    const malfunctions: SessionMalfunctionReport[] = (
+      (malfunctionsData as unknown as RawMalfunctionReport[]) ?? []
     ).map((m) => ({
       id: m.id,
       stationReasonId: m.station_reason_id,

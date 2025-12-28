@@ -92,7 +92,7 @@ export async function closeActiveSessionsForWorker(
       p_station_reason_id: null,
       p_note: "replaced-by-new-session",
       p_image_url: null,
-      p_malfunction_id: null,
+      p_report_id: null,
     });
 
     if (statusError) {
@@ -266,7 +266,7 @@ type StatusEventPayload = {
   note?: string | null;
   image_url?: string | null;
   started_at?: string;
-  malfunction_id?: string | null;
+  report_id?: string | null;
 };
 
 const assertStatusAllowedForSession = async (
@@ -314,7 +314,7 @@ export async function startStatusEvent(
     p_station_reason_id: payload.station_reason_id ?? null,
     p_note: payload.note ?? null,
     p_image_url: payload.image_url ?? null,
-    p_malfunction_id: payload.malfunction_id ?? null,
+    p_report_id: payload.report_id ?? null,
   });
 
   if (error) {
@@ -470,7 +470,7 @@ export async function abandonActiveSession(
     p_station_reason_id: null,
     p_note: note,
     p_image_url: null,
-    p_malfunction_id: null,
+    p_report_id: null,
   });
 
   if (statusError) {

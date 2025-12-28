@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect, useCallback } from "react";
-import { Menu, Settings, LayoutDashboard, History, Wrench, ChevronLeft, AlertTriangle } from "lucide-react";
+import { Menu, Settings, LayoutDashboard, History, Wrench, ChevronLeft, FileText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/sheet";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { ChangePasswordDialog } from "./change-password-dialog";
-import { fetchOpenMalfunctionsCountApi } from "@/lib/api/admin-management";
+import { fetchReportsCountsAdminApi } from "@/lib/api/admin-management";
 import { useScrollDirection } from "@/hooks/useScrollDirection";
 import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
@@ -27,7 +27,7 @@ type AdminLayoutProps = {
 const navItems = [
   { label: "דשבורד", href: "/admin", disabled: false, icon: LayoutDashboard },
   { label: "היסטוריה ודוחות", href: "/admin/history", disabled: false, icon: History },
-  { label: "תקלות", href: "/admin/malfunctions", disabled: false, icon: AlertTriangle },
+  { label: "דיווחים", href: "/admin/reports", disabled: false, icon: FileText },
   { label: "ניהול", href: "/admin/manage", disabled: false, icon: Wrench },
 ];
 
@@ -35,27 +35,31 @@ export const AdminLayout = ({ children, header }: AdminLayoutProps) => {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
-  const [openMalfunctionsCount, setOpenMalfunctionsCount] = useState(0);
+  const [pendingReportsCount, setPendingReportsCount] = useState(0);
   const { scrollDirection, isAtTop } = useScrollDirection();
 
-  const fetchMalfunctionsCount = useCallback(async () => {
+  const fetchReportsCount = useCallback(async () => {
     try {
-      const { count } = await fetchOpenMalfunctionsCountApi();
-      setOpenMalfunctionsCount(count);
+      const { counts } = await fetchReportsCountsAdminApi();
+      // Total pending = open malfunctions + pending general + pending scrap
+      setPendingReportsCount(counts.total);
     } catch {
       // Silently fail - badge just won't show
     }
   }, []);
 
   useEffect(() => {
-    fetchMalfunctionsCount();
+    fetchReportsCount();
     // Refresh count every 30 seconds
-    const interval = setInterval(fetchMalfunctionsCount, 30000);
+    const interval = setInterval(fetchReportsCount, 30000);
     return () => clearInterval(interval);
-  }, [fetchMalfunctionsCount]);
+  }, [fetchReportsCount]);
 
   const renderNavItem = (item: (typeof navItems)[number]) => {
-    const isActive = pathname === item.href;
+    // For /admin/reports, also highlight when on sub-routes
+    const isActive = item.href === "/admin/reports"
+      ? pathname.startsWith("/admin/reports")
+      : pathname === item.href;
     const Icon = item.icon;
 
     if (item.disabled) {
@@ -77,7 +81,7 @@ export const AdminLayout = ({ children, header }: AdminLayoutProps) => {
       );
     }
 
-    const showMalfunctionBadge = item.href === "/admin/malfunctions" && openMalfunctionsCount > 0;
+    const showReportsBadge = item.href === "/admin/reports" && pendingReportsCount > 0;
 
     return (
       <Link
@@ -93,7 +97,7 @@ export const AdminLayout = ({ children, header }: AdminLayoutProps) => {
       >
         <div className="relative">
           <Icon className={`h-4 w-4 transition-colors ${isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground"}`} />
-          {showMalfunctionBadge && (
+          {showReportsBadge && (
             <span className="absolute -top-1 -left-1 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-card" />
           )}
         </div>

@@ -1,15 +1,15 @@
 import { Suspense } from "react";
-import { MalfunctionsDashboard } from "./_components/malfunctions-dashboard";
+import { GeneralReportsDashboard } from "./_components/general-reports-dashboard";
 
 export const metadata = {
-  title: "תקלות | Gestelit Work Monitor",
-  description: "ניהול תקלות תחנות",
+  title: "דיווחים כלליים | Gestelit Work Monitor",
+  description: "ניהול דיווחי סטטוס",
 };
 
-export default function MalfunctionsPage() {
+export default function GeneralReportsPage() {
   return (
     <Suspense fallback={
-      <div className="flex min-h-screen items-center justify-center bg-background">
+      <div className="flex items-center justify-center py-20">
         <div className="flex flex-col items-center gap-4">
           <div className="relative h-12 w-12">
             <div className="absolute inset-0 rounded-full border-2 border-primary/20" />
@@ -19,7 +19,7 @@ export default function MalfunctionsPage() {
         </div>
       </div>
     }>
-      <MalfunctionsDashboard />
+      <GeneralReportsDashboard />
     </Suspense>
   );
 }

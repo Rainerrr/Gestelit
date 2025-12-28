@@ -16,7 +16,7 @@ type StatusUpdatePayload = {
   label_ru?: string | null;
   color_hex?: string;
   machine_state?: MachineState;
-  requires_malfunction_report?: boolean;
+  report_type?: "none" | "malfunction" | "general";
 };
 
 type StatusDefinitionRouteContext = { params: Promise<{ id: string }> };

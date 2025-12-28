@@ -4,34 +4,33 @@ import { useState } from "react";
 import { ChevronDown, ChevronUp, AlertTriangle, Eye, Cpu, CheckCircle2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import type { StationWithMalfunctions, StationWithArchivedMalfunctions } from "@/lib/data/malfunctions";
-import type { MalfunctionStatus } from "@/lib/types";
-import { MalfunctionCard } from "./malfunction-card";
+import type { StationWithReports, StationWithArchivedReports } from "@/lib/data/reports";
+import type { MalfunctionReportStatus } from "@/lib/types";
+import { ReportCard } from "./report-card";
 
-type StationMalfunctionsCardProps = {
-  data: StationWithMalfunctions | StationWithArchivedMalfunctions;
-  onStatusChange: (id: string, status: MalfunctionStatus) => Promise<void>;
+type StationReportsCardProps = {
+  data: StationWithReports | StationWithArchivedReports;
+  onStatusChange: (id: string, status: MalfunctionReportStatus) => Promise<void>;
   isUpdating: boolean;
   defaultExpanded?: boolean;
-  highlightMalfunctionId?: string | null;
+  highlightReportId?: string | null;
   isArchive?: boolean;
 };
 
-export const StationMalfunctionsCard = ({
+export const StationReportsCard = ({
   data,
   onStatusChange,
   isUpdating,
   defaultExpanded = false,
-  highlightMalfunctionId,
+  highlightReportId,
   isArchive = false,
-}: StationMalfunctionsCardProps) => {
+}: StationReportsCardProps) => {
   const [expanded, setExpanded] = useState(defaultExpanded);
-  const { station, malfunctions } = data;
+  const { station, reports } = data;
 
-  // Type-safe access to counts based on archive mode
-  const openCount = isArchive ? 0 : (data as StationWithMalfunctions).openCount;
-  const knownCount = isArchive ? 0 : (data as StationWithMalfunctions).knownCount;
-  const solvedCount = isArchive ? (data as StationWithArchivedMalfunctions).solvedCount : 0;
+  const openCount = isArchive ? 0 : (data as StationWithReports).openCount;
+  const knownCount = isArchive ? 0 : (data as StationWithReports).knownCount;
+  const solvedCount = isArchive ? (data as StationWithArchivedReports).solvedCount : 0;
 
   return (
     <div className={cn(
@@ -50,7 +49,6 @@ export const StationMalfunctionsCard = ({
         )}
       >
         <div className="flex items-center gap-4 flex-1 min-w-0">
-          {/* Station icon */}
           <div className={cn(
             "flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border transition-colors",
             expanded
@@ -63,7 +61,6 @@ export const StationMalfunctionsCard = ({
             )} />
           </div>
 
-          {/* Station info */}
           <div className="flex flex-col items-start min-w-0">
             <h3 className="text-base font-semibold text-foreground truncate">
               {station.name}
@@ -76,7 +73,6 @@ export const StationMalfunctionsCard = ({
           </div>
         </div>
 
-        {/* Status badges and expand indicator */}
         <div className="flex items-center gap-3 shrink-0">
           {isArchive ? (
             <Badge className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20 gap-1.5 font-medium">
@@ -116,22 +112,22 @@ export const StationMalfunctionsCard = ({
         </div>
       </button>
 
-      {/* Expanded content - list of malfunctions */}
+      {/* Expanded content */}
       {expanded ? (
         <div className="border-t border-border/60 p-4 space-y-3 bg-card/20">
-          {malfunctions.length === 0 ? (
+          {reports.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-4">
               {isArchive ? "אין תקלות בארכיון בתחנה זו." : "אין תקלות פתוחות בתחנה זו."}
             </p>
           ) : (
-            malfunctions.map((malfunction) => (
-              <MalfunctionCard
-                key={malfunction.id}
-                malfunction={malfunction}
+            reports.map((report) => (
+              <ReportCard
+                key={report.id}
+                report={report}
                 stationReasons={station.station_reasons}
                 onStatusChange={onStatusChange}
                 isUpdating={isUpdating}
-                isHighlighted={malfunction.id === highlightMalfunctionId}
+                isHighlighted={report.id === highlightReportId}
               />
             ))
           )}

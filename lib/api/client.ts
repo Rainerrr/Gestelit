@@ -1,7 +1,9 @@
 import type {
   ChecklistKind,
   Job,
-  Malfunction,
+  Report,
+  ReportReason,
+  ReportType,
   Station,
   StationChecklist,
   StatusDefinition,
@@ -137,7 +139,7 @@ export async function startStatusEventApi(options: {
   stationReasonId?: string | null;
   note?: string | null;
   imageUrl?: string | null;
-  malfunctionId?: string | null;
+  reportId?: string | null;
 }) {
   const response = await fetch("/api/status-events", {
     method: "POST",
@@ -148,7 +150,7 @@ export async function startStatusEventApi(options: {
       stationReasonId: options.stationReasonId,
       note: options.note,
       imageUrl: options.imageUrl,
-      malfunctionId: options.malfunctionId,
+      reportId: options.reportId,
     }),
   });
   await handleResponse(response);
@@ -214,18 +216,30 @@ export async function validateJobExistsApi(
   }
 }
 
-export async function createMalfunctionApi(input: {
-  stationId: string;
+// Unified Reports API
+export async function createReportApi(input: {
+  type: ReportType;
+  stationId?: string;
+  sessionId?: string;
   stationReasonId?: string;
+  reportReasonId?: string;
   description?: string;
   image?: File | null;
   workerId?: string;
-  sessionId?: string;
-}): Promise<Malfunction> {
+}): Promise<Report> {
   const formData = new FormData();
-  formData.append("stationId", input.stationId);
+  formData.append("type", input.type);
+  if (input.stationId) {
+    formData.append("stationId", input.stationId);
+  }
+  if (input.sessionId) {
+    formData.append("sessionId", input.sessionId);
+  }
   if (input.stationReasonId) {
     formData.append("stationReasonId", input.stationReasonId);
+  }
+  if (input.reportReasonId) {
+    formData.append("reportReasonId", input.reportReasonId);
   }
   if (input.description) {
     formData.append("description", input.description);
@@ -236,15 +250,18 @@ export async function createMalfunctionApi(input: {
   if (input.workerId) {
     formData.append("workerId", input.workerId);
   }
-  if (input.sessionId) {
-    formData.append("sessionId", input.sessionId);
-  }
 
-  const response = await fetch("/api/malfunctions", {
+  const response = await fetch("/api/reports", {
     method: "POST",
     body: formData,
   });
-  const data = await handleResponse<{ malfunction: Malfunction }>(response);
-  return data.malfunction;
+  const data = await handleResponse<{ report: Report }>(response);
+  return data.report;
+}
+
+export async function fetchReportReasonsApi(): Promise<ReportReason[]> {
+  const response = await fetch("/api/admin/reports/reasons?activeOnly=true");
+  const data = await handleResponse<{ reasons: ReportReason[] }>(response);
+  return data.reasons ?? [];
 }
 

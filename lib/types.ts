@@ -66,6 +66,7 @@ export interface Session {
   last_seen_at?: string | null;
   forced_closed_at?: string | null;
   last_status_change_at?: string | null;
+  scrap_report_submitted?: boolean;
   created_at?: string;
   updated_at?: string;
 }
@@ -84,7 +85,7 @@ export interface StatusEvent {
   station_reason_id?: string | null;
   note?: string | null;
   image_url?: string | null;
-  malfunction_id?: string | null;
+  report_id?: string | null;
   started_at: string;
   ended_at?: string | null;
 }
@@ -96,17 +97,34 @@ export interface StationReason {
   is_active: boolean;
 }
 
-export type MalfunctionStatus = "open" | "known" | "solved";
+// Unified Reports System
+export type ReportType = "malfunction" | "general" | "scrap";
+export type MalfunctionReportStatus = "open" | "known" | "solved";
+export type SimpleReportStatus = "new" | "approved";
+export type ReportStatus = MalfunctionReportStatus | SimpleReportStatus;
+export type StatusReportType = "none" | "malfunction" | "general";
 
-export interface Malfunction {
+export interface ReportReason {
   id: string;
-  station_id: string;
-  station_reason_id?: string | null;
+  label_he: string;
+  label_ru?: string | null;
+  is_active: boolean;
+  sort_order: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface Report {
+  id: string;
+  type: ReportType;
+  station_id?: string | null;
+  session_id?: string | null;
+  reported_by_worker_id?: string | null;
   description?: string | null;
   image_url?: string | null;
-  status: MalfunctionStatus;
-  reported_by_worker_id?: string | null;
-  session_id?: string | null;
+  station_reason_id?: string | null;
+  report_reason_id?: string | null;
+  status: ReportStatus;
   status_changed_at?: string | null;
   status_changed_by?: string | null;
   admin_notes?: string | null;
@@ -114,9 +132,11 @@ export interface Malfunction {
   updated_at?: string;
 }
 
-export interface MalfunctionWithDetails extends Malfunction {
+export interface ReportWithDetails extends Report {
   station?: Station | null;
+  session?: Session | null;
   reporter?: Pick<Worker, "id" | "full_name" | "worker_code"> | null;
+  report_reason?: ReportReason | null;
 }
 
 export interface StationChecklistItem {
@@ -140,7 +160,7 @@ export interface StatusDefinition {
   label_ru?: string | null;
   color_hex: string;
   machine_state: MachineState;
-  requires_malfunction_report?: boolean;
+  report_type?: StatusReportType;
   is_protected?: boolean;
   created_at?: string;
   updated_at?: string;

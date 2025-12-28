@@ -1,0 +1,424 @@
+import { createServiceSupabase } from "@/lib/supabase/client";
+import type {
+  Report,
+  ReportStatus,
+  ReportType,
+  ReportWithDetails,
+  Station,
+  StationReason,
+} from "@/lib/types";
+
+// Grouped report types for admin views
+export type StationWithReports = {
+  station: Station;
+  reports: ReportWithDetails[];
+  openCount: number;
+  knownCount: number;
+};
+
+export type StationWithArchivedReports = {
+  station: Station;
+  reports: ReportWithDetails[];
+  solvedCount: number;
+};
+
+export type StationWithScrapReports = {
+  station: Station;
+  reports: ReportWithDetails[];
+  newCount: number;
+  approvedCount: number;
+};
+
+// Create report payload
+type CreateReportPayload = {
+  type: ReportType;
+  station_id?: string | null;
+  session_id?: string | null;
+  reported_by_worker_id?: string | null;
+  description?: string | null;
+  image_url?: string | null;
+  station_reason_id?: string | null;
+  report_reason_id?: string | null;
+};
+
+export async function createReport(payload: CreateReportPayload): Promise<Report> {
+  const supabase = createServiceSupabase();
+
+  const { data, error } = await supabase
+    .from("reports")
+    .insert({
+      type: payload.type,
+      station_id: payload.station_id ?? null,
+      session_id: payload.session_id ?? null,
+      reported_by_worker_id: payload.reported_by_worker_id ?? null,
+      description: payload.description ?? null,
+      image_url: payload.image_url ?? null,
+      station_reason_id: payload.station_reason_id ?? null,
+      report_reason_id: payload.report_reason_id ?? null,
+      // Status is set by database trigger based on type
+    })
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to create report: ${error.message}`);
+  }
+
+  // If this is a scrap report, mark the session as having submitted scrap report
+  if (payload.type === "scrap" && payload.session_id) {
+    const { error: sessionError } = await supabase
+      .from("sessions")
+      .update({ scrap_report_submitted: true })
+      .eq("id", payload.session_id);
+
+    if (sessionError) {
+      console.error("[reports] Failed to update session scrap_report_submitted:", sessionError.message);
+    }
+  }
+
+  return data as Report;
+}
+
+// Update report status
+export type UpdateReportStatusPayload = {
+  reportId: string;
+  status: ReportStatus;
+  adminNotes?: string | null;
+  changedBy?: string;
+};
+
+export async function updateReportStatus(
+  payload: UpdateReportStatusPayload
+): Promise<Report> {
+  const supabase = createServiceSupabase();
+
+  const { data, error } = await supabase
+    .from("reports")
+    .update({
+      status: payload.status,
+      admin_notes: payload.adminNotes ?? null,
+      status_changed_by: payload.changedBy ?? null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", payload.reportId)
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to update report status: ${error.message}`);
+  }
+
+  return data as Report;
+}
+
+// Get malfunction reports (open/known) grouped by station
+export async function getMalfunctionReportsGroupedByStation(): Promise<
+  StationWithReports[]
+> {
+  const supabase = createServiceSupabase();
+
+  const { data: reports, error: reportsError } = await supabase
+    .from("reports")
+    .select("*")
+    .eq("type", "malfunction")
+    .in("status", ["open", "known"])
+    .order("created_at", { ascending: false });
+
+  if (reportsError) {
+    throw new Error(`Failed to fetch malfunction reports: ${reportsError.message}`);
+  }
+
+  if (!reports || reports.length === 0) {
+    return [];
+  }
+
+  return groupReportsByStation(reports, "malfunction");
+}
+
+// Get archived malfunction reports (solved)
+export async function getArchivedMalfunctionReports(): Promise<
+  StationWithArchivedReports[]
+> {
+  const supabase = createServiceSupabase();
+
+  const { data: reports, error: reportsError } = await supabase
+    .from("reports")
+    .select("*")
+    .eq("type", "malfunction")
+    .eq("status", "solved")
+    .order("status_changed_at", { ascending: false });
+
+  if (reportsError) {
+    throw new Error(`Failed to fetch archived reports: ${reportsError.message}`);
+  }
+
+  if (!reports || reports.length === 0) {
+    return [];
+  }
+
+  return groupArchivedReportsByStation(reports);
+}
+
+// Get general reports (feed view - chronological)
+export async function getGeneralReports(options?: {
+  status?: "new" | "approved";
+  limit?: number;
+}): Promise<ReportWithDetails[]> {
+  const supabase = createServiceSupabase();
+
+  let query = supabase
+    .from("reports")
+    .select("*")
+    .eq("type", "general")
+    .order("created_at", { ascending: false });
+
+  if (options?.status) {
+    query = query.eq("status", options.status);
+  }
+
+  if (options?.limit) {
+    query = query.limit(options.limit);
+  }
+
+  const { data: reports, error } = await query;
+
+  if (error) {
+    throw new Error(`Failed to fetch general reports: ${error.message}`);
+  }
+
+  if (!reports || reports.length === 0) {
+    return [];
+  }
+
+  return enrichReportsWithDetails(reports);
+}
+
+// Get scrap reports grouped by station
+export async function getScrapReportsGroupedByStation(): Promise<
+  StationWithScrapReports[]
+> {
+  const supabase = createServiceSupabase();
+
+  const { data: reports, error: reportsError } = await supabase
+    .from("reports")
+    .select("*")
+    .eq("type", "scrap")
+    .order("created_at", { ascending: false });
+
+  if (reportsError) {
+    throw new Error(`Failed to fetch scrap reports: ${reportsError.message}`);
+  }
+
+  if (!reports || reports.length === 0) {
+    return [];
+  }
+
+  return groupScrapReportsByStation(reports);
+}
+
+// Count open malfunction reports (for notification badge)
+export async function getOpenMalfunctionReportsCount(): Promise<number> {
+  const supabase = createServiceSupabase();
+
+  const { count, error } = await supabase
+    .from("reports")
+    .select("*", { count: "exact", head: true })
+    .eq("type", "malfunction")
+    .eq("status", "open");
+
+  if (error) {
+    throw new Error(`Failed to count malfunction reports: ${error.message}`);
+  }
+
+  return count ?? 0;
+}
+
+// Count pending general reports
+export async function getPendingGeneralReportsCount(): Promise<number> {
+  const supabase = createServiceSupabase();
+
+  const { count, error } = await supabase
+    .from("reports")
+    .select("*", { count: "exact", head: true })
+    .eq("type", "general")
+    .eq("status", "new");
+
+  if (error) {
+    throw new Error(`Failed to count general reports: ${error.message}`);
+  }
+
+  return count ?? 0;
+}
+
+// Count pending scrap reports
+export async function getPendingScrapReportsCount(): Promise<number> {
+  const supabase = createServiceSupabase();
+
+  const { count, error } = await supabase
+    .from("reports")
+    .select("*", { count: "exact", head: true })
+    .eq("type", "scrap")
+    .eq("status", "new");
+
+  if (error) {
+    throw new Error(`Failed to count scrap reports: ${error.message}`);
+  }
+
+  return count ?? 0;
+}
+
+// Helper: Get reason label from station reasons
+export function getReasonLabel(
+  stationReasons: StationReason[] | null | undefined,
+  reasonId: string | null | undefined,
+  lang: "he" | "ru" = "he"
+): string {
+  if (!reasonId || !stationReasons) return "";
+
+  const reason = stationReasons.find((r) => r.id === reasonId);
+  if (!reason) return reasonId;
+
+  return lang === "ru" ? reason.label_ru : reason.label_he;
+}
+
+// Helper: Enrich reports with related data
+async function enrichReportsWithDetails(
+  reports: Report[]
+): Promise<ReportWithDetails[]> {
+  const supabase = createServiceSupabase();
+
+  const stationIds = [...new Set(reports.map((r) => r.station_id).filter(Boolean))] as string[];
+  const workerIds = [...new Set(reports.map((r) => r.reported_by_worker_id).filter(Boolean))] as string[];
+  const sessionIds = [...new Set(reports.map((r) => r.session_id).filter(Boolean))] as string[];
+  const reasonIds = [...new Set(reports.map((r) => r.report_reason_id).filter(Boolean))] as string[];
+
+  // Fetch related data in parallel
+  const [stationsResult, workersResult, sessionsResult, reasonsResult] = await Promise.all([
+    stationIds.length > 0
+      ? supabase.from("stations").select("id, name, code, station_type, is_active, station_reasons").in("id", stationIds)
+      : { data: [], error: null },
+    workerIds.length > 0
+      ? supabase.from("workers").select("id, full_name, worker_code").in("id", workerIds)
+      : { data: [], error: null },
+    sessionIds.length > 0
+      ? supabase.from("sessions").select("*").in("id", sessionIds)
+      : { data: [], error: null },
+    reasonIds.length > 0
+      ? supabase.from("report_reasons").select("*").in("id", reasonIds)
+      : { data: [], error: null },
+  ]);
+
+  const stationsMap = new Map((stationsResult.data || []).map((s) => [s.id, s]));
+  const workersMap = new Map((workersResult.data || []).map((w) => [w.id, w]));
+  const sessionsMap = new Map((sessionsResult.data || []).map((s) => [s.id, s]));
+  const reasonsMap = new Map((reasonsResult.data || []).map((r) => [r.id, r]));
+
+  return reports.map((report) => ({
+    ...report,
+    station: report.station_id ? stationsMap.get(report.station_id) ?? null : null,
+    session: report.session_id ? sessionsMap.get(report.session_id) ?? null : null,
+    reporter: report.reported_by_worker_id ? workersMap.get(report.reported_by_worker_id) ?? null : null,
+    report_reason: report.report_reason_id ? reasonsMap.get(report.report_reason_id) ?? null : null,
+  })) as ReportWithDetails[];
+}
+
+// Helper: Group malfunction reports by station
+async function groupReportsByStation(
+  reports: Report[],
+  _type: ReportType
+): Promise<StationWithReports[]> {
+  const enriched = await enrichReportsWithDetails(reports);
+
+  const stationMap = new Map<string, StationWithReports>();
+
+  for (const report of enriched) {
+    const stationId = report.station_id;
+    if (!stationId || !report.station) continue;
+
+    if (!stationMap.has(stationId)) {
+      stationMap.set(stationId, {
+        station: report.station,
+        reports: [],
+        openCount: 0,
+        knownCount: 0,
+      });
+    }
+
+    const entry = stationMap.get(stationId)!;
+    entry.reports.push(report);
+
+    if (report.status === "open") {
+      entry.openCount++;
+    } else if (report.status === "known") {
+      entry.knownCount++;
+    }
+  }
+
+  return Array.from(stationMap.values()).sort(
+    (a, b) => b.openCount + b.knownCount - (a.openCount + a.knownCount)
+  );
+}
+
+// Helper: Group archived reports by station
+async function groupArchivedReportsByStation(
+  reports: Report[]
+): Promise<StationWithArchivedReports[]> {
+  const enriched = await enrichReportsWithDetails(reports);
+
+  const stationMap = new Map<string, StationWithArchivedReports>();
+
+  for (const report of enriched) {
+    const stationId = report.station_id;
+    if (!stationId || !report.station) continue;
+
+    if (!stationMap.has(stationId)) {
+      stationMap.set(stationId, {
+        station: report.station,
+        reports: [],
+        solvedCount: 0,
+      });
+    }
+
+    const entry = stationMap.get(stationId)!;
+    entry.reports.push(report);
+    entry.solvedCount++;
+  }
+
+  return Array.from(stationMap.values()).sort((a, b) => b.solvedCount - a.solvedCount);
+}
+
+// Helper: Group scrap reports by station
+async function groupScrapReportsByStation(
+  reports: Report[]
+): Promise<StationWithScrapReports[]> {
+  const enriched = await enrichReportsWithDetails(reports);
+
+  const stationMap = new Map<string, StationWithScrapReports>();
+
+  for (const report of enriched) {
+    const stationId = report.station_id;
+    if (!stationId || !report.station) continue;
+
+    if (!stationMap.has(stationId)) {
+      stationMap.set(stationId, {
+        station: report.station,
+        reports: [],
+        newCount: 0,
+        approvedCount: 0,
+      });
+    }
+
+    const entry = stationMap.get(stationId)!;
+    entry.reports.push(report);
+
+    if (report.status === "new") {
+      entry.newCount++;
+    } else if (report.status === "approved") {
+      entry.approvedCount++;
+    }
+  }
+
+  return Array.from(stationMap.values()).sort(
+    (a, b) => b.newCount - a.newCount
+  );
+}

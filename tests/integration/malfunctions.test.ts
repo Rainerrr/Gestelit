@@ -2,132 +2,133 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { TestFactory, TestCleanup, getTestSupabase } from "../helpers";
 import { testId } from "../setup";
 
-describe("Malfunction State Machine", () => {
+describe("Report State Machine", () => {
   // Test fixtures
   let testStation: { id: string };
 
   // Track created resources for cleanup
-  const createdMalfunctionIds: string[] = [];
+  const createdReportIds: string[] = [];
 
   beforeAll(async () => {
-    testStation = await TestFactory.createStation("malfunction_test");
+    testStation = await TestFactory.createStation("report_test");
   });
 
   afterAll(async () => {
-    await TestCleanup.cleanupMalfunctions(createdMalfunctionIds);
+    await TestCleanup.cleanupReports(createdReportIds);
     await TestCleanup.cleanupStations([testStation.id]);
   });
 
   /**
-   * Helper to create a malfunction with a given status
+   * Helper to create a malfunction report with a given status
    */
-  async function createMalfunction(status: "open" | "known" | "solved") {
+  async function createMalfunctionReport(status: "open" | "known" | "solved") {
     const supabase = getTestSupabase();
     const { data, error } = await supabase
-      .from("malfunctions")
+      .from("reports")
       .insert({
+        type: "malfunction",
         station_id: testStation.id,
         status: status,
-        description: testId(`malfunction_${status}`),
+        description: testId(`report_${status}`),
       })
       .select("*")
       .single();
 
-    if (error) throw new Error(`Failed to create malfunction: ${error.message}`);
-    createdMalfunctionIds.push(data.id);
+    if (error) throw new Error(`Failed to create report: ${error.message}`);
+    createdReportIds.push(data.id);
     return data;
   }
 
   /**
-   * Helper to update malfunction status
+   * Helper to update report status
    */
-  async function updateMalfunctionStatus(id: string, newStatus: string) {
+  async function updateReportStatus(id: string, newStatus: string) {
     const supabase = getTestSupabase();
     return supabase
-      .from("malfunctions")
+      .from("reports")
       .update({ status: newStatus })
       .eq("id", id)
       .select("*")
       .single();
   }
 
-  describe("Valid Transitions", () => {
+  describe("Valid Transitions (Malfunction Reports)", () => {
     it("should allow open -> known transition", async () => {
-      const malfunction = await createMalfunction("open");
+      const report = await createMalfunctionReport("open");
 
-      const { data, error } = await updateMalfunctionStatus(malfunction.id, "known");
+      const { data, error } = await updateReportStatus(report.id, "known");
 
       expect(error).toBeNull();
       expect(data?.status).toBe("known");
     });
 
     it("should allow open -> solved transition (direct resolution)", async () => {
-      const malfunction = await createMalfunction("open");
+      const report = await createMalfunctionReport("open");
 
-      const { data, error } = await updateMalfunctionStatus(malfunction.id, "solved");
+      const { data, error } = await updateReportStatus(report.id, "solved");
 
       expect(error).toBeNull();
       expect(data?.status).toBe("solved");
     });
 
     it("should allow known -> solved transition", async () => {
-      const malfunction = await createMalfunction("known");
+      const report = await createMalfunctionReport("known");
 
-      const { data, error } = await updateMalfunctionStatus(malfunction.id, "solved");
+      const { data, error } = await updateReportStatus(report.id, "solved");
 
       expect(error).toBeNull();
       expect(data?.status).toBe("solved");
     });
+
+    it("should allow solved -> open transition (return from archive)", async () => {
+      const report = await createMalfunctionReport("solved");
+
+      const { data, error } = await updateReportStatus(report.id, "open");
+
+      expect(error).toBeNull();
+      expect(data?.status).toBe("open");
+    });
   });
 
   describe("Invalid Transitions (Blocked by Trigger)", () => {
-    it("should block solved -> open transition", async () => {
-      const malfunction = await createMalfunction("solved");
-
-      const { error } = await updateMalfunctionStatus(malfunction.id, "open");
-
-      expect(error).not.toBeNull();
-      expect(error?.message).toContain("Cannot transition");
-    });
-
     it("should block solved -> known transition", async () => {
-      const malfunction = await createMalfunction("solved");
+      const report = await createMalfunctionReport("solved");
 
-      const { error } = await updateMalfunctionStatus(malfunction.id, "known");
+      const { error } = await updateReportStatus(report.id, "known");
 
       expect(error).not.toBeNull();
-      expect(error?.message).toContain("Cannot transition");
+      expect(error?.message).toContain("transition");
     });
 
     it("should block known -> open transition (cannot un-acknowledge)", async () => {
-      const malfunction = await createMalfunction("known");
+      const report = await createMalfunctionReport("known");
 
-      const { error } = await updateMalfunctionStatus(malfunction.id, "open");
+      const { error } = await updateReportStatus(report.id, "open");
 
       expect(error).not.toBeNull();
-      expect(error?.message).toContain("Cannot transition");
+      expect(error?.message).toContain("transition");
     });
   });
 
   describe("Edge Cases", () => {
     it("should allow updating same status (no-op)", async () => {
-      const malfunction = await createMalfunction("open");
+      const report = await createMalfunctionReport("open");
 
       // Update to same status should not trigger error
-      const { data, error } = await updateMalfunctionStatus(malfunction.id, "open");
+      const { data, error } = await updateReportStatus(report.id, "open");
 
       expect(error).toBeNull();
       expect(data?.status).toBe("open");
     });
 
     it("should allow updating other fields without affecting state machine", async () => {
-      const malfunction = await createMalfunction("open");
+      const report = await createMalfunctionReport("open");
 
       const supabase = getTestSupabase();
       const { data, error } = await supabase
-        .from("malfunctions")
+        .from("reports")
         .update({ description: "Updated description" })
-        .eq("id", malfunction.id)
+        .eq("id", report.id)
         .select("*")
         .single();
 
@@ -135,29 +136,55 @@ describe("Malfunction State Machine", () => {
       expect(data?.description).toBe("Updated description");
       expect(data?.status).toBe("open");
     });
+  });
 
-    it("should preserve solved status permanently", async () => {
-      // Create and solve a malfunction
-      const malfunction = await createMalfunction("open");
-      await updateMalfunctionStatus(malfunction.id, "solved");
-
-      // Try all possible invalid transitions
-      const invalidTransitions = ["open", "known"];
-
-      for (const invalidStatus of invalidTransitions) {
-        const { error } = await updateMalfunctionStatus(malfunction.id, invalidStatus);
-        expect(error).not.toBeNull();
-      }
-
-      // Verify it's still solved
+  describe("General/Scrap Reports State Machine", () => {
+    it("should allow new -> approved transition for general reports", async () => {
       const supabase = getTestSupabase();
-      const { data } = await supabase
-        .from("malfunctions")
-        .select("status")
-        .eq("id", malfunction.id)
+      const { data: report, error: createError } = await supabase
+        .from("reports")
+        .insert({
+          type: "general",
+          station_id: testStation.id,
+          status: "new",
+          description: testId("general_report"),
+        })
+        .select("*")
         .single();
 
-      expect(data?.status).toBe("solved");
+      if (createError) throw new Error(`Failed to create report: ${createError.message}`);
+      createdReportIds.push(report.id);
+
+      const { data, error } = await updateReportStatus(report.id, "approved");
+
+      expect(error).toBeNull();
+      expect(data?.status).toBe("approved");
+    });
+
+    it("should block approved -> new transition for general reports", async () => {
+      const supabase = getTestSupabase();
+      const { data: report, error: createError } = await supabase
+        .from("reports")
+        .insert({
+          type: "general",
+          station_id: testStation.id,
+          status: "new",
+          description: testId("general_report_2"),
+        })
+        .select("*")
+        .single();
+
+      if (createError) throw new Error(`Failed to create report: ${createError.message}`);
+      createdReportIds.push(report.id);
+
+      // First transition to approved
+      await updateReportStatus(report.id, "approved");
+
+      // Try to transition back to new
+      const { error } = await updateReportStatus(report.id, "new");
+
+      expect(error).not.toBeNull();
+      expect(error?.message).toContain("transition");
     });
   });
 });

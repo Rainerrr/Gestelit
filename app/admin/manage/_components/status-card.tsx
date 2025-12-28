@@ -4,7 +4,6 @@ import { useRef, useEffect, type KeyboardEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { RTLToggle } from "@/components/ui/rtl-toggle";
 import {
   Select,
   SelectContent,
@@ -12,8 +11,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Trash2, Lock } from "lucide-react";
-import type { MachineState, StatusDefinition } from "@/lib/types";
+import { Trash2, Lock, FileX, AlertTriangle, FileText } from "lucide-react";
+import type { MachineState, StatusDefinition, StatusReportType } from "@/lib/types";
 import { ALLOWED_STATUS_COLORS } from "@/lib/status";
 
 const MACHINE_STATE_LABELS: Record<MachineState, string> = {
@@ -108,11 +107,75 @@ const ColorPicker = ({
   );
 };
 
+const REPORT_TYPE_OPTIONS: {
+  value: StatusReportType;
+  label: string;
+  shortLabel: string;
+  icon: typeof FileX;
+  activeClass: string;
+}[] = [
+  {
+    value: "none",
+    label: "ללא דיווח",
+    shortLabel: "ללא",
+    icon: FileX,
+    activeClass: "bg-slate-600 text-white border-slate-500",
+  },
+  {
+    value: "malfunction",
+    label: "דיווח תקלה",
+    shortLabel: "תקלה",
+    icon: AlertTriangle,
+    activeClass: "bg-red-600 text-white border-red-500",
+  },
+  {
+    value: "general",
+    label: "דיווח כללי",
+    shortLabel: "כללי",
+    icon: FileText,
+    activeClass: "bg-blue-600 text-white border-blue-500",
+  },
+];
+
+type ReportTypeToggleProps = {
+  value: StatusReportType;
+  onChange: (value: StatusReportType) => void;
+  disabled?: boolean;
+};
+
+const ReportTypeToggle = ({ value, onChange, disabled = false }: ReportTypeToggleProps) => {
+  return (
+    <div className="flex items-center rounded-md border border-input bg-muted/30 p-0.5">
+      {REPORT_TYPE_OPTIONS.map((option) => {
+        const Icon = option.icon;
+        const isActive = value === option.value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            disabled={disabled}
+            onClick={() => onChange(option.value)}
+            title={option.label}
+            className={`flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium transition-all ${
+              isActive
+                ? option.activeClass
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+            } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
+          >
+            <Icon className="h-3 w-3" />
+            <span className="hidden sm:inline">{option.shortLabel}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+};
+
 type StatusCardProps = {
   status: StatusDefinition;
   onUpdateField: (
     id: string,
-    key: "label_he" | "label_ru" | "color_hex" | "machine_state" | "requires_malfunction_report",
+    key: "label_he" | "label_ru" | "color_hex" | "machine_state" | "report_type",
     value: string | boolean,
   ) => void;
   onRemove: (status: StatusDefinition) => void;
@@ -225,25 +288,11 @@ export const StatusCard = ({
           </Select>
 
           {status.machine_state === "stoppage" && (
-            <div className="flex items-center gap-1.5">
-              <RTLToggle
-                id={`malfunction-${status.id}`}
-                checked={status.requires_malfunction_report ?? false}
-                onCheckedChange={(checked) =>
-                  onUpdateField(status.id, "requires_malfunction_report", checked)
-                }
-                disabled={isDisabled}
-                variant="warning"
-              />
-              <Label
-                htmlFor={`malfunction-${status.id}`}
-                className={`text-[11px] text-muted-foreground cursor-pointer whitespace-nowrap ${
-                  isProtected ? "cursor-not-allowed" : ""
-                }`}
-              >
-                דורש דיווח
-              </Label>
-            </div>
+            <ReportTypeToggle
+              value={(status.report_type as StatusReportType) ?? "none"}
+              onChange={(value) => onUpdateField(status.id, "report_type", value)}
+              disabled={isDisabled}
+            />
           )}
         </div>
 

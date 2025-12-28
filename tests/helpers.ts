@@ -159,11 +159,11 @@ export const TestCleanup = {
   },
 
   /**
-   * Delete test malfunctions
+   * Delete test reports
    */
-  async cleanupMalfunctions(malfunctionIds: string[]) {
-    if (malfunctionIds.length === 0) return;
-    await supabase.from("malfunctions").delete().in("id", malfunctionIds);
+  async cleanupReports(reportIds: string[]) {
+    if (reportIds.length === 0) return;
+    await supabase.from("reports").delete().in("id", reportIds);
   },
 
   /**

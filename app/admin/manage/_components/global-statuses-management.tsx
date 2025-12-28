@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Plus, CheckCircle2, AlertCircle } from "lucide-react";
-import type { MachineState, StatusDefinition } from "@/lib/types";
+import type { MachineState, StatusDefinition, StatusReportType } from "@/lib/types";
 import {
   createStatusDefinitionAdminApi,
   deleteStatusDefinitionAdminApi,
@@ -50,7 +50,7 @@ export const GlobalStatusesManagement = () => {
         label_ru: "",
         color_hex: "#0ea5e9",
         machine_state: "production" as MachineState,
-        requires_malfunction_report: false,
+        report_type: "none" as StatusReportType,
         created_at: new Date().toISOString(),
       },
     ]);
@@ -58,19 +58,19 @@ export const GlobalStatusesManagement = () => {
 
   const handleUpdateField = (
     id: string,
-    key: "label_he" | "label_ru" | "color_hex" | "machine_state" | "requires_malfunction_report",
+    key: "label_he" | "label_ru" | "color_hex" | "machine_state" | "report_type",
     value: string | boolean,
   ) => {
     setStatuses((prev) =>
       prev.map((status) => {
         if (status.id !== id) return status;
 
-        // If changing machine_state away from "stoppage", reset requires_malfunction_report
+        // If changing machine_state away from "stoppage", reset report_type to "none"
         if (key === "machine_state" && value !== "stoppage") {
           return {
             ...status,
             machine_state: value as MachineState,
-            requires_malfunction_report: false,
+            report_type: "none" as StatusReportType,
           };
         }
 
@@ -141,7 +141,7 @@ export const GlobalStatusesManagement = () => {
           label_ru: status.label_ru?.trim() ?? "",
           color_hex: status.color_hex ?? "#0ea5e9",
           machine_state: status.machine_state ?? "production",
-          requires_malfunction_report: status.requires_malfunction_report ?? false,
+          report_type: status.report_type ?? "none",
         };
 
         if (status.id.startsWith("temp-")) {

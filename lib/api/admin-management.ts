@@ -37,7 +37,7 @@ type StatusDefinitionPayload = {
   label_ru?: string | null;
   color_hex: string;
   machine_state: StatusDefinition["machine_state"];
-  requires_malfunction_report?: boolean;
+  report_type?: StatusDefinition["report_type"];
 };
 type StatusDefinitionUpdatePayload = Partial<StatusDefinitionPayload>;
 
@@ -433,53 +433,6 @@ export async function fetchMonthlyJobThroughputAdminApi(params: {
 }
 
 // ============================================
-// MALFUNCTIONS API FUNCTIONS
-// ============================================
-
-import type { StationWithMalfunctions, StationWithArchivedMalfunctions } from "@/lib/data/malfunctions";
-import type { Malfunction, MalfunctionStatus } from "@/lib/types";
-
-export async function fetchMalfunctionsAdminApi(params?: {
-  includeArchived?: boolean;
-}): Promise<{
-  stations: StationWithMalfunctions[];
-  archived?: StationWithArchivedMalfunctions[];
-}> {
-  const query = new URLSearchParams();
-  if (params?.includeArchived) query.set("archived", "true");
-
-  const queryString = query.toString();
-  const response = await fetch(
-    `/api/admin/malfunctions${queryString ? `?${queryString}` : ""}`,
-    createAdminRequestInit()
-  );
-  return handleResponse(response);
-}
-
-export async function updateMalfunctionStatusAdminApi(
-  id: string,
-  status: MalfunctionStatus,
-  adminNotes?: string,
-): Promise<{ malfunction: Malfunction }> {
-  const response = await fetch(
-    `/api/admin/malfunctions/${id}`,
-    createAdminRequestInit({
-      method: "PATCH",
-      body: JSON.stringify({ status, adminNotes }),
-    })
-  );
-  return handleResponse(response);
-}
-
-export async function fetchOpenMalfunctionsCountApi(): Promise<{ count: number }> {
-  const response = await fetch(
-    "/api/admin/malfunctions/count",
-    createAdminRequestInit()
-  );
-  return handleResponse(response);
-}
-
-// ============================================
 // JOBS MANAGEMENT API FUNCTIONS
 // ============================================
 
@@ -549,6 +502,141 @@ export async function checkJobActiveSessionAdminApi(
   const response = await fetch(
     `/api/admin/jobs/${jobId}/active-session`,
     createAdminRequestInit()
+  );
+  return handleResponse(response);
+}
+
+// ============================================
+// REPORTS API FUNCTIONS
+// ============================================
+
+import type {
+  StationWithReports,
+  StationWithArchivedReports,
+  StationWithScrapReports,
+} from "@/lib/data/reports";
+import type { Report, ReportReason, ReportStatus, ReportWithDetails, ReportType } from "@/lib/types";
+
+export type ReportCounts = {
+  malfunction: number;
+  general: number;
+  scrap: number;
+  total: number;
+};
+
+export async function fetchReportsCountsAdminApi(): Promise<{ counts: ReportCounts }> {
+  const response = await fetch(
+    "/api/admin/reports?countsOnly=true",
+    createAdminRequestInit()
+  );
+  return handleResponse(response);
+}
+
+export async function fetchMalfunctionReportsAdminApi(params?: {
+  includeArchived?: boolean;
+}): Promise<{
+  stations: StationWithReports[];
+  archived?: StationWithArchivedReports[];
+}> {
+  const query = new URLSearchParams();
+  query.set("type", "malfunction");
+  if (params?.includeArchived) query.set("includeArchived", "true");
+
+  const response = await fetch(
+    `/api/admin/reports?${query.toString()}`,
+    createAdminRequestInit()
+  );
+  return handleResponse(response);
+}
+
+export async function fetchGeneralReportsAdminApi(): Promise<{
+  reports: ReportWithDetails[];
+}> {
+  const response = await fetch(
+    "/api/admin/reports?type=general",
+    createAdminRequestInit()
+  );
+  return handleResponse(response);
+}
+
+export async function fetchScrapReportsAdminApi(): Promise<{
+  stations: StationWithScrapReports[];
+}> {
+  const response = await fetch(
+    "/api/admin/reports?type=scrap",
+    createAdminRequestInit()
+  );
+  return handleResponse(response);
+}
+
+export async function updateReportStatusAdminApi(
+  id: string,
+  status: ReportStatus,
+  adminNotes?: string
+): Promise<{ report: Report }> {
+  const response = await fetch(
+    `/api/admin/reports/${id}`,
+    createAdminRequestInit({
+      method: "PATCH",
+      body: JSON.stringify({ status, adminNotes }),
+    })
+  );
+  return handleResponse(response);
+}
+
+// Report Reasons Management
+export async function fetchReportReasonsAdminApi(params?: {
+  activeOnly?: boolean;
+}): Promise<{ reasons: ReportReason[] }> {
+  const query = new URLSearchParams();
+  if (params?.activeOnly) query.set("activeOnly", "true");
+
+  const queryString = query.toString();
+  const response = await fetch(
+    `/api/admin/reports/reasons${queryString ? `?${queryString}` : ""}`,
+    createAdminRequestInit()
+  );
+  return handleResponse(response);
+}
+
+export async function createReportReasonAdminApi(payload: {
+  label_he: string;
+  label_ru?: string | null;
+  sort_order?: number;
+}): Promise<{ reason: ReportReason }> {
+  const response = await fetch(
+    "/api/admin/reports/reasons",
+    createAdminRequestInit({
+      method: "POST",
+      body: JSON.stringify(payload),
+    })
+  );
+  return handleResponse(response);
+}
+
+export async function updateReportReasonAdminApi(
+  id: string,
+  payload: {
+    label_he?: string;
+    label_ru?: string | null;
+    sort_order?: number;
+    is_active?: boolean;
+  }
+): Promise<{ reason: ReportReason }> {
+  const response = await fetch(
+    `/api/admin/reports/reasons/${id}`,
+    createAdminRequestInit({
+      method: "PUT",
+      body: JSON.stringify(payload),
+    })
+  );
+  return handleResponse(response);
+}
+
+export async function deleteReportReasonAdminApi(id: string): Promise<{ success: boolean }> {
+  const response = await fetch(
+    `/api/admin/reports/reasons/${id}`,
+    createAdminRequestInit({ method: "DELETE" })
   );
   return handleResponse(response);
 }

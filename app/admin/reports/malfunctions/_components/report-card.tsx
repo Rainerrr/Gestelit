@@ -10,8 +10,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import type { MalfunctionWithDetails, MalfunctionStatus, StationReason } from "@/lib/types";
-import { getReasonLabel } from "@/lib/data/malfunctions";
+import type { ReportWithDetails, MalfunctionReportStatus, StationReason } from "@/lib/types";
+import { getReasonLabel } from "@/lib/data/reports";
 
 const formatRelativeTime = (dateStr: string): string => {
   const date = new Date(dateStr);
@@ -34,29 +34,27 @@ const formatRelativeTime = (dateStr: string): string => {
   }).format(date);
 };
 
-type MalfunctionCardProps = {
-  malfunction: MalfunctionWithDetails;
+type ReportCardProps = {
+  report: ReportWithDetails;
   stationReasons: StationReason[] | null | undefined;
-  onStatusChange: (id: string, status: MalfunctionStatus) => Promise<void>;
+  onStatusChange: (id: string, status: MalfunctionReportStatus) => Promise<void>;
   isUpdating: boolean;
   isHighlighted?: boolean;
 };
 
-export const MalfunctionCard = ({
-  malfunction,
+export const ReportCard = ({
+  report,
   stationReasons,
   onStatusChange,
   isUpdating,
   isHighlighted = false,
-}: MalfunctionCardProps) => {
+}: ReportCardProps) => {
   const [expanded, setExpanded] = useState(isHighlighted);
   const [imageOpen, setImageOpen] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
 
-  // Scroll into view and apply highlight effect when highlighted
   useEffect(() => {
     if (isHighlighted && cardRef.current) {
-      // Small delay to ensure the card is rendered and expanded
       const timer = setTimeout(() => {
         cardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       }, 300);
@@ -64,9 +62,10 @@ export const MalfunctionCard = ({
     }
   }, [isHighlighted]);
 
-  const reasonLabel = getReasonLabel(stationReasons, malfunction.station_reason_id);
+  const reasonLabel = getReasonLabel(stationReasons, report.station_reason_id);
+  const status = report.status as MalfunctionReportStatus;
 
-  const statusConfig: Record<MalfunctionStatus, { label: string; color: string; icon: typeof AlertTriangle }> = {
+  const statusConfig: Record<MalfunctionReportStatus, { label: string; color: string; icon: typeof AlertTriangle }> = {
     open: {
       label: "חדש",
       color: "bg-red-500/10 border-red-500/30 text-red-400",
@@ -84,11 +83,11 @@ export const MalfunctionCard = ({
     },
   };
 
-  const config = statusConfig[malfunction.status];
+  const config = statusConfig[status];
   const StatusIcon = config.icon;
 
-  const handleStatusChange = async (newStatus: MalfunctionStatus) => {
-    await onStatusChange(malfunction.id, newStatus);
+  const handleStatusChange = async (newStatus: MalfunctionReportStatus) => {
+    await onStatusChange(report.id, newStatus);
   };
 
   return (
@@ -101,7 +100,7 @@ export const MalfunctionCard = ({
           : "border-border/60"
       )}
     >
-      {/* Header row - always visible */}
+      {/* Header row */}
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
@@ -124,14 +123,12 @@ export const MalfunctionCard = ({
 
           <span className="text-xs text-muted-foreground flex items-center gap-1 shrink-0">
             <Clock className="h-3 w-3" />
-            {malfunction.created_at
-              ? formatRelativeTime(malfunction.created_at)
-              : "—"}
+            {report.created_at ? formatRelativeTime(report.created_at) : "—"}
           </span>
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          {malfunction.image_url ? (
+          {report.image_url ? (
             <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-primary/30 text-primary">
               תמונה
             </Badge>
@@ -147,32 +144,29 @@ export const MalfunctionCard = ({
       {/* Expandable content */}
       {expanded ? (
         <div className="border-t border-border/40 px-4 py-4 space-y-4 bg-card/20">
-          {/* Description */}
-          {malfunction.description ? (
+          {report.description ? (
             <div className="space-y-1">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">תיאור</p>
               <p className="text-sm text-foreground/90 whitespace-pre-wrap leading-relaxed">
-                {malfunction.description}
+                {report.description}
               </p>
             </div>
           ) : null}
 
-          {/* Reporter info */}
-          {malfunction.reporter ? (
+          {report.reporter ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <User className="h-3.5 w-3.5" />
               <span>דווח על ידי:</span>
               <span className="text-foreground font-medium">
-                {malfunction.reporter.full_name}
+                {report.reporter.full_name}
               </span>
               <span className="text-xs font-mono text-muted-foreground/70">
-                ({malfunction.reporter.worker_code})
+                ({report.reporter.worker_code})
               </span>
             </div>
           ) : null}
 
-          {/* Image */}
-          {malfunction.image_url ? (
+          {report.image_url ? (
             <div className="space-y-2">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">תמונה מצורפת</p>
               <button
@@ -181,8 +175,8 @@ export const MalfunctionCard = ({
                 className="relative group rounded-lg overflow-hidden border border-border/60 hover:border-primary/50 transition-all"
               >
                 <img
-                  src={malfunction.image_url}
-                  alt="תמונת תקלה"
+                  src={report.image_url}
+                  alt="תמונת דיווח"
                   className="max-h-48 w-auto object-contain bg-black/20"
                 />
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">
@@ -195,7 +189,7 @@ export const MalfunctionCard = ({
           {/* Status actions */}
           <div className="flex items-center gap-2 pt-2 border-t border-border/40">
             <span className="text-xs text-muted-foreground ml-2">שנה סטטוס:</span>
-            {malfunction.status !== "open" ? (
+            {status !== "open" ? (
               <Button
                 variant="outline"
                 size="sm"
@@ -207,7 +201,7 @@ export const MalfunctionCard = ({
                 חדש
               </Button>
             ) : null}
-            {malfunction.status !== "known" ? (
+            {status !== "known" ? (
               <Button
                 variant="outline"
                 size="sm"
@@ -233,10 +227,10 @@ export const MalfunctionCard = ({
         </div>
       ) : null}
 
-      {/* Image lightbox dialog */}
+      {/* Image lightbox */}
       <Dialog open={imageOpen} onOpenChange={setImageOpen}>
         <DialogContent className="max-w-4xl w-auto p-0 bg-black/95 border-border overflow-hidden">
-          <DialogTitle className="sr-only">תמונת תקלה</DialogTitle>
+          <DialogTitle className="sr-only">תמונת דיווח</DialogTitle>
           <button
             type="button"
             onClick={() => setImageOpen(false)}
@@ -244,10 +238,10 @@ export const MalfunctionCard = ({
           >
             <X className="h-5 w-5" />
           </button>
-          {malfunction.image_url ? (
+          {report.image_url ? (
             <img
-              src={malfunction.image_url}
-              alt="תמונת תקלה"
+              src={report.image_url}
+              alt="תמונת דיווח"
               className="max-h-[85vh] max-w-full w-auto h-auto object-contain"
             />
           ) : null}

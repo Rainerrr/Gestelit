@@ -49,7 +49,7 @@ export async function POST(request: Request) {
     label_ru?: string | null;
     color_hex?: string;
     machine_state?: MachineState;
-    requires_malfunction_report?: boolean;
+    report_type?: "none" | "malfunction" | "general";
   } | null;
 
   if (!body?.scope || !body.label_he || !body.machine_state) {
@@ -64,7 +64,7 @@ export async function POST(request: Request) {
       label_ru: body.label_ru,
       color_hex: body.color_hex,
       machine_state: body.machine_state,
-      requires_malfunction_report: body.requires_malfunction_report,
+      report_type: body.report_type,
     });
     return NextResponse.json({ status });
   } catch (error) {
