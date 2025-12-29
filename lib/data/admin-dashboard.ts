@@ -142,8 +142,8 @@ const mapActiveSession = (
 });
 
 /**
- * Fetch malfunction counts for multiple sessions
- * Counts malfunctions linked via session_id FK
+ * Fetch malfunction report counts for multiple sessions
+ * Counts malfunction reports linked via session_id FK
  */
 export const fetchMalfunctionCountsBySessionIds = async (
   sessionIds: string[],
@@ -154,8 +154,9 @@ export const fetchMalfunctionCountsBySessionIds = async (
 
   const supabase = createServiceSupabase();
   const { data, error } = await supabase
-    .from("malfunctions")
+    .from("reports")
     .select("session_id")
+    .eq("type", "malfunction")
     .in("session_id", sessionIds);
 
   if (error) {
@@ -505,7 +506,7 @@ type StatusEventRow = {
   started_at: string;
   ended_at: string | null;
   sessions?: { station_id: string | null } | null;
-  status_definitions?: { requires_malfunction_report: boolean } | null;
+  status_definitions?: { report_type: string | null } | null;
 };
 
 export type SessionStatusEvent = {
@@ -514,7 +515,7 @@ export type SessionStatusEvent = {
   stationId: string | null;
   startedAt: string;
   endedAt: string | null;
-  requiresMalfunctionReport: boolean;
+  reportType: string | null;
 };
 
 export const fetchStatusEventsBySessionIds = async (
@@ -533,7 +534,7 @@ export const fetchStatusEventsBySessionIds = async (
       .order("started_at", { ascending: true });
 
   const { data, error } = await runQuery(
-    "session_id, status_definition_id, started_at, ended_at, sessions!inner(station_id), status_definitions(requires_malfunction_report)",
+    "session_id, status_definition_id, started_at, ended_at, sessions!inner(station_id), status_definitions(report_type)",
   );
 
   let rows = (data as unknown as StatusEventRow[]) ?? null;
@@ -563,7 +564,7 @@ export const fetchStatusEventsBySessionIds = async (
     stationId: row.sessions?.station_id ?? null,
     startedAt: row.started_at,
     endedAt: row.ended_at,
-    requiresMalfunctionReport: row.status_definitions?.requires_malfunction_report ?? false,
+    reportType: row.status_definitions?.report_type ?? null,
   }));
 };
 

@@ -22,6 +22,13 @@ Integration tests use Vitest and run against the live Supabase database. Tests a
 - `status-definitions.test.ts` - Protected status rules, deletion reassignment, scoping
 - `malfunctions.test.ts` - State machine transitions (open/known/solved)
 
+Run a single test file:
+```bash
+npm run test -- tests/integration/session-lifecycle.test.ts
+```
+
+Test setup (`tests/setup.ts`) loads environment variables from `.env.local`.
+
 ### Supabase Migrations
 
 ```bash
@@ -38,6 +45,7 @@ Migrations are in `supabase/migrations/` with timestamp prefixes (YYYYMMDDHHMMSS
 - **Database**: Supabase (PostgreSQL) with Row Level Security
 - **Styling**: TailwindCSS + shadcn/ui components
 - **Language Direction**: RTL-first (Hebrew primary)
+- **Path Alias**: `@/` resolves to project root
 
 ### Key Directories
 - `app/(worker)/` - Worker-facing flow (login → station → job → checklist → work)
@@ -69,10 +77,19 @@ Migrations are in `supabase/migrations/` with timestamp prefixes (YYYYMMDDHHMMSS
 
 ### Data Layer Pattern
 - All Supabase queries centralized in `lib/data/` for reuse across API routes
-- `startStatusEvent()` atomically: closes previous event, validates status, mirrors to sessions, logs new event
 - Service role required for all data functions
 - API routes in `app/api/` call functions from `lib/data/`
 - Client-side code uses wrappers from `lib/api/client.ts` (auto-adds auth headers)
+
+**PostgreSQL RPC Functions:**
+- `create_status_event_atomic()` - Atomically closes previous event, inserts new event, mirrors to sessions
+- `get_jobs_with_stats()` - Aggregates job data with session totals (good/scrap counts)
+
+**Key Data Modules:**
+- `lib/data/sessions.ts` - Session lifecycle operations
+- `lib/data/jobs.ts` - Job CRUD, `getOrCreateJob()` for worker flow, aggregation for admin
+- `lib/data/malfunctions.ts` - Malfunction tracking with station grouping
+- `lib/data/status-definitions.ts` - Status configuration (global/station scoped)
 
 ## Cursor Rules (Important Conventions)
 

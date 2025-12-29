@@ -323,6 +323,46 @@ export const translations = {
     he: "לא ניתן לשמור את הצ'ק-ליסט. נסו שוב.",
     ru: "Не удалось сохранить чек-лист. Попробуйте ещё раз.",
   },
+  "checklist.scrap.dialog.title": {
+    he: "דיווח פסולים",
+    ru: "Отчёт о браке",
+  },
+  "checklist.scrap.dialog.description": {
+    he: "כמות הפסולים חרגה מהסף המותר. נא לתת הסבר.",
+    ru: "Количество брака превысило допустимый порог. Пожалуйста, объясните.",
+  },
+  "checklist.scrap.dialog.count": {
+    he: "פסולים בעבודה זו",
+    ru: "брака в этой работе",
+  },
+  "checklist.scrap.dialog.notePlaceholder": {
+    he: "הסבירו את הסיבה לכמות הפסולים הגבוהה...",
+    ru: "Объясните причину большого количества брака...",
+  },
+  "checklist.scrap.dialog.submit": {
+    he: "שליחת דיווח והמשך",
+    ru: "Отправить отчёт и продолжить",
+  },
+  "checklist.scrap.dialog.warning": {
+    he: "יש לשלוח דיווח על הפסולים לפני סיום המשמרת.",
+    ru: "Необходимо отправить отчёт о браке перед завершением смены.",
+  },
+  "checklist.scrap.submitted": {
+    he: "הדיווח נשלח",
+    ru: "Отчёт отправлен",
+  },
+  "checklist.scrap.required": {
+    he: "חובה",
+    ru: "Обязательно",
+  },
+  "checklist.scrap.count": {
+    he: "כמות פסולים",
+    ru: "Кол-во брака",
+  },
+  "checklist.scrap.fillReport": {
+    he: "מלא דיווח פסולים",
+    ru: "Заполнить отчёт о браке",
+  },
   "work.title": {
     he: "מסך עבודה חי",
     ru: "Экран выполнения заказа",
@@ -434,6 +474,38 @@ export const translations = {
   "work.dialog.fault.submitAndChangeStatus": {
     he: "דווח והחלף סטטוס",
     ru: "Отправить и изменить статус",
+  },
+  "work.dialog.report.title": {
+    he: "דיווח מצב",
+    ru: "Отчёт о состоянии",
+  },
+  "work.dialog.report.reason": {
+    he: "סיבת הדיווח",
+    ru: "Причина отчёта",
+  },
+  "work.dialog.report.note": {
+    he: "הערות נוספות",
+    ru: "Дополнительные сведения",
+  },
+  "work.dialog.report.image": {
+    he: "צילום (אופציונלי)",
+    ru: "Фото (по желанию)",
+  },
+  "work.dialog.report.imagePlaceholder": {
+    he: "אפשר לצרף תמונה לתיעוד (אופציונלי).",
+    ru: "Прикрепите фото для документирования (необязательно).",
+  },
+  "work.dialog.report.submit": {
+    he: "שמירת דיווח",
+    ru: "Сохранить отчёт",
+  },
+  "work.dialog.report.submitAndChangeStatus": {
+    he: "דווח והחלף סטטוס",
+    ru: "Отправить и изменить статус",
+  },
+  "work.error.report": {
+    he: "לא ניתן לשמור את הדיווח.",
+    ru: "Не удалось сохранить отчёт.",
   },
   "work.dialog.finish.title": {
     he: "לאשר סיום משמרת?",

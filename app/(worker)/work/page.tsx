@@ -33,7 +33,8 @@ import { Input } from "@/components/ui/input";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useWorkerSession } from "@/contexts/WorkerSessionContext";
 import {
-  createMalfunctionApi,
+  createReportApi,
+  fetchReportReasonsApi,
   startStatusEventApi,
   updateSessionTotalsApi,
 } from "@/lib/api/client";
@@ -44,7 +45,7 @@ import {
   getStatusLabel,
 } from "@/lib/status";
 import { cn } from "@/lib/utils";
-import type { StationReason, StatusDefinition } from "@/lib/types";
+import type { ReportReason, StationReason, StatusDefinition } from "@/lib/types";
 import { useSessionHeartbeat } from "@/hooks/useSessionHeartbeat";
 import { fetchStationStatusesApi } from "@/lib/api/client";
 import { useRef } from "react";
@@ -133,6 +134,17 @@ export default function WorkPage() {
   const [productionError, setProductionError] = useState<string | null>(null);
   const [faultError, setFaultError] = useState<string | null>(null);
   const lastStatusesFetchRef = useRef<string | null>(null);
+
+  // General report dialog state
+  const [isGeneralReportDialogOpen, setGeneralReportDialogOpen] = useState(false);
+  const [generalReportReasons, setGeneralReportReasons] = useState<ReportReason[]>([]);
+  const [generalReportReason, setGeneralReportReason] = useState<string>();
+  const [generalReportNote, setGeneralReportNote] = useState("");
+  const [generalReportImage, setGeneralReportImage] = useState<File | null>(null);
+  const [generalReportImagePreview, setGeneralReportImagePreview] = useState<string | null>(null);
+  const [isGeneralReportSubmitting, setIsGeneralReportSubmitting] = useState(false);
+  const [generalReportError, setGeneralReportError] = useState<string | null>(null);
+  const [pendingGeneralStatusId, setPendingGeneralStatusId] = useState<string | null>(null);
   const reasons = useMemo<StationReason[]>(
     () => getActiveStationReasons(station?.station_reasons ?? []),
     [station?.station_reasons],
@@ -229,17 +241,35 @@ export default function WorkPage() {
       : "#94a3b8",
   );
 
-  const handleStatusChange = async (statusId: string, malfunctionId?: string) => {
+  const handleStatusChange = async (statusId: string, reportId?: string) => {
     if (!sessionId || currentStatus === statusId) {
       return;
     }
 
-    // Check if this status requires a malfunction report
+    // Check the report_type to determine dialog
     const statusDef = getStatusDefinition(statusId);
-    if (statusDef?.requires_malfunction_report && !malfunctionId) {
+    const reportType = statusDef?.report_type ?? "none";
+
+    if (reportType === "malfunction" && !reportId) {
       // Store the pending status and open the malfunction dialog
       setPendingStatusId(statusId);
       setFaultDialogOpen(true);
+      return;
+    }
+
+    if (reportType === "general" && !reportId) {
+      // Store the pending status and open the general report dialog
+      setPendingGeneralStatusId(statusId);
+      // Fetch report reasons if not already loaded
+      if (generalReportReasons.length === 0) {
+        fetchReportReasonsApi().then((reasons) => {
+          setGeneralReportReasons(reasons);
+          if (reasons.length > 0 && !generalReportReason) {
+            setGeneralReportReason(reasons[0].id);
+          }
+        }).catch(console.error);
+      }
+      setGeneralReportDialogOpen(true);
       return;
     }
 
@@ -249,7 +279,7 @@ export default function WorkPage() {
       await startStatusEventApi({
         sessionId,
         statusDefinitionId: statusId,
-        malfunctionId,
+        reportId: reportId,
       });
     } catch {
       setStatusError(t("work.error.status"));
@@ -309,6 +339,49 @@ export default function WorkPage() {
       setFaultImagePreview(URL.createObjectURL(file));
     } else {
       setFaultImagePreview(null);
+    }
+  };
+
+  const handleGeneralReportImageChange = (file: File | null) => {
+    setGeneralReportImage(file);
+    if (generalReportImagePreview) {
+      URL.revokeObjectURL(generalReportImagePreview);
+    }
+    if (file) {
+      setGeneralReportImagePreview(URL.createObjectURL(file));
+    } else {
+      setGeneralReportImagePreview(null);
+    }
+  };
+
+  const handleGeneralReportSubmit = async () => {
+    if (!sessionId || !station) return;
+    setGeneralReportError(null);
+    setIsGeneralReportSubmitting(true);
+    try {
+      const report = await createReportApi({
+        type: "general",
+        sessionId,
+        stationId: station.id,
+        reportReasonId: generalReportReason,
+        description: generalReportNote,
+        image: generalReportImage,
+        workerId: worker?.id,
+      });
+      setGeneralReportDialogOpen(false);
+      setGeneralReportReason(undefined);
+      setGeneralReportNote("");
+      handleGeneralReportImageChange(null);
+
+      // If there's a pending status change, complete it with the report ID
+      if (pendingGeneralStatusId) {
+        await handleStatusChange(pendingGeneralStatusId, report.id);
+        setPendingGeneralStatusId(null);
+      }
+    } catch {
+      setGeneralReportError(t("work.error.report"));
+    } finally {
+      setIsGeneralReportSubmitting(false);
     }
   };
 
@@ -670,7 +743,8 @@ export default function WorkPage() {
                 setFaultError(null);
                 setIsFaultSubmitting(true);
                 try {
-                  const malfunction = await createMalfunctionApi({
+                  const report = await createReportApi({
+                    type: "malfunction",
                     stationId: station.id,
                     stationReasonId: faultReason,
                     description: faultNote,
@@ -684,9 +758,9 @@ export default function WorkPage() {
                   handleFaultImageChange(null);
 
                   // If there's a pending status change that required malfunction report,
-                  // now complete the status change with the malfunction ID
+                  // now complete the status change with the report ID
                   if (pendingStatusId) {
-                    await handleStatusChange(pendingStatusId, malfunction.id);
+                    await handleStatusChange(pendingStatusId, report.id);
                     setPendingStatusId(null);
                   }
                 } catch {
@@ -701,6 +775,114 @@ export default function WorkPage() {
                 : pendingStatusId
                   ? t("work.dialog.fault.submitAndChangeStatus")
                   : t("work.dialog.fault.submit")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isGeneralReportDialogOpen} onOpenChange={setGeneralReportDialogOpen}>
+        <DialogContent dir="rtl" className="border-border bg-card">
+          <DialogHeader>
+            <DialogTitle className="text-foreground">{t("work.dialog.report.title")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 text-right">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-muted-foreground">
+                {t("work.dialog.report.reason")}
+              </label>
+              <Select value={generalReportReason} onValueChange={setGeneralReportReason}>
+                <SelectTrigger className="justify-between border-input bg-secondary text-right text-foreground">
+                  <SelectValue placeholder={t("work.dialog.report.reason")} />
+                </SelectTrigger>
+                <SelectContent align="end" className="border-input bg-popover">
+                  {generalReportReasons.length === 0 ? (
+                    <SelectItem value="empty" disabled className="text-muted-foreground">
+                      {t("checklist.loading")}
+                    </SelectItem>
+                  ) : (
+                    generalReportReasons.map((reason) => (
+                      <SelectItem key={reason.id} value={reason.id} className="text-foreground focus:bg-accent focus:text-accent-foreground">
+                        {language === "he" ? reason.label_he : (reason.label_ru ?? reason.label_he)}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-muted-foreground">
+                {t("work.dialog.report.note")}
+              </label>
+              <Textarea
+                placeholder={t("work.dialog.report.note")}
+                value={generalReportNote}
+                onChange={(event) => setGeneralReportNote(event.target.value)}
+                className="border-input bg-secondary text-right text-foreground placeholder:text-muted-foreground"
+                rows={3}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-muted-foreground">
+                {t("work.dialog.report.image")}
+              </label>
+              <div className="space-y-3">
+                <Input
+                  type="file"
+                  accept="image/*"
+                  aria-label={t("work.dialog.report.image")}
+                  className="border-input bg-secondary text-foreground file:bg-muted file:text-muted-foreground"
+                  onChange={(event) =>
+                    handleGeneralReportImageChange(event.target.files?.[0] ?? null)
+                  }
+                />
+                {generalReportImagePreview ? (
+                  <div className="overflow-hidden rounded-xl border border-input">
+                    <Image
+                      src={generalReportImagePreview}
+                      alt={t("work.dialog.report.image")}
+                      width={800}
+                      height={400}
+                      className="h-48 w-full object-cover"
+                    />
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-input p-4 text-right text-sm text-muted-foreground">
+                    {t("work.dialog.report.imagePlaceholder")}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            {generalReportError ? (
+              <p className="w-full text-right text-sm text-rose-600 dark:text-rose-400">
+                {generalReportError}
+              </p>
+            ) : null}
+            <Button
+              type="button"
+              variant="ghost"
+              className="border-input text-foreground/80 hover:bg-accent hover:text-foreground"
+              onClick={() => {
+                setGeneralReportDialogOpen(false);
+                setPendingGeneralStatusId(null);
+              }}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button
+              type="button"
+              className="bg-primary font-medium text-primary-foreground hover:bg-primary/90"
+              disabled={isGeneralReportSubmitting}
+              onClick={() => void handleGeneralReportSubmit()}
+            >
+              {isGeneralReportSubmitting
+                ? `${t("work.dialog.report.submit")}...`
+                : pendingGeneralStatusId
+                  ? t("work.dialog.report.submitAndChangeStatus")
+                  : t("work.dialog.report.submit")}
             </Button>
           </DialogFooter>
         </DialogContent>

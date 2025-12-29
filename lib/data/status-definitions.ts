@@ -1,6 +1,6 @@
 import { isValidStatusColor } from "@/lib/status";
 import { createServiceSupabase } from "@/lib/supabase/client";
-import type { MachineState, StatusDefinition, StatusScope } from "@/lib/types";
+import type { MachineState, StatusDefinition, StatusScope, StatusReportType } from "@/lib/types";
 
 type StatusDefinitionInput = {
   scope: StatusScope;
@@ -9,7 +9,7 @@ type StatusDefinitionInput = {
   label_ru?: string | null;
   color_hex?: string;
   machine_state?: MachineState;
-  requires_malfunction_report?: boolean;
+  report_type?: StatusReportType;
 };
 
 // Protected status definitions - these cannot be edited or deleted
@@ -19,7 +19,7 @@ type ProtectedStatusConfig = {
   label_ru: string;
   color_hex: string;
   machine_state: MachineState;
-  requires_malfunction_report: boolean;
+  report_type: StatusReportType;
 };
 
 const PROTECTED_STATUSES: Record<string, ProtectedStatusConfig> = {
@@ -28,21 +28,21 @@ const PROTECTED_STATUSES: Record<string, ProtectedStatusConfig> = {
     label_ru: "Другое",
     color_hex: "#94a3b8",
     machine_state: "stoppage",
-    requires_malfunction_report: false,
+    report_type: "none",
   },
   production: {
     label_he: "ייצור",
     label_ru: "Производство",
     color_hex: "#10b981",
     machine_state: "production",
-    requires_malfunction_report: false,
+    report_type: "none",
   },
   malfunction: {
     label_he: "תקלה",
     label_ru: "Неисправность",
     color_hex: "#ef4444",
     machine_state: "stoppage",
-    requires_malfunction_report: true,
+    report_type: "malfunction",
   },
 };
 
@@ -71,7 +71,7 @@ const VALID_MACHINE_STATES: MachineState[] = ["production", "setup", "stoppage"]
 type NormalizedPayload = StatusDefinitionInput & {
   label_ru: string | null;
   color_hex: string;
-  requires_malfunction_report: boolean;
+  report_type: StatusReportType;
 };
 
 const normalizePayload = (
@@ -108,7 +108,7 @@ const normalizePayload = (
     label_ru: payload.label_ru?.trim() ?? null,
     color_hex: color,
     machine_state: machineState,
-    requires_malfunction_report: payload.requires_malfunction_report ?? false,
+    report_type: payload.report_type ?? "none",
   };
 };
 
@@ -142,7 +142,7 @@ async function ensureGlobalOtherStatus(): Promise<StatusDefinition> {
       label_ru: otherConfig.label_ru,
       color_hex: otherConfig.color_hex,
       machine_state: otherConfig.machine_state,
-      requires_malfunction_report: otherConfig.requires_malfunction_report,
+      report_type: otherConfig.report_type,
       is_protected: true,
     })
     .select("*")

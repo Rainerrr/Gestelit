@@ -12,7 +12,7 @@ type StatusPayload = {
   stationReasonId?: string | null;
   note?: string | null;
   imageUrl?: string | null;
-  malfunctionId?: string | null;
+  reportId?: string | null;
 };
 
 export async function POST(request: Request) {
@@ -34,7 +34,7 @@ export async function POST(request: Request) {
       station_reason_id: body.stationReasonId,
       note: body.note,
       image_url: body.imageUrl,
-      malfunction_id: body.malfunctionId,
+      report_id: body.reportId,
     });
 
     return NextResponse.json({ event });

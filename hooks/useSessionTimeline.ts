@@ -16,7 +16,7 @@ export type TimelineSegment = {
   label: string;
   colorHex: string;
   dotClass: string;
-  requiresMalfunctionReport?: boolean;
+  reportType?: string | null;
 };
 
 type UseSessionTimelineArgs = {
@@ -48,7 +48,7 @@ type RawEvent = {
   status: StatusEventState;
   startedAt: string;
   endedAt: string | null;
-  requiresMalfunctionReport?: boolean;
+  reportType?: string | null;
 };
 
 const normalizeSegments = ({
@@ -85,7 +85,7 @@ const normalizeSegments = ({
         label: getStatusLabel(item.status, dictionary, stationId),
         colorHex,
         dotClass: "bg-slate-400",
-        requiresMalfunctionReport: item.requiresMalfunctionReport,
+        reportType: item.reportType,
       } satisfies TimelineSegment;
     })
     .filter(Boolean) as TimelineSegment[];
@@ -102,11 +102,11 @@ const mergeShortSegments = (
   const merged: TimelineSegment[] = [];
   for (const seg of segments) {
     const duration = seg.end - seg.start;
-    // Never merge segments that require malfunction reports - they're important to show
+    // Never merge segments that have a report type - they're important to show
     const shouldMerge =
       duration < minDurationMs &&
       merged.length > 0 &&
-      !seg.requiresMalfunctionReport;
+      !seg.reportType;
 
     if (shouldMerge) {
       // Extend previous segment to include this short one
@@ -154,7 +154,7 @@ export const useSessionTimeline = ({
             status: item.status,
             startedAt: item.startedAt,
             endedAt: item.endedAt,
-            requiresMalfunctionReport: item.requiresMalfunctionReport,
+            reportType: item.reportType,
           })),
         );
       } catch (err) {

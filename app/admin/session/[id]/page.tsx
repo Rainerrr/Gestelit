@@ -25,10 +25,10 @@ import {
   useStatusDictionary,
 } from "../../_components/status-dictionary";
 import { useAdminGuard } from "@/hooks/useAdminGuard";
-import type { SessionDetail, SessionMalfunction } from "@/app/api/admin/dashboard/session/[id]/route";
+import type { SessionDetail, SessionMalfunctionReport } from "@/app/api/admin/dashboard/session/[id]/route";
 import type { StatusEventState, StationReason } from "@/lib/types";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { getReasonLabel } from "@/lib/data/malfunctions";
+import { getReasonLabel } from "@/lib/data/reports";
 import {
   calculateSessionFlags,
   hasAnyFlag,
@@ -95,7 +95,7 @@ const formatRelativeTime = (dateStr: string): string => {
 };
 
 type MalfunctionCardProps = {
-  malfunction: SessionMalfunction;
+  malfunction: SessionMalfunctionReport;
   stationReasons: StationReason[] | null | undefined;
 };
 
@@ -205,7 +205,7 @@ const SessionMalfunctionCard = ({ malfunction, stationReasons }: MalfunctionCard
             </div>
           )}
 
-          {/* Link to malfunction management */}
+          {/* Link to reports management */}
           <div className="pt-2 border-t border-border/40">
             <Button
               variant="outline"
@@ -213,9 +213,9 @@ const SessionMalfunctionCard = ({ malfunction, stationReasons }: MalfunctionCard
               asChild
               className="h-8 text-xs border-primary/30 text-primary hover:bg-primary/10 hover:text-primary"
             >
-              <a href={`/admin/malfunctions?highlight=${malfunction.id}`}>
+              <a href={`/admin/reports/malfunctions?highlight=${malfunction.id}`}>
                 <ExternalLink className="h-3.5 w-3.5 ml-1.5" />
-                הצג בניהול תקלות
+                הצג בניהול דיווחים
               </a>
             </Button>
           </div>
