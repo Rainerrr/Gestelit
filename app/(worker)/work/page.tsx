@@ -39,6 +39,7 @@ import {
   updateSessionTotalsApi,
 } from "@/lib/api/client";
 import { getActiveStationReasons } from "@/lib/data/station-reasons";
+import { STOP_STATUS_LABEL_HE } from "@/lib/data/status-definitions";
 import {
   buildStatusDictionary,
   getStatusHex,
@@ -246,31 +247,42 @@ export default function WorkPage() {
       return;
     }
 
+    // Check if we're changing FROM the initial stop status
+    // When the session starts, it defaults to the stop status - changing from it
+    // should not require a report (it's just a placeholder until user picks a status)
+    const currentStatusDef = currentStatus ? getStatusDefinition(currentStatus) : undefined;
+    const isChangingFromInitialStopStatus =
+      currentStatusDef?.label_he === STOP_STATUS_LABEL_HE &&
+      currentStatusDef?.is_protected === true;
+
     // Check the report_type to determine dialog
     const statusDef = getStatusDefinition(statusId);
     const reportType = statusDef?.report_type ?? "none";
 
-    if (reportType === "malfunction" && !reportId) {
-      // Store the pending status and open the malfunction dialog
-      setPendingStatusId(statusId);
-      setFaultDialogOpen(true);
-      return;
-    }
-
-    if (reportType === "general" && !reportId) {
-      // Store the pending status and open the general report dialog
-      setPendingGeneralStatusId(statusId);
-      // Fetch report reasons if not already loaded
-      if (generalReportReasons.length === 0) {
-        fetchReportReasonsApi().then((reasons) => {
-          setGeneralReportReasons(reasons);
-          if (reasons.length > 0 && !generalReportReason) {
-            setGeneralReportReason(reasons[0].id);
-          }
-        }).catch(console.error);
+    // Skip report requirement when changing from the initial stop status
+    if (!isChangingFromInitialStopStatus) {
+      if (reportType === "malfunction" && !reportId) {
+        // Store the pending status and open the malfunction dialog
+        setPendingStatusId(statusId);
+        setFaultDialogOpen(true);
+        return;
       }
-      setGeneralReportDialogOpen(true);
-      return;
+
+      if (reportType === "general" && !reportId) {
+        // Store the pending status and open the general report dialog
+        setPendingGeneralStatusId(statusId);
+        // Fetch report reasons if not already loaded
+        if (generalReportReasons.length === 0) {
+          fetchReportReasonsApi().then((reasons) => {
+            setGeneralReportReasons(reasons);
+            if (reasons.length > 0 && !generalReportReason) {
+              setGeneralReportReason(reasons[0].id);
+            }
+          }).catch(console.error);
+        }
+        setGeneralReportDialogOpen(true);
+        return;
+      }
     }
 
     setStatusError(null);

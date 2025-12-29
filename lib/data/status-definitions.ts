@@ -44,6 +44,13 @@ const PROTECTED_STATUSES: Record<string, ProtectedStatusConfig> = {
     machine_state: "stoppage",
     report_type: "malfunction",
   },
+  stop: {
+    label_he: "עצירה",
+    label_ru: "Остановка",
+    color_hex: "#f97316",
+    machine_state: "stoppage",
+    report_type: "general", // Requires report when selected manually, but not when set as initial status
+  },
 };
 
 const PROTECTED_LABELS_HE = Object.values(PROTECTED_STATUSES).map(s => s.label_he);
@@ -312,3 +319,40 @@ export async function deleteStatusDefinition(id: string): Promise<void> {
 
 // Export for UI to check if a status is protected (non-editable/non-deletable)
 export { isProtectedStatus, PROTECTED_LABELS_HE };
+
+// Stop status label for client-side checks (used as initial session status)
+export const STOP_STATUS_LABEL_HE = PROTECTED_STATUSES.stop.label_he;
+
+// Protected status keys for type-safe lookups
+export type ProtectedStatusKey = keyof typeof PROTECTED_STATUSES;
+
+/**
+ * Get a protected status definition by its key.
+ * Uses is_protected column for robust identification.
+ */
+export async function getProtectedStatusDefinition(
+  key: ProtectedStatusKey,
+): Promise<StatusDefinition> {
+  const supabase = createServiceSupabase();
+  const config = PROTECTED_STATUSES[key];
+
+  const { data, error } = await supabase
+    .from("status_definitions")
+    .select("*")
+    .eq("scope", "global")
+    .eq("is_protected", true)
+    .eq("label_he", config.label_he)
+    .is("station_id", null)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to fetch protected status '${key}': ${error.message}`);
+  }
+
+  if (!data) {
+    throw new Error(`Protected status '${key}' not found in database`);
+  }
+
+  return data as StatusDefinition;
+}

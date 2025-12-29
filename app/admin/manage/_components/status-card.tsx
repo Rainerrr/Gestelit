@@ -22,7 +22,7 @@ const MACHINE_STATE_LABELS: Record<MachineState, string> = {
 };
 
 // Protected status labels - must match lib/data/status-definitions.ts
-const PROTECTED_LABELS_HE = ["אחר", "ייצור", "תקלה"];
+const PROTECTED_LABELS_HE = ["אחר", "ייצור", "תקלה", "עצירה"];
 
 type ColorPickerProps = {
   value: string;

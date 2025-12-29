@@ -15,7 +15,7 @@ const reportsTabs = [
   },
   {
     href: "/admin/reports/general",
-    label: "דיווחים כלליים",
+    label: "כלליים",
     icon: FileText,
   },
   {
@@ -56,50 +56,44 @@ export default function ReportsLayout({
   return (
     <AdminLayout
       header={
-        <div className="flex flex-col gap-4 text-right">
-          {/* Mobile simplified title */}
-          <div className="flex items-center gap-3 lg:hidden">
-            <LayoutList className="h-5 w-5 text-primary" />
-            <h1 className="text-xl font-bold text-foreground">דיווחים</h1>
+        <div className="flex flex-col gap-3">
+          {/* Main header row */}
+          <div className="flex items-center gap-3">
+            <LayoutList className="h-5 w-5 text-primary shrink-0" />
+            <h1 className="text-lg font-semibold text-foreground sm:text-xl">דיווחים</h1>
           </div>
-          {/* Desktop full header */}
-          <div className="hidden lg:block space-y-1 text-right">
-            <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-[0.2em]">מערכת דיווחים</p>
-            <h1 className="text-2xl font-bold text-foreground tracking-tight lg:text-3xl">
-              ניהול דיווחים ותקלות
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              צפייה וניהול תקלות, דיווחים כלליים ודיווחי פסולים מהתחנות
-            </p>
+
+          {/* Capsule-style tabs */}
+          <div className="flex items-center">
+            <div className="inline-flex items-center gap-1 p-1 rounded-lg border border-border bg-card/80 backdrop-blur-sm">
+              {reportsTabs.map((tab) => {
+                const isActive = pathname === tab.href;
+                const Icon = tab.icon;
+                return (
+                  <Link
+                    key={tab.href}
+                    href={tab.href}
+                    className={cn(
+                      "relative flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-all duration-200",
+                      "sm:gap-2 sm:px-4 sm:py-2",
+                      isActive
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                    )}
+                  >
+                    <Icon className={cn(
+                      "h-4 w-4 shrink-0",
+                      isActive ? "text-primary-foreground" : ""
+                    )} />
+                    <span className="hidden xs:inline sm:inline">{tab.label}</span>
+                  </Link>
+                );
+              })}
+            </div>
           </div>
         </div>
       }
     >
-      {/* Tabs navigation */}
-      <div className="mb-6">
-        <div className="flex items-center gap-1 overflow-x-auto scrollbar-none pb-1">
-          {reportsTabs.map((tab) => {
-            const isActive = pathname === tab.href;
-            const Icon = tab.icon;
-            return (
-              <Link
-                key={tab.href}
-                href={tab.href}
-                className={cn(
-                  "flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all shrink-0",
-                  isActive
-                    ? "bg-primary/10 text-primary border border-primary/30"
-                    : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
-                )}
-              >
-                <Icon className="h-4 w-4" />
-                <span>{tab.label}</span>
-              </Link>
-            );
-          })}
-        </div>
-      </div>
-
       {/* Page content */}
       {children}
     </AdminLayout>

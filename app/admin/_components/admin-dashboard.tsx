@@ -255,40 +255,25 @@ const AdminDashboardContent = () => {
     <>
       <AdminLayout
         header={
-          <div className="flex flex-col gap-5">
-            {/* Mobile simplified title */}
-            <div className="flex items-center gap-3 lg:hidden">
-              <LayoutDashboard className="h-5 w-5 text-primary" />
-              <h1 className="text-xl font-bold text-foreground">דשבורד</h1>
-              <ConnectionIndicator />
-            </div>
-            {/* Desktop full header */}
-            <div className="hidden lg:flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <ConnectionIndicator />
-                  <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-[0.2em]">לוח בקרה בזמן אמת</span>
-                </div>
-                <h1 className="text-2xl font-bold text-foreground tracking-tight lg:text-3xl">
-                  מסך ניהול — תחנות פעילות
-                </h1>
-                <p className="text-sm text-muted-foreground max-w-xl">
-                  התמונה מתעדכנת בתדירות גבוהה, ללא ריענון מלא של העמוד.
-                </p>
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <LayoutDashboard className="h-5 w-5 text-primary shrink-0" />
+                <h1 className="text-lg font-semibold text-foreground sm:text-xl">דשבורד</h1>
+                <ConnectionIndicator />
               </div>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-                <Button
-                  variant="destructive"
-                  onClick={() => setResetDialogOpen(true)}
-                  className="w-full sm:w-auto bg-red-600 hover:bg-red-700 border-0 font-medium shadow-lg shadow-red-900/20"
-                  size="sm"
-                >
-                  סגירת כל התחנות
-                </Button>
-              </div>
+              <Button
+                variant="destructive"
+                onClick={() => setResetDialogOpen(true)}
+                className="bg-red-600 hover:bg-red-700 border-0 font-medium"
+                size="sm"
+              >
+                <span className="hidden sm:inline">סגירת כל התחנות</span>
+                <span className="sm:hidden">סגירה</span>
+              </Button>
             </div>
             {resetResult ? (
-              <div className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/10 px-4 py-2.5">
+              <div className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2">
                 <div className="h-1.5 w-1.5 rounded-full bg-primary" />
                 <p className="text-sm font-medium text-primary">{resetResult}</p>
               </div>

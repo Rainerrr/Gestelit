@@ -39,6 +39,7 @@ import { DepartmentManager } from "./department-manager";
 import { StationTypeManager } from "./station-type-manager";
 import { GlobalStatusesManagement } from "./global-statuses-management";
 import { AdminLayout } from "../../_components/admin-layout";
+import { AdminPageHeader } from "../../_components/admin-page-header";
 
 type ActiveTab = "workers" | "stations" | "jobs";
 type JobStatusFilter = "all" | "active" | "completed";
@@ -402,70 +403,22 @@ export const ManagementDashboard = () => {
   return (
     <AdminLayout
       header={
-        <div className="flex flex-col gap-4 text-right">
-          {/* Mobile simplified title */}
-          <div className="flex items-center gap-3 lg:hidden">
-            <Wrench className="h-5 w-5 text-primary" />
-            <h1 className="text-xl font-bold text-foreground">ניהול</h1>
-          </div>
-          {/* Desktop full header */}
-          <div className="hidden lg:block space-y-1 text-right">
-            <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-[0.2em]">ניהול</p>
-            <h1 className="text-2xl font-bold text-foreground tracking-tight lg:text-3xl">
-              ניהול עובדים ותחנות
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              הוספה, עריכה והרשאות של עובדים ומכונות.
-            </p>
-          </div>
-        </div>
+        <AdminPageHeader
+          icon={Wrench}
+          title="ניהול"
+          capsules={{
+            options: [
+              { id: "workers", label: "עובדים", icon: Users },
+              { id: "stations", label: "תחנות", icon: Cpu },
+              { id: "jobs", label: "עבודות", icon: Briefcase },
+            ],
+            activeId: activeTab,
+            onChange: (id) => setActiveTab(id as ActiveTab),
+          }}
+        />
       }
     >
       <div className="space-y-4">
-        {/* Tab Switcher */}
-        <div className="flex justify-center">
-          <div className="inline-flex items-center gap-1 p-1.5 rounded-xl border border-border bg-card backdrop-blur-sm shadow-xl shadow-black/20 sm:gap-2 sm:p-2 sm:rounded-2xl">
-            <button
-              type="button"
-              onClick={() => setActiveTab("workers")}
-              aria-label="עובדים"
-              className={`relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold rounded-lg transition-all duration-200 sm:gap-3 sm:px-8 sm:py-3.5 sm:text-base sm:rounded-xl ${
-                activeTab === "workers"
-                  ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25"
-                  : "text-muted-foreground hover:text-foreground hover:bg-accent"
-              }`}
-            >
-              <Users className={`h-4 w-4 sm:h-5 sm:w-5 ${activeTab === "workers" ? "text-primary-foreground" : ""}`} />
-              <span className="hidden xs:inline sm:inline">עובדים</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab("stations")}
-              aria-label="תחנות"
-              className={`relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold rounded-lg transition-all duration-200 sm:gap-3 sm:px-8 sm:py-3.5 sm:text-base sm:rounded-xl ${
-                activeTab === "stations"
-                  ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25"
-                  : "text-muted-foreground hover:text-foreground hover:bg-accent"
-              }`}
-            >
-              <Cpu className={`h-4 w-4 sm:h-5 sm:w-5 ${activeTab === "stations" ? "text-primary-foreground" : ""}`} />
-              <span className="hidden xs:inline sm:inline">תחנות</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab("jobs")}
-              aria-label="עבודות"
-              className={`relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold rounded-lg transition-all duration-200 sm:gap-3 sm:px-8 sm:py-3.5 sm:text-base sm:rounded-xl ${
-                activeTab === "jobs"
-                  ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25"
-                  : "text-muted-foreground hover:text-foreground hover:bg-accent"
-              }`}
-            >
-              <Briefcase className={`h-4 w-4 sm:h-5 sm:w-5 ${activeTab === "jobs" ? "text-primary-foreground" : ""}`} />
-              <span className="hidden xs:inline sm:inline">עבודות</span>
-            </button>
-          </div>
-        </div>
 
         {/* Filters */}
         <div className="space-y-3 rounded-xl border border-border bg-card/50 backdrop-blur-sm p-4">

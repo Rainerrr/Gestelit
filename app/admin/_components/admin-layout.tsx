@@ -203,7 +203,7 @@ export const AdminLayout = ({ children, header }: AdminLayoutProps) => {
         <div className="flex min-w-0 flex-1 flex-col">
           <header
             className={cn(
-              "shrink-0 border-b border-border/60 bg-card/80 backdrop-blur-sm px-4 py-5 sm:px-6 lg:px-8",
+              "shrink-0 border-b border-border/60 bg-card/80 backdrop-blur-sm px-4 py-3 sm:px-6 lg:px-8",
               "sticky top-0 z-40 transform transition-transform duration-300",
               scrollDirection === "down" && !isAtTop
                 ? "-translate-y-full lg:translate-y-0"

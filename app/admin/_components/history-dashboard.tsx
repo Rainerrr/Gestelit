@@ -516,33 +516,20 @@ export const HistoryDashboard = () => {
   return (
     <AdminLayout
       header={
-        <div className="flex flex-col gap-3 text-right">
-          {/* Mobile simplified title */}
-          <div className="flex items-center gap-3 lg:hidden">
-            <History className="h-5 w-5 text-primary" />
-            <h1 className="text-xl font-bold text-foreground">היסטוריה</h1>
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <History className="h-5 w-5 text-primary shrink-0" />
+            <h1 className="text-lg font-semibold text-foreground sm:text-xl">היסטוריה</h1>
           </div>
-          {/* Desktop full header */}
-          <div className="hidden lg:flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="space-y-1 text-right">
-              <p className="text-xs text-muted-foreground">היסטוריה ודוחות</p>
-              <h1 className="text-xl font-semibold text-foreground sm:text-2xl">
-                מעקב עבודות שהושלמו
-              </h1>
-              <p className="text-xs text-muted-foreground sm:text-sm">
-                פילוח עבודות סגורות, חיפוש לפי עובד, תחנה ופק&quot;ע.
-              </p>
-            </div>
-            <Button
-              variant="outline"
-              onClick={() => setFilters({})}
-              aria-label="איפוס מסננים"
-              className="w-full sm:w-auto border-input bg-secondary text-foreground/80 hover:bg-accent hover:text-foreground"
-              size="sm"
-            >
-              איפוס
-            </Button>
-          </div>
+          <Button
+            variant="outline"
+            onClick={() => setFilters({})}
+            aria-label="איפוס מסננים"
+            className="border-input bg-secondary text-foreground/80 hover:bg-accent hover:text-foreground"
+            size="sm"
+          >
+            איפוס
+          </Button>
         </div>
       }
     >
