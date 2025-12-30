@@ -22,6 +22,8 @@ import type { ReactNode } from "react";
 type AdminLayoutProps = {
   children: ReactNode;
   header: ReactNode;
+  /** Mobile bottom navigation bar - rendered outside header context */
+  mobileBottomBar?: ReactNode;
 };
 
 const navItems = [
@@ -31,7 +33,7 @@ const navItems = [
   { label: "ניהול", href: "/admin/manage", disabled: false, icon: Wrench },
 ];
 
-export const AdminLayout = ({ children, header }: AdminLayoutProps) => {
+export const AdminLayout = ({ children, header, mobileBottomBar }: AdminLayoutProps) => {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
@@ -227,6 +229,9 @@ export const AdminLayout = ({ children, header }: AdminLayoutProps) => {
         isOpen={passwordDialogOpen}
         onOpenChange={setPasswordDialogOpen}
       />
+
+      {/* Mobile bottom navigation - rendered outside header context */}
+      {mobileBottomBar}
     </section>
   );
 };

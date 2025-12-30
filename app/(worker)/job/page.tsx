@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FormSection } from "@/components/forms/form-section";
 import { PageHeader } from "@/components/layout/page-header";
@@ -13,6 +13,7 @@ import { useTranslation } from "@/hooks/useTranslation";
 import { useWorkerSession } from "@/contexts/WorkerSessionContext";
 import { createJobSessionApi, validateJobExistsApi } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
+import { getOrCreateInstanceId } from "@/lib/utils/instance-id";
 
 export default function JobPage() {
   const router = useRouter();
@@ -22,6 +23,9 @@ export default function JobPage() {
   const [jobNumber, setJobNumber] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Generate instance ID for this tab
+  const instanceId = useMemo(() => getOrCreateInstanceId(), []);
 
   useEffect(() => {
     if (!worker) {
@@ -59,6 +63,7 @@ export default function JobPage() {
         worker.id,
         station.id,
         trimmed,
+        instanceId,
       );
       setJob(job);
       setSessionId(session.id);

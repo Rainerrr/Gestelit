@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useMemo, useState } from "react";
 import { LayoutDashboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -27,6 +26,7 @@ import { useIdleSessionCleanup } from "@/hooks/useIdleSessionCleanup";
 import { KpiCards } from "./kpi-cards";
 import { ActiveSessionsTable } from "./active-sessions-table";
 import { StatusCharts } from "./status-charts";
+import { ActiveReportsWidget } from "./active-reports-widget";
 import {
   getStatusLabelFromDictionary,
   getStatusOrderFromDictionary,
@@ -157,6 +157,7 @@ const StatusChartsSection = ({ dictionary, isLoading }: SectionProps) => {
       throughputData={throughputData}
       isLoading={isLoading}
       dictionary={dictionary}
+      sideWidget={<ActiveReportsWidget />}
     />
   );
 };

@@ -39,7 +39,7 @@ import { DepartmentManager } from "./department-manager";
 import { StationTypeManager } from "./station-type-manager";
 import { GlobalStatusesManagement } from "./global-statuses-management";
 import { AdminLayout } from "../../_components/admin-layout";
-import { AdminPageHeader } from "../../_components/admin-page-header";
+import { AdminPageHeader, MobileBottomBar } from "../../_components/admin-page-header";
 
 type ActiveTab = "workers" | "stations" | "jobs";
 type JobStatusFilter = "all" | "active" | "completed";
@@ -400,25 +400,28 @@ export const ManagementDashboard = () => {
     return null;
   }
 
+  const capsuleConfig = {
+    options: [
+      { id: "workers", label: "עובדים", icon: Users },
+      { id: "stations", label: "תחנות", icon: Cpu },
+      { id: "jobs", label: "עבודות", icon: Briefcase },
+    ],
+    activeId: activeTab,
+    onChange: (id: string) => setActiveTab(id as ActiveTab),
+  };
+
   return (
     <AdminLayout
       header={
         <AdminPageHeader
           icon={Wrench}
           title="ניהול"
-          capsules={{
-            options: [
-              { id: "workers", label: "עובדים", icon: Users },
-              { id: "stations", label: "תחנות", icon: Cpu },
-              { id: "jobs", label: "עבודות", icon: Briefcase },
-            ],
-            activeId: activeTab,
-            onChange: (id) => setActiveTab(id as ActiveTab),
-          }}
+          capsules={capsuleConfig}
         />
       }
+      mobileBottomBar={<MobileBottomBar capsules={capsuleConfig} />}
     >
-      <div className="space-y-4">
+      <div className="space-y-4 pb-mobile-nav">
 
         {/* Filters */}
         <div className="space-y-3 rounded-xl border border-border bg-card/50 backdrop-blur-sm p-4">

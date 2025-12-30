@@ -641,4 +641,23 @@ export async function deleteReportReasonAdminApi(id: string): Promise<{ success:
   return handleResponse(response);
 }
 
+// Fetch all reports data (for SSE fallback polling)
+export async function fetchAllReportsAdminApi(): Promise<{
+  general: ReportWithDetails[];
+  malfunction: StationWithReports[];
+  scrap: StationWithScrapReports[];
+}> {
+  const [generalRes, malfunctionRes, scrapRes] = await Promise.all([
+    fetchGeneralReportsAdminApi(),
+    fetchMalfunctionReportsAdminApi(),
+    fetchScrapReportsAdminApi(),
+  ]);
+
+  return {
+    general: generalRes.reports,
+    malfunction: malfunctionRes.stations,
+    scrap: scrapRes.stations,
+  };
+}
+
 

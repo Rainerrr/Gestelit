@@ -124,6 +124,7 @@ export interface Report {
   image_url?: string | null;
   station_reason_id?: string | null;
   report_reason_id?: string | null;
+  status_event_id?: string | null;
   status: ReportStatus;
   status_changed_at?: string | null;
   status_changed_by?: string | null;
@@ -132,11 +133,22 @@ export interface Report {
   updated_at?: string;
 }
 
+export interface StatusEventForReport {
+  id: string;
+  started_at: string;
+  ended_at: string | null;
+  status_definition: Pick<
+    StatusDefinition,
+    "id" | "label_he" | "label_ru" | "color_hex" | "machine_state"
+  > | null;
+}
+
 export interface ReportWithDetails extends Report {
   station?: Station | null;
   session?: Session | null;
   reporter?: Pick<Worker, "id" | "full_name" | "worker_code"> | null;
   report_reason?: ReportReason | null;
+  status_event?: StatusEventForReport | null;
 }
 
 export interface StationChecklistItem {

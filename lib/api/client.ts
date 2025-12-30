@@ -7,12 +7,14 @@ import type {
   Station,
   StationChecklist,
   StatusDefinition,
+  StatusEvent,
   StatusEventState,
   Session,
   SessionAbandonReason,
   Worker,
   WorkerResumeSession,
 } from "@/lib/types";
+import type { StationWithOccupancy } from "@/lib/data/stations";
 import { getWorkerCode } from "./auth-helpers";
 
 async function handleResponse<T>(response: Response): Promise<T> {
@@ -83,18 +85,43 @@ export async function fetchStationsApi(workerId: string) {
   return data.stations;
 }
 
+export async function fetchStationsWithOccupancyApi(
+  workerId: string,
+): Promise<StationWithOccupancy[]> {
+  const response = await fetch(
+    `/api/stations/with-occupancy?workerId=${encodeURIComponent(workerId)}`,
+    {
+      headers: createWorkerHeaders(),
+    },
+  );
+  return handleResponse<StationWithOccupancy[]>(response);
+}
+
 export async function createJobSessionApi(
   workerId: string,
   stationId: string,
   jobNumber: string,
+  instanceId?: string,
 ) {
   const response = await fetch("/api/jobs", {
     method: "POST",
     headers: createWorkerHeaders(),
-    body: JSON.stringify({ workerId, stationId, jobNumber }),
+    body: JSON.stringify({ workerId, stationId, jobNumber, instanceId }),
   });
   const data = await handleResponse<{ job: Job; session: Session }>(response);
   return data;
+}
+
+export async function takeoverSessionApi(
+  sessionId: string,
+  instanceId: string,
+): Promise<{ success: boolean }> {
+  const response = await fetch("/api/sessions/takeover", {
+    method: "POST",
+    headers: createWorkerHeaders(),
+    body: JSON.stringify({ sessionId, instanceId }),
+  });
+  return handleResponse<{ success: boolean }>(response);
 }
 
 export async function fetchChecklistApi(
@@ -140,7 +167,7 @@ export async function startStatusEventApi(options: {
   note?: string | null;
   imageUrl?: string | null;
   reportId?: string | null;
-}) {
+}): Promise<StatusEvent> {
   const response = await fetch("/api/status-events", {
     method: "POST",
     headers: createWorkerHeaders(),
@@ -153,7 +180,8 @@ export async function startStatusEventApi(options: {
       reportId: options.reportId,
     }),
   });
-  await handleResponse(response);
+  const data = await handleResponse<{ event: StatusEvent }>(response);
+  return data.event;
 }
 
 export async function fetchStationStatusesApi(
@@ -226,6 +254,7 @@ export async function createReportApi(input: {
   description?: string;
   image?: File | null;
   workerId?: string;
+  statusEventId?: string;
 }): Promise<Report> {
   const formData = new FormData();
   formData.append("type", input.type);
@@ -250,6 +279,9 @@ export async function createReportApi(input: {
   if (input.workerId) {
     formData.append("workerId", input.workerId);
   }
+  if (input.statusEventId) {
+    formData.append("statusEventId", input.statusEventId);
+  }
 
   const response = await fetch("/api/reports", {
     method: "POST",
@@ -260,8 +292,57 @@ export async function createReportApi(input: {
 }
 
 export async function fetchReportReasonsApi(): Promise<ReportReason[]> {
-  const response = await fetch("/api/admin/reports/reasons?activeOnly=true");
+  const response = await fetch("/api/reports/reasons");
   const data = await handleResponse<{ reasons: ReportReason[] }>(response);
   return data.reasons ?? [];
+}
+
+/**
+ * Atomically creates a status event and report together.
+ * If report creation fails, the status event is rolled back.
+ */
+export async function createStatusEventWithReportApi(input: {
+  sessionId: string;
+  statusDefinitionId: string;
+  reportType: ReportType;
+  stationId?: string;
+  stationReasonId?: string;
+  reportReasonId?: string;
+  description?: string;
+  image?: File | null;
+  workerId?: string;
+}): Promise<{ event: StatusEvent; report: Report }> {
+  const formData = new FormData();
+  formData.append("sessionId", input.sessionId);
+  formData.append("statusDefinitionId", input.statusDefinitionId);
+  formData.append("reportType", input.reportType);
+
+  if (input.stationId) {
+    formData.append("stationId", input.stationId);
+  }
+  if (input.stationReasonId) {
+    formData.append("stationReasonId", input.stationReasonId);
+  }
+  if (input.reportReasonId) {
+    formData.append("reportReasonId", input.reportReasonId);
+  }
+  if (input.description) {
+    formData.append("description", input.description);
+  }
+  if (input.image) {
+    formData.append("image", input.image);
+  }
+  if (input.workerId) {
+    formData.append("workerId", input.workerId);
+  }
+
+  const response = await fetch("/api/status-events/with-report", {
+    method: "POST",
+    headers: {
+      "X-Worker-Code": getWorkerCode() ?? "",
+    },
+    body: formData,
+  });
+  return handleResponse<{ event: StatusEvent; report: Report }>(response);
 }
 

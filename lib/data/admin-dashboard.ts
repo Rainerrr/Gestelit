@@ -501,6 +501,7 @@ export const fetchRecentSessions = async (
 
 type StatusEventRow = {
   session_id: string;
+  id: string;
   status_definition_id?: StatusEventState;
   status_code?: StatusEventState;
   started_at: string;
@@ -509,13 +510,23 @@ type StatusEventRow = {
   status_definitions?: { report_type: string | null } | null;
 };
 
+type ReportForStatusEvent = {
+  status_event_id: string;
+  type: string;
+  report_reasons?: { label_he: string | null } | null;
+  stations?: { station_reasons: { id: string; label: string }[] | null } | null;
+  station_reason_id?: string | null;
+};
+
 export type SessionStatusEvent = {
   sessionId: string;
+  statusEventId: string;
   status: StatusEventState;
   stationId: string | null;
   startedAt: string;
   endedAt: string | null;
   reportType: string | null;
+  reportReasonLabel: string | null;
 };
 
 export const fetchStatusEventsBySessionIds = async (
@@ -534,7 +545,7 @@ export const fetchStatusEventsBySessionIds = async (
       .order("started_at", { ascending: true });
 
   const { data, error } = await runQuery(
-    "session_id, status_definition_id, started_at, ended_at, sessions!inner(station_id), status_definitions(report_type)",
+    "id, session_id, status_definition_id, started_at, ended_at, sessions!inner(station_id), status_definitions(report_type)",
   );
 
   let rows = (data as unknown as StatusEventRow[]) ?? null;
@@ -542,7 +553,7 @@ export const fetchStatusEventsBySessionIds = async (
   if (error) {
     console.error("[admin-dashboard] Status events fetch failed (new schema)", error);
     const legacy = await runQuery(
-      "session_id, status_code, started_at, ended_at, sessions!inner(station_id)",
+      "id, session_id, status_code, started_at, ended_at, sessions!inner(station_id)",
     );
     if (legacy.error) {
       console.error(
@@ -558,13 +569,53 @@ export const fetchStatusEventsBySessionIds = async (
     return [];
   }
 
+  // Get status event IDs to fetch linked reports
+  const statusEventIds = rows.map((row) => row.id);
+
+  // Fetch reports linked to these status events
+  const { data: reportsData } = await supabase
+    .from("reports")
+    .select(`
+      status_event_id,
+      type,
+      station_reason_id,
+      report_reasons:report_reason_id(label_he),
+      stations:station_id(station_reasons)
+    `)
+    .in("status_event_id", statusEventIds);
+
+  // Build a map of status_event_id -> report reason label
+  const reportMap = new Map<string, string>();
+  if (reportsData) {
+    for (const report of reportsData as unknown as ReportForStatusEvent[]) {
+      if (!report.status_event_id) continue;
+
+      let label: string | null = null;
+
+      if (report.type === "general" && report.report_reasons?.label_he) {
+        label = report.report_reasons.label_he;
+      } else if (report.type === "malfunction" && report.station_reason_id && report.stations?.station_reasons) {
+        const reason = report.stations.station_reasons.find(
+          (r) => r.id === report.station_reason_id
+        );
+        label = reason?.label ?? null;
+      }
+
+      if (label) {
+        reportMap.set(report.status_event_id, label);
+      }
+    }
+  }
+
   return rows.map((row) => ({
     sessionId: row.session_id,
+    statusEventId: row.id,
     status: row.status_definition_id ?? row.status_code ?? "unknown",
     stationId: row.sessions?.station_id ?? null,
     startedAt: row.started_at,
     endedAt: row.ended_at,
     reportType: row.status_definitions?.report_type ?? null,
+    reportReasonLabel: reportMap.get(row.id) ?? null,
   }));
 };
 

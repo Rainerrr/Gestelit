@@ -8,6 +8,8 @@ import {
   useRef,
   useState,
 } from "react";
+import { useSessionClaimListener } from "@/hooks/useSessionBroadcast";
+import { getOrCreateInstanceId } from "@/lib/utils/instance-id";
 import { useRouter } from "next/navigation";
 import { PageHeader } from "@/components/layout/page-header";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -24,9 +26,10 @@ import {
 } from "@/components/ui/dialog";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useWorkerSession } from "@/contexts/WorkerSessionContext";
-import { abandonSessionApi, fetchStationsApi } from "@/lib/api/client";
+import { abandonSessionApi, fetchStationsWithOccupancyApi } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 import type { SessionAbandonReason, Station } from "@/lib/types";
+import type { StationWithOccupancy } from "@/lib/data/stations";
 import type { TranslationKey } from "@/lib/i18n/translations";
 import { BackButton } from "@/components/navigation/back-button";
 
@@ -58,7 +61,7 @@ export default function StationPage() {
 
   type StationsState = {
     loading: boolean;
-    items: Station[];
+    items: StationWithOccupancy[];
     error: string | null;
   };
 
@@ -67,7 +70,7 @@ export default function StationPage() {
       prev: StationsState,
       action:
         | { type: "start" }
-        | { type: "success"; payload: Station[] }
+        | { type: "success"; payload: StationWithOccupancy[] }
         | { type: "error" },
     ) => {
       switch (action.type) {
@@ -92,6 +95,20 @@ export default function StationPage() {
   const expirationHandledRef = useRef(false);
 
   const isRecoveryBlocking = Boolean(pendingRecovery);
+  const instanceId = useMemo(() => getOrCreateInstanceId(), []);
+
+  // Handle when another tab claims the session we're showing in recovery dialog
+  const handleSessionClaimed = useCallback(() => {
+    setPendingRecovery(null);
+    router.replace("/session-transferred");
+  }, [setPendingRecovery, router]);
+
+  // Listen for session takeover from other tabs
+  useSessionClaimListener(
+    pendingRecovery?.session.id,
+    instanceId,
+    handleSessionClaimed,
+  );
 
   const handleDiscardSession = useCallback(
     async (reason: SessionAbandonReason = "worker_choice") => {
@@ -120,7 +137,7 @@ export default function StationPage() {
 
     let active = true;
     dispatch({ type: "start" });
-    fetchStationsApi(worker.id)
+    fetchStationsWithOccupancyApi(worker.id)
       .then((result) => {
         if (!active) return;
         dispatch({ type: "success", payload: result });
@@ -285,12 +302,14 @@ export default function StationPage() {
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {stations.map((stationOption) => {
               const isSelected = selectedStation === stationOption.id;
+              const isOccupied = stationOption.occupancy?.isOccupied ?? false;
+              const isDisabled = isRecoveryBlocking || isOccupied;
               return (
                 <button
                   key={stationOption.id}
                   type="button"
                   onClick={() => {
-                    if (isRecoveryBlocking) {
+                    if (isDisabled) {
                       return;
                     }
                     setSelectedStation(stationOption.id);
@@ -300,10 +319,11 @@ export default function StationPage() {
                     isSelected
                       ? "border-primary/50 bg-primary/10 ring-2 ring-primary/20"
                       : "hover:border-primary/40 hover:bg-accent",
-                    isRecoveryBlocking ? "cursor-not-allowed opacity-60" : "",
+                    isDisabled ? "cursor-not-allowed opacity-60" : "",
+                    isOccupied ? "border-amber-500/30 bg-amber-50/5" : "",
                   )}
                   aria-pressed={isSelected}
-                  disabled={isRecoveryBlocking}
+                  disabled={isDisabled}
                 >
                   <div className="space-y-2">
                     <p className="text-xl font-semibold text-foreground">
@@ -316,9 +336,38 @@ export default function StationPage() {
                         className={cn(
                           "inline-flex h-2.5 w-2.5 rounded-full transition",
                           isSelected ? "bg-primary" : "bg-muted-foreground/50",
+                          isOccupied ? "bg-amber-500" : "",
                         )}
                       />
                     </div>
+                    {isOccupied && stationOption.occupancy?.occupiedBy && (
+                      <div className="mt-2 flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+                        <svg
+                          className="h-4 w-4 shrink-0"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                          />
+                        </svg>
+                        <span className="truncate">
+                          {t("station.occupied.by", {
+                            name: stationOption.occupancy.occupiedBy.workerName,
+                          })}
+                          {stationOption.occupancy.isGracePeriod && (
+                            <span className="mr-1 text-amber-600 dark:text-amber-500">
+                              {" "}
+                              ({t("station.occupied.gracePeriod")})
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </button>
               );

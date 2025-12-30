@@ -215,6 +215,14 @@ export const translations = {
     he: "נבחר",
     ru: "Выбрано",
   },
+  "station.occupied.by": {
+    he: "בשימוש ע\"י {{name}}",
+    ru: "Используется: {{name}}",
+  },
+  "station.occupied.gracePeriod": {
+    he: "בהמתנה",
+    ru: "Ожидание",
+  },
   "station.type.prepress": {
     he: "קדם דפוס",
     ru: "Препресс",
@@ -362,6 +370,26 @@ export const translations = {
   "checklist.scrap.fillReport": {
     he: "מלא דיווח פסולים",
     ru: "Заполнить отчёт о браке",
+  },
+  "sessionTransferred.title": {
+    he: "המשמרת הועברה",
+    ru: "Сессия перенесена",
+  },
+  "sessionTransferred.subtitle": {
+    he: "המשמרת שלך פעילה בחלון אחר",
+    ru: "Ваша сессия активна в другом окне",
+  },
+  "sessionTransferred.cardTitle": {
+    he: "המשמרת הועברה לחלון אחר",
+    ru: "Сессия перенесена в другое окно",
+  },
+  "sessionTransferred.description": {
+    he: "פתחת את המשמרת בחלון או מכשיר אחר. כדי להמשיך לעבוד, השתמש בחלון הפעיל.",
+    ru: "Вы открыли сессию в другом окне или устройстве. Для продолжения работы используйте активное окно.",
+  },
+  "sessionTransferred.goToLogin": {
+    he: "חזרה לכניסה",
+    ru: "Вернуться к входу",
   },
   "work.title": {
     he: "מסך עבודה חי",

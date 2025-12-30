@@ -18,6 +18,7 @@ import { PieChartIcon, BarChart3 } from "lucide-react";
 import {
   getStatusColorFromDictionary,
 } from "./status-dictionary";
+import type { ReactNode } from "react";
 
 type StatusDataPoint = {
   key: string;
@@ -37,6 +38,8 @@ type StatusChartsProps = {
   throughputData: ThroughputDataPoint[];
   isLoading: boolean;
   dictionary: StatusDictionary;
+  /** Optional widget to render alongside the pie chart on desktop */
+  sideWidget?: ReactNode;
 };
 
 const tooltipStyle = {
@@ -85,6 +88,7 @@ const StatusChartsComponent = ({
   throughputData,
   isLoading,
   dictionary,
+  sideWidget,
 }: StatusChartsProps) => {
   const [activeIndex, setActiveIndex] = useState<number | undefined>(undefined);
 
@@ -317,11 +321,21 @@ const StatusChartsComponent = ({
   };
 
   return (
-    <div className="grid grid-cols-1 gap-4 lg:gap-6 xl:grid-cols-2">
-      <ChartCard title="פיזור סטטוסים" icon={PieChartIcon}>
-        {renderStatusPie()}
-      </ChartCard>
+    <div className="space-y-4 lg:space-y-6">
+      {/* Top row: Side widget first on mobile (for visibility), then pie chart */}
+      <div className="grid grid-cols-1 gap-4 lg:gap-6 xl:grid-cols-2">
+        {/* On mobile: widget shows first. On desktop: shown second (order-last) */}
+        {sideWidget && (
+          <div className="xl:order-last">
+            {sideWidget}
+          </div>
+        )}
+        <ChartCard title="פיזור סטטוסים" icon={PieChartIcon}>
+          {renderStatusPie()}
+        </ChartCard>
+      </div>
 
+      {/* Bottom row: Throughput bar chart - full width */}
       <ChartCard title="תפוקה לפי תחנה" icon={BarChart3}>
         {renderThroughputBars()}
       </ChartCard>
@@ -360,6 +374,7 @@ const throughputDataEqual = (
 const areEqual = (prev: StatusChartsProps, next: StatusChartsProps) => {
   if (prev.isLoading !== next.isLoading) return false;
   if (prev.dictionary !== next.dictionary) return false;
+  if (prev.sideWidget !== next.sideWidget) return false;
   if (!statusDataEqual(prev.statusData, next.statusData)) return false;
   if (!throughputDataEqual(prev.throughputData, next.throughputData)) return false;
   return true;

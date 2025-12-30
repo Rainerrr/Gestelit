@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createReport } from "@/lib/data/reports";
 import { uploadImageToStorage } from "@/lib/utils/storage";
+import { createServiceSupabase } from "@/lib/supabase/client";
 import type { ReportType } from "@/lib/types";
 
 const VALID_REPORT_TYPES: ReportType[] = ["malfunction", "general", "scrap"];
@@ -20,6 +21,7 @@ export async function POST(request: Request) {
   const description = formData.get("description");
   const image = formData.get("image");
   const workerId = formData.get("workerId");
+  const statusEventIdParam = formData.get("statusEventId");
 
   // Validate type
   if (!type || typeof type !== "string" || !VALID_REPORT_TYPES.includes(type as ReportType)) {
@@ -61,6 +63,26 @@ export async function POST(request: Request) {
     }
   }
 
+  // Use provided status_event_id if available, otherwise look up current open status event
+  let statusEventId: string | null = null;
+  if (typeof statusEventIdParam === "string" && statusEventIdParam.trim().length > 0) {
+    // Use the explicitly provided status event ID (for when status event was just created)
+    statusEventId = statusEventIdParam;
+  } else if (sessionId && typeof sessionId === "string" && sessionId.trim().length > 0) {
+    // Fall back to looking up current open status event for the session
+    const supabase = createServiceSupabase();
+    const { data: openEvent } = await supabase
+      .from("status_events")
+      .select("id")
+      .eq("session_id", sessionId)
+      .is("ended_at", null)
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    statusEventId = openEvent?.id ?? null;
+  }
+
   try {
     const report = await createReport({
       type: reportType,
@@ -79,6 +101,7 @@ export async function POST(request: Request) {
       description:
         typeof description === "string" && description.trim().length > 0 ? description : null,
       image_url: imageUrl,
+      status_event_id: statusEventId,
     });
 
     return NextResponse.json({ report });

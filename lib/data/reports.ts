@@ -39,6 +39,7 @@ type CreateReportPayload = {
   image_url?: string | null;
   station_reason_id?: string | null;
   report_reason_id?: string | null;
+  status_event_id?: string | null;
 };
 
 export async function createReport(payload: CreateReportPayload): Promise<Report> {
@@ -55,6 +56,7 @@ export async function createReport(payload: CreateReportPayload): Promise<Report
       image_url: payload.image_url ?? null,
       station_reason_id: payload.station_reason_id ?? null,
       report_reason_id: payload.report_reason_id ?? null,
+      status_event_id: payload.status_event_id ?? null,
       // Status is set by database trigger based on type
     })
     .select("*")
@@ -132,7 +134,7 @@ export async function getMalfunctionReportsGroupedByStation(): Promise<
     return [];
   }
 
-  return groupReportsByStation(reports, "malfunction");
+  return groupReportsByStation(reports);
 }
 
 // Get archived malfunction reports (solved)
@@ -291,9 +293,10 @@ async function enrichReportsWithDetails(
   const workerIds = [...new Set(reports.map((r) => r.reported_by_worker_id).filter(Boolean))] as string[];
   const sessionIds = [...new Set(reports.map((r) => r.session_id).filter(Boolean))] as string[];
   const reasonIds = [...new Set(reports.map((r) => r.report_reason_id).filter(Boolean))] as string[];
+  const statusEventIds = [...new Set(reports.map((r) => r.status_event_id).filter(Boolean))] as string[];
 
   // Fetch related data in parallel
-  const [stationsResult, workersResult, sessionsResult, reasonsResult] = await Promise.all([
+  const [stationsResult, workersResult, sessionsResult, reasonsResult, statusEventsResult] = await Promise.all([
     stationIds.length > 0
       ? supabase.from("stations").select("id, name, code, station_type, is_active, station_reasons").in("id", stationIds)
       : { data: [], error: null },
@@ -306,12 +309,30 @@ async function enrichReportsWithDetails(
     reasonIds.length > 0
       ? supabase.from("report_reasons").select("*").in("id", reasonIds)
       : { data: [], error: null },
+    statusEventIds.length > 0
+      ? supabase
+          .from("status_events")
+          .select(`
+            id,
+            started_at,
+            ended_at,
+            status_definition:status_definitions(
+              id,
+              label_he,
+              label_ru,
+              color_hex,
+              machine_state
+            )
+          `)
+          .in("id", statusEventIds)
+      : { data: [], error: null },
   ]);
 
   const stationsMap = new Map((stationsResult.data || []).map((s) => [s.id, s]));
   const workersMap = new Map((workersResult.data || []).map((w) => [w.id, w]));
   const sessionsMap = new Map((sessionsResult.data || []).map((s) => [s.id, s]));
   const reasonsMap = new Map((reasonsResult.data || []).map((r) => [r.id, r]));
+  const statusEventsMap = new Map((statusEventsResult.data || []).map((e) => [e.id, e]));
 
   return reports.map((report) => ({
     ...report,
@@ -319,13 +340,13 @@ async function enrichReportsWithDetails(
     session: report.session_id ? sessionsMap.get(report.session_id) ?? null : null,
     reporter: report.reported_by_worker_id ? workersMap.get(report.reported_by_worker_id) ?? null : null,
     report_reason: report.report_reason_id ? reasonsMap.get(report.report_reason_id) ?? null : null,
+    status_event: report.status_event_id ? statusEventsMap.get(report.status_event_id) ?? null : null,
   })) as ReportWithDetails[];
 }
 
 // Helper: Group malfunction reports by station
 async function groupReportsByStation(
-  reports: Report[],
-  _type: ReportType
+  reports: Report[]
 ): Promise<StationWithReports[]> {
   const enriched = await enrichReportsWithDetails(reports);
 
@@ -421,4 +442,173 @@ async function groupScrapReportsByStation(
   return Array.from(stationMap.values()).sort(
     (a, b) => b.newCount - a.newCount
   );
+}
+
+// =============================================================================
+// Client-side helper functions for view transformations
+// =============================================================================
+
+/**
+ * Filter reports to only include ongoing ones (status event still active)
+ */
+export function filterOngoingReports(
+  reports: ReportWithDetails[]
+): ReportWithDetails[] {
+  return reports.filter((r) => r.status_event?.ended_at === null);
+}
+
+/**
+ * Filter reports to only include finished ones (status event ended)
+ */
+export function filterFinishedReports(
+  reports: ReportWithDetails[]
+): ReportWithDetails[] {
+  return reports.filter((r) => r.status_event?.ended_at !== null || !r.status_event);
+}
+
+/**
+ * Group reports by date (ISO date string as key)
+ * Returns sorted dates (most recent first) with their reports
+ */
+export function groupReportsByDate(
+  reports: ReportWithDetails[]
+): { date: string; reports: ReportWithDetails[] }[] {
+  const dateMap = new Map<string, ReportWithDetails[]>();
+
+  for (const report of reports) {
+    const dateKey = new Date(report.created_at || Date.now())
+      .toISOString()
+      .split("T")[0];
+
+    if (!dateMap.has(dateKey)) {
+      dateMap.set(dateKey, []);
+    }
+    dateMap.get(dateKey)!.push(report);
+  }
+
+  // Sort dates descending (most recent first)
+  const sortedDates = Array.from(dateMap.keys()).sort((a, b) =>
+    b.localeCompare(a)
+  );
+
+  return sortedDates.map((date) => ({
+    date,
+    reports: dateMap.get(date)!,
+  }));
+}
+
+/**
+ * Flatten station-grouped reports into a flat array
+ * Works with any station grouping type
+ */
+export function flattenStationReports(
+  stations: (StationWithReports | StationWithArchivedReports | StationWithScrapReports)[]
+): ReportWithDetails[] {
+  const allReports: ReportWithDetails[] = [];
+
+  for (const station of stations) {
+    allReports.push(...station.reports);
+  }
+
+  // Sort by created_at descending
+  return allReports.sort(
+    (a, b) =>
+      new Date(b.created_at || 0).getTime() -
+      new Date(a.created_at || 0).getTime()
+  );
+}
+
+/**
+ * Sort malfunction reports by priority: open > known > solved
+ */
+export function sortByMalfunctionPriority(
+  reports: ReportWithDetails[]
+): ReportWithDetails[] {
+  const priorityMap: Record<string, number> = {
+    open: 0,
+    known: 1,
+    solved: 2,
+  };
+
+  return [...reports].sort((a, b) => {
+    const priorityA = priorityMap[a.status] ?? 3;
+    const priorityB = priorityMap[b.status] ?? 3;
+
+    if (priorityA !== priorityB) {
+      return priorityA - priorityB;
+    }
+
+    // Within same priority, sort by created_at descending
+    return (
+      new Date(b.created_at || 0).getTime() -
+      new Date(a.created_at || 0).getTime()
+    );
+  });
+}
+
+/**
+ * Group flat reports by station for per-station view
+ * Generic version that calculates counts based on report statuses
+ */
+export function groupFlatReportsByStation(
+  reports: ReportWithDetails[],
+  reportType: ReportType
+): (StationWithReports | StationWithScrapReports)[] {
+  const stationMap = new Map<string, {
+    station: Station;
+    reports: ReportWithDetails[];
+    openCount: number;
+    knownCount: number;
+    newCount: number;
+    approvedCount: number;
+  }>();
+
+  for (const report of reports) {
+    const stationId = report.station_id;
+    if (!stationId || !report.station) continue;
+
+    if (!stationMap.has(stationId)) {
+      stationMap.set(stationId, {
+        station: report.station,
+        reports: [],
+        openCount: 0,
+        knownCount: 0,
+        newCount: 0,
+        approvedCount: 0,
+      });
+    }
+
+    const entry = stationMap.get(stationId)!;
+    entry.reports.push(report);
+
+    // Count based on status
+    if (report.status === "open") entry.openCount++;
+    else if (report.status === "known") entry.knownCount++;
+    else if (report.status === "new") entry.newCount++;
+    else if (report.status === "approved") entry.approvedCount++;
+  }
+
+  const grouped = Array.from(stationMap.values());
+
+  // Return appropriate type based on reportType
+  if (reportType === "malfunction") {
+    return grouped
+      .map((g) => ({
+        station: g.station,
+        reports: g.reports,
+        openCount: g.openCount,
+        knownCount: g.knownCount,
+      }))
+      .sort((a, b) => b.openCount + b.knownCount - (a.openCount + a.knownCount));
+  }
+
+  // For general and scrap
+  return grouped
+    .map((g) => ({
+      station: g.station,
+      reports: g.reports,
+      newCount: g.newCount,
+      approvedCount: g.approvedCount,
+    }))
+    .sort((a, b) => b.newCount - a.newCount);
 }

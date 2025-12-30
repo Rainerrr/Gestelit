@@ -2,7 +2,7 @@
 
 import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Clock, Package, AlertTriangle, Trash2, TrendingDown, Settings, AlertOctagon, ChevronDown, ChevronUp, User, ZoomIn, X, ExternalLink } from "lucide-react";
+import { ArrowRight, Clock, Package, AlertTriangle, Trash2, TrendingDown, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,10 +25,9 @@ import {
   useStatusDictionary,
 } from "../../_components/status-dictionary";
 import { useAdminGuard } from "@/hooks/useAdminGuard";
-import type { SessionDetail, SessionMalfunctionReport } from "@/app/api/admin/dashboard/session/[id]/route";
+import type { SessionDetail } from "@/app/api/admin/dashboard/session/[id]/route";
+import { SessionReportsWidget } from "./_components/session-reports-widget";
 import type { StatusEventState, StationReason } from "@/lib/types";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { getReasonLabel } from "@/lib/data/reports";
 import {
   calculateSessionFlags,
   hasAnyFlag,
@@ -71,178 +70,6 @@ const formatProductionRate = (totalGood: number, activeTimeSeconds: number) => {
   if (activeTimeSeconds <= 0) return "0";
   const rate = totalGood / (activeTimeSeconds / 3600);
   return rate.toFixed(1);
-};
-
-const formatRelativeTime = (dateStr: string): string => {
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffSeconds = Math.floor(diffMs / 1000);
-  const diffMinutes = Math.floor(diffSeconds / 60);
-  const diffHours = Math.floor(diffMinutes / 60);
-  const diffDays = Math.floor(diffHours / 24);
-
-  if (diffMinutes < 1) return "עכשיו";
-  if (diffMinutes < 60) return `לפני ${diffMinutes} דקות`;
-  if (diffHours < 24) return `לפני ${diffHours} שעות`;
-  if (diffDays === 1) return "אתמול";
-  if (diffDays < 7) return `לפני ${diffDays} ימים`;
-
-  return new Intl.DateTimeFormat("he-IL", {
-    day: "2-digit",
-    month: "2-digit",
-  }).format(date);
-};
-
-type MalfunctionCardProps = {
-  malfunction: SessionMalfunctionReport;
-  stationReasons: StationReason[] | null | undefined;
-};
-
-const SessionMalfunctionCard = ({ malfunction, stationReasons }: MalfunctionCardProps) => {
-  const [expanded, setExpanded] = useState(false);
-  const [imageOpen, setImageOpen] = useState(false);
-
-  const reasonLabel = getReasonLabel(stationReasons, malfunction.stationReasonId);
-
-  const statusConfig = {
-    open: {
-      label: "חדש",
-      color: "bg-red-500/10 border-red-500/30 text-red-400",
-    },
-    known: {
-      label: "בטיפול",
-      color: "bg-amber-500/10 border-amber-500/30 text-amber-400",
-    },
-    solved: {
-      label: "נפתר",
-      color: "bg-emerald-500/10 border-emerald-500/30 text-emerald-400",
-    },
-  };
-
-  const config = statusConfig[malfunction.status];
-
-  return (
-    <div className="border border-border/60 rounded-lg bg-card/30 overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between gap-3 px-4 py-3 text-right hover:bg-accent/30 transition-colors"
-      >
-        <div className="flex items-center gap-3 flex-1 min-w-0">
-          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border shrink-0 ${config.color}`}>
-            <AlertOctagon className="h-3 w-3" />
-            {config.label}
-          </span>
-
-          {reasonLabel && (
-            <span className="text-sm text-foreground font-medium truncate">
-              {reasonLabel}
-            </span>
-          )}
-
-          <span className="text-xs text-muted-foreground flex items-center gap-1 shrink-0">
-            <Clock className="h-3 w-3" />
-            {malfunction.createdAt ? formatRelativeTime(malfunction.createdAt) : "—"}
-          </span>
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-          {malfunction.imageUrl && (
-            <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-primary/30 text-primary">
-              תמונה
-            </Badge>
-          )}
-          {expanded ? (
-            <ChevronUp className="h-4 w-4 text-muted-foreground" />
-          ) : (
-            <ChevronDown className="h-4 w-4 text-muted-foreground" />
-          )}
-        </div>
-      </button>
-
-      {expanded && (
-        <div className="border-t border-border/40 px-4 py-4 space-y-4 bg-card/20">
-          {malfunction.description && (
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">תיאור</p>
-              <p className="text-sm text-foreground/90 whitespace-pre-wrap leading-relaxed">
-                {malfunction.description}
-              </p>
-            </div>
-          )}
-
-          {malfunction.reporterName && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <User className="h-3.5 w-3.5" />
-              <span>דווח על ידי:</span>
-              <span className="text-foreground font-medium">{malfunction.reporterName}</span>
-              {malfunction.reporterCode && (
-                <span className="text-xs font-mono text-muted-foreground/70">
-                  ({malfunction.reporterCode})
-                </span>
-              )}
-            </div>
-          )}
-
-          {malfunction.imageUrl && (
-            <div className="space-y-2">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">תמונה מצורפת</p>
-              <button
-                type="button"
-                onClick={() => setImageOpen(true)}
-                className="relative group rounded-lg overflow-hidden border border-border/60 hover:border-primary/50 transition-all"
-              >
-                <img
-                  src={malfunction.imageUrl}
-                  alt="תמונת תקלה"
-                  className="max-h-48 w-auto object-contain bg-black/20"
-                />
-                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">
-                  <ZoomIn className="h-8 w-8 text-white drop-shadow-lg" />
-                </div>
-              </button>
-            </div>
-          )}
-
-          {/* Link to reports management */}
-          <div className="pt-2 border-t border-border/40">
-            <Button
-              variant="outline"
-              size="sm"
-              asChild
-              className="h-8 text-xs border-primary/30 text-primary hover:bg-primary/10 hover:text-primary"
-            >
-              <a href={`/admin/reports/malfunctions?highlight=${malfunction.id}`}>
-                <ExternalLink className="h-3.5 w-3.5 ml-1.5" />
-                הצג בניהול דיווחים
-              </a>
-            </Button>
-          </div>
-        </div>
-      )}
-
-      <Dialog open={imageOpen} onOpenChange={setImageOpen}>
-        <DialogContent className="max-w-4xl w-auto p-0 bg-black/95 border-border overflow-hidden">
-          <DialogTitle className="sr-only">תמונת תקלה</DialogTitle>
-          <button
-            type="button"
-            onClick={() => setImageOpen(false)}
-            className="absolute top-3 left-3 z-10 p-2 rounded-full bg-black/50 hover:bg-black/70 text-white transition-colors"
-          >
-            <X className="h-5 w-5" />
-          </button>
-          {malfunction.imageUrl && (
-            <img
-              src={malfunction.imageUrl}
-              alt="תמונת תקלה"
-              className="max-h-[85vh] max-w-full w-auto h-auto object-contain"
-            />
-          )}
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
 };
 
 export default function SessionDetailPage({ params }: Props) {
@@ -557,29 +384,12 @@ export default function SessionDetailPage({ params }: Props) {
         </CardContent>
       </Card>
 
-      {/* Malfunctions Card - only show if there are malfunctions */}
-      {session.malfunctions && session.malfunctions.length > 0 && (
-        <Card className="border-border bg-card/50">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-lg text-foreground">
-              <AlertOctagon className="h-5 w-5 text-red-500" />
-              דיווחי תקלה
-              <Badge variant="secondary" className="mr-2 text-xs">
-                {session.malfunctions.length}
-              </Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {session.malfunctions.map((malfunction) => (
-              <SessionMalfunctionCard
-                key={malfunction.id}
-                malfunction={malfunction}
-                stationReasons={stationReasons}
-              />
-            ))}
-          </CardContent>
-        </Card>
-      )}
+      {/* Session Reports Widget */}
+      <SessionReportsWidget
+        malfunctions={session.malfunctions ?? []}
+        generalReports={session.generalReports ?? []}
+        stationReasons={stationReasons}
+      />
 
       {/* Production Stats Card */}
       <Card className="border-border bg-card/50">

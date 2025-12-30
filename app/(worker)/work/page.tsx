@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { PageHeader } from "@/components/layout/page-header";
@@ -34,22 +34,24 @@ import { useTranslation } from "@/hooks/useTranslation";
 import { useWorkerSession } from "@/contexts/WorkerSessionContext";
 import {
   createReportApi,
+  createStatusEventWithReportApi,
   fetchReportReasonsApi,
   startStatusEventApi,
+  takeoverSessionApi,
   updateSessionTotalsApi,
 } from "@/lib/api/client";
 import { getActiveStationReasons } from "@/lib/data/station-reasons";
-import { STOP_STATUS_LABEL_HE } from "@/lib/data/status-definitions";
 import {
   buildStatusDictionary,
   getStatusHex,
   getStatusLabel,
 } from "@/lib/status";
 import { cn } from "@/lib/utils";
+import { getOrCreateInstanceId } from "@/lib/utils/instance-id";
 import type { ReportReason, StationReason, StatusDefinition } from "@/lib/types";
 import { useSessionHeartbeat } from "@/hooks/useSessionHeartbeat";
+import { useSessionBroadcast } from "@/hooks/useSessionBroadcast";
 import { fetchStationStatusesApi } from "@/lib/api/client";
-import { useRef } from "react";
 
 type StatusVisual = {
   dotColor: string;
@@ -179,6 +181,17 @@ export default function WorkPage() {
     }
   }, [faultReason, reasons]);
 
+  // Generate instance ID for this tab
+  const instanceId = useMemo(() => getOrCreateInstanceId(), []);
+
+  // Track whether this tab has successfully claimed the session
+  const [isTakeoverComplete, setIsTakeoverComplete] = useState(false);
+
+  // Handle session takeover (another tab/device took over)
+  const handleSessionTakeover = useCallback(() => {
+    router.replace("/session-transferred");
+  }, [router]);
+
   useEffect(() => {
     if (!worker) {
       router.replace("/login");
@@ -197,7 +210,46 @@ export default function WorkPage() {
     }
   }, [worker, station, job, sessionId, router]);
 
-  useSessionHeartbeat(sessionId);
+  // Claim session on mount (takeover from any previous instance)
+  // MUST complete before heartbeat starts to avoid race condition
+  useEffect(() => {
+    if (!sessionId || !instanceId) return;
+
+    let cancelled = false;
+
+    const claimSession = async () => {
+      try {
+        await takeoverSessionApi(sessionId, instanceId);
+        if (!cancelled) {
+          setIsTakeoverComplete(true);
+        }
+      } catch (err) {
+        console.warn("[work] Failed to claim session:", err);
+        // Still mark as complete to allow heartbeat to run
+        // The heartbeat will handle the mismatch if takeover truly failed
+        if (!cancelled) {
+          setIsTakeoverComplete(true);
+        }
+      }
+    };
+
+    void claimSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, instanceId]);
+
+  // Heartbeat with instance validation
+  // Only start AFTER takeover is complete to avoid race condition
+  useSessionHeartbeat({
+    sessionId: isTakeoverComplete ? sessionId : undefined,
+    instanceId,
+    onInstanceMismatch: handleSessionTakeover,
+  });
+
+  // Cross-tab coordination via BroadcastChannel
+  useSessionBroadcast(sessionId, instanceId, handleSessionTakeover);
 
   const formatReason = (reason: StationReason) =>
     language === "he" ? reason.label_he : reason.label_ru;
@@ -247,42 +299,34 @@ export default function WorkPage() {
       return;
     }
 
-    // Check if we're changing FROM the initial stop status
-    // When the session starts, it defaults to the stop status - changing from it
-    // should not require a report (it's just a placeholder until user picks a status)
-    const currentStatusDef = currentStatus ? getStatusDefinition(currentStatus) : undefined;
-    const isChangingFromInitialStopStatus =
-      currentStatusDef?.label_he === STOP_STATUS_LABEL_HE &&
-      currentStatusDef?.is_protected === true;
-
-    // Check the report_type to determine dialog
+    // Check the target status's report_type to determine if a report dialog is needed
+    // Handle empty strings and null/undefined - only valid values are "malfunction", "general", or "none"
     const statusDef = getStatusDefinition(statusId);
-    const reportType = statusDef?.report_type ?? "none";
+    const rawReportType = statusDef?.report_type;
+    const reportType = (rawReportType === "malfunction" || rawReportType === "general")
+      ? rawReportType
+      : "none";
 
-    // Skip report requirement when changing from the initial stop status
-    if (!isChangingFromInitialStopStatus) {
-      if (reportType === "malfunction" && !reportId) {
-        // Store the pending status and open the malfunction dialog
-        setPendingStatusId(statusId);
-        setFaultDialogOpen(true);
-        return;
-      }
+    // If target status requires a report and none provided, open the appropriate dialog
+    if (reportType === "malfunction" && !reportId) {
+      setPendingStatusId(statusId);
+      setFaultDialogOpen(true);
+      return;
+    }
 
-      if (reportType === "general" && !reportId) {
-        // Store the pending status and open the general report dialog
-        setPendingGeneralStatusId(statusId);
-        // Fetch report reasons if not already loaded
-        if (generalReportReasons.length === 0) {
-          fetchReportReasonsApi().then((reasons) => {
-            setGeneralReportReasons(reasons);
-            if (reasons.length > 0 && !generalReportReason) {
-              setGeneralReportReason(reasons[0].id);
-            }
-          }).catch(console.error);
-        }
-        setGeneralReportDialogOpen(true);
-        return;
+    if (reportType === "general" && !reportId) {
+      setPendingGeneralStatusId(statusId);
+      // Fetch report reasons if not already loaded
+      if (generalReportReasons.length === 0) {
+        fetchReportReasonsApi().then((reasons) => {
+          setGeneralReportReasons(reasons);
+          if (reasons.length > 0 && !generalReportReason) {
+            setGeneralReportReason(reasons[0].id);
+          }
+        }).catch(console.error);
       }
+      setGeneralReportDialogOpen(true);
+      return;
     }
 
     setStatusError(null);
@@ -371,25 +415,39 @@ export default function WorkPage() {
     setGeneralReportError(null);
     setIsGeneralReportSubmitting(true);
     try {
-      const report = await createReportApi({
-        type: "general",
-        sessionId,
-        stationId: station.id,
-        reportReasonId: generalReportReason,
-        description: generalReportNote,
-        image: generalReportImage,
-        workerId: worker?.id,
-      });
+      if (pendingGeneralStatusId) {
+        // Use atomic endpoint - status change + report in one transaction
+        // If report fails, status change is rolled back
+        await createStatusEventWithReportApi({
+          sessionId,
+          statusDefinitionId: pendingGeneralStatusId,
+          reportType: "general",
+          stationId: station.id,
+          reportReasonId: generalReportReason,
+          description: generalReportNote,
+          image: generalReportImage,
+          workerId: worker?.id,
+        });
+        // Only update UI status after successful atomic operation
+        setCurrentStatus(pendingGeneralStatusId);
+      } else {
+        // No status change - just create the report
+        await createReportApi({
+          type: "general",
+          sessionId,
+          stationId: station.id,
+          reportReasonId: generalReportReason,
+          description: generalReportNote,
+          image: generalReportImage,
+          workerId: worker?.id,
+        });
+      }
+
       setGeneralReportDialogOpen(false);
       setGeneralReportReason(undefined);
       setGeneralReportNote("");
       handleGeneralReportImageChange(null);
-
-      // If there's a pending status change, complete it with the report ID
-      if (pendingGeneralStatusId) {
-        await handleStatusChange(pendingGeneralStatusId, report.id);
-        setPendingGeneralStatusId(null);
-      }
+      setPendingGeneralStatusId(null);
     } catch {
       setGeneralReportError(t("work.error.report"));
     } finally {
@@ -654,7 +712,10 @@ export default function WorkPage() {
         </div>
       </section>
 
-      <Dialog open={isFaultDialogOpen} onOpenChange={setFaultDialogOpen}>
+      <Dialog open={isFaultDialogOpen} onOpenChange={(open) => {
+        setFaultDialogOpen(open);
+        if (!open) setPendingStatusId(null);
+      }}>
         <DialogContent dir="rtl" className="border-border bg-card">
           <DialogHeader>
             <DialogTitle className="text-foreground">{t("work.dialog.fault.title")}</DialogTitle>
@@ -755,26 +816,39 @@ export default function WorkPage() {
                 setFaultError(null);
                 setIsFaultSubmitting(true);
                 try {
-                  const report = await createReportApi({
-                    type: "malfunction",
-                    stationId: station.id,
-                    stationReasonId: faultReason,
-                    description: faultNote,
-                    image: faultImage,
-                    workerId: worker?.id,
-                    sessionId: sessionId,
-                  });
+                  if (pendingStatusId) {
+                    // Use atomic endpoint - status change + report in one transaction
+                    // If report fails, status change is rolled back
+                    await createStatusEventWithReportApi({
+                      sessionId,
+                      statusDefinitionId: pendingStatusId,
+                      reportType: "malfunction",
+                      stationId: station.id,
+                      stationReasonId: faultReason,
+                      description: faultNote,
+                      image: faultImage,
+                      workerId: worker?.id,
+                    });
+                    // Only update UI status after successful atomic operation
+                    setCurrentStatus(pendingStatusId);
+                  } else {
+                    // No status change - just create the report
+                    await createReportApi({
+                      type: "malfunction",
+                      stationId: station.id,
+                      stationReasonId: faultReason,
+                      description: faultNote,
+                      image: faultImage,
+                      workerId: worker?.id,
+                      sessionId: sessionId,
+                    });
+                  }
+
                   setFaultDialogOpen(false);
                   setFaultReason(undefined);
                   setFaultNote("");
                   handleFaultImageChange(null);
-
-                  // If there's a pending status change that required malfunction report,
-                  // now complete the status change with the report ID
-                  if (pendingStatusId) {
-                    await handleStatusChange(pendingStatusId, report.id);
-                    setPendingStatusId(null);
-                  }
+                  setPendingStatusId(null);
                 } catch {
                   setFaultError(t("work.error.fault"));
                 } finally {
@@ -792,7 +866,10 @@ export default function WorkPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isGeneralReportDialogOpen} onOpenChange={setGeneralReportDialogOpen}>
+      <Dialog open={isGeneralReportDialogOpen} onOpenChange={(open) => {
+        setGeneralReportDialogOpen(open);
+        if (!open) setPendingGeneralStatusId(null);
+      }}>
         <DialogContent dir="rtl" className="border-border bg-card">
           <DialogHeader>
             <DialogTitle className="text-foreground">{t("work.dialog.report.title")}</DialogTitle>

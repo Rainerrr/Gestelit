@@ -17,6 +17,7 @@ export type TimelineSegment = {
   colorHex: string;
   dotClass: string;
   reportType?: string | null;
+  reportReasonLabel?: string | null;
 };
 
 type UseSessionTimelineArgs = {
@@ -49,6 +50,7 @@ type RawEvent = {
   startedAt: string;
   endedAt: string | null;
   reportType?: string | null;
+  reportReasonLabel?: string | null;
 };
 
 const normalizeSegments = ({
@@ -86,6 +88,7 @@ const normalizeSegments = ({
         colorHex,
         dotClass: "bg-slate-400",
         reportType: item.reportType,
+        reportReasonLabel: item.reportReasonLabel,
       } satisfies TimelineSegment;
     })
     .filter(Boolean) as TimelineSegment[];
@@ -155,6 +158,7 @@ export const useSessionTimeline = ({
             startedAt: item.startedAt,
             endedAt: item.endedAt,
             reportType: item.reportType,
+            reportReasonLabel: item.reportReasonLabel,
           })),
         );
       } catch (err) {

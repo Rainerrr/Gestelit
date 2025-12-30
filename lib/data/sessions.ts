@@ -37,6 +37,7 @@ type SessionPayload = {
   station_id: string;
   job_id: string;
   started_at?: string;
+  active_instance_id?: string;
 };
 
 async function getStopStatusId(): Promise<string> {
@@ -126,9 +127,12 @@ export async function createSession(
   const { data, error } = await supabase
     .from("sessions")
     .insert({
-      ...payload,
-      status: "active" satisfies SessionStatus,
+      worker_id: payload.worker_id,
+      station_id: payload.station_id,
+      job_id: payload.job_id,
       started_at: payload.started_at ?? new Date().toISOString(),
+      active_instance_id: payload.active_instance_id ?? null,
+      status: "active" satisfies SessionStatus,
       current_status_id: initialStatusId,
     })
     .select("*")
@@ -157,11 +161,30 @@ export async function completeSession(
   sessionId: string,
 ): Promise<Session> {
   const supabase = createServiceSupabase();
+  const timestamp = new Date().toISOString();
+
+  // Close any open status events before completing the session
+  // This ensures reports linked to status events get proper ended_at timestamps
+  const stopStatusId = await getStopStatusId();
+  const { error: statusError } = await supabase.rpc("create_status_event_atomic", {
+    p_session_id: sessionId,
+    p_status_definition_id: stopStatusId,
+    p_station_reason_id: null,
+    p_note: "session-completed",
+    p_image_url: null,
+    p_report_id: null,
+  });
+
+  if (statusError) {
+    // Log but don't fail - session completion is more important
+    console.error(`[completeSession] Failed to close status events: ${statusError.message}`);
+  }
+
   const { data, error } = await supabase
     .from("sessions")
     .update({
       status: "completed" satisfies SessionStatus,
-      ended_at: new Date().toISOString(),
+      ended_at: timestamp,
     })
     .eq("id", sessionId)
     .select("*")
@@ -324,6 +347,64 @@ export async function recordSessionHeartbeat(sessionId: string): Promise<void> {
   if (error) {
     throw new Error(`Failed to record session heartbeat: ${error.message}`);
   }
+}
+
+export type HeartbeatResult =
+  | { success: true }
+  | { success: false; error: "INSTANCE_MISMATCH" | "SESSION_NOT_FOUND" | "SESSION_NOT_ACTIVE" };
+
+/**
+ * Record a heartbeat with instance validation.
+ * Returns error if the instance ID doesn't match the session's active instance.
+ * This prevents multiple tabs/devices from running the same session.
+ */
+export async function recordSessionHeartbeatWithInstance(
+  sessionId: string,
+  instanceId: string,
+): Promise<HeartbeatResult> {
+  const supabase = createServiceSupabase();
+  const timestamp = new Date().toISOString();
+
+  // First, fetch the current session to check instance
+  const { data: session, error: fetchError } = await supabase
+    .from("sessions")
+    .select("id, active_instance_id, status")
+    .eq("id", sessionId)
+    .maybeSingle();
+
+  if (fetchError) {
+    throw new Error(`Failed to fetch session: ${fetchError.message}`);
+  }
+
+  if (!session) {
+    return { success: false, error: "SESSION_NOT_FOUND" };
+  }
+
+  // If session is no longer active (completed, aborted, force-closed), reject
+  // This handles the case where the session was discarded/abandoned
+  if (session.status !== "active") {
+    return { success: false, error: "SESSION_NOT_ACTIVE" };
+  }
+
+  // If session has an active instance and it doesn't match, reject
+  if (session.active_instance_id && session.active_instance_id !== instanceId) {
+    return { success: false, error: "INSTANCE_MISMATCH" };
+  }
+
+  // Update heartbeat and set instance ID if not set
+  const { error: updateError } = await supabase
+    .from("sessions")
+    .update({
+      last_seen_at: timestamp,
+      active_instance_id: instanceId,
+    })
+    .eq("id", sessionId);
+
+  if (updateError) {
+    throw new Error(`Failed to record session heartbeat: ${updateError.message}`);
+  }
+
+  return { success: true };
 }
 
 type WorkerActiveSessionRow = {
