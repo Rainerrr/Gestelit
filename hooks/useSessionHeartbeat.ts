@@ -1,8 +1,12 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 
 const HEARTBEAT_INTERVAL_MS = 15_000;
+
+// Use useLayoutEffect on client, useEffect on server (SSR safety)
+const useIsomorphicLayoutEffect =
+  typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
 type HeartbeatBody = {
   sessionId: string;
@@ -48,7 +52,9 @@ export const useSessionHeartbeat = (options: UseSessionHeartbeatOptions) => {
 
   // Use ref to avoid stale closure in interval
   const onInstanceMismatchRef = useRef(onInstanceMismatch);
-  onInstanceMismatchRef.current = onInstanceMismatch;
+  useIsomorphicLayoutEffect(() => {
+    onInstanceMismatchRef.current = onInstanceMismatch;
+  });
 
   useEffect(() => {
     if (!sessionId || typeof window === "undefined") {

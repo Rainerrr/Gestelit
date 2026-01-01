@@ -175,11 +175,8 @@ export default function WorkPage() {
       })
       .finally(() => setStatusesLoading(false));
   }, [station?.id, statuses.length, isStatusesLoading, setStatuses]);
-  useEffect(() => {
-    if (!faultReason && reasons.length > 0) {
-      setFaultReason(reasons[0].id);
-    }
-  }, [faultReason, reasons]);
+  // NOTE: We intentionally do NOT auto-select the first reason
+  // to force workers to explicitly pick a reason for reports
 
   // Generate instance ID for this tab
   const instanceId = useMemo(() => getOrCreateInstanceId(), []);
@@ -320,9 +317,8 @@ export default function WorkPage() {
       if (generalReportReasons.length === 0) {
         fetchReportReasonsApi().then((reasons) => {
           setGeneralReportReasons(reasons);
-          if (reasons.length > 0 && !generalReportReason) {
-            setGeneralReportReason(reasons[0].id);
-          }
+          // NOTE: We intentionally do NOT auto-select the first reason
+          // to force workers to explicitly pick a reason
         }).catch(console.error);
       }
       setGeneralReportDialogOpen(true);
@@ -411,7 +407,7 @@ export default function WorkPage() {
   };
 
   const handleGeneralReportSubmit = async () => {
-    if (!sessionId || !station) return;
+    if (!sessionId || !station || !generalReportReason) return;
     setGeneralReportError(null);
     setIsGeneralReportSubmitting(true);
     try {
@@ -810,9 +806,9 @@ export default function WorkPage() {
             <Button
               type="button"
               className="bg-primary font-medium text-primary-foreground hover:bg-primary/90"
-              disabled={isFaultSubmitting}
+              disabled={isFaultSubmitting || !faultReason}
               onClick={async () => {
-                if (!station) return;
+                if (!station || !faultReason) return;
                 setFaultError(null);
                 setIsFaultSubmitting(true);
                 try {
@@ -964,7 +960,7 @@ export default function WorkPage() {
             <Button
               type="button"
               className="bg-primary font-medium text-primary-foreground hover:bg-primary/90"
-              disabled={isGeneralReportSubmitting}
+              disabled={isGeneralReportSubmitting || !generalReportReason}
               onClick={() => void handleGeneralReportSubmit()}
             >
               {isGeneralReportSubmitting

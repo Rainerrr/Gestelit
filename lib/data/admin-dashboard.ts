@@ -514,7 +514,7 @@ type ReportForStatusEvent = {
   status_event_id: string;
   type: string;
   report_reasons?: { label_he: string | null } | null;
-  stations?: { station_reasons: { id: string; label: string }[] | null } | null;
+  stations?: { station_reasons: { id: string; label_he: string; label_ru: string }[] | null } | null;
   station_reason_id?: string | null;
 };
 
@@ -598,7 +598,7 @@ export const fetchStatusEventsBySessionIds = async (
         const reason = report.stations.station_reasons.find(
           (r) => r.id === report.station_reason_id
         );
-        label = reason?.label ?? null;
+        label = reason?.label_he ?? null;
       }
 
       if (label) {

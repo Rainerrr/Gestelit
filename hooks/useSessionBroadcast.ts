@@ -1,12 +1,16 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 
 const CHANNEL_NAME = "gestelit_session_channel";
 
 type BroadcastMessage =
   | { type: "SESSION_TAKEOVER"; sessionId: string; instanceId: string }
   | { type: "SESSION_RELEASED"; sessionId: string };
+
+// Use useLayoutEffect on client, useEffect on server (SSR safety)
+const useIsomorphicLayoutEffect =
+  typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
 /**
  * Hook for cross-tab session coordination using BroadcastChannel API.
@@ -24,7 +28,9 @@ export function useSessionBroadcast(
 ) {
   // Use ref to avoid stale closure
   const onTakeoverRef = useRef(onTakeover);
-  onTakeoverRef.current = onTakeover;
+  useIsomorphicLayoutEffect(() => {
+    onTakeoverRef.current = onTakeover;
+  });
 
   useEffect(() => {
     if (!sessionId || typeof window === "undefined" || !currentInstanceId) {
@@ -102,7 +108,9 @@ export function useSessionClaimListener(
   onClaimed: () => void,
 ) {
   const onClaimedRef = useRef(onClaimed);
-  onClaimedRef.current = onClaimed;
+  useIsomorphicLayoutEffect(() => {
+    onClaimedRef.current = onClaimed;
+  });
 
   useEffect(() => {
     if (!sessionId || typeof window === "undefined" || !currentInstanceId) {

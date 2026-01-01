@@ -88,7 +88,7 @@ Migrations are in `supabase/migrations/` with timestamp prefixes (YYYYMMDDHHMMSS
 **Key Data Modules:**
 - `lib/data/sessions.ts` - Session lifecycle operations
 - `lib/data/jobs.ts` - Job CRUD, `getOrCreateJob()` for worker flow, aggregation for admin
-- `lib/data/malfunctions.ts` - Malfunction tracking with station grouping
+- `lib/data/reports.ts` - Unified report system (malfunction/general/scrap), station grouping, view transformations
 - `lib/data/status-definitions.ts` - Status configuration (global/station scoped)
 
 ## Cursor Rules (Important Conventions)
@@ -138,10 +138,18 @@ Snapshot columns: `worker_full_name_snapshot`, `worker_code_snapshot`, `station_
 ### Station-Scoped Reasons
 Each station has `station_reasons` JSON array. Default "תקלת כללית" reason is always included server-side.
 
-### Malfunction Tracking
-Malfunctions link to status events and sessions. Status flow: `open` → `known` → `solved`.
+### Unified Reports System
+Reports are the generalized tracking system (replacing legacy malfunctions). Three report types with distinct workflows:
 
-State machine enforced by database trigger - invalid transitions (e.g., `solved` → `open`) are rejected.
+**Report Types:**
+- `malfunction` - Equipment issues; status flow: `open` → `known` → `solved` (state machine enforced by trigger)
+- `general` - Observations/notes; status flow: `new` → `approved`
+- `scrap` - Scrap reporting; status flow: `new` → `approved`
+
+**Key relationships:**
+- Reports link to `status_events` via `status_event_id` (tracks which status triggered the report)
+- `lib/data/reports.ts` - All report CRUD, grouping functions, and view transformations
+- Status definitions have `report_type` field (`none` | `malfunction` | `general`) to trigger automatic report creation
 
 ### Storage
 Image uploads use service role client via `lib/utils/storage.ts`. Max 5MB, type-validated.
@@ -153,7 +161,8 @@ Key types to understand:
 - `MachineState`: `"production" | "setup" | "stoppage"`
 - `StatusScope`: `"global" | "station"`
 - `ChecklistKind`: `"start" | "end"`
-- `MalfunctionStatus`: `"open" | "known" | "solved"`
+- `ReportType`: `"malfunction" | "general" | "scrap"`
+- `ReportStatus`: `"open" | "known" | "solved"` (malfunction) or `"new" | "approved"` (general/scrap)
 
 ## Environment Variables
 
@@ -189,7 +198,7 @@ Currently, no rate limiting is implemented at the application layer. For product
 **Priority endpoints for rate limiting:**
 - `POST /api/sessions` - Session creation (prevent abuse)
 - `POST /api/admin/login` - Admin authentication (prevent brute force)
-- `POST /api/malfunctions` - Malfunction reports (prevent spam)
+- `POST /api/reports` - Report submissions (prevent spam)
 
 ### Authentication Model
 - **Workers**: Identified by worker code (not secret). Assumes trusted internal network or VPN.

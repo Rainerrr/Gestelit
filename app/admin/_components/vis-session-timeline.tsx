@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useRef } from "react";
+import { useCallback, useMemo, useState, useRef } from "react";
 import { FileText, AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { getStatusBadgeClass } from "@/lib/status";
@@ -38,6 +38,7 @@ const formatDuration = (ms: number) => {
 type TooltipData = {
   segment: TimelineSegment;
   x: number;
+  containerWidth: number;
 };
 
 const CustomTooltip = ({ segment }: { segment: TimelineSegment }) => {
@@ -62,13 +63,13 @@ const CustomTooltip = ({ segment }: { segment: TimelineSegment }) => {
       <div className="px-3 py-2 space-y-1.5">
         {/* Report info */}
         {hasReport && (
-          <div className="flex items-center gap-2 text-xs pb-1.5 border-b border-border">
+          <div className="flex items-center justify-center gap-2 text-xs pb-1.5 border-b border-border">
             {isMalfunction ? (
               <AlertTriangle className="h-3.5 w-3.5 text-red-400 shrink-0" />
             ) : (
               <FileText className="h-3.5 w-3.5 text-primary shrink-0" />
             )}
-            <span className="text-foreground font-medium truncate">
+            <span className="text-foreground font-medium text-center">
               {segment.reportReasonLabel}
             </span>
           </div>
@@ -135,10 +136,10 @@ export const VisSessionTimeline = ({
   }, [startTs, endTs]);
 
   // Calculate percentage position for a timestamp
-  const getPosition = (ts: number): number => {
+  const getPosition = useCallback((ts: number): number => {
     if (!startTs || totalDuration === 0) return 0;
     return ((ts - startTs) / totalDuration) * 100;
-  };
+  }, [startTs, totalDuration]);
 
   // Calculate "now" marker position
   const nowPosition = useMemo(() => {
@@ -155,7 +156,8 @@ export const VisSessionTimeline = ({
     const containerRect = containerRef.current?.getBoundingClientRect();
     if (containerRect) {
       const x = rect.left + rect.width / 2 - containerRect.left;
-      setTooltip({ segment, x });
+      const containerWidth = containerRect.width;
+      setTooltip({ segment, x, containerWidth });
     }
   };
 
@@ -285,7 +287,7 @@ export const VisSessionTimeline = ({
         <div
           className="absolute z-50 pointer-events-none"
           style={{
-            left: Math.max(80, Math.min(tooltip.x, containerRef.current?.offsetWidth ? containerRef.current.offsetWidth - 80 : tooltip.x)),
+            left: Math.max(80, Math.min(tooltip.x, tooltip.containerWidth ? tooltip.containerWidth - 80 : tooltip.x)),
             top: -8,
             transform: "translate(-50%, -100%)",
           }}

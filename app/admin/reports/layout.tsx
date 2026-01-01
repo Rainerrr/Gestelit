@@ -6,7 +6,6 @@ import { AlertTriangle, FileText, Trash2, LayoutList } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AdminLayout } from "../_components/admin-layout";
 import { useAdminGuard } from "@/hooks/useAdminGuard";
-import type { LucideIcon } from "lucide-react";
 
 const reportsTabs = [
   {
@@ -25,6 +24,43 @@ const reportsTabs = [
     icon: Trash2,
   },
 ];
+
+// Moved outside component to avoid creating during render
+const MobileBottomBar = ({ pathname }: { pathname: string }) => (
+  <div className="fixed bottom-0 left-0 right-0 z-50 sm:hidden">
+    <div className="border-t border-border/80 bg-card/95 backdrop-blur-md px-2 py-1.5 safe-area-pb">
+      <div className="flex items-center justify-around">
+        {reportsTabs.map((tab) => {
+          const isActive = pathname === tab.href;
+          const Icon = tab.icon;
+          return (
+            <Link
+              key={tab.href}
+              href={tab.href}
+              className={cn(
+                "flex flex-col items-center gap-0.5 px-4 py-1.5 rounded-lg transition-colors min-w-[4rem]",
+                isActive
+                  ? "text-primary"
+                  : "text-muted-foreground active:bg-accent"
+              )}
+            >
+              <Icon className={cn(
+                "h-5 w-5",
+                isActive ? "text-primary" : ""
+              )} />
+              <span className={cn(
+                "text-[11px] font-medium",
+                isActive ? "text-primary" : ""
+              )}>
+                {tab.label}
+              </span>
+            </Link>
+          );
+        })}
+      </div>
+    </div>
+  </div>
+);
 
 export default function ReportsLayout({
   children,
@@ -53,42 +89,6 @@ export default function ReportsLayout({
   if (hasAccess === false) {
     return null;
   }
-
-  const MobileBottomBar = () => (
-    <div className="fixed bottom-0 left-0 right-0 z-50 sm:hidden">
-      <div className="border-t border-border/80 bg-card/95 backdrop-blur-md px-2 py-1.5 safe-area-pb">
-        <div className="flex items-center justify-around">
-          {reportsTabs.map((tab) => {
-            const isActive = pathname === tab.href;
-            const Icon = tab.icon;
-            return (
-              <Link
-                key={tab.href}
-                href={tab.href}
-                className={cn(
-                  "flex flex-col items-center gap-0.5 px-4 py-1.5 rounded-lg transition-colors min-w-[4rem]",
-                  isActive
-                    ? "text-primary"
-                    : "text-muted-foreground active:bg-accent"
-                )}
-              >
-                <Icon className={cn(
-                  "h-5 w-5",
-                  isActive ? "text-primary" : ""
-                )} />
-                <span className={cn(
-                  "text-[11px] font-medium",
-                  isActive ? "text-primary" : ""
-                )}>
-                  {tab.label}
-                </span>
-              </Link>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
 
   return (
     <AdminLayout
@@ -132,7 +132,7 @@ export default function ReportsLayout({
           <div className="hidden sm:block shrink-0 w-[100px]" />
         </div>
       }
-      mobileBottomBar={<MobileBottomBar />}
+      mobileBottomBar={<MobileBottomBar pathname={pathname} />}
     >
       {/* Page content */}
       {children}

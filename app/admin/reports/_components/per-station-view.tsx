@@ -122,11 +122,20 @@ export const PerStationView = ({
   }, [highlightReportId, archivedReports]);
 
   // Auto-expand archive if highlight is in it
-  useMemo(() => {
-    if (highlightInArchive && !archiveExpanded) {
+  // Track which highlight we've already expanded for
+  const [expandedForHighlightId, setExpandedForHighlightId] = useState<string | null>(null);
+
+  // When highlight changes to a report in archive, expand archive
+  if (highlightInArchive && highlightReportId && expandedForHighlightId !== highlightReportId) {
+    setExpandedForHighlightId(highlightReportId);
+    if (!archiveExpanded) {
       setArchiveExpanded(true);
     }
-  }, [highlightInArchive, archiveExpanded]);
+  }
+  // Reset when highlight is cleared
+  if (!highlightReportId && expandedForHighlightId !== null) {
+    setExpandedForHighlightId(null);
+  }
 
   const totalArchivedCount = archivedReports.length;
   const hasContent = ongoingReports.length > 0 || stationGroups.length > 0;
