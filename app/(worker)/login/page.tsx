@@ -54,11 +54,13 @@ export default function LoginPage() {
         console.error("[login] Failed to fetch active session", sessionError);
       }
       if (activeSession) {
+        // Session recovery still goes to station page where the recovery dialog is shown
         setPendingRecovery(activeSession);
         router.push("/station");
         return;
       }
-      router.push("/station");
+      // New flow: job entry before station selection
+      router.push("/job");
     } catch {
       setError(t("login.error.notFound"));
     }

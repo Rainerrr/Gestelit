@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/dialog";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useWorkerSession } from "@/contexts/WorkerSessionContext";
-import { abandonSessionApi, fetchStationsWithOccupancyApi } from "@/lib/api/client";
+import { abandonSessionApi, createSessionApi, fetchStationsWithOccupancyApi } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 import type { SessionAbandonReason, Station } from "@/lib/types";
 import type { StationWithOccupancy } from "@/lib/data/stations";
@@ -52,8 +52,12 @@ export default function StationPage() {
   const { t } = useTranslation();
   const {
     worker,
+    job,
     station,
     setStation,
+    setSessionId,
+    setSessionStartedAt,
+    setCurrentStatus,
     pendingRecovery,
     setPendingRecovery,
     hydrateFromSnapshot,
@@ -92,6 +96,8 @@ export default function StationPage() {
   const [resumeCountdownMs, setResumeCountdownMs] = useState(0);
   const [resumeActionLoading, setResumeActionLoading] = useState(false);
   const [resumeError, setResumeError] = useState<string | null>(null);
+  const [isCreatingSession, setIsCreatingSession] = useState(false);
+  const [sessionError, setSessionError] = useState<string | null>(null);
   const expirationHandledRef = useRef(false);
 
   const isRecoveryBlocking = Boolean(pendingRecovery);
@@ -134,6 +140,11 @@ export default function StationPage() {
       router.replace("/login");
       return;
     }
+    // Job is required before station selection (unless recovering a session)
+    if (!job && !pendingRecovery) {
+      router.replace("/job");
+      return;
+    }
 
     let active = true;
     dispatch({ type: "start" });
@@ -150,7 +161,7 @@ export default function StationPage() {
     return () => {
       active = false;
     };
-  }, [worker, router]);
+  }, [worker, job, pendingRecovery, router]);
 
   useEffect(() => {
     if (!pendingRecovery?.graceExpiresAt) {
@@ -199,8 +210,8 @@ export default function StationPage() {
     (entry) => entry.id === selectedStation,
   );
 
-  const handleContinue = () => {
-    if (!selectedStation || !worker || pendingRecovery) {
+  const handleContinue = async () => {
+    if (!selectedStation || !worker || !job || pendingRecovery) {
       return;
     }
     const stationEntity = stations.find(
@@ -209,8 +220,34 @@ export default function StationPage() {
     if (!stationEntity) {
       return;
     }
-    setStation(stationEntity);
-    router.push("/job");
+
+    setIsCreatingSession(true);
+    setSessionError(null);
+
+    try {
+      // Create the session with worker, job, and station
+      const session = await createSessionApi(
+        worker.id,
+        stationEntity.id,
+        job.id,
+        instanceId,
+      );
+
+      setStation(stationEntity);
+      setSessionId(session.id);
+      setSessionStartedAt(session.started_at ?? null);
+      setCurrentStatus(undefined);
+      router.push("/checklist/start");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "SESSION_FAILED";
+      if (message === "STATION_OCCUPIED") {
+        setSessionError(t("station.error.occupied"));
+      } else {
+        setSessionError(t("station.error.sessionFailed"));
+      }
+    } finally {
+      setIsCreatingSession(false);
+    }
   };
 
   const countdownLabel = useMemo(
@@ -259,11 +296,18 @@ export default function StationPage() {
 
   return (
     <>
-      <BackButton href="/login" />
+      <BackButton href="/job" />
       <PageHeader
         eyebrow={worker.full_name}
         title={t("station.title")}
         subtitle={t("station.subtitle")}
+        actions={
+          job ? (
+            <Badge variant="secondary" className="border-border bg-secondary text-foreground/80">
+              {`${t("common.job")}: ${job.job_number}`}
+            </Badge>
+          ) : null
+        }
       />
 
       {pendingRecovery ? (
@@ -386,14 +430,17 @@ export default function StationPage() {
                     {typeLabel(selectedStationEntity.station_type)}
                   </p>
                 ) : null}
+                {sessionError ? (
+                  <p className="text-xs text-rose-600 dark:text-rose-400">{sessionError}</p>
+                ) : null}
               </div>
               <Button
                 size="lg"
                 className="w-full justify-center bg-primary font-medium text-primary-foreground hover:bg-primary/90 sm:w-auto sm:min-w-48"
-                disabled={!selectedStation || isRecoveryBlocking}
+                disabled={!selectedStation || isRecoveryBlocking || isCreatingSession}
                 onClick={handleContinue}
               >
-                {t("station.continue")}
+                {isCreatingSession ? t("station.creating") : t("station.continue")}
               </Button>
             </div>
           </div>

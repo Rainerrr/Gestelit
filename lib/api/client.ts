@@ -97,6 +97,46 @@ export async function fetchStationsWithOccupancyApi(
   return handleResponse<StationWithOccupancy[]>(response);
 }
 
+/**
+ * Validate that a job exists in the database.
+ * Returns the job if found, or exists: false if not.
+ */
+export async function validateJobApi(
+  jobNumber: string,
+): Promise<{ exists: boolean; job?: Job }> {
+  const response = await fetch(
+    `/api/jobs/validate?jobNumber=${encodeURIComponent(jobNumber)}`,
+    {
+      headers: createWorkerHeaders(),
+    },
+  );
+  const data = await handleResponse<{ exists: boolean; job?: Job }>(response);
+  return data;
+}
+
+/**
+ * Create a new session with worker, station, and job.
+ * Called after station selection when the job has already been selected.
+ */
+export async function createSessionApi(
+  workerId: string,
+  stationId: string,
+  jobId: string,
+  instanceId?: string,
+): Promise<Session> {
+  const response = await fetch("/api/sessions", {
+    method: "POST",
+    headers: createWorkerHeaders(),
+    body: JSON.stringify({ workerId, stationId, jobId, instanceId }),
+  });
+  const data = await handleResponse<{ session: Session }>(response);
+  return data.session;
+}
+
+/**
+ * @deprecated Use getOrCreateJobApi + createSessionApi instead.
+ * Legacy function that combines job lookup and session creation.
+ */
 export async function createJobSessionApi(
   workerId: string,
   stationId: string,
