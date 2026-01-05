@@ -9,6 +9,7 @@ import {
   HistoryCharts,
   type StatusSummary,
 } from "./history-charts";
+import { HistoryStatistics } from "./history-statistics";
 import {
   ThroughputChart,
   type ThroughputSummary,
@@ -358,8 +359,30 @@ export const HistoryDashboard = () => {
     [sessions],
   );
 
+  const filteredSessions = useMemo(() => {
+    if (!filters.dateRange?.from) return sessions;
+
+    const fromDate = new Date(filters.dateRange.from);
+    fromDate.setHours(0, 0, 0, 0);
+
+    const toDate = filters.dateRange.to
+      ? new Date(filters.dateRange.to)
+      : new Date(filters.dateRange.from);
+    toDate.setHours(23, 59, 59, 999);
+
+    return sessions.filter((session) => {
+      const sessionDate = new Date(session.startedAt);
+      return sessionDate >= fromDate && sessionDate <= toDate;
+    });
+  }, [sessions, filters.dateRange]);
+
+  const filteredStatusEvents = useMemo(() => {
+    const filteredIds = new Set(filteredSessions.map((s) => s.id));
+    return statusEvents.filter((event) => filteredIds.has(event.sessionId));
+  }, [filteredSessions, statusEvents]);
+
   const sortedSessions = useMemo(() => {
-    const list = [...sessions];
+    const list = [...filteredSessions];
     const direction = sort.direction === "asc" ? 1 : -1;
 
     const getValue = (session: CompletedSession) => {
@@ -402,7 +425,7 @@ export const HistoryDashboard = () => {
     });
 
     return list;
-  }, [sessions, sort]);
+  }, [filteredSessions, sort]);
 
   const sessionsTotalPages = useMemo(
     () => Math.max(1, Math.ceil(sortedSessions.length / SESSIONS_PAGE_SIZE)),
@@ -556,6 +579,19 @@ export const HistoryDashboard = () => {
           onChange={setFilters}
         />
 
+        {/* Statistics cards - affected by filters */}
+        <HistoryStatistics
+          sessions={filteredSessions}
+          statusEvents={filteredStatusEvents}
+          dictionary={dictionary}
+          isLoading={
+            isLoading ||
+            isLoadingFilters ||
+            isLoadingStatusEvents ||
+            isStatusesLoading
+          }
+        />
+
         {/* Status distribution chart - affected by filters */}
         <HistoryCharts
           statusData={statusData}
@@ -573,7 +609,11 @@ export const HistoryDashboard = () => {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="text-right">
               <p className="text-sm text-foreground/80">עבודות שהושלמו</p>
-              <p className="text-xs text-muted-foreground">{sessions.length} עבודות</p>
+              <p className="text-xs text-muted-foreground">
+                {sortedSessions.length === sessions.length
+                  ? `${sessions.length} עבודות`
+                  : `${sortedSessions.length} מתוך ${sessions.length} עבודות`}
+              </p>
               {deleteError ? (
                 <p className="text-sm text-red-400">{deleteError}</p>
               ) : null}
