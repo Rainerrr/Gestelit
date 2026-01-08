@@ -91,7 +91,9 @@ export const DateRangePicker = ({
     setFromInput(inputValue);
 
     const parsed = parse(inputValue, "dd/MM/yyyy", new Date());
-    if (isValid(parsed) && inputValue.length === 10) {
+    const now = new Date();
+    now.setHours(23, 59, 59, 999);
+    if (isValid(parsed) && inputValue.length === 10 && parsed <= now) {
       setTempRange((prev) => ({
         from: parsed,
         to: prev?.to && parsed <= prev.to ? prev.to : undefined,
@@ -105,7 +107,9 @@ export const DateRangePicker = ({
     setToInput(inputValue);
 
     const parsed = parse(inputValue, "dd/MM/yyyy", new Date());
-    if (isValid(parsed) && inputValue.length === 10 && tempRange?.from && parsed >= tempRange.from) {
+    const now = new Date();
+    now.setHours(23, 59, 59, 999);
+    if (isValid(parsed) && inputValue.length === 10 && tempRange?.from && parsed >= tempRange.from && parsed <= now) {
       setTempRange((prev) => ({
         from: prev?.from,
         to: parsed,
@@ -161,7 +165,16 @@ export const DateRangePicker = ({
 
   const hasSelection = Boolean(value?.from);
 
+  // Today's date at start of day for disabling future dates
+  const today = React.useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
+
   // Calendar classNames for proper range highlighting in RTL
+  // Buttons stay fixed size - highlighting is done via cell backgrounds (see globals.css)
+  // Include rdp- classes so CSS selectors work
   const calendarClassNames = {
     months: "flex",
     month: "space-y-2",
@@ -171,35 +184,28 @@ export const DateRangePicker = ({
     weekdays: "flex",
     weekday: "text-muted-foreground w-9 font-normal text-[0.8rem] text-center",
     week: "flex w-full mt-1",
-    // Day cell: handles the background tint for range
-    day: cn(
-      "relative p-0 text-center text-sm focus-within:relative focus-within:z-20",
-      // RTL: range-start is on the RIGHT, range-end is on the LEFT
-      "[&:has(.day-range-start)]:rounded-r-md [&:has(.day-range-start)]:rounded-l-none",
-      "[&:has(.day-range-end)]:rounded-l-md [&:has(.day-range-end)]:rounded-r-none",
-      "[&:has(.day-range-start.day-range-end)]:rounded-md"
-    ),
-    // Day button: the clickable element inside the cell
+    // Day cell: fixed size, flex centering for smaller buttons, backgrounds via CSS :has()
+    day: "rdp-day relative p-0 text-center text-sm h-9 w-9 flex items-center justify-center",
+    // Day button: FIXED size, never changes dimensions
     day_button: cn(
-      "h-9 w-9 p-0 font-normal rounded-md transition-colors",
-      "hover:bg-accent hover:text-accent-foreground",
-      "focus:outline-none focus:ring-2 focus:ring-primary/30",
-      "aria-selected:opacity-100"
+      "h-9 w-9 p-0 font-normal transition-colors rounded-full",
+      "hover:bg-accent/80 hover:text-accent-foreground",
+      "focus:outline-none focus:ring-2 focus:ring-primary/30"
     ),
-    // Range start: solid primary
-    range_start: "day-range-start bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground",
-    // Range end: solid primary
-    range_end: "day-range-end bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground",
-    // Selected (single): fully rounded
-    selected: "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground rounded-md",
+    // Range start: blue circle with band behind (styled via CSS ::before)
+    range_start: "rdp-range_start relative z-10 bg-primary text-primary-foreground rounded-full hover:bg-primary/90",
+    // Range end: blue circle with band behind (styled via CSS ::before)
+    range_end: "rdp-range_end relative z-10 bg-primary text-primary-foreground rounded-full hover:bg-primary/90",
+    // Selected (single day only - range classes override for ranges)
+    selected: "bg-primary text-primary-foreground hover:bg-primary/90 rounded-full",
     // Today indicator
     today: "ring-1 ring-inset ring-primary/40",
     // Outside days
-    outside: "text-muted-foreground/50 aria-selected:bg-accent/30 aria-selected:text-muted-foreground",
+    outside: "text-muted-foreground/50",
     // Disabled
-    disabled: "text-muted-foreground/40 cursor-not-allowed",
-    // Range middle: light accent background
-    range_middle: "bg-accent/50 text-foreground rounded-none hover:bg-accent/70",
+    disabled: "text-muted-foreground/40 cursor-not-allowed hover:bg-transparent",
+    // Range middle: neutral band, no circle (CSS handles background)
+    range_middle: "rdp-range_middle text-foreground",
     hidden: "invisible",
   };
 
@@ -327,6 +333,7 @@ export const DateRangePicker = ({
                 showOutsideDays={false}
                 locale={he}
                 weekStartsOn={0}
+                disabled={{ after: today }}
                 formatters={{
                   formatWeekdayName: (date) => hebrewDays[date.getDay()],
                 }}
@@ -348,6 +355,7 @@ export const DateRangePicker = ({
                 showOutsideDays={false}
                 locale={he}
                 weekStartsOn={0}
+                disabled={{ after: today }}
                 formatters={{
                   formatWeekdayName: (date) => hebrewDays[date.getDay()],
                 }}
