@@ -1,19 +1,28 @@
 "use client";
 
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useWorkerSession } from "@/contexts/WorkerSessionContext";
+import { clearPersistedSessionState } from "@/lib/utils/session-storage";
 
 export default function SessionTransferredPage() {
   const router = useRouter();
   const { t } = useTranslation();
   const { reset } = useWorkerSession();
 
+  // Clear persisted session state immediately when landing on this page
+  // since the session was taken over by another tab/device
+  useEffect(() => {
+    clearPersistedSessionState();
+  }, []);
+
   const handleGoToLogin = () => {
     reset();
+    clearPersistedSessionState(); // Defensive: ensure state is cleared
     router.replace("/login");
   };
 

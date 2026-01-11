@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { CheckCircle2, Users, Cpu, Briefcase, Wrench } from "lucide-react";
+import { CheckCircle2, Users, Cpu, Briefcase, Wrench, GitBranch } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,8 +28,14 @@ import {
   createJobAdminApi,
   updateJobAdminApi,
   deleteJobAdminApi,
+  fetchProductionLinesAdminApi,
+  createProductionLineAdminApi,
+  updateProductionLineAdminApi,
+  deleteProductionLineAdminApi,
+  updateProductionLineStationsAdminApi,
+  fetchAvailableStationsForLineAdminApi,
 } from "@/lib/api/admin-management";
-import type { Job, Station, Worker } from "@/lib/types";
+import type { Job, Station, Worker, ProductionLineWithStations } from "@/lib/types";
 import type { StationWithStats, WorkerWithStats } from "@/lib/data/admin-management";
 import type { JobWithStats } from "@/lib/data/jobs";
 import { WorkersManagement } from "./workers-management";
@@ -38,10 +44,12 @@ import { JobsManagement } from "./jobs-management";
 import { DepartmentManager } from "./department-manager";
 import { StationTypeManager } from "./station-type-manager";
 import { GlobalStatusesManagement } from "./global-statuses-management";
+import { ProductionLinesManagement } from "./production-lines-management";
+import { ProductionLineStationsDialog } from "./production-line-stations-dialog";
 import { AdminLayout } from "../../_components/admin-layout";
 import { AdminPageHeader, MobileBottomBar } from "../../_components/admin-page-header";
 
-type ActiveTab = "workers" | "stations" | "jobs";
+type ActiveTab = "workers" | "stations" | "jobs" | "lines";
 type JobStatusFilter = "all" | "active" | "completed";
 
 const errorCopy: Record<string, string> = {
@@ -59,6 +67,13 @@ const errorCopy: Record<string, string> = {
   JOB_CREATE_FAILED: "יצירת עבודה נכשלה.",
   JOB_UPDATE_FAILED: "עדכון עבודה נכשל.",
   JOB_DELETE_FAILED: "מחיקת עבודה נכשלה.",
+  CODE_ALREADY_EXISTS: "קוד קו ייצור כבר קיים במערכת.",
+  HAS_ACTIVE_JOBS: "לא ניתן למחוק קו ייצור עם עבודות פעילות.",
+  PRODUCTION_LINE_NOT_FOUND: "קו ייצור לא נמצא.",
+  PRODUCTION_LINE_CREATE_FAILED: "יצירת קו ייצור נכשלה.",
+  PRODUCTION_LINE_UPDATE_FAILED: "עדכון קו ייצור נכשל.",
+  PRODUCTION_LINE_DELETE_FAILED: "מחיקת קו ייצור נכשלה.",
+  STATION_ALREADY_IN_LINE: "אחת או יותר מהתחנות כבר משויכת לקו אחר.",
 };
 
 export const ManagementDashboard = () => {
@@ -77,8 +92,14 @@ export const ManagementDashboard = () => {
   const [jobs, setJobs] = useState<JobWithStats[]>([]);
   const [isLoadingJobs, setIsLoadingJobs] = useState<boolean>(true);
   const [jobStatusFilter, setJobStatusFilter] = useState<JobStatusFilter>("all");
+  const [productionLines, setProductionLines] = useState<ProductionLineWithStations[]>([]);
+  const [isLoadingLines, setIsLoadingLines] = useState<boolean>(true);
+  const [editingLineStations, setEditingLineStations] = useState<ProductionLineWithStations | null>(null);
   const [bannerError, setBannerError] = useState<string | null>(null);
   const [bannerSuccess, setBannerSuccess] = useState<string | null>(null);
+
+  // Track if initial data has been loaded to prevent re-running on callback changes
+  const initialLoadDoneRef = useRef(false);
 
   const hebrewLetters = useMemo(
     () => ["א", "ב", "ג", "ד", "ה", "ו", "ז", "ח", "ט", "י", "כ", "ל", "מ", "נ", "ס", "ע", "פ", "צ", "ק", "ר", "ש", "ת"],
@@ -157,27 +178,52 @@ export const ManagementDashboard = () => {
     }
   }, [friendlyError, search, jobStatusFilter]);
 
+  const loadProductionLines = useCallback(async () => {
+    setIsLoadingLines(true);
+    setBannerError(null);
+    try {
+      const { lines } = await fetchProductionLinesAdminApi({ includeInactive: true });
+      setProductionLines(lines);
+    } catch (error) {
+      friendlyError(error);
+    } finally {
+      setIsLoadingLines(false);
+    }
+  }, [friendlyError]);
+
+  // Initial load - runs ONCE when hasAccess becomes true
+  // Loads departments, station types, and stations (needed for worker permissions)
   useEffect(() => {
-    if (hasAccess !== true) return;
+    if (hasAccess !== true || initialLoadDoneRef.current) return;
+    initialLoadDoneRef.current = true;
     void loadDepartments();
     void loadStationTypes();
     void loadStations();
   }, [hasAccess, loadDepartments, loadStationTypes, loadStations]);
 
+  // Load workers when on workers tab (handles filter changes)
   useEffect(() => {
     if (hasAccess !== true || activeTab !== "workers") return;
     void loadWorkers();
   }, [hasAccess, activeTab, loadWorkers]);
 
+  // Load stations when on stations tab (handles filter changes)
   useEffect(() => {
     if (hasAccess !== true || activeTab !== "stations") return;
     void loadStations();
   }, [hasAccess, activeTab, loadStations]);
 
+  // Load jobs when on jobs tab (handles filter changes)
   useEffect(() => {
     if (hasAccess !== true || activeTab !== "jobs") return;
     void loadJobs();
   }, [hasAccess, activeTab, loadJobs]);
+
+  // Load production lines when on lines tab
+  useEffect(() => {
+    if (hasAccess !== true || activeTab !== "lines") return;
+    void loadProductionLines();
+  }, [hasAccess, activeTab, loadProductionLines]);
 
   const handleAddWorker = async (payload: Partial<Worker>) => {
     setBannerError(null);
@@ -383,6 +429,73 @@ export const ManagementDashboard = () => {
     }
   };
 
+  // Production Lines Handlers
+  const handleAddProductionLine = async (payload: { name: string; code?: string | null; is_active?: boolean }) => {
+    setBannerError(null);
+    try {
+      await createProductionLineAdminApi(payload);
+      await loadProductionLines();
+    } catch (error) {
+      friendlyError(error);
+      throw error; // Re-throw for dialog to show error
+    }
+  };
+
+  const handleUpdateProductionLine = async (id: string, payload: { name?: string; code?: string | null; is_active?: boolean }) => {
+    setBannerError(null);
+    try {
+      await updateProductionLineAdminApi(id, payload);
+    } catch (error) {
+      friendlyError(error);
+      throw error;
+    }
+  };
+
+  const handleDeleteProductionLine = async (id: string) => {
+    setBannerError(null);
+    setBannerSuccess(null);
+    try {
+      await deleteProductionLineAdminApi(id);
+      setBannerSuccess("קו הייצור נמחק בהצלחה.");
+      await loadProductionLines();
+      setTimeout(() => setBannerSuccess(null), 5000);
+    } catch (error) {
+      friendlyError(error);
+      throw error;
+    }
+  };
+
+  const handleEditLineStations = (lineId: string) => {
+    const line = productionLines.find((l) => l.id === lineId);
+    if (line) {
+      setEditingLineStations(line);
+    }
+  };
+
+  const handleSaveLineStations = async (lineId: string, stationIds: string[]) => {
+    setBannerError(null);
+    try {
+      await updateProductionLineStationsAdminApi(lineId, stationIds);
+      await loadProductionLines();
+    } catch (error) {
+      friendlyError(error);
+      throw error;
+    }
+  };
+
+  const handleFetchAvailableStations = async (lineId?: string) => {
+    const { stations } = await fetchAvailableStationsForLineAdminApi(lineId);
+    return stations;
+  };
+
+  const handleCheckLineLocked = async (lineId: string) => {
+    // Check if line has active job items
+    const line = productionLines.find((l) => l.id === lineId);
+    // For now, we'll let the API determine if the line is locked
+    // This will be handled by the API when trying to modify stations
+    return false;
+  };
+
   if (hasAccess === null) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center rounded-xl border border-border bg-card/50 text-muted-foreground">
@@ -405,6 +518,7 @@ export const ManagementDashboard = () => {
       { id: "workers", label: "עובדים", icon: Users },
       { id: "stations", label: "תחנות", icon: Cpu },
       { id: "jobs", label: "עבודות", icon: Briefcase },
+      { id: "lines", label: "קווי ייצור", icon: GitBranch },
     ],
     activeId: activeTab,
     onChange: (id: string) => setActiveTab(id as ActiveTab),
@@ -601,7 +715,7 @@ export const ManagementDashboard = () => {
             <Separator />
             <GlobalStatusesManagement />
           </>
-        ) : (
+        ) : activeTab === "jobs" ? (
           <JobsManagement
             jobs={jobs}
             isLoading={isLoadingJobs}
@@ -610,6 +724,31 @@ export const ManagementDashboard = () => {
             onDelete={handleDeleteJob}
             onRefresh={loadJobs}
           />
+        ) : (
+          <>
+            <ProductionLinesManagement
+              lines={productionLines}
+              isLoading={isLoadingLines}
+              onAdd={handleAddProductionLine}
+              onEdit={handleUpdateProductionLine}
+              onDelete={handleDeleteProductionLine}
+              onEditStations={handleEditLineStations}
+              onCheckLocked={handleCheckLineLocked}
+              onRefresh={loadProductionLines}
+            />
+            <ProductionLineStationsDialog
+              line={editingLineStations}
+              open={editingLineStations !== null}
+              onOpenChange={(open) => {
+                if (!open) {
+                  setEditingLineStations(null);
+                }
+              }}
+              onSave={handleSaveLineStations}
+              onFetchAvailableStations={handleFetchAvailableStations}
+              onCheckLocked={handleCheckLineLocked}
+            />
+          </>
         )}
       </div>
     </AdminLayout>

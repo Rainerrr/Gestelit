@@ -6,6 +6,7 @@ import type {
   ReportType,
   Station,
   StationChecklist,
+  StationSelectionJobItem,
   StatusDefinition,
   StatusEvent,
   StatusEventState,
@@ -95,6 +96,44 @@ export async function fetchStationsWithOccupancyApi(
     },
   );
   return handleResponse<StationWithOccupancy[]>(response);
+}
+
+/**
+ * Fetch stations that are BOTH assigned to the worker AND part of the job's job_items.
+ * This implements the intersection permission model for production line jobs.
+ *
+ * Returns:
+ * - List of allowed stations with occupancy info
+ * - Throws JOB_NOT_CONFIGURED if job has no job_items (legacy job)
+ */
+export async function fetchAllowedStationsForJobApi(
+  jobId: string,
+  workerId: string,
+): Promise<StationWithOccupancy[]> {
+  const response = await fetch(
+    `/api/jobs/${encodeURIComponent(jobId)}/allowed-stations?workerId=${encodeURIComponent(workerId)}`,
+    {
+      headers: createWorkerHeaders(),
+    },
+  );
+  return handleResponse<StationWithOccupancy[]>(response);
+}
+
+/**
+ * Fetch job items structured for station selection UI.
+ * Returns job items with pipeline stations, worker assignment flags, and occupancy.
+ */
+export async function fetchStationSelectionForJobApi(
+  jobId: string,
+  workerId: string,
+): Promise<{ jobItems: StationSelectionJobItem[] }> {
+  const response = await fetch(
+    `/api/jobs/${encodeURIComponent(jobId)}/station-selection?workerId=${encodeURIComponent(workerId)}`,
+    {
+      headers: createWorkerHeaders(),
+    },
+  );
+  return handleResponse<{ jobItems: StationSelectionJobItem[] }>(response);
 }
 
 /**
@@ -384,5 +423,52 @@ export async function createStatusEventWithReportApi(input: {
     body: formData,
   });
   return handleResponse<{ event: StatusEvent; report: Report }>(response);
+}
+
+// ============================================
+// PRODUCTION PIPELINE API
+// ============================================
+
+export type PipelineNeighborStation = {
+  id: string;
+  name: string;
+  code: string;
+  position: number;
+  isTerminal: boolean;
+  wipAvailable: number;
+  occupiedBy: string | null;
+};
+
+export type SessionPipelineContext = {
+  isProductionLine: boolean;
+  isSingleStation: boolean;
+  currentPosition: number;
+  isTerminal: boolean;
+  prevStation: PipelineNeighborStation | null;
+  nextStation: PipelineNeighborStation | null;
+  upstreamWip: number;
+  waitingOutput: number;
+  jobItem: {
+    id: string;
+    kind: "station" | "line";
+    plannedQuantity: number;
+  } | null;
+};
+
+/**
+ * Fetch the production pipeline context for a session.
+ * Returns neighboring stations, WIP balances, and position info.
+ */
+export async function fetchSessionPipelineContextApi(
+  sessionId: string,
+): Promise<SessionPipelineContext> {
+  const response = await fetch(
+    `/api/sessions/pipeline?sessionId=${encodeURIComponent(sessionId)}`,
+    {
+      headers: createWorkerHeaders(),
+    },
+  );
+  const data = await handleResponse<{ context: SessionPipelineContext }>(response);
+  return data.context;
 }
 

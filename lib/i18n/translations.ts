@@ -159,6 +159,22 @@ export const translations = {
     he: "לא ניתן ליצור עבודה כעת. נסו שוב.",
     ru: "Не удалось создать работу. Попробуйте ещё раз.",
   },
+  "station.error.jobNotConfigured": {
+    he: "פק\"ע לא מוגדר לייצור",
+    ru: "Заказ не настроен для производства",
+  },
+  "station.error.jobNotConfiguredDesc": {
+    he: "הפק\"ע הזה עדיין לא הוגדר עם תחנות או קווי ייצור. פנו למנהל להגדרת הפק\"ע.",
+    ru: "Этот заказ ещё не настроен со станциями или производственными линиями. Обратитесь к администратору для настройки заказа.",
+  },
+  "station.error.selectAnotherJob": {
+    he: "בחר פק\"ע אחר",
+    ru: "Выбрать другой заказ",
+  },
+  "station.error.jobItemNotFound": {
+    he: "לא נמצא פריט ייצור מתאים לתחנה זו",
+    ru: "Не найден подходящий элемент производства для этой станции",
+  },
   "station.resume.bannerTitle": {
     he: "נמצאה עבודה פעילה",
     ru: "Найдена активная работа",
@@ -270,6 +286,54 @@ export const translations = {
   "station.type.other": {
     he: "אחר",
     ru: "Другое",
+  },
+  "station.productionLine": {
+    he: "קו ייצור",
+    ru: "Производственная линия",
+  },
+  "station.singleStation": {
+    he: "תחנה בודדת",
+    ru: "Отдельная станция",
+  },
+  "station.stationCount": {
+    he: "{{count}} תחנות",
+    ru: "{{count}} станций",
+  },
+  "station.plannedQuantity": {
+    he: "{{count}} יח׳ מתוכננות",
+    ru: "{{count}} ед. запланировано",
+  },
+  "station.notAssigned": {
+    he: "לא משויך אליך",
+    ru: "Не назначено вам",
+  },
+  "station.terminal": {
+    he: "תחנה סופית",
+    ru: "Конечная станция",
+  },
+  "station.available": {
+    he: "פנוי",
+    ru: "Свободно",
+  },
+  "station.occupied": {
+    he: "תפוס",
+    ru: "Занято",
+  },
+  "station.gracePeriod": {
+    he: "תקופת חסד",
+    ru: "Период ожидания",
+  },
+  "station.noStations": {
+    he: "אין תחנות להצגה",
+    ru: "Нет станций для отображения",
+  },
+  "station.noJobItems": {
+    he: "אין פריטי עבודה מוגדרים לעבודה זו",
+    ru: "Для этого заказа не определены рабочие элементы",
+  },
+  "station.noAssignedStations": {
+    he: "אין לך תחנות משויכות לעבודה זו",
+    ru: "У вас нет назначенных станций для этого заказа",
   },
   "job.title": {
     he: "פתיחת פק\"ע",
@@ -503,6 +567,10 @@ export const translations = {
     he: "לא ניתן לעדכן כמויות כרגע.",
     ru: "Не удалось обновить количества.",
   },
+  "work.error.wipDownstreamConsumed": {
+    he: "לא ניתן להקטין כמות - היא כבר נצרכה בתחנה הבאה.",
+    ru: "Нельзя уменьшить количество — оно уже использовано на следующей станции.",
+  },
   "work.error.fault": {
     he: "לא ניתן לשמור את דיווח התקלה.",
     ru: "Не удалось сохранить сообщение о неисправности.",
@@ -558,6 +626,55 @@ export const translations = {
   "work.dialog.finish.confirm": {
     he: "מעבר לצ'ק ליסט סגירה",
     ru: "Перейти к финальному чек-листу",
+  },
+  // Production Pipeline
+  "work.pipeline.upstream": {
+    he: "תחנה קודמת",
+    ru: "Предыдущая станция",
+  },
+  "work.pipeline.downstream": {
+    he: "תחנה הבאה",
+    ru: "Следующая станция",
+  },
+  "work.pipeline.available": {
+    he: "זמין לשליפה",
+    ru: "Доступно",
+  },
+  "work.pipeline.waiting": {
+    he: "ממתין",
+    ru: "Ожидает",
+  },
+  "work.pipeline.firstStation": {
+    he: "תחנה ראשונה",
+    ru: "Первая станция",
+  },
+  "work.pipeline.lastStation": {
+    he: "תחנה סופית",
+    ru: "Последняя станция",
+  },
+  "work.pipeline.singleStation": {
+    he: "עמדה בודדת",
+    ru: "Отдельная станция",
+  },
+  "work.pipeline.collapse": {
+    he: "צמצם",
+    ru: "Свернуть",
+  },
+  "work.pipeline.expand": {
+    he: "לחץ להרחבה",
+    ru: "Нажмите для раскрытия",
+  },
+  "work.pipeline.flowTitle": {
+    he: "זרימת קו ייצור",
+    ru: "Поток производственной линии",
+  },
+  "work.pipeline.output": {
+    he: "תפוקה",
+    ru: "Выход",
+  },
+  "work.pipeline.noStation": {
+    he: "אין תחנה",
+    ru: "Нет станции",
   },
   "summary.completed": {
     he: "הפק\"ע נסגר בהצלחה.",

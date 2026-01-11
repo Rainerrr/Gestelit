@@ -26,12 +26,16 @@ import {
 } from "@/components/ui/dialog";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useWorkerSession } from "@/contexts/WorkerSessionContext";
-import { abandonSessionApi, createSessionApi, fetchStationsWithOccupancyApi } from "@/lib/api/client";
-import { cn } from "@/lib/utils";
-import type { SessionAbandonReason, Station } from "@/lib/types";
-import type { StationWithOccupancy } from "@/lib/data/stations";
-import type { TranslationKey } from "@/lib/i18n/translations";
+import {
+  abandonSessionApi,
+  createSessionApi,
+  fetchStationsWithOccupancyApi,
+  fetchStationSelectionForJobApi,
+} from "@/lib/api/client";
+import { persistSessionState, clearPersistedSessionState } from "@/lib/utils/session-storage";
+import type { SessionAbandonReason, StationSelectionJobItem } from "@/lib/types";
 import { BackButton } from "@/components/navigation/back-button";
+import { JobItemCard } from "@/components/worker/job-item-card";
 
 const formatDuration = (totalSeconds: number) => {
   const safeSeconds = Math.max(0, Math.floor(totalSeconds));
@@ -63,35 +67,60 @@ export default function StationPage() {
     hydrateFromSnapshot,
   } = useWorkerSession();
 
-  type StationsState = {
+  type JobItemsState = {
     loading: boolean;
-    items: StationWithOccupancy[];
+    items: StationSelectionJobItem[];
     error: string | null;
+    errorCode: string | null;
+    // Legacy mode for session recovery (flat station list)
+    legacyMode: boolean;
   };
 
   const [state, dispatch] = useReducer(
     (
-      prev: StationsState,
+      prev: JobItemsState,
       action:
         | { type: "start" }
-        | { type: "success"; payload: StationWithOccupancy[] }
-        | { type: "error" },
+        | { type: "success"; payload: StationSelectionJobItem[]; legacyMode?: boolean }
+        | { type: "error"; errorCode?: string },
     ) => {
       switch (action.type) {
         case "start":
-          return { ...prev, loading: true, error: null };
+          return { ...prev, loading: true, error: null, errorCode: null };
         case "success":
-          return { loading: false, items: action.payload, error: null };
+          return {
+            loading: false,
+            items: action.payload,
+            error: null,
+            errorCode: null,
+            legacyMode: action.legacyMode ?? false,
+          };
         case "error":
-          return { ...prev, loading: false, error: "error" };
+          return { ...prev, loading: false, error: "error", errorCode: action.errorCode ?? null };
         default:
           return prev;
       }
     },
-    { loading: true, items: [], error: null },
+    { loading: true, items: [], error: null, errorCode: null, legacyMode: false },
   );
-  const [selectedStation, setSelectedStation] = useState<string | undefined>(
-    station?.id,
+
+  // Track both station ID and job item station ID for session creation
+  type Selection = {
+    stationId: string;
+    jobItemStationId: string;
+    stationName: string;
+    stationCode: string;
+  } | null;
+
+  const [selection, setSelection] = useState<Selection>(
+    station
+      ? {
+          stationId: station.id,
+          jobItemStationId: "", // Will be set on actual selection
+          stationName: station.name,
+          stationCode: station.code,
+        }
+      : null,
   );
   const [resumeCountdownMs, setResumeCountdownMs] = useState(0);
   const [resumeActionLoading, setResumeActionLoading] = useState(false);
@@ -125,6 +154,8 @@ export default function StationPage() {
       setResumeError(null);
       try {
         await abandonSessionApi(pendingRecovery.session.id, reason);
+        // Clear any persisted state since the session is being discarded
+        clearPersistedSessionState();
         setPendingRecovery(null);
       } catch {
         setResumeError(t("station.resume.error"));
@@ -148,15 +179,59 @@ export default function StationPage() {
 
     let active = true;
     dispatch({ type: "start" });
-    fetchStationsWithOccupancyApi(worker.id)
-      .then((result) => {
-        if (!active) return;
-        dispatch({ type: "success", payload: result });
-      })
-      .catch(() => {
+
+    // Fetch stations based on whether we have a job with job_items
+    const fetchStations = async () => {
+      try {
+        // If recovering a session, use the legacy endpoint (all worker stations)
+        if (pendingRecovery || !job) {
+          const result = await fetchStationsWithOccupancyApi(worker.id);
+          if (!active) return;
+          // Convert legacy flat stations to job items format for display
+          const legacyJobItems: StationSelectionJobItem[] = result.map((s) => ({
+            id: s.id,
+            kind: "station" as const,
+            name: s.name,
+            plannedQuantity: 0,
+            pipelineStations: [
+              {
+                id: s.id,
+                name: s.name,
+                code: s.code,
+                position: 1,
+                isTerminal: true,
+                isWorkerAssigned: true,
+                occupancy: s.occupancy,
+                jobItemStationId: "", // Not applicable in legacy mode
+              },
+            ],
+          }));
+          dispatch({ type: "success", payload: legacyJobItems, legacyMode: true });
+        } else {
+          // Use the new job-specific station selection endpoint
+          try {
+            const result = await fetchStationSelectionForJobApi(job.id, worker.id);
+            if (!active) return;
+            dispatch({ type: "success", payload: result.jobItems });
+          } catch (error) {
+            if (!active) return;
+            const errorMsg = error instanceof Error ? error.message : "UNKNOWN";
+            if (errorMsg === "JOB_NOT_CONFIGURED") {
+              // Job has no job_items - block with specific error
+              dispatch({ type: "error", errorCode: "JOB_NOT_CONFIGURED" });
+            } else {
+              // Other error - dispatch generic error
+              dispatch({ type: "error", errorCode: errorMsg });
+            }
+          }
+        }
+      } catch {
         if (!active) return;
         dispatch({ type: "error" });
-      });
+      }
+    };
+
+    void fetchStations();
 
     return () => {
       active = false;
@@ -193,7 +268,7 @@ export default function StationPage() {
 
     const graceExpiryTime = new Date(pendingRecovery.graceExpiresAt).getTime();
     const now = Date.now();
-    
+
     if (now < graceExpiryTime) {
       return;
     }
@@ -202,22 +277,24 @@ export default function StationPage() {
     void handleDiscardSession("expired");
   }, [pendingRecovery, resumeCountdownMs, handleDiscardSession]);
 
-  const typeLabel = (stationType: Station["station_type"]) =>
-    t(`station.type.${stationType}` as TranslationKey);
-
-  const stations = state.items;
-  const selectedStationEntity = stations.find(
-    (entry) => entry.id === selectedStation,
-  );
+  const handleStationSelect = (stationId: string, jobItemStationId: string) => {
+    // Find the station details from job items
+    for (const item of state.items) {
+      const pipelineStation = item.pipelineStations.find((s) => s.id === stationId);
+      if (pipelineStation) {
+        setSelection({
+          stationId,
+          jobItemStationId,
+          stationName: pipelineStation.name,
+          stationCode: pipelineStation.code,
+        });
+        break;
+      }
+    }
+  };
 
   const handleContinue = async () => {
-    if (!selectedStation || !worker || !job || pendingRecovery) {
-      return;
-    }
-    const stationEntity = stations.find(
-      (entry) => entry.id === selectedStation,
-    );
-    if (!stationEntity) {
+    if (!selection || !worker || !job || pendingRecovery) {
       return;
     }
 
@@ -228,20 +305,49 @@ export default function StationPage() {
       // Create the session with worker, job, and station
       const session = await createSessionApi(
         worker.id,
-        stationEntity.id,
+        selection.stationId,
         job.id,
         instanceId,
       );
 
-      setStation(stationEntity);
+      // Create a minimal station object for context
+      const stationForContext = {
+        id: selection.stationId,
+        name: selection.stationName,
+        code: selection.stationCode,
+        station_type: "other" as const,
+        is_active: true,
+      };
+
+      setStation(stationForContext);
       setSessionId(session.id);
       setSessionStartedAt(session.started_at ?? null);
       setCurrentStatus(undefined);
+
+      // Persist session state to sessionStorage for recovery on page refresh
+      persistSessionState({
+        sessionId: session.id,
+        workerId: worker.id,
+        workerCode: worker.worker_code,
+        workerFullName: worker.full_name,
+        stationId: selection.stationId,
+        stationName: selection.stationName,
+        stationCode: selection.stationCode,
+        jobId: job.id,
+        jobNumber: job.job_number,
+        startedAt: session.started_at ?? new Date().toISOString(),
+        totals: { good: 0, scrap: 0 },
+      });
+
       router.push("/checklist/start");
     } catch (error) {
       const message = error instanceof Error ? error.message : "SESSION_FAILED";
       if (message === "STATION_OCCUPIED") {
         setSessionError(t("station.error.occupied"));
+      } else if (message === "JOB_ITEM_NOT_FOUND") {
+        setSessionError(t("station.error.jobItemNotFound"));
+      } else if (message === "JOB_NOT_CONFIGURED") {
+        setSessionError(t("station.error.jobNotConfigured"));
       } else {
         setSessionError(t("station.error.sessionFailed"));
       }
@@ -280,6 +386,27 @@ export default function StationPage() {
     }
     hydrateFromSnapshot(pendingRecovery);
     setResumeError(null);
+
+    // Persist session state for future refreshes
+    if (worker) {
+      persistSessionState({
+        sessionId: pendingRecovery.session.id,
+        workerId: worker.id,
+        workerCode: worker.worker_code,
+        workerFullName: worker.full_name,
+        stationId: pendingRecovery.station.id,
+        stationName: pendingRecovery.station.name,
+        stationCode: pendingRecovery.station.code,
+        jobId: pendingRecovery.job.id,
+        jobNumber: pendingRecovery.job.job_number,
+        startedAt: pendingRecovery.session.started_at,
+        totals: {
+          good: pendingRecovery.session.total_good ?? 0,
+          scrap: pendingRecovery.session.total_scrap ?? 0,
+        },
+      });
+    }
+
     router.push("/work");
   };
 
@@ -289,6 +416,13 @@ export default function StationPage() {
       router.push("/login");
     }
   };
+
+  // Check if worker has any assigned stations in any job item
+  const hasAnyAssignedStations = useMemo(() => {
+    return state.items.some((item) =>
+      item.pipelineStations.some((s) => s.isWorkerAssigned)
+    );
+  }, [state.items]);
 
   if (!worker) {
     return null;
@@ -323,113 +457,81 @@ export default function StationPage() {
       ) : null}
 
       {state.loading ? (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 3 }).map((_, index) => (
+        <div className="space-y-4 max-w-3xl">
+          {Array.from({ length: 2 }).map((_, index) => (
             <div
               key={`skeleton-${index}`}
-              className="h-32 rounded-xl border border-dashed border-border bg-card/50"
+              className="h-40 rounded-xl border border-dashed border-border bg-card/50"
             >
               <div className="h-full w-full animate-pulse rounded-xl bg-muted" />
             </div>
           ))}
         </div>
+      ) : state.errorCode === "JOB_NOT_CONFIGURED" ? (
+        <Card className="max-w-3xl border border-amber-500/30 bg-amber-50/10 text-right dark:border-amber-500/20 dark:bg-amber-500/5">
+          <CardHeader className="space-y-3">
+            <CardTitle className="text-lg text-amber-700 dark:text-amber-400">
+              {t("station.error.jobNotConfigured")}
+            </CardTitle>
+            <p className="text-sm text-amber-600/80 dark:text-amber-500/80">
+              {t("station.error.jobNotConfiguredDesc")}
+            </p>
+            <Button
+              variant="outline"
+              className="w-fit border-amber-500/30 text-amber-700 hover:bg-amber-50 dark:border-amber-500/20 dark:text-amber-400 dark:hover:bg-amber-500/10"
+              onClick={() => router.push("/job")}
+            >
+              {t("station.error.selectAnotherJob")}
+            </Button>
+          </CardHeader>
+        </Card>
       ) : state.items.length === 0 ? (
         <Card className="max-w-3xl border border-dashed border-border bg-card/50 text-right">
           <CardHeader>
             <CardTitle className="text-lg text-muted-foreground">
-              {state.error ? t("station.error.load") : t("station.empty")}
+              {state.error ? t("station.error.load") : t("station.noJobItems")}
             </CardTitle>
           </CardHeader>
         </Card>
+      ) : !hasAnyAssignedStations ? (
+        <Card className="max-w-3xl border border-amber-500/30 bg-amber-50/10 text-right dark:border-amber-500/20 dark:bg-amber-500/5">
+          <CardHeader className="space-y-3">
+            <CardTitle className="text-lg text-amber-700 dark:text-amber-400">
+              {t("station.noAssignedStations")}
+            </CardTitle>
+            <Button
+              variant="outline"
+              className="w-fit border-amber-500/30 text-amber-700 hover:bg-amber-50 dark:border-amber-500/20 dark:text-amber-400 dark:hover:bg-amber-500/10"
+              onClick={() => router.push("/job")}
+            >
+              {t("station.error.selectAnotherJob")}
+            </Button>
+          </CardHeader>
+        </Card>
       ) : (
-        <section className="space-y-6">
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {stations.map((stationOption) => {
-              const isSelected = selectedStation === stationOption.id;
-              const isOccupied = stationOption.occupancy?.isOccupied ?? false;
-              const isDisabled = isRecoveryBlocking || isOccupied;
-              return (
-                <button
-                  key={stationOption.id}
-                  type="button"
-                  onClick={() => {
-                    if (isDisabled) {
-                      return;
-                    }
-                    setSelectedStation(stationOption.id);
-                  }}
-                  className={cn(
-                    "rounded-xl border border-border bg-card/50 p-4 text-right backdrop-blur-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
-                    isSelected
-                      ? "border-primary/50 bg-primary/10 ring-2 ring-primary/20"
-                      : "hover:border-primary/40 hover:bg-accent",
-                    isDisabled ? "cursor-not-allowed opacity-60" : "",
-                    isOccupied ? "border-amber-500/30 bg-amber-50/5" : "",
-                  )}
-                  aria-pressed={isSelected}
-                  disabled={isDisabled}
-                >
-                  <div className="space-y-2">
-                    <p className="text-xl font-semibold text-foreground">
-                      {stationOption.name}
-                    </p>
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{typeLabel(stationOption.station_type)}</span>
-                      <span
-                        aria-hidden
-                        className={cn(
-                          "inline-flex h-2.5 w-2.5 rounded-full transition",
-                          isSelected ? "bg-primary" : "bg-muted-foreground/50",
-                          isOccupied ? "bg-amber-500" : "",
-                        )}
-                      />
-                    </div>
-                    {isOccupied && stationOption.occupancy?.occupiedBy && (
-                      <div className="mt-2 flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
-                        <svg
-                          className="h-4 w-4 shrink-0"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                          strokeWidth={2}
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-                          />
-                        </svg>
-                        <span className="truncate">
-                          {t("station.occupied.by", {
-                            name: stationOption.occupancy.occupiedBy.workerName,
-                          })}
-                          {stationOption.occupancy.isGracePeriod && (
-                            <span className="mr-1 text-amber-600 dark:text-amber-500">
-                              {" "}
-                              ({t("station.occupied.gracePeriod")})
-                            </span>
-                          )}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
+        <section className="space-y-6 max-w-4xl">
+          {/* Job Item Cards */}
+          <div className="space-y-4">
+            {state.items.map((jobItem) => (
+              <JobItemCard
+                key={jobItem.id}
+                jobItem={jobItem}
+                selectedStationId={selection?.stationId ?? null}
+                onStationSelect={handleStationSelect}
+                disabled={isRecoveryBlocking}
+              />
+            ))}
           </div>
+
+          {/* Selection Summary & Continue Button */}
           <div className="rounded-xl border border-border bg-card/50 p-4 backdrop-blur-sm">
             <div className="flex flex-col gap-3 text-right md:flex-row md:items-center md:justify-between">
               <div className="space-y-1">
                 <p className="text-sm text-foreground/80">
-                  {selectedStationEntity
-                    ? `${t("station.selected")} · ${selectedStationEntity.name}`
+                  {selection
+                    ? `${t("station.selected")} · ${selection.stationName}`
                     : t("station.subtitle")}
                 </p>
-                {selectedStationEntity ? (
-                  <p className="text-xs text-muted-foreground">
-                    {typeLabel(selectedStationEntity.station_type)}
-                  </p>
-                ) : null}
                 {sessionError ? (
                   <p className="text-xs text-rose-600 dark:text-rose-400">{sessionError}</p>
                 ) : null}
@@ -437,7 +539,7 @@ export default function StationPage() {
               <Button
                 size="lg"
                 className="w-full justify-center bg-primary font-medium text-primary-foreground hover:bg-primary/90 sm:w-auto sm:min-w-48"
-                disabled={!selectedStation || isRecoveryBlocking || isCreatingSession}
+                disabled={!selection || isRecoveryBlocking || isCreatingSession}
                 onClick={handleContinue}
               >
                 {isCreatingSession ? t("station.creating") : t("station.continue")}
@@ -519,4 +621,3 @@ export default function StationPage() {
     </>
   );
 }
-

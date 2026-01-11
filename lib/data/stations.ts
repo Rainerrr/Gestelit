@@ -1,5 +1,7 @@
 import { getActiveStationReasons, mergeStationReasonsWithDefault } from "@/lib/data/station-reasons";
+import { getJobAllowedStationIds } from "@/lib/data/job-items";
 import { createServiceSupabase } from "@/lib/supabase/client";
+import { SESSION_GRACE_MS } from "@/lib/constants";
 import type { Station, StationReason } from "@/lib/types";
 
 type WorkerStationRow = {
@@ -74,8 +76,7 @@ export async function getStationActiveReasons(
   return getActiveStationReasons(station.station_reasons);
 }
 
-// Grace period: 5 minutes (must match lib/data/sessions.ts)
-const SESSION_GRACE_MS = 5 * 60 * 1000;
+// SESSION_GRACE_MS is imported from @/lib/constants
 
 export type StationOccupancy = {
   isOccupied: boolean;
@@ -284,5 +285,73 @@ export async function isStationOccupied(
       workerName: session.workers?.full_name ?? "Unknown",
     },
   };
+}
+
+// ============================================
+// JOB + WORKER INTERSECTION
+// ============================================
+
+/**
+ * Fetch stations that are BOTH:
+ * 1. Assigned to the worker (worker_stations)
+ * 2. Part of the job's job_items (via job_item_stations)
+ *
+ * This is the intersection required for the worker flow:
+ * Worker can only select stations that they're assigned to AND that are relevant to the job.
+ */
+export async function fetchAllowedStationsForJobAndWorker(
+  jobId: string,
+  workerId: string,
+): Promise<StationWithOccupancy[]> {
+  // Get all station IDs allowed for this job (from job_items)
+  const jobStationIds = await getJobAllowedStationIds(jobId);
+
+  if (jobStationIds.length === 0) {
+    // Job has no job_items configured - return empty array
+    // (Worker flow should block before this point)
+    return [];
+  }
+
+  // Get all stations assigned to this worker with occupancy info
+  const workerStations = await fetchStationsWithOccupancy(workerId);
+
+  // Filter to only stations that are in both sets (intersection)
+  const jobStationIdSet = new Set(jobStationIds);
+  const allowedStations = workerStations.filter((station) =>
+    jobStationIdSet.has(station.id)
+  );
+
+  return allowedStations;
+}
+
+/**
+ * Check if a station is allowed for a job and worker combination.
+ * Used for server-side validation during session creation.
+ */
+export async function isStationAllowedForJobAndWorker(
+  stationId: string,
+  jobId: string,
+  workerId: string,
+): Promise<boolean> {
+  const supabase = createServiceSupabase();
+
+  // Check if worker is assigned to this station
+  const { count: workerCount, error: workerError } = await supabase
+    .from("worker_stations")
+    .select("*", { count: "exact", head: true })
+    .eq("worker_id", workerId)
+    .eq("station_id", stationId);
+
+  if (workerError) {
+    throw new Error(`Failed to check worker assignment: ${workerError.message}`);
+  }
+
+  if ((workerCount ?? 0) === 0) {
+    return false; // Worker not assigned to this station
+  }
+
+  // Check if this station is part of the job's job_items
+  const jobStationIds = await getJobAllowedStationIds(jobId);
+  return jobStationIds.includes(stationId);
 }
 

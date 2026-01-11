@@ -1,348 +1,275 @@
 # Gestelit Work Monitor - Architecture Reference
 
-> Manufacturing floor real-time worker session tracking system
-> Stack: Next.js 16 + React 19 + TypeScript + Supabase (PostgreSQL)
-> Updated: January 2026
+Manufacturing floor real-time worker session tracking system.
+
+- **Framework**: Next.js 16 (App Router) + React 19 + TypeScript
+- **Database**: Supabase (PostgreSQL 17) with Row Level Security
+- **Styling**: TailwindCSS + shadcn/ui, RTL-first (Hebrew primary)
+- **Updated**: January 2026
 
 ---
 
-## Table of Contents
+## Commands
 
-1. [Quick Reference](#1-quick-reference)
-2. [System Overview](#2-system-overview)
-3. [Database Schema](#3-database-schema)
-4. [Data Management Patterns](#4-data-management-patterns)
-5. [Application Architecture](#5-application-architecture)
-6. [API Layer](#6-api-layer)
-7. [Security Model](#7-security-model)
-8. [Testing Strategy](#8-testing-strategy)
-9. [Conventions](#9-conventions)
-
----
-
-## 1. Quick Reference
-
-### Commands
 ```bash
-npm run dev       # Development server (localhost:3000)
-npm run build     # Production build
-npm run lint      # ESLint check
-npm run test:run  # Run integration tests
-npx supabase db push  # Apply migrations to remote
-```
-
-### Key Directories
-```
-app/(worker)/          # Worker flow: login -> station -> job -> checklist -> work
-app/admin/             # Admin dashboard, history, reports, management
-app/api/               # Backend API routes (service role)
-lib/data/              # Server-side Supabase queries (reusable)
-lib/api/               # Client-side API wrappers (auth headers)
-lib/types.ts           # TypeScript domain types
-contexts/              # React contexts (WorkerSession, Language)
-hooks/                 # Custom React hooks
-tests/integration/     # Vitest integration tests
-supabase/migrations/   # Database migrations (timestamped)
+npm run dev          # Start dev server at localhost:3000
+npm run build        # Production build
+npm run lint         # ESLint check
+npm run test:run     # Run integration tests once
+npm run test         # Run tests in watch mode
+npx supabase db push # Apply migrations to remote database
 ```
 
 ---
 
-## 2. System Overview
-
-### Domain Model
+## Directory Structure
 
 ```
-                    ┌─────────────┐
-                    │   Workers   │
-                    │ (employees) │
-                    └──────┬──────┘
-                           │ works on
-                           ▼
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│   Stations  │◄────│   Sessions  │────►│    Jobs     │
-│ (machines)  │     │ (work unit) │     │  (orders)   │
-└─────────────┘     └──────┬──────┘     └─────────────┘
-                           │
-              ┌────────────┼────────────┐
-              ▼            ▼            ▼
-       ┌──────────┐  ┌──────────┐  ┌──────────┐
-       │  Status  │  │ Checklist│  │  Reports │
-       │  Events  │  │ Responses│  │(issues)  │
-       └──────────┘  └──────────┘  └──────────┘
+app/(worker)/        # Worker flow: login -> job -> station -> checklist -> work
+app/admin/           # Admin dashboard, history, reports, management
+app/api/             # API routes (all use service role Supabase client)
+lib/data/            # Server-side Supabase queries (reusable across routes)
+lib/api/             # Client-side API wrappers (auto-add auth headers)
+lib/types.ts         # TypeScript domain types
+contexts/            # React contexts (WorkerSession, Language)
+hooks/               # Custom React hooks
+tests/integration/   # Vitest integration tests
+supabase/migrations/ # Database migrations (timestamped YYYYMMDDHHMMSS)
 ```
 
-### Core Domain Types
+---
+
+## Domain Types
+
 ```typescript
-SessionStatus: "active" | "completed" | "aborted"
-MachineState: "production" | "setup" | "stoppage"
-StatusScope: "global" | "station"
-ReportType: "malfunction" | "general" | "scrap"
-ReportStatus: "open" | "known" | "solved" | "new" | "approved"
-ChecklistKind: "start" | "end"
+type SessionStatus = "active" | "completed" | "aborted";
+type MachineState = "production" | "setup" | "stoppage";
+type StatusScope = "global" | "station";
+type ReportType = "malfunction" | "general" | "scrap";
+type ReportStatus = "open" | "known" | "solved" | "new" | "approved";
+type ChecklistKind = "start" | "end";
+type WorkerRole = "worker" | "admin";
 ```
-
-### Session Lifecycle
-
-```
-┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐
-│  Login  │───►│ Station │───►│   Job   │───►│  Start  │───►│  Work   │───►│Complete │
-│ (code)  │    │ Select  │    │  Entry  │    │Checklist│    │ (active)│    │   End   │
-└─────────┘    └─────────┘    └─────────┘    └─────────┘    └────┬────┘    └─────────┘
-                                                                  │
-                              ┌───────────────────────────────────┤
-                              │                                   │
-                              ▼                                   ▼
-                    ┌──────────────────┐              ┌──────────────────┐
-                    │  Heartbeat (15s) │              │  Grace Period    │
-                    │  last_seen_at    │              │  (5 min recovery)│
-                    └──────────────────┘              └──────────────────┘
-```
-
-**Key Behaviors:**
-- Single active session per worker (enforced)
-- Station occupancy tracking (one session per station)
-- Instance tracking prevents multi-tab conflicts
-- Idle sessions auto-closed after 5 minutes
-- 5-minute grace period allows session recovery
 
 ---
 
-## 3. Database Schema
+## Worker Flow
 
-### Entity Relationship Diagram
+The worker flow is sequential: Login -> Job -> Station -> Start Checklist -> Work -> End Checklist -> Complete.
 
-```
-┌─────────────────────┐       ┌─────────────────────┐
-│      workers        │       │      stations       │
-├─────────────────────┤       ├─────────────────────┤
-│ id (PK)             │       │ id (PK)             │
-│ worker_code (UNIQUE)│       │ code (UNIQUE)       │
-│ full_name           │       │ name                │
-│ department          │       │ station_type        │
-│ language            │       │ is_active           │
-│ role                │       │ start_checklist     │◄── JSONB
-│ is_active           │       │ end_checklist       │◄── JSONB
-└─────────┬───────────┘       │ station_reasons     │◄── JSONB
-          │                   └─────────┬───────────┘
-          │                             │
-          │    ┌────────────────────────┤
-          │    │                        │
-          ▼    ▼                        ▼
-┌─────────────────────┐       ┌─────────────────────┐
-│  worker_stations    │       │ status_definitions  │
-├─────────────────────┤       ├─────────────────────┤
-│ id (PK)             │       │ id (PK)             │
-│ worker_id (FK)      │       │ scope (global/station)
-│ station_id (FK)     │       │ station_id (FK,NULL)│
-└─────────────────────┘       │ label_he, label_ru  │
-                              │ color_hex           │◄── 15-color palette
-                              │ machine_state       │◄── production/setup/stoppage
-                              │ report_type         │◄── none/malfunction/general
-                              │ is_protected        │
-                              └─────────┬───────────┘
-                                        │
-          ┌─────────────────────────────┼─────────────────────────────┐
-          │                             │                             │
-          ▼                             ▼                             ▼
-┌─────────────────────┐       ┌─────────────────────┐       ┌─────────────────────┐
-│       jobs          │       │      sessions       │       │   status_events     │
-├─────────────────────┤       ├─────────────────────┤       ├─────────────────────┤
-│ id (PK)             │◄──────│ id (PK)             │◄──────│ id (PK)             │
-│ job_number (UNIQUE) │       │ worker_id (FK)      │       │ session_id (FK)     │
-│ customer_name       │       │ station_id (FK)     │       │ status_definition_id│
-│ description         │       │ job_id (FK)         │       │ station_reason_id   │
-│ planned_quantity    │       │ status              │       │ note                │
-└─────────────────────┘       │ current_status_id   │◄──┐   │ image_url           │
-                              │ started_at          │   │   │ report_id (FK)      │
-                              │ ended_at            │   │   │ started_at          │
-                              │ last_seen_at        │   │   │ ended_at            │
-                              │ forced_closed_at    │   │   └─────────────────────┘
-                              │ last_status_change_at   │
-                              │ active_instance_id  │   └── Status Mirroring
-                              │ total_good          │
-                              │ total_scrap         │
-                              │ scrap_report_submitted
-                              │ *_snapshot columns  │◄── Historical snapshots
-                              └─────────────────────┘
-                                        │
-                                        ▼
-┌─────────────────────┐       ┌─────────────────────┐       ┌─────────────────────┐
-│checklist_responses  │       │      reports        │       │   report_reasons    │
-├─────────────────────┤       ├─────────────────────┤       ├─────────────────────┤
-│ id (PK)             │       │ id (PK)             │       │ id (PK)             │
-│ session_id (FK)     │       │ type (enum)         │◄──────│ label_he, label_ru  │
-│ station_id (FK)     │       │ status (enum)       │       │ is_active           │
-│ kind (start/end)    │       │ station_id (FK)     │       │ sort_order          │
-│ item_id             │       │ session_id (FK)     │       └─────────────────────┘
-│ value_bool          │       │ status_event_id (FK)│
-│ value_text          │       │ reported_by_worker_id
-└─────────────────────┘       │ station_reason_id   │◄── JSONB key reference
-                              │ report_reason_id (FK)
-                              │ description         │
-                              │ image_url           │
-                              │ admin_notes         │
-                              │ status_changed_at   │
-                              │ status_changed_by   │
-                              └─────────────────────┘
-```
+1. **Login**: Worker enters their code, validated against `workers` table
+2. **Job Entry**: Worker enters job number, creates job if not exists
+3. **Station Selection**: Worker picks from assigned stations (filtered by `worker_stations`)
+4. **Start Checklist**: Worker completes station's start checklist (if configured)
+5. **Work**: Active session with status tracking, quantity updates, heartbeat every 15s
+6. **End Checklist**: Worker completes station's end checklist (if configured)
+7. **Complete**: Session marked completed, all status events closed
 
-### Core Tables
+Session behaviors:
+- Single active session per worker enforced
+- Station occupancy tracked (one active session per station)
+- `active_instance_id` prevents multi-tab conflicts
+- Idle sessions auto-closed after 5 minutes via cron
+- 5-minute grace period allows session recovery after disconnect
 
-#### workers
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | UUID | Primary key |
-| `worker_code` | TEXT | Unique worker identifier for login |
-| `full_name` | TEXT | Display name |
-| `department` | TEXT | Optional department grouping |
-| `language` | TEXT | Preferred language (he/ru/auto) |
-| `role` | ENUM | worker or admin |
-| `is_active` | BOOLEAN | Soft delete flag |
+---
 
-#### stations
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | UUID | Primary key |
-| `code` | TEXT | Unique station code |
-| `name` | TEXT | Display name |
-| `station_type` | TEXT | Machine category |
-| `is_active` | BOOLEAN | Soft delete flag |
-| `start_checklist` | JSONB | Start-of-shift checklist items |
-| `end_checklist` | JSONB | End-of-shift checklist items |
-| `station_reasons` | JSONB | Malfunction reasons specific to station |
+## Database Schema
 
-**station_reasons JSONB structure:**
+### Tables Overview
+
+| Table | Purpose | Row Count (approx) |
+|-------|---------|-------------------|
+| `workers` | Employee records | 38 |
+| `stations` | Machine/workstation records | 27 |
+| `worker_stations` | Worker-to-station assignments (many-to-many) | 131 |
+| `jobs` | Job/order records | 45 |
+| `sessions` | Work session records | 27 |
+| `status_events` | Status change timeline per session | 230 |
+| `status_definitions` | Configurable status types | 10 |
+| `reports` | Malfunction/general/scrap reports | 55 |
+| `report_reasons` | Global reasons for general reports | 2 |
+
+### workers
+
+Columns:
+- `id` UUID PK, default `gen_random_uuid()`
+- `worker_code` TEXT NOT NULL UNIQUE - login identifier
+- `full_name` TEXT NOT NULL
+- `department` TEXT NULL
+- `language` TEXT NULL, default `'auto'`, CHECK `('he', 'ru', 'auto')`
+- `role` worker_role NOT NULL, default `'worker'`, ENUM `('worker', 'admin')`
+- `is_active` BOOLEAN NOT NULL, default `true`
+- `created_at` TIMESTAMPTZ NOT NULL, default `now()`
+- `updated_at` TIMESTAMPTZ NOT NULL, default `now()`
+
+### stations
+
+Columns:
+- `id` UUID PK, default `gen_random_uuid()`
+- `code` TEXT NOT NULL UNIQUE
+- `name` TEXT NOT NULL
+- `station_type` TEXT NOT NULL, default `'other'`, CHECK `('prepress', 'digital_press', 'offset', 'folding', 'cutting', 'binding', 'shrink', 'lamination', 'other')`
+- `is_active` BOOLEAN NOT NULL, default `true`
+- `start_checklist` JSONB NOT NULL, default `'[]'`, validated by `validate_checklist_jsonb()`
+- `end_checklist` JSONB NOT NULL, default `'[]'`, validated by `validate_checklist_jsonb()`
+- `station_reasons` JSONB NOT NULL, default includes "general-malfunction", validated by `validate_station_reasons_jsonb()`
+- `created_at` TIMESTAMPTZ NOT NULL, default `now()`
+- `updated_at` TIMESTAMPTZ NOT NULL, default `now()`
+
+Checklist JSONB structure:
 ```json
-[
-  {
-    "id": "general-malfunction",
-    "label_he": "תקלת כללית",
-    "label_ru": "Общая неисправность",
-    "is_active": true
-  }
-]
+[{"id": "string", "label_he": "string", "label_ru": "string", "order_index": 0, "is_required": true}]
 ```
 
-#### jobs
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | UUID | Primary key |
-| `job_number` | TEXT | Unique job/order number |
-| `customer_name` | TEXT | Customer reference |
-| `description` | TEXT | Job description |
-| `planned_quantity` | INTEGER | Target production quantity |
-
-#### sessions
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | UUID | Primary key |
-| `worker_id` | UUID FK | Worker reference |
-| `station_id` | UUID FK | Station reference |
-| `job_id` | UUID FK | Job reference |
-| `status` | ENUM | active/completed/aborted |
-| `current_status_id` | UUID FK | Mirrored from latest status_event |
-| `started_at` | TIMESTAMPTZ | Session start time |
-| `ended_at` | TIMESTAMPTZ | Session end time |
-| `last_seen_at` | TIMESTAMPTZ | Last heartbeat timestamp |
-| `forced_closed_at` | TIMESTAMPTZ | If force-closed by system/admin |
-| `last_status_change_at` | TIMESTAMPTZ | Mirrored for efficient queries |
-| `active_instance_id` | TEXT | Browser tab identifier for multi-tab prevention |
-| `total_good` | INTEGER | Good units produced |
-| `total_scrap` | INTEGER | Scrap units |
-| `scrap_report_submitted` | BOOLEAN | Whether scrap was reported |
-| `*_snapshot` | TEXT | Historical snapshots of worker/station names |
-
-**Snapshot Columns:**
-- `worker_full_name_snapshot`, `worker_code_snapshot`
-- `station_name_snapshot`, `station_code_snapshot`
-
-Used for historical records where original names matter, even if entity is later renamed.
-
-#### status_definitions
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | UUID | Primary key |
-| `scope` | TEXT | 'global' or 'station' |
-| `station_id` | UUID FK | Required if scope='station' |
-| `label_he` | TEXT | Hebrew label |
-| `label_ru` | TEXT | Russian label |
-| `color_hex` | TEXT | Status color (15-color palette) |
-| `machine_state` | TEXT | production/setup/stoppage |
-| `report_type` | TEXT | none/malfunction/general |
-| `is_protected` | BOOLEAN | Cannot be edited/deleted |
-
-**Protected Statuses:**
-| Key | Hebrew | State | Report Type |
-|-----|--------|-------|-------------|
-| production | ייצור | production | none |
-| malfunction | תקלה | stoppage | malfunction |
-| stop | עצירה | stoppage | general |
-| other | אחר | stoppage | none |
-
-**Color Palette (15 allowed values):**
-```
-#ef4444 #f97316 #f59e0b #eab308 #84cc16
-#22c55e #10b981 #14b8a6 #06b6d4 #0ea5e9
-#3b82f6 #6366f1 #8b5cf6 #a855f7 #94a3b8
+Station reasons JSONB structure:
+```json
+[{"id": "general-malfunction", "label_he": "תקלת כללית", "label_ru": "Общая неисправность", "is_active": true}]
 ```
 
-#### status_events
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | UUID | Primary key |
-| `session_id` | UUID FK | Parent session |
-| `status_definition_id` | UUID FK | Status reference |
-| `station_reason_id` | TEXT | Key into station.station_reasons JSONB |
-| `note` | TEXT | Optional note |
-| `image_url` | TEXT | Optional image reference |
-| `report_id` | UUID FK | Linked report if created |
-| `started_at` | TIMESTAMPTZ | Event start time |
-| `ended_at` | TIMESTAMPTZ | Event end time (NULL if current) |
+### worker_stations
 
-#### reports
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | UUID | Primary key |
-| `type` | ENUM | malfunction/general/scrap |
-| `status` | ENUM | Type-dependent status |
-| `station_id` | UUID FK | Station reference |
-| `session_id` | UUID FK | Session that created report |
-| `status_event_id` | UUID FK | Status event that triggered report |
-| `reported_by_worker_id` | UUID FK | Worker who reported |
-| `station_reason_id` | TEXT | For malfunctions: key into station_reasons |
-| `report_reason_id` | UUID FK | For general reports: references report_reasons |
-| `description` | TEXT | Report description |
-| `image_url` | TEXT | Uploaded image URL |
-| `admin_notes` | TEXT | Admin comments |
-| `status_changed_at` | TIMESTAMPTZ | Last status change |
-| `status_changed_by` | TEXT | Who changed status |
+Many-to-many join table for worker-station assignments.
 
-**Report Status Flows:**
+Columns:
+- `id` UUID PK, default `gen_random_uuid()`
+- `worker_id` UUID FK -> workers.id NOT NULL
+- `station_id` UUID FK -> stations.id NOT NULL
+- `created_at` TIMESTAMPTZ NOT NULL, default `now()`
 
-```
-Malfunction:  open ──► known ──► solved
-                │               ▲
-                └───────────────┘ (direct solve)
-                     solved ──► open (reopen)
+Constraints:
+- UNIQUE on `(worker_id, station_id)`
 
-General/Scrap:  new ──► approved (one-way)
-```
+### jobs
 
-#### report_reasons
+Columns:
+- `id` UUID PK, default `gen_random_uuid()`
+- `job_number` TEXT NOT NULL UNIQUE
+- `customer_name` TEXT NULL
+- `description` TEXT NULL
+- `planned_quantity` INTEGER NULL
+- `created_at` TIMESTAMPTZ NOT NULL, default `now()`
+- `updated_at` TIMESTAMPTZ NOT NULL, default `now()`
+
+### sessions
+
+Columns:
+- `id` UUID PK, default `gen_random_uuid()`
+- `worker_id` UUID FK -> workers.id NULL (nullable for historical data)
+- `station_id` UUID FK -> stations.id NULL (nullable for historical data)
+- `job_id` UUID FK -> jobs.id NOT NULL
+- `status` session_status NOT NULL, default `'active'`, ENUM `('active', 'completed', 'aborted')`
+- `current_status_id` UUID FK -> status_definitions.id NOT NULL (mirrored from latest status_event)
+- `started_at` TIMESTAMPTZ NOT NULL, default `now()`
+- `ended_at` TIMESTAMPTZ NULL
+- `last_seen_at` TIMESTAMPTZ NOT NULL, default `timezone('utc', now())` (heartbeat timestamp)
+- `forced_closed_at` TIMESTAMPTZ NULL (set when force-closed by system/admin)
+- `last_status_change_at` TIMESTAMPTZ NOT NULL, default `timezone('utc', now())`
+- `start_checklist_completed` BOOLEAN NOT NULL, default `false`
+- `end_checklist_completed` BOOLEAN NOT NULL, default `false`
+- `active_instance_id` TEXT NULL (browser tab ID for multi-tab prevention)
+- `total_good` INTEGER NOT NULL, default `0`
+- `total_scrap` INTEGER NOT NULL, default `0`
+- `scrap_report_submitted` BOOLEAN NOT NULL, default `false`
+- `worker_full_name_snapshot` TEXT NULL
+- `worker_code_snapshot` TEXT NULL
+- `station_name_snapshot` TEXT NULL
+- `station_code_snapshot` TEXT NULL
+- `created_at` TIMESTAMPTZ NOT NULL, default `now()`
+- `updated_at` TIMESTAMPTZ NOT NULL, default `now()`
+
+Snapshot columns store historical values at session creation time. Use snapshots for historical reports, use FK joins for real-time displays.
+
+### status_definitions
+
+Configurable status types. Can be global or station-specific.
+
+Columns:
+- `id` UUID PK, default `gen_random_uuid()`
+- `scope` TEXT NOT NULL, CHECK `('global', 'station')`
+- `station_id` UUID FK -> stations.id NULL (required if scope='station')
+- `label_he` TEXT NOT NULL
+- `label_ru` TEXT NULL
+- `color_hex` TEXT NOT NULL, default `'#94a3b8'`, CHECK (15 allowed colors)
+- `machine_state` TEXT NOT NULL, CHECK `('production', 'setup', 'stoppage')`
+- `report_type` TEXT NOT NULL, default `'none'`, CHECK `('none', 'malfunction', 'general')`
+- `is_protected` BOOLEAN NOT NULL, default `false`
+- `created_at` TIMESTAMPTZ NOT NULL, default `timezone('utc', now())`
+- `updated_at` TIMESTAMPTZ NOT NULL, default `timezone('utc', now())`
+
+Protected statuses (cannot be edited/deleted):
+
+| label_he | label_ru | color_hex | machine_state | report_type |
+|----------|----------|-----------|---------------|-------------|
+| ייצור | Производство | #10b981 | production | none |
+| תקלה | Неисправность | #ef4444 | stoppage | malfunction |
+| עצירה | Остановка | #f97316 | stoppage | general |
+| אחר | Другое | #94a3b8 | stoppage | general |
+
+Allowed colors: `#10b981`, `#f59e0b`, `#f97316`, `#ef4444`, `#3b82f6`, `#8b5cf6`, `#06b6d4`, `#14b8a6`, `#84cc16`, `#eab308`, `#ec4899`, `#6366f1`, `#0ea5e9`, `#64748b`, `#94a3b8`
+
+### status_events
+
+Timeline of status changes within a session.
+
+Columns:
+- `id` UUID PK, default `gen_random_uuid()`
+- `session_id` UUID FK -> sessions.id NOT NULL
+- `status_definition_id` UUID FK -> status_definitions.id NOT NULL
+- `station_reason_id` TEXT NULL (key into station.station_reasons JSONB)
+- `note` TEXT NULL
+- `image_url` TEXT NULL
+- `report_id` UUID FK -> reports.id NULL
+- `started_at` TIMESTAMPTZ NOT NULL, default `now()`
+- `ended_at` TIMESTAMPTZ NULL (NULL means currently active)
+- `created_at` TIMESTAMPTZ NOT NULL, default `now()`
+
+### reports
+
+Unified reports table for malfunctions, general reports, and scrap.
+
+Columns:
+- `id` UUID PK, default `gen_random_uuid()`
+- `type` report_type_enum NOT NULL, ENUM `('malfunction', 'general', 'scrap')`
+- `status` report_status NOT NULL, default `'new'`, ENUM `('new', 'approved', 'open', 'known', 'solved')`
+- `station_id` UUID FK -> stations.id NULL
+- `session_id` UUID FK -> sessions.id NULL
+- `status_event_id` UUID FK -> status_events.id NULL (links report to triggering status event)
+- `reported_by_worker_id` UUID FK -> workers.id NULL
+- `station_reason_id` TEXT NULL (for malfunctions: key into station_reasons)
+- `report_reason_id` UUID FK -> report_reasons.id NULL (for general reports)
+- `description` TEXT NULL
+- `image_url` TEXT NULL
+- `admin_notes` TEXT NULL
+- `status_changed_at` TIMESTAMPTZ NULL
+- `status_changed_by` TEXT NULL
+- `created_at` TIMESTAMPTZ NOT NULL, default `now()`
+- `updated_at` TIMESTAMPTZ NOT NULL, default `now()`
+
+Report status flows (enforced by trigger):
+- Malfunction: `open` -> `known` -> `solved`, or `open` -> `solved` directly, `solved` -> `open` (reopen)
+- General/Scrap: `new` -> `approved` only (one-way, no backtrack)
+
+### report_reasons
+
 Global reasons for general reports (admin-configurable).
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | UUID | Primary key |
-| `label_he` | TEXT | Hebrew label |
-| `label_ru` | TEXT | Russian label |
-| `is_active` | BOOLEAN | Active flag |
-| `sort_order` | INTEGER | Display order |
+Columns:
+- `id` UUID PK, default `gen_random_uuid()`
+- `label_he` TEXT NOT NULL
+- `label_ru` TEXT NULL
+- `is_active` BOOLEAN NOT NULL, default `true`
+- `sort_order` INTEGER NOT NULL, default `0`
+- `created_at` TIMESTAMPTZ NOT NULL, default `now()`
+- `updated_at` TIMESTAMPTZ NOT NULL, default `now()`
 
-### Database Functions (RPC)
+---
 
-#### create_status_event_atomic
-Atomic function that eliminates race conditions in status changes:
+## Database Functions
+
+### create_status_event_atomic
+
+Atomically creates a status event and mirrors to session. Prevents race conditions.
 
 ```sql
 create_status_event_atomic(
@@ -355,13 +282,14 @@ create_status_event_atomic(
 ) RETURNS status_events
 ```
 
-**Operations (single transaction):**
-1. Closes all open status events for session (`ended_at = now()`)
+Operations in single transaction:
+1. Closes all open status events for session (sets `ended_at = now()`)
 2. Inserts new status event
-3. Mirrors `current_status_id` and `last_status_change_at` to sessions table
+3. Updates `sessions.current_status_id` and `sessions.last_status_change_at`
 
-#### get_jobs_with_stats
-Aggregates job data with session totals:
+### get_jobs_with_stats
+
+Returns jobs with aggregated session statistics.
 
 ```sql
 get_jobs_with_stats() RETURNS TABLE (
@@ -378,361 +306,197 @@ get_jobs_with_stats() RETURNS TABLE (
 )
 ```
 
-### Database Triggers
+### Validation Functions
 
-#### Report Status Validation
-Enforces state machine rules for report transitions:
-
-```sql
-TRIGGER report_state_transition_check
-BEFORE UPDATE OF status ON reports
-```
-
-**Rules:**
-- Malfunction: `open` → `known` or `solved`; `known` → `solved`; `solved` → `open` (reopen)
-- General/Scrap: `new` → `approved` only (no backtrack)
-
-#### Report Default Status
-Sets initial status based on report type:
-
-```sql
-TRIGGER report_set_default_status
-BEFORE INSERT ON reports
-```
-
-- Malfunction → `open`
-- General/Scrap → `new`
-
-### Indexes
-
-```sql
--- Session queries
-sessions_current_status_idx ON sessions(current_status_id)
-sessions_job_idx ON sessions(job_id)
-sessions_started_at_idx ON sessions(started_at)
-sessions_station_occupancy_idx ON sessions(station_id, status, last_seen_at)
-  WHERE status = 'active' AND ended_at IS NULL AND forced_closed_at IS NULL
-sessions_instance_validation_idx ON sessions(id, active_instance_id)
-  WHERE status = 'active'
-
--- Status events
-status_events_session_idx ON status_events(session_id)
-status_definitions_machine_state_idx ON status_definitions(machine_state)
-
--- Reports
-reports_type_idx ON reports(type)
-reports_status_idx ON reports(status)
-reports_station_id_idx ON reports(station_id)
-reports_session_id_idx ON reports(session_id)
-reports_created_at_idx ON reports(created_at DESC)
-reports_type_status_idx ON reports(type, status)
-reports_status_event_id_idx ON reports(status_event_id)
-```
+- `validate_checklist_jsonb(data JSONB)` - validates checklist array structure
+- `validate_station_reasons_jsonb(data JSONB)` - validates station_reasons array structure
+- `set_updated_at()` - trigger function to update updated_at timestamp
+- `set_report_default_status()` - sets initial status based on report type (malfunction->open, others->new)
+- `validate_report_transition()` - enforces state machine rules for report status transitions
 
 ---
 
-## 4. Data Management Patterns
+## Database Triggers
 
-### Data Layer Architecture
+| Trigger | Table | Event | Function |
+|---------|-------|-------|----------|
+| `report_set_default_status` | reports | BEFORE INSERT | `set_report_default_status()` |
+| `report_state_transition_check` | reports | BEFORE UPDATE OF status | `validate_report_transition()` |
+| `status_definitions_set_updated_at` | status_definitions | BEFORE UPDATE | `set_updated_at()` |
+
+---
+
+## Database Indexes
+
+Sessions:
+- `sessions_current_status_idx` on `(current_status_id)`
+- `sessions_job_idx` on `(job_id)`
+- `sessions_started_at_idx` on `(started_at)`
+- `sessions_station_idx` on `(station_id)`
+- `sessions_status_idx` on `(status)`
+- `sessions_worker_idx` on `(worker_id)`
+- `sessions_station_occupancy_idx` on `(station_id, status, last_seen_at)` WHERE `status = 'active' AND ended_at IS NULL AND forced_closed_at IS NULL`
+- `sessions_instance_validation_idx` on `(id, active_instance_id)` WHERE `status = 'active'`
+
+Status events:
+- `status_events_session_idx` on `(session_id)`
+- `status_events_malfunction_id_idx` on `(report_id)`
+
+Status definitions:
+- `status_definitions_machine_state_idx` on `(machine_state)`
+- `status_definitions_scope_idx` on `(scope)`
+- `status_definitions_station_idx` on `(station_id)`
+- `status_definitions_protected_idx` on `(is_protected)` WHERE `is_protected = true`
+
+Reports:
+- `reports_type_idx` on `(type)`
+- `reports_status_idx` on `(status)`
+- `reports_station_id_idx` on `(station_id)`
+- `reports_session_id_idx` on `(session_id)`
+- `reports_created_at_idx` on `(created_at DESC)`
+- `reports_type_status_idx` on `(type, status)`
+- `reports_status_event_id_idx` on `(status_event_id)`
+
+---
+
+## Data Layer
+
+### Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Client Components                         │
-│            (React, hooks, contexts)                          │
-└─────────────────────────────┬───────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                  lib/api/ (Client Layer)                     │
-│   - Auto-adds auth headers (X-Worker-Code, X-Admin-Password)│
-│   - Typed responses                                          │
-│   - Error handling                                           │
-└─────────────────────────────┬───────────────────────────────┘
-                              │ HTTP
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                  app/api/ (API Routes)                       │
-│   - Validates auth via lib/auth/permissions.ts              │
-│   - Calls lib/data/ functions                               │
-│   - Returns JSON responses                                   │
-└─────────────────────────────┬───────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                  lib/data/ (Service Layer)                   │
-│   - All Supabase queries centralized here                   │
-│   - Uses createServiceSupabase() (service role)             │
-│   - Reusable across multiple API routes                     │
-│   - Business logic and validation                            │
-└─────────────────────────────┬───────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│               Supabase (PostgreSQL + RLS)                    │
-│   - Row Level Security enabled on all tables                │
-│   - Service role bypasses RLS                               │
-│   - Database functions for atomic operations                │
-└─────────────────────────────────────────────────────────────┘
+Client Components (React)
+    ↓ HTTP
+lib/api/ (client wrappers, adds auth headers)
+    ↓ HTTP
+app/api/ (API routes, validates auth, calls lib/data/)
+    ↓
+lib/data/ (Supabase queries, uses service role)
+    ↓
+Supabase (PostgreSQL + RLS)
 ```
+
+All API routes use `createServiceSupabase()` which bypasses RLS with service role key.
 
 ### Key Data Modules
 
-#### lib/data/sessions.ts
-Session lifecycle management:
+**lib/data/sessions.ts** - Session lifecycle:
+- `createSession()` - creates session with initial production status
+- `completeSession()` - marks session completed, closes status events
+- `abandonActiveSession()` - abandons session (worker choice or expired)
+- `recordSessionHeartbeatWithInstance()` - heartbeat with instance validation
+- `getGracefulActiveSession()` - gets session within grace period
+- `closeActiveSessionsForWorker()` - enforces single session per worker
 
-```typescript
-// Session creation with automatic status initialization
-createSession(payload: SessionPayload): Promise<Session>
+**lib/data/reports.ts** - Unified reports:
+- `createReport()` - creates report (status set by trigger)
+- `updateReportStatus()` - updates status (validates state machine)
+- `getMalfunctionReportsGroupedByStation()` - malfunctions grouped by station
+- `getGeneralReports()` - general reports feed
+- `getScrapReportsGroupedByStation()` - scrap reports grouped
+- `getOpenMalfunctionReportsCount()` - count for badges
+- `getPendingGeneralReportsCount()` - count for badges
 
-// Atomic status event creation (uses RPC)
-startStatusEvent(payload: StatusEventPayload): Promise<StatusEvent>
+**lib/data/status-definitions.ts** - Status configuration:
+- `fetchActiveStatusDefinitions()` - gets global + station-specific statuses
+- `getProtectedStatusDefinition()` - gets protected status by key
+- `createStatusDefinition()` / `updateStatusDefinition()` / `deleteStatusDefinition()`
 
-// Session completion with status event closing
-completeSession(sessionId: string): Promise<Session>
+**lib/data/jobs.ts** - Job management:
+- `getOrCreateJob()` - worker flow: get existing or create new
+- `fetchAllJobsWithStats()` - admin: jobs with aggregated stats
 
-// Grace period handling
-getGracefulActiveSession(workerId: string): Promise<WorkerGraceSessionDetails | null>
-
-// Session abandonment (worker choice or expiry)
-abandonActiveSession(sessionId: string, reason: SessionAbandonReason): Promise<void>
-
-// Heartbeat with instance validation
-recordSessionHeartbeatWithInstance(sessionId: string, instanceId: string): Promise<HeartbeatResult>
-
-// Close all active sessions for worker (single-session enforcement)
-closeActiveSessionsForWorker(workerId: string): Promise<string[]>
-```
-
-#### lib/data/reports.ts
-Unified reports system:
-
-```typescript
-// Create report (status set by trigger)
-createReport(payload: CreateReportPayload): Promise<Report>
-
-// Update report status (validates state machine)
-updateReportStatus(payload: UpdateReportStatusPayload): Promise<Report>
-
-// Malfunction reports grouped by station
-getMalfunctionReportsGroupedByStation(): Promise<StationWithReports[]>
-
-// Archived (solved) malfunction reports
-getArchivedMalfunctionReports(): Promise<StationWithArchivedReports[]>
-
-// General reports (feed view)
-getGeneralReports(options?: { status?: string; limit?: number }): Promise<ReportWithDetails[]>
-
-// Scrap reports grouped by station
-getScrapReportsGroupedByStation(): Promise<StationWithScrapReports[]>
-
-// Count functions for notification badges
-getOpenMalfunctionReportsCount(): Promise<number>
-getPendingGeneralReportsCount(): Promise<number>
-getPendingScrapReportsCount(): Promise<number>
-
-// View transformation utilities
-filterOngoingReports(reports): ReportWithDetails[]
-filterFinishedReports(reports): ReportWithDetails[]
-groupReportsByDate(reports): { date: string; reports: ReportWithDetails[] }[]
-flattenStationReports(stations): ReportWithDetails[]
-sortByMalfunctionPriority(reports): ReportWithDetails[]
-```
-
-#### lib/data/status-definitions.ts
-Status configuration management:
-
-```typescript
-// Fetch statuses (global + station-specific)
-fetchActiveStatusDefinitions(stationId?: string): Promise<StatusDefinition[]>
-
-// CRUD operations
-createStatusDefinition(payload: StatusDefinitionInput): Promise<StatusDefinition>
-updateStatusDefinition(id: string, payload: Partial<StatusDefinitionInput>): Promise<StatusDefinition>
-deleteStatusDefinition(id: string): Promise<void>  // Reassigns to fallback
-
-// Protected status access
-getProtectedStatusDefinition(key: ProtectedStatusKey): Promise<StatusDefinition>
-
-// Validation
-isProtectedStatus(labelHe: string): boolean
-PROTECTED_LABELS_HE: string[]
-```
-
-#### lib/data/jobs.ts
-Job management with statistics:
-
-```typescript
-// Worker flow: get or create job
-getOrCreateJob(jobNumber: string, payload?: JobInput): Promise<Job>
-
-// Admin: fetch all jobs with aggregated stats
-fetchAllJobsWithStats(options?: { search?: string; status?: string }): Promise<JobWithStats[]>
-
-// CRUD operations
-createJobAdmin(payload): Promise<Job>
-updateJob(id: string, payload): Promise<Job>
-deleteJob(id: string): Promise<void>  // Checks for active sessions
-
-// Validation
-hasActiveSessionsForJob(jobId: string): Promise<boolean>
-```
-
-#### lib/data/admin-dashboard.ts
-Admin dashboard queries:
-
-```typescript
-// Active sessions with enriched data
-fetchActiveSessions(): Promise<ActiveSession[]>
-fetchActiveSessionById(sessionId: string): Promise<ActiveSession | null>
-
-// Recent sessions (history)
-fetchRecentSessions(args: FetchRecentSessionsArgs): Promise<CompletedSession[]>
-
-// Status events for timeline visualization
-fetchStatusEventsBySessionIds(sessionIds: string[]): Promise<SessionStatusEvent[]>
-
-// Malfunction counts per session
-fetchMalfunctionCountsBySessionIds(sessionIds: string[]): Promise<Map<string, number>>
-
-// Time calculations by machine state
-fetchStoppageTimeBySessionIds(sessionIds: string[]): Promise<Map<string, number>>
-fetchSetupTimeBySessionIds(sessionIds: string[]): Promise<Map<string, number>>
-
-// Monthly job throughput
-fetchMonthlyJobThroughput(args: FetchMonthlyJobThroughputArgs): Promise<JobThroughput[]>
-```
-
-### Status Mirroring Pattern
-
-The `current_status_id` in `sessions` is a denormalized mirror of the latest status event. This enables efficient dashboard queries without joins.
-
-**Implementation via `create_status_event_atomic()`:**
-
-```sql
--- 1. Close open events
-UPDATE status_events SET ended_at = now()
-WHERE session_id = p_session_id AND ended_at IS NULL;
-
--- 2. Insert new event
-INSERT INTO status_events (...) VALUES (...) RETURNING * INTO v_result;
-
--- 3. Mirror to sessions (same transaction)
-UPDATE sessions SET
-  current_status_id = p_status_definition_id,
-  last_status_change_at = now()
-WHERE id = p_session_id;
-```
-
-**Usage:**
-```typescript
-// TypeScript client code
-const { data, error } = await supabase.rpc("create_status_event_atomic", {
-  p_session_id: sessionId,
-  p_status_definition_id: statusId,
-  p_note: note,
-  // ...
-});
-```
-
-### Snapshot vs FK Join Strategy
-
-| Scenario | Use Snapshots | Use FK Joins |
-|----------|---------------|--------------|
-| Historical records display | ✓ | |
-| Completed session archives | ✓ | |
-| Audit trails | ✓ | |
-| Active session monitoring | | ✓ |
-| Real-time dashboard updates | | ✓ |
-| Current entity information | | ✓ |
-
-**Snapshot columns are populated at session creation:**
-```typescript
-// When creating session, snapshot current names
-worker_full_name_snapshot: worker.full_name,
-worker_code_snapshot: worker.worker_code,
-station_name_snapshot: station.name,
-station_code_snapshot: station.code
-```
-
-### Instance Tracking Pattern
-
-Prevents same session running in multiple browser tabs:
-
-```typescript
-// On heartbeat
-async function recordSessionHeartbeatWithInstance(sessionId: string, instanceId: string) {
-  // 1. Fetch session's current instance
-  const session = await supabase.from("sessions").select("active_instance_id, status").eq("id", sessionId);
-
-  // 2. Validate instance matches
-  if (session.active_instance_id && session.active_instance_id !== instanceId) {
-    return { success: false, error: "INSTANCE_MISMATCH" };
-  }
-
-  // 3. Update heartbeat and claim instance
-  await supabase.from("sessions").update({
-    last_seen_at: timestamp,
-    active_instance_id: instanceId
-  }).eq("id", sessionId);
-}
-```
-
-**Client handles `INSTANCE_MISMATCH` by redirecting to session-transferred page.**
-
-### Report-Status Event Linking
-
-Reports are linked to the status event that triggered them via `status_event_id`:
-
-```
-Session → Status Event (stoppage) → Report (malfunction)
-                │                        │
-                └── status_event_id ─────┘
-```
-
-This enables:
-- Tracking report duration (status event `ended_at`)
-- Filtering ongoing vs. finished reports
-- Timeline visualization with report context
+**lib/data/admin-dashboard.ts** - Admin queries:
+- `fetchActiveSessions()` - active sessions with enriched data
+- `fetchRecentSessions()` - session history
+- `fetchStatusEventsBySessionIds()` - status timeline data
+- `fetchMonthlyJobThroughput()` - throughput statistics
 
 ---
 
-## 5. Application Architecture
+## API Routes
 
-### Route Groups
+### Authentication
 
-```
-app/
-├── (worker)/              # Worker-facing flow (protected by WorkerSessionContext)
-│   ├── login/             # Worker code authentication
-│   ├── station/           # Station selection
-│   ├── job/               # Job number entry
-│   ├── checklist/
-│   │   ├── start/         # Pre-work checklist
-│   │   └── end/           # Post-work checklist
-│   ├── work/              # Active work screen (status, quantities)
-│   └── session-transferred/  # Shown when session taken over
-│
-├── admin/                 # Admin dashboard (protected by cookie session)
-│   ├── page.tsx           # Main dashboard (active sessions, KPIs)
-│   ├── history/           # Session history with filters
-│   ├── reports/
-│   │   ├── malfunctions/  # Malfunction reports management
-│   │   ├── general/       # General reports + reasons management
-│   │   └── scrap/         # Scrap reports management
-│   ├── manage/            # Entity management
-│   │   ├── workers        # Workers CRUD + permissions
-│   │   ├── stations       # Stations CRUD + statuses
-│   │   ├── jobs           # Jobs CRUD
-│   │   └── statuses       # Global status definitions
-│   └── session/[id]/      # Individual session detail view
-│
-└── api/                   # API routes (Next.js Route Handlers)
-```
+| Actor | Header | Validation |
+|-------|--------|------------|
+| Worker | `X-Worker-Code` | Validated via `lib/auth/permissions.ts` |
+| Admin | `X-Admin-Password` or `admin_session` cookie (15-min TTL) | Compared with env `ADMIN_PASSWORD` |
 
-### Key React Contexts
+### Worker Routes
 
-#### WorkerSessionContext
-Manages worker authentication and active session state:
+| Method | Route | Purpose |
+|--------|-------|---------|
+| POST | `/api/workers/login` | Authenticate by worker code |
+| GET | `/api/workers/active-session` | Get active session for recovery |
+| POST | `/api/sessions` | Create new session |
+| POST | `/api/sessions/heartbeat` | Update last_seen_at with instance |
+| POST | `/api/sessions/complete` | Mark session completed |
+| POST | `/api/sessions/abandon` | Abandon session |
+| POST | `/api/sessions/takeover` | Take over session to new instance |
+| PATCH | `/api/sessions/quantities` | Update good/scrap counts |
+| POST | `/api/status-events` | Create status event (atomic) |
+| POST | `/api/status-events/with-report` | Create status event + report |
+| POST | `/api/reports` | Create report |
+| GET | `/api/reports/reasons` | Get active report reasons |
+| GET | `/api/checklists` | Get station checklists |
+| POST | `/api/checklists/responses` | Submit checklist responses |
+| GET | `/api/stations` | List stations |
+| GET | `/api/stations/with-occupancy` | Stations with active session info |
+| GET | `/api/statuses` | Get status definitions |
+| GET/POST | `/api/jobs` | Job operations |
+| POST | `/api/jobs/validate` | Validate job number |
+| GET | `/api/reasons` | Get station reasons |
+
+### Admin Routes
+
+| Method | Route | Purpose |
+|--------|-------|---------|
+| POST | `/api/admin/auth/login` | Admin login, set cookie |
+| GET | `/api/admin/auth/session` | Validate admin session |
+| POST | `/api/admin/auth/change-password` | Change admin password |
+| GET | `/api/admin/dashboard/active-sessions` | All active sessions |
+| GET | `/api/admin/dashboard/active-sessions/stream` | SSE for real-time updates |
+| GET | `/api/admin/dashboard/recent-sessions` | Session history |
+| GET | `/api/admin/dashboard/status-events` | Status timeline data |
+| GET | `/api/admin/dashboard/monthly-throughput` | Job throughput stats |
+| GET | `/api/admin/dashboard/session/[id]` | Individual session details |
+| GET | `/api/admin/dashboard/session/[id]/stream` | SSE for session updates |
+| POST | `/api/admin/sessions/close-all` | Force-close all sessions |
+| DELETE | `/api/admin/sessions/delete` | Delete session record |
+| GET/POST | `/api/admin/workers` | List/create workers |
+| GET/PUT/DELETE | `/api/admin/workers/[id]` | Worker CRUD |
+| GET | `/api/admin/workers/[id]/active-session` | Worker's active session |
+| GET/POST | `/api/admin/stations` | List/create stations |
+| GET/PUT/DELETE | `/api/admin/stations/[id]` | Station CRUD |
+| GET | `/api/admin/stations/[id]/active-session` | Station's active session |
+| GET/POST | `/api/admin/jobs` | List/create jobs |
+| GET/PUT/DELETE | `/api/admin/jobs/[id]` | Job CRUD |
+| GET | `/api/admin/jobs/[id]/active-session` | Job's active sessions |
+| GET/POST | `/api/admin/status-definitions` | Global statuses |
+| PUT/DELETE | `/api/admin/status-definitions/[id]` | Status CRUD |
+| POST | `/api/admin/status-definitions/purge` | Purge unused statuses |
+| GET | `/api/admin/reports` | Fetch reports by type |
+| PATCH | `/api/admin/reports/[id]` | Update report status |
+| GET/POST | `/api/admin/reports/reasons` | Report reasons CRUD |
+| PUT/DELETE | `/api/admin/reports/reasons/[id]` | Report reason CRUD |
+| GET | `/api/admin/reports/stream` | SSE for report updates |
+| GET/POST/DELETE | `/api/admin/worker-stations` | Worker-station assignments |
+| GET | `/api/admin/departments` | Get unique departments |
+| GET | `/api/admin/station-types` | Get station types |
+
+### Cron Routes
+
+| Route | Purpose |
+|-------|---------|
+| `/api/cron/close-idle-sessions` | Close sessions with last_seen_at > 5 minutes ago |
+
+---
+
+## React Contexts
+
+### WorkerSessionContext
+
+Manages worker authentication and active session state.
 
 ```typescript
 interface WorkerSessionContextValue {
@@ -748,289 +512,161 @@ interface WorkerSessionContextValue {
 }
 ```
 
-#### LanguageContext
-RTL-first internationalization (Hebrew/Russian):
+### LanguageContext
+
+RTL-first internationalization (Hebrew/Russian).
 
 ```typescript
 interface LanguageContextValue {
-  language: SupportedLanguage;
-  setLanguage: (lang: SupportedLanguage) => void;
+  language: "he" | "ru";
+  setLanguage: (lang: "he" | "ru") => void;
   t: (key: string) => string;
 }
 ```
 
-### Key Custom Hooks
+---
 
-#### useSessionHeartbeat
-Maintains session liveness:
+## Key Patterns
 
-```typescript
-function useSessionHeartbeat(sessionId: string | null, instanceId: string) {
-  // Sends heartbeat every 15 seconds
-  // Validates instance to prevent multi-tab conflicts
-  // Triggers session takeover flow on INSTANCE_MISMATCH
-}
-```
+### Status Mirroring
 
-#### useSessionBroadcast
-Cross-tab session state synchronization:
+`sessions.current_status_id` is a denormalized mirror of the latest status event. Updated atomically by `create_status_event_atomic()`. Enables efficient dashboard queries without joins to status_events.
 
-```typescript
-function useSessionBroadcast() {
-  // Uses BroadcastChannel API
-  // Notifies other tabs of session changes
-  // Handles session takeover scenarios
-}
-```
+### Snapshot vs FK Join
+
+Use snapshot columns (`worker_full_name_snapshot`, etc.) for:
+- Historical records and reports
+- Completed session archives
+- Audit trails
+
+Use FK joins for:
+- Active session displays
+- Real-time dashboard updates
+- Current entity information
+
+### Instance Tracking
+
+Prevents same session running in multiple browser tabs:
+1. Each tab generates unique `instanceId`
+2. Heartbeat validates `active_instance_id` matches
+3. On mismatch, returns `INSTANCE_MISMATCH` error
+4. Client redirects to `/session-transferred` page
+
+### Report-Status Event Linking
+
+Reports link to triggering status events via `status_event_id`. Enables:
+- Tracking report duration (status event `ended_at`)
+- Filtering ongoing vs finished reports
+- Timeline visualization with report context
 
 ---
 
-## 6. API Layer
+## Security
 
-### Authentication Headers
+### Row Level Security
 
-| Actor | Method | Header | Validation |
-|-------|--------|--------|------------|
-| Worker | Worker code lookup | `X-Worker-Code` | `lib/auth/permissions.ts` |
-| Admin | Password validation | `X-Admin-Password` | Compared with env `ADMIN_PASSWORD` |
-| Admin | Session cookie | `admin_session` (15-min TTL) | Cookie validation |
+All tables have RLS enabled. API routes bypass RLS using service role key.
 
-### Worker Routes
+### Authentication Flows
 
-| Route | Method | Purpose |
-|-------|--------|---------|
-| `/api/workers/login` | POST | Authenticate by worker code |
-| `/api/workers/active-session` | GET | Get active session for recovery |
-| `/api/sessions/heartbeat` | POST | Update `last_seen_at` with instance |
-| `/api/sessions/complete` | POST | Mark session completed |
-| `/api/sessions/abandon` | POST | Abandon session (worker choice) |
-| `/api/sessions/takeover` | POST | Take over session to new instance |
-| `/api/sessions/quantities` | PATCH | Update good/scrap counts |
-| `/api/status-events` | POST | Create status event (atomic) |
-| `/api/status-events/with-report` | POST | Create status event + report |
-| `/api/reports` | POST | Create report |
-| `/api/checklists` | GET | Get station checklists |
-| `/api/checklists/responses` | POST | Submit checklist responses |
+Worker:
+1. POST `/api/workers/login` with worker code
+2. Server validates code exists and `is_active=true`
+3. Client stores worker in context, includes `X-Worker-Code` header in requests
 
-### Admin Routes
+Admin:
+1. POST `/api/admin/auth/login` with password
+2. Server validates against `ADMIN_PASSWORD` env
+3. Sets HttpOnly cookie `admin_session` (15-min TTL)
+4. Can also use `X-Admin-Password` header
 
-| Route | Method | Purpose |
-|-------|--------|---------|
-| `/api/admin/auth/login` | POST | Admin login, set cookie |
-| `/api/admin/auth/session` | GET | Validate admin session |
-| `/api/admin/auth/change-password` | POST | Change admin password |
-| `/api/admin/dashboard/active-sessions` | GET | All active sessions |
-| `/api/admin/dashboard/active-sessions/stream` | GET | SSE for real-time updates |
-| `/api/admin/dashboard/recent-sessions` | GET | Session history |
-| `/api/admin/dashboard/status-events` | GET | Status timeline data |
-| `/api/admin/dashboard/monthly-throughput` | GET | Job throughput stats |
-| `/api/admin/sessions/close-all` | POST | Force-close all sessions |
-| `/api/admin/sessions/delete` | DELETE | Delete session record |
-| `/api/admin/workers` | GET/POST | List/create workers |
-| `/api/admin/workers/[id]` | GET/PUT/DELETE | Worker CRUD |
-| `/api/admin/stations` | GET/POST | List/create stations |
-| `/api/admin/stations/[id]` | GET/PUT/DELETE | Station CRUD |
-| `/api/admin/jobs` | GET/POST | List/create jobs |
-| `/api/admin/jobs/[id]` | GET/PUT/DELETE | Job CRUD |
-| `/api/admin/status-definitions` | GET/POST | Global statuses |
-| `/api/admin/status-definitions/[id]` | PUT/DELETE | Status CRUD |
-| `/api/admin/reports` | GET | Fetch reports by type |
-| `/api/admin/reports/[id]` | PATCH | Update report status |
-| `/api/admin/reports/reasons` | GET/POST | Report reasons CRUD |
-| `/api/admin/reports/stream` | GET | SSE for report updates |
+### HTTPS Required
 
-### Cron Routes
-
-| Route | Purpose |
-|-------|---------|
-| `/api/cron/close-idle-sessions` | Close sessions idle >5 minutes |
+All auth headers transmitted in plaintext. Production must use HTTPS.
 
 ---
 
-## 7. Security Model
+## Environment Variables
 
-### Row Level Security (RLS)
-
-All tables have RLS enabled. API routes use service role to bypass RLS.
-
-**Policy examples:**
-```sql
--- Anonymous can read active stations
-CREATE POLICY "anon_read_stations" ON stations
-  FOR SELECT TO anon USING (is_active = true);
-
--- Service role bypasses all policies
--- (used by API routes via SUPABASE_SERVICE_ROLE_KEY)
-```
-
-### Authentication Flow
-
-**Worker Flow:**
-```
-1. Enter worker code → POST /api/workers/login
-2. Server validates code exists, is_active=true
-3. Returns worker data, client stores in context
-4. Subsequent requests include X-Worker-Code header
-5. API routes validate header via lib/auth/permissions.ts
-```
-
-**Admin Flow:**
-```
-1. Enter password → POST /api/admin/auth/login
-2. Server validates against ADMIN_PASSWORD env
-3. Sets HttpOnly cookie (admin_session, 15-min TTL)
-4. Subsequent requests validated by cookie
-5. Can also use X-Admin-Password header for API calls
-```
-
-### Session Security
-
-| Feature | Implementation |
-|---------|----------------|
-| Single session per worker | `closeActiveSessionsForWorker()` on new session |
-| Multi-tab prevention | `active_instance_id` validation on heartbeat |
-| Idle timeout | Cron job closes sessions with `last_seen_at` > 5 min |
-| Grace period | 5-minute recovery window after disconnect |
-| UTC timestamps | All time comparisons use UTC |
-
-### HTTPS Requirement
-
-All authentication headers are transmitted in plaintext. **Production MUST use HTTPS.**
+Required:
+- `NEXT_PUBLIC_SUPABASE_URL` - Supabase project URL
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Supabase anon key
+- `SUPABASE_SERVICE_ROLE_KEY` - Service role key (server-side only)
+- `ADMIN_PASSWORD` - Admin authentication password
 
 ---
 
-## 8. Testing Strategy
+## Testing
 
-### Integration Tests
+Integration tests in `tests/integration/`:
+- `session-lifecycle.test.ts` - Session creation, status mirroring, concurrent updates
+- `status-definitions.test.ts` - Protected status rules, deletion reassignment, scoping
+- `malfunctions.test.ts` - State machine transitions via reports table
 
-Located in `tests/integration/`:
-
-| File | Coverage |
-|------|----------|
-| `session-lifecycle.test.ts` | Session creation, status mirroring, concurrent updates |
-| `status-definitions.test.ts` | Protected status rules, deletion reassignment, scoping |
-| `malfunctions.test.ts` | State machine transitions (now via reports table) |
-
-### Test Utilities
-
-```typescript
-// tests/helpers.ts
-TestFactory.createWorker(suffix)      // Create test worker
-TestFactory.createStation(suffix)     // Create test station
-TestFactory.getProductionStatus()     // Get production status ID
-TestCleanup.cleanupSessions(ids)      // Clean up after tests
-```
-
-### Running Tests
-
+Run tests:
 ```bash
-npm run test           # Watch mode
-npm run test:run       # Single run
-npm run test -- path   # Specific file
+npm run test:run     # Single run
+npm run test         # Watch mode
+npm run test -- tests/integration/session-lifecycle.test.ts  # Specific file
 ```
 
-Tests run against live Supabase database (uses `.env.local`).
+Tests run against live Supabase database using `.env.local`.
 
 ---
 
-## 9. Conventions
+## Conventions
 
 ### Hebrew Text
 - UTF-8 encoded, no BOM
-- Output Hebrew literally (א–ת)
-- No nikud (vowels)
+- Literal Hebrew characters (א-ת), no nikud
 - No HTML entities or Unicode escapes
 
-### Styling (RTL-First)
-- Root layout: `dir="rtl"`
-- Labels on right, inputs on left
-- shadcn/ui + Tailwind CSS only
+### Styling
+- RTL-first: root layout `dir="rtl"`
+- shadcn/ui + TailwindCSS only
 - No custom CSS frameworks
-- Modern, clean design (no gradients, glowing effects)
-- Neutral backgrounds, 1–2 accent colors
+- Clean design: no gradients, glowing effects
+- Neutral backgrounds, 1-2 accent colors
 
 ### Code Style
 - Early returns for readability
-- `handle` prefix for event handlers
-- Const arrow functions
-- Tailwind classes only (no inline styles)
+- `handle` prefix for event handlers (handleClick, handleSubmit)
+- Const arrow functions over function declarations
+- Tailwind classes only, no inline styles
 
 ### File Naming
 - Components: PascalCase (`StatusCard.tsx`)
 - Utilities: camelCase (`formatTime.ts`)
-- API routes: lowercase (`route.ts` in directories)
+- API routes: `route.ts` in directories
 
 ---
 
-## 10. Environment Variables
+## Troubleshooting
 
-```env
-# Required
-NEXT_PUBLIC_SUPABASE_URL=<project-url>
-NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon-key>
-SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
-ADMIN_PASSWORD=<admin-password>
-
-# Optional
-NODE_ENV=development|production
-```
-
----
-
-## 11. Migrations Reference
-
-### Recent Migrations
-
-| Migration | Purpose |
-|-----------|---------|
-| `20251228192515_generalized_reports_schema.sql` | Unified reports table, report_reasons, state machine |
-| `20251228192624_migrate_malfunctions_to_reports.sql` | Data migration from legacy malfunctions |
-| `20251229120000_cleanup_legacy_malfunctions.sql` | Remove legacy malfunction table |
-| `20251229193926_make_stop_status_protected.sql` | Add "stop" as protected status |
-| `20251230100000_add_status_event_id_to_reports.sql` | Link reports to status events |
-| `20251230151610_add_instance_tracking.sql` | Multi-tab prevention (active_instance_id) |
-| `20251230170326_close_orphaned_status_events.sql` | Cleanup orphaned events |
-
-### Core Schema Migrations
-
-| Migration | Purpose |
-|-----------|---------|
-| `20250101000000_base_schema.sql` | Initial schema (workers, stations, jobs, sessions) |
-| `20251212100000_status_definitions.sql` | Status definitions table |
-| `20251215112227_enable_rls_policies.sql` | Enable RLS on all tables |
-| `20251227233225_atomic_status_event_function.sql` | Atomic status function |
-| `20251227233746_malfunction_state_machine.sql` | State machine trigger |
-| `20251227233819_jsonb_validation.sql` | Checklist JSONB validation |
-
----
-
-## 12. Troubleshooting
-
-### Status Event Creation Fails
+**Status event creation fails:**
 1. Verify `status_definition_id` exists
 2. Check status is allowed for station (global or matching station_id)
-3. Ensure `create_status_event_atomic` function exists
-4. Verify session is active
+3. Ensure session is active
+4. Verify `create_status_event_atomic` function exists
 
-### Protected Status Cannot Be Modified
-- Check `is_protected = true` in `status_definitions`
+**Protected status cannot be modified:**
+- Check `is_protected = true` in status_definitions
 - Protected labels: ייצור, תקלה, עצירה, אחר
 
-### Report Transition Rejected
-- Malfunction: `open` → `known`/`solved`, `known` → `solved`, `solved` → `open`
-- General/Scrap: `new` → `approved` only
+**Report transition rejected:**
+- Malfunction: open -> known/solved, known -> solved, solved -> open
+- General/Scrap: new -> approved only
 
-### Session Not Closing
+**Session not closing:**
 1. Check `last_seen_at` timestamp
-2. Verify cron job is running (`/api/cron/close-idle-sessions`)
+2. Verify cron job running at `/api/cron/close-idle-sessions`
 3. Grace period is 5 minutes from last heartbeat
 
-### Instance Mismatch Error
+**Instance mismatch error:**
 - Session running in another tab/device
-- Client should redirect to `/session-transferred`
-- Can use "takeover" to reclaim session
+- Client redirects to `/session-transferred`
+- Use takeover endpoint to reclaim session
 
-### RLS Policy Blocking Queries
+**RLS blocking queries:**
 - Ensure API routes use `createServiceSupabase()` (service role)
-- Check that RLS policies allow intended operations
-- Anon key has limited access (read-only for public data)
+- Check RLS policies allow intended operations

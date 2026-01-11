@@ -243,18 +243,66 @@ const COLOR_STYLES: Record<string, StatusColorConfig> = {
 const getColorStyle = (hex: string): StatusColorConfig =>
   COLOR_STYLES[hex] ?? COLOR_STYLES[DEFAULT_COLOR_HEX];
 
+/**
+ * Protected status display order by Hebrew label.
+ * Order: stoppage (1) → production (2) → malfunction (3) → other (last)
+ */
+const PROTECTED_STATUS_ORDER: Record<string, number> = {
+  "עצירה": 1,      // stoppage - first (default session status)
+  "ייצור": 2,      // production
+  "תקלה": 3,       // malfunction
+  "אחר": 1000,     // other - always last
+};
+
+/**
+ * Sorts status definitions in the correct display order:
+ * 1. Protected: stoppage → production → malfunction
+ * 2. Global non-protected (by created_at)
+ * 3. Station-scoped (by created_at)
+ * 4. Protected: other (always last)
+ */
+export const sortStatusDefinitions = (
+  definitions: StatusDefinition[],
+): StatusDefinition[] => {
+  return [...definitions].sort((a, b) => {
+    const aProtectedOrder = a.is_protected ? (PROTECTED_STATUS_ORDER[a.label_he] ?? 500) : null;
+    const bProtectedOrder = b.is_protected ? (PROTECTED_STATUS_ORDER[b.label_he] ?? 500) : null;
+
+    // Both are protected - sort by their fixed order
+    if (aProtectedOrder !== null && bProtectedOrder !== null) {
+      return aProtectedOrder - bProtectedOrder;
+    }
+
+    // Only A is protected
+    if (aProtectedOrder !== null) {
+      // A comes before B unless A is "other" (which comes last)
+      return aProtectedOrder < 1000 ? -1 : 1;
+    }
+
+    // Only B is protected
+    if (bProtectedOrder !== null) {
+      // B comes before A unless B is "other" (which comes last)
+      return bProtectedOrder < 1000 ? 1 : -1;
+    }
+
+    // Neither is protected - sort by scope (global before station), then by created_at
+    if (a.scope !== b.scope) {
+      return a.scope === "global" ? -1 : 1;
+    }
+
+    // Same scope - sort by created_at
+    return new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime();
+  });
+};
+
 export const buildStatusDictionary = (
   definitions: StatusDefinition[] = [],
 ): StatusDictionary => {
-  const globalDefs = definitions
-    .filter((item) => item.scope === "global")
-    .sort(
-      (a, b) =>
-        new Date(a.created_at ?? 0).getTime() -
-        new Date(b.created_at ?? 0).getTime(),
-    );
+  // Sort all definitions using the standard ordering
+  const sorted = sortStatusDefinitions(definitions);
 
-  const stationDefs = definitions.filter(
+  const globalDefs = sorted.filter((item) => item.scope === "global");
+  const stationDefs = sorted.filter(
     (item) => item.scope === "station" && item.station_id,
   );
 
@@ -271,7 +319,8 @@ export const buildStatusDictionary = (
     station.set(stationId, bucket);
   });
 
-  const order = globalDefs.map((item) => item.id);
+  // Order reflects the full sorted list (protected first, then global, then station, then "other")
+  const order = sorted.map((item) => item.id);
 
   return { global, station, order };
 };

@@ -67,6 +67,9 @@ export interface Session {
   forced_closed_at?: string | null;
   last_status_change_at?: string | null;
   scrap_report_submitted?: boolean;
+  // Job item tracking (for production line WIP)
+  job_item_id?: string | null;
+  job_item_station_id?: string | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -176,4 +179,170 @@ export interface StatusDefinition {
   is_protected?: boolean;
   created_at?: string;
   updated_at?: string;
+}
+
+// ============================================
+// PRODUCTION LINES + JOB ITEMS + WIP
+// ============================================
+
+export type JobItemKind = "station" | "line";
+
+export interface ProductionLine {
+  id: string;
+  name: string;
+  code?: string | null;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ProductionLineStation {
+  id: string;
+  production_line_id: string;
+  station_id: string;
+  position: number;
+  created_at?: string;
+  station?: Station;
+}
+
+export interface ProductionLineWithStations extends ProductionLine {
+  stations: ProductionLineStation[];
+}
+
+export interface JobItem {
+  id: string;
+  job_id: string;
+  kind: JobItemKind;
+  station_id?: string | null;
+  production_line_id?: string | null;
+  planned_quantity: number;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+  station?: Station;
+  production_line?: Pick<ProductionLine, "id" | "name" | "code">;
+}
+
+export interface JobItemStation {
+  id: string;
+  job_item_id: string;
+  station_id: string;
+  position: number;
+  is_terminal: boolean;
+  created_at?: string;
+  station?: Station;
+}
+
+export interface JobItemProgress {
+  job_item_id: string;
+  completed_good: number;
+  updated_at?: string;
+}
+
+export interface JobItemWithDetails extends JobItem {
+  job_item_stations?: JobItemStation[];
+  progress?: JobItemProgress;
+  wip_balances?: WipBalance[];
+}
+
+export interface WipBalance {
+  id: string;
+  job_item_id: string;
+  job_item_station_id: string;
+  good_available: number;
+  updated_at?: string;
+}
+
+export interface WipConsumption {
+  id: string;
+  job_item_id: string;
+  consuming_session_id: string;
+  from_job_item_station_id: string;
+  good_used: number;
+  created_at?: string;
+}
+
+export interface SessionWipAccounting {
+  session_id: string;
+  job_item_id: string;
+  job_item_station_id: string;
+  // Good accounting
+  total_good: number;
+  pulled_good: number;
+  originated_good: number;
+  // Scrap accounting (symmetric with good)
+  total_scrap: number;
+  pulled_scrap: number;
+  originated_scrap: number;
+}
+
+export interface SessionUpdateResult {
+  success: boolean;
+  error_code?: string | null;
+  session_id: string;
+  total_good: number;
+  total_scrap: number;
+}
+
+// ============================================
+// LIVE JOB PROGRESS (Admin Dashboard)
+// ============================================
+
+export interface WipStationData {
+  jobItemStationId: string;
+  stationId: string;
+  stationName: string;
+  position: number;
+  isTerminal: boolean;
+  goodAvailable: number;
+  hasActiveSession: boolean;
+}
+
+export interface LiveJobItemAssignment {
+  jobItem: JobItemWithDetails;
+  wipDistribution: WipStationData[];
+  completedGood: number;
+  plannedQuantity: number;
+}
+
+export interface LiveJobProgress {
+  job: Job;
+  jobItems: LiveJobItemAssignment[];
+  activeSessionCount: number;
+  activeStationIds: string[];
+}
+
+// ============================================
+// STATION SELECTION (Worker Flow)
+// ============================================
+
+export interface StationOccupancy {
+  isOccupied: boolean;
+  isGracePeriod: boolean;
+  occupiedBy?: {
+    workerId: string;
+    workerName: string;
+    sessionId: string;
+    lastSeenAt: string;
+    graceExpiresAt: string;
+  };
+}
+
+export interface PipelineStationOption {
+  id: string;
+  name: string;
+  code: string;
+  position: number;
+  isTerminal: boolean;
+  isWorkerAssigned: boolean;
+  occupancy: StationOccupancy;
+  jobItemStationId: string;
+}
+
+export interface StationSelectionJobItem {
+  id: string;
+  kind: JobItemKind;
+  name: string;
+  plannedQuantity: number;
+  pipelineStations: PipelineStationOption[];
 }

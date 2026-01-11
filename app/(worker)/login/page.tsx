@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FormSection } from "@/components/forms/form-section";
 import { LanguageSelect } from "@/components/language/language-select";
@@ -13,6 +13,10 @@ import { Label } from "@/components/ui/label";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useWorkerSession } from "@/contexts/WorkerSessionContext";
 import { fetchWorkerActiveSessionApi, loginWorkerApi } from "@/lib/api/client";
+import {
+  getPersistedSessionState,
+  clearPersistedSessionState,
+} from "@/lib/utils/session-storage";
 import type { SupportedLanguage } from "@/lib/i18n/translations";
 
 export default function LoginPage() {
@@ -23,8 +27,28 @@ export default function LoginPage() {
     reset,
     setPendingRecovery,
   } = useWorkerSession();
+  const formRef = useRef<HTMLFormElement>(null);
   const [workerId, setWorkerId] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [isAutoLogging, setIsAutoLogging] = useState(false);
+  const autoLoginAttempted = useRef(false);
+
+  // Auto-login on refresh: check sessionStorage for persisted session state
+  // and automatically trigger login flow to show recovery dialog
+  useEffect(() => {
+    if (autoLoginAttempted.current) return;
+    autoLoginAttempted.current = true;
+
+    const persisted = getPersistedSessionState();
+    if (persisted?.workerCode) {
+      setWorkerId(persisted.workerCode);
+      setIsAutoLogging(true);
+      // Use requestAnimationFrame to ensure state is updated before submit
+      requestAnimationFrame(() => {
+        formRef.current?.requestSubmit();
+      });
+    }
+  }, []);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -63,6 +87,12 @@ export default function LoginPage() {
       router.push("/job");
     } catch {
       setError(t("login.error.notFound"));
+      // Clear persisted state if auto-login fails (worker code no longer valid)
+      if (isAutoLogging) {
+        clearPersistedSessionState();
+      }
+    } finally {
+      setIsAutoLogging(false);
     }
   };
 
@@ -74,7 +104,7 @@ export default function LoginPage() {
         title={t("login.title")}
         subtitle={t("login.subtitle")}
       />
-      <form onSubmit={handleSubmit} className="max-w-3xl space-y-6">
+      <form ref={formRef} onSubmit={handleSubmit} className="max-w-3xl space-y-6">
         <FormSection
           title={t("login.title")}
           description={t("login.subtitle")}
@@ -82,9 +112,10 @@ export default function LoginPage() {
             <Button
               type="submit"
               size="lg"
+              disabled={isAutoLogging}
               className="w-full justify-center bg-primary font-medium text-primary-foreground hover:bg-primary/90 sm:w-auto sm:min-w-48"
             >
-              {t("login.submit")}
+              {isAutoLogging ? t("checklist.loading") : t("login.submit")}
             </Button>
           }
         >

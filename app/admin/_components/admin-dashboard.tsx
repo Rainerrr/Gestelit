@@ -131,30 +131,9 @@ const StatusChartsSection = ({ dictionary, isLoading }: SectionProps) => {
     return combined;
   });
 
-  const throughputData = useAdminSessionsSelector((state) => {
-    const map = new Map<
-      string,
-      { name: string; label: string; good: number; scrap: number }
-    >();
-
-    state.sessionIds.forEach((id) => {
-      const session = state.sessionsMap.get(id);
-      if (!session) return;
-      const key = session.stationName || "תחנה לא ידועה";
-      const current =
-        map.get(key) ?? { name: key, label: key, good: 0, scrap: 0 };
-      current.good += session.totalGood ?? 0;
-      current.scrap += session.totalScrap ?? 0;
-      map.set(key, current);
-    });
-
-    return Array.from(map.values());
-  });
-
   return (
     <StatusCharts
       statusData={statusData}
-      throughputData={throughputData}
       isLoading={isLoading}
       dictionary={dictionary}
       sideWidget={<ActiveReportsWidget />}

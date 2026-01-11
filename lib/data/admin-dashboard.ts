@@ -1,9 +1,13 @@
 import { createServiceSupabase } from "@/lib/supabase/client";
 import type {
+  Job,
+  JobItemWithDetails,
+  LiveJobProgress,
   MachineState,
   SessionStatus,
   StationType,
   StatusEventState,
+  WipStationData,
 } from "@/lib/types";
 
 export type ActiveSession = {
@@ -738,4 +742,224 @@ export const fetchMonthlyJobThroughput = async (
     (a, b) => new Date(b.lastEndedAt).getTime() - new Date(a.lastEndedAt).getTime(),
   );
 };
+
+// ============================================
+// LIVE JOB PROGRESS (for admin dashboard)
+// ============================================
+
+type ActiveJobSessionRow = {
+  job_id: string;
+  station_id: string | null;
+  jobs: Job | null;
+};
+
+type JobItemRow = JobItemWithDetails & {
+  stations?: { id: string; name: string; code: string } | null;
+  production_lines?: { id: string; name: string; code: string | null } | null;
+  job_item_stations?: Array<{
+    id: string;
+    job_item_id: string;
+    station_id: string;
+    position: number;
+    is_terminal: boolean;
+    stations: { id: string; name: string; code: string } | null;
+  }>;
+  wip_balances?: Array<{
+    id: string;
+    job_item_id: string;
+    job_item_station_id: string;
+    good_available: number;
+  }>;
+  job_item_progress?: { completed_good: number } | null;
+};
+
+/**
+ * Fetch active jobs with progress data for the live dashboard.
+ * Returns jobs that have at least one active session, sorted by session count (descending).
+ */
+export async function fetchActiveJobsWithProgress(): Promise<LiveJobProgress[]> {
+  const supabase = createServiceSupabase();
+
+  // Step 1: Get all active sessions grouped by job_id
+  const { data: activeSessions, error: sessionsError } = await supabase
+    .from("sessions")
+    .select("job_id, station_id, jobs(*)")
+    .eq("status", "active")
+    .is("ended_at", null);
+
+  if (sessionsError) {
+    console.error("[admin-dashboard] Failed to fetch active sessions for jobs", sessionsError);
+    return [];
+  }
+
+  const sessions = (activeSessions ?? []) as unknown as ActiveJobSessionRow[];
+
+  if (sessions.length === 0) {
+    return [];
+  }
+
+  // Step 2: Group sessions by job_id and collect active station IDs
+  const jobSessionMap = new Map<
+    string,
+    { job: Job; sessionCount: number; activeStationIds: Set<string> }
+  >();
+
+  sessions.forEach((session) => {
+    if (!session.job_id || !session.jobs) return;
+
+    const existing = jobSessionMap.get(session.job_id);
+    if (existing) {
+      existing.sessionCount += 1;
+      if (session.station_id) {
+        existing.activeStationIds.add(session.station_id);
+      }
+    } else {
+      const stationIds = new Set<string>();
+      if (session.station_id) {
+        stationIds.add(session.station_id);
+      }
+      jobSessionMap.set(session.job_id, {
+        job: session.jobs,
+        sessionCount: 1,
+        activeStationIds: stationIds,
+      });
+    }
+  });
+
+  // Step 3: For each job, fetch the first active job item with details
+  const jobIds = Array.from(jobSessionMap.keys());
+
+  const { data: jobItemsData, error: itemsError } = await supabase
+    .from("job_items")
+    .select(`
+      *,
+      stations:station_id(id, name, code),
+      production_lines:production_line_id(id, name, code),
+      job_item_stations(id, job_item_id, station_id, position, is_terminal, stations(id, name, code)),
+      wip_balances(*),
+      job_item_progress(*)
+    `)
+    .in("job_id", jobIds)
+    .eq("is_active", true)
+    .order("created_at", { ascending: true });
+
+  if (itemsError) {
+    console.error("[admin-dashboard] Failed to fetch job items", itemsError);
+    return [];
+  }
+
+  const jobItems = (jobItemsData ?? []) as unknown as JobItemRow[];
+
+  // Group ALL job items by job_id (not just first)
+  const jobItemsMap = new Map<string, JobItemRow[]>();
+  jobItems.forEach((item) => {
+    const existing = jobItemsMap.get(item.job_id);
+    if (existing) {
+      existing.push(item);
+    } else {
+      jobItemsMap.set(item.job_id, [item]);
+    }
+  });
+
+  // Step 4: Build LiveJobProgress array
+  const results: LiveJobProgress[] = [];
+
+  jobSessionMap.forEach(({ job, sessionCount, activeStationIds }, jobId) => {
+    const jobItemsList = jobItemsMap.get(jobId) ?? [];
+    const activeStationIdsArray = Array.from(activeStationIds);
+
+    // Build assignments for all job items
+    const jobItemAssignments = jobItemsList.map((jobItem) => {
+      const wipDistribution: WipStationData[] = [];
+      let completedGood = 0;
+
+      // Get progress (completed good from terminal station)
+      completedGood = jobItem.job_item_progress?.completed_good ?? 0;
+
+      if (jobItem.kind === "line" && jobItem.job_item_stations) {
+        // Production line: build WIP for each station in order
+        const sortedStations = [...jobItem.job_item_stations].sort(
+          (a, b) => a.position - b.position
+        );
+        const wipMap = new Map(
+          (jobItem.wip_balances ?? []).map((wb) => [wb.job_item_station_id, wb.good_available])
+        );
+
+        sortedStations.forEach((jis) => {
+          wipDistribution.push({
+            jobItemStationId: jis.id,
+            stationId: jis.station_id,
+            stationName: jis.stations?.name ?? `שלב ${jis.position}`,
+            position: jis.position,
+            isTerminal: jis.is_terminal,
+            goodAvailable: wipMap.get(jis.id) ?? 0,
+            hasActiveSession: activeStationIds.has(jis.station_id),
+          });
+        });
+      } else if (jobItem.kind === "station" && jobItem.station_id) {
+        // Single station: simple WIP distribution
+        wipDistribution.push({
+          jobItemStationId: jobItem.id, // Use job item ID for single station
+          stationId: jobItem.station_id,
+          stationName: jobItem.stations?.name ?? "תחנה",
+          position: 1,
+          isTerminal: true,
+          goodAvailable: completedGood,
+          hasActiveSession: activeStationIds.has(jobItem.station_id),
+        });
+      }
+
+      // Build jobItem with partial station data (only name/code needed for display)
+      const mappedJobItem: JobItemWithDetails = {
+        id: jobItem.id,
+        job_id: jobItem.job_id,
+        kind: jobItem.kind,
+        station_id: jobItem.station_id,
+        production_line_id: jobItem.production_line_id,
+        planned_quantity: jobItem.planned_quantity,
+        is_active: jobItem.is_active,
+        station: jobItem.stations as JobItemWithDetails["station"],
+        production_line: jobItem.production_lines ?? undefined,
+        job_item_stations: jobItem.job_item_stations?.map((jis) => {
+          // jis.stations comes from Supabase join (named "stations")
+          const stationData = (jis as { stations?: { id: string; name: string; code: string } | null }).stations;
+          return {
+            id: jis.id,
+            job_item_id: jis.job_item_id,
+            station_id: jis.station_id,
+            position: jis.position,
+            is_terminal: jis.is_terminal,
+            station: stationData as JobItemWithDetails["station"],
+          };
+        }),
+        wip_balances: jobItem.wip_balances,
+        progress: jobItem.job_item_progress
+          ? {
+              job_item_id: jobItem.id,
+              completed_good: jobItem.job_item_progress.completed_good,
+            }
+          : undefined,
+      };
+
+      return {
+        jobItem: mappedJobItem,
+        wipDistribution,
+        completedGood,
+        plannedQuantity: jobItem.planned_quantity,
+      };
+    });
+
+    results.push({
+      job,
+      jobItems: jobItemAssignments,
+      activeSessionCount: sessionCount,
+      activeStationIds: activeStationIdsArray,
+    });
+  });
+
+  // Sort by session count descending (most active first)
+  results.sort((a, b) => b.activeSessionCount - a.activeSessionCount);
+
+  return results;
+}
 

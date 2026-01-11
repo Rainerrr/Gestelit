@@ -1,4 +1,4 @@
-import { isValidStatusColor } from "@/lib/status";
+import { isValidStatusColor, sortStatusDefinitions } from "@/lib/status";
 import { createServiceSupabase } from "@/lib/supabase/client";
 import type { MachineState, StatusDefinition, StatusScope, StatusReportType } from "@/lib/types";
 
@@ -168,8 +168,7 @@ export async function fetchActiveStatusDefinitions(
   const supabase = createServiceSupabase();
   let query = supabase
     .from("status_definitions")
-    .select("*")
-    .order("created_at", { ascending: true });
+    .select("*");
 
   if (stationId) {
     query = query.or(
@@ -183,7 +182,8 @@ export async function fetchActiveStatusDefinitions(
   if (error) {
     throw new Error(error.message);
   }
-  return (data as StatusDefinition[]) ?? [];
+  // Sort in code: stoppage → production → malfunction → global → station → other
+  return sortStatusDefinitions((data as StatusDefinition[]) ?? []);
 }
 
 export async function fetchStatusDefinitionsByStationIds(
@@ -192,8 +192,7 @@ export async function fetchStatusDefinitionsByStationIds(
   const supabase = createServiceSupabase();
   let query = supabase
     .from("status_definitions")
-    .select("*")
-    .order("created_at", { ascending: true });
+    .select("*");
 
   if (stationIds.length > 0) {
     query = query.or(
@@ -205,7 +204,8 @@ export async function fetchStatusDefinitionsByStationIds(
   if (error) {
     throw new Error(error.message);
   }
-  return (data as StatusDefinition[]) ?? [];
+  // Sort in code: stoppage → production → malfunction → global → station → other
+  return sortStatusDefinitions((data as StatusDefinition[]) ?? []);
 }
 
 export async function createStatusDefinition(
