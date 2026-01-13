@@ -37,13 +37,31 @@ import {
   usePipelineContext,
 } from "@/contexts/PipelineContext";
 import {
+  bindJobItemToSessionApi,
+  checkFirstProductQAApi,
   createReportApi,
   createStatusEventWithReportApi,
+  endProductionStatusApi,
   fetchReportReasonsApi,
   startStatusEventApi,
+  submitFirstProductQARequestApi,
   takeoverSessionApi,
   updateSessionTotalsApi,
+  type FirstProductQAStatus,
 } from "@/lib/api/client";
+import {
+  JobSelectionDialog,
+  type JobSelectionResult,
+} from "@/components/work/job-selection-dialog";
+import { ProductionContextBanner } from "@/components/work/production-context-banner";
+import {
+  QuantityReportDialog,
+  type QuantityReportResult,
+} from "@/components/work/quantity-report-dialog";
+import {
+  FirstProductQADialog,
+  type FirstProductQADialogMode,
+} from "@/components/work/first-product-qa-dialog";
 import { getActiveStationReasons } from "@/lib/data/station-reasons";
 import { ProductionPipeline, type PipelineStation } from "@/components/work/production-pipeline";
 import {
@@ -116,6 +134,7 @@ export default function WorkPage() {
   const router = useRouter();
 
   // Route guards - must come before any conditional returns that use hooks
+  // Note: job is now optional - workers select job when entering production
   useEffect(() => {
     if (!worker) {
       router.replace("/login");
@@ -125,17 +144,15 @@ export default function WorkPage() {
       router.replace("/station");
       return;
     }
-    if (worker && station && !job) {
-      router.replace("/job");
-      return;
+    // Session must exist - job is now optional (selected when entering production)
+    if (worker && station && !sessionId) {
+      router.replace("/station");
     }
-    if (worker && station && job && !sessionId) {
-      router.replace("/job");
-    }
-  }, [worker, station, job, sessionId, router]);
+  }, [worker, station, sessionId, router]);
 
   // Guard render - don't render content until session is ready
-  if (!worker || !station || !job || !sessionId) {
+  // Note: job is optional now - it gets bound when entering production
+  if (!worker || !station || !sessionId) {
     return null;
   }
 
@@ -166,6 +183,11 @@ function WorkPageContent() {
     setCurrentStatus,
     totals,
     updateTotals,
+    activeJobItem,
+    setActiveJobItem,
+    setJob,
+    currentStatusEventId,
+    setCurrentStatusEventId,
   } = useWorkerSession();
   const [isStatusesLoading, setStatusesLoading] = useState(false);
   const dictionary = useMemo(
@@ -196,6 +218,28 @@ function WorkPageContent() {
   const [generalReportError, setGeneralReportError] = useState<string | null>(null);
   const [pendingGeneralStatusId, setPendingGeneralStatusId] = useState<string | null>(null);
 
+  // Job selection dialog state (for entering production without job)
+  const [isJobSelectionDialogOpen, setJobSelectionDialogOpen] = useState(false);
+  const [pendingProductionStatusId, setPendingProductionStatusId] = useState<string | null>(null);
+  const [isJobSelectionSubmitting, setIsJobSelectionSubmitting] = useState(false);
+  // Track if force job selection mode is active (cannot dismiss dialog without selection)
+  const [isForceJobSelection, setIsForceJobSelection] = useState(false);
+
+  // Quantity report dialog state (for leaving production)
+  const [isQuantityReportDialogOpen, setQuantityReportDialogOpen] = useState(false);
+  const [pendingExitStatusId, setPendingExitStatusId] = useState<string | null>(null);
+  const [isQuantityReportSubmitting, setIsQuantityReportSubmitting] = useState(false);
+  // Track if this is a job switch (need to open job selection after quantity report)
+  const [isPendingJobSwitch, setIsPendingJobSwitch] = useState(false);
+
+  // First Product QA dialog state
+  const [isQADialogOpen, setQADialogOpen] = useState(false);
+  const [qaDialogMode, setQADialogMode] = useState<FirstProductQADialogMode>("request");
+  const [qaStatus, setQAStatus] = useState<FirstProductQAStatus | null>(null);
+  const [isQASubmitting, setIsQASubmitting] = useState(false);
+  // Pending job selection result - stored while waiting for QA approval
+  const [pendingQAJobSelection, setPendingQAJobSelection] = useState<JobSelectionResult | null>(null);
+
   // Pipeline context from real-time SSE provider (now inside PipelineProvider)
   const pipelineContext = usePipelineContext();
 
@@ -211,6 +255,29 @@ function WorkPageContent() {
       nextStation: pipelineContext.nextStation,
     });
   }, [pipelineContext]);
+
+  // Force job selection when in production without an active job item
+  // This can happen if:
+  // 1. Session was recovered while in production status but job binding was lost
+  // 2. Status was changed externally (admin, API) to production
+  useEffect(() => {
+    // Build status dictionary to check machine state
+    const dict = buildStatusDictionary(statuses);
+    const statusDef = currentStatus
+      ? (dict.global.get(currentStatus) ??
+         (station?.id ? dict.station.get(station.id)?.get(currentStatus) : undefined))
+      : undefined;
+
+    const isProductionStatus = statusDef?.machine_state === "production";
+
+    // If in production without job item, force job selection dialog
+    if (isProductionStatus && !activeJobItem && station && !isJobSelectionDialogOpen) {
+      console.log("[WorkPageContent] In production without job item, forcing job selection");
+      setPendingProductionStatusId(currentStatus ?? null);
+      setIsForceJobSelection(true);
+      setJobSelectionDialogOpen(true);
+    }
+  }, [currentStatus, activeJobItem, statuses, station, isJobSelectionDialogOpen]);
 
   const reasons = useMemo<StationReason[]>(
     () => getActiveStationReasons(station?.station_reasons ?? []),
@@ -317,7 +384,8 @@ function WorkPageContent() {
 
   // These are guaranteed to exist by the guard in WorkPage
   // but TypeScript needs help knowing that
-  if (!worker || !station || !job || !sessionId) {
+  // Note: job is now optional - it's selected when entering production
+  if (!worker || !station || !sessionId) {
     return null;
   }
 
@@ -332,6 +400,27 @@ function WorkPageContent() {
       : "#94a3b8",
   );
 
+  // Check if current status is a production status
+  const currentStatusDef = currentStatusSafe ? getStatusDefinition(currentStatusSafe) : undefined;
+  const isInProduction = currentStatusDef?.machine_state === "production";
+
+  // Handle "Switch Job" action - requires quantity reporting before switching
+  const handleSwitchJob = () => {
+    // When switching jobs while in production, we need to:
+    // 1. Report quantities for current production period
+    // 2. Then open job selection dialog
+    if (activeJobItem && currentStatusEventId) {
+      // Need to report quantities first
+      setPendingExitStatusId(currentStatus ?? null); // Stay in production after reporting
+      setIsPendingJobSwitch(true);
+      setQuantityReportDialogOpen(true);
+    } else {
+      // No active job item or no status event ID - just open job selection
+      setPendingProductionStatusId(currentStatus ?? null);
+      setJobSelectionDialogOpen(true);
+    }
+  };
+
   const handleStatusChange = async (statusId: string, reportId?: string) => {
     if (!sessionId || currentStatus === statusId) {
       return;
@@ -344,6 +433,30 @@ function WorkPageContent() {
     const reportType = (rawReportType === "malfunction" || rawReportType === "general")
       ? rawReportType
       : "none";
+
+    // Check if entering production status without an active job item
+    // If so, open job selection dialog first
+    const isTargetProductionStatus = statusDef?.machine_state === "production";
+    if (isTargetProductionStatus && !activeJobItem && station) {
+      setPendingProductionStatusId(statusId);
+      setJobSelectionDialogOpen(true);
+      return;
+    }
+
+    // Check if LEAVING production status (current is production, target is not)
+    // If so, show quantity report dialog first
+    const isLeavingProduction =
+      isInProduction &&
+      !isTargetProductionStatus &&
+      activeJobItem &&
+      currentStatusEventId;
+
+    if (isLeavingProduction) {
+      setPendingExitStatusId(statusId);
+      setIsPendingJobSwitch(false);
+      setQuantityReportDialogOpen(true);
+      return;
+    }
 
     // If target status requires a report and none provided, open the appropriate dialog
     if (reportType === "malfunction" && !reportId) {
@@ -369,15 +482,295 @@ function WorkPageContent() {
     setStatusError(null);
     setCurrentStatus(statusId);
     try {
-      await startStatusEventApi({
+      const statusEvent = await startStatusEventApi({
         sessionId,
         statusDefinitionId: statusId,
         reportId: reportId,
       });
+
+      // Store the status event ID for quantity reporting later
+      if (statusEvent?.id) {
+        setCurrentStatusEventId(statusEvent.id);
+      }
     } catch {
       setStatusError(t("work.error.status"));
     }
   };
+
+  // Handler for job selection dialog completion
+  const handleJobSelectionComplete = async (result: JobSelectionResult) => {
+    if (!sessionId || !pendingProductionStatusId || !station) return;
+
+    setIsJobSelectionSubmitting(true);
+    setStatusError(null);
+
+    try {
+      // Check if station requires first product QA
+      if (station.requires_first_product_qa) {
+        // Check QA approval status
+        const qaCheckResult = await checkFirstProductQAApi(
+          result.jobItem.id,
+          station.id,
+        );
+        setQAStatus(qaCheckResult);
+
+        if (!qaCheckResult.approved) {
+          // QA not approved - show QA dialog
+          setPendingQAJobSelection(result);
+          setJobSelectionDialogOpen(false);
+
+          if (qaCheckResult.pendingReport) {
+            // There's already a pending QA request - show waiting mode
+            setQADialogMode("waiting");
+          } else {
+            // No pending request - show request mode
+            setQADialogMode("request");
+          }
+          setQADialogOpen(true);
+          setIsJobSelectionSubmitting(false);
+          return;
+        }
+        // QA is approved - continue with production
+      }
+
+      // Proceed with starting production (QA approved or not required)
+      await proceedWithProduction(result);
+    } catch (error) {
+      console.error("[work] Failed to complete job selection:", error);
+      const message = error instanceof Error ? error.message : String(error);
+
+      // Provide specific error messages based on error type
+      if (message.includes("QA") || message.includes("qa")) {
+        setStatusError("שגיאה בבדיקת אישור QA. נסה שנית.");
+      } else if (message.includes("bind") || message.includes("session")) {
+        setStatusError("שגיאה בקישור עבודה לתפק\"ע. נסה שנית.");
+      } else if (message.includes("network") || message.includes("fetch")) {
+        setStatusError("שגיאת רשת. בדוק את החיבור ונסה שנית.");
+      } else {
+        setStatusError("שגיאה בבחירת עבודה. נסה שנית.");
+      }
+      setIsJobSelectionSubmitting(false);
+    }
+  };
+
+  // Helper function to proceed with production after job selection (and QA if required)
+  const proceedWithProduction = async (result: JobSelectionResult) => {
+    if (!sessionId || !pendingProductionStatusId) return;
+
+    try {
+      // 1. Bind job item to session
+      await bindJobItemToSessionApi(
+        sessionId,
+        result.job.id,
+        result.jobItem.id,
+        result.jobItem.jobItemStationId,
+      );
+
+      // 2. Update context with active job item
+      setActiveJobItem({
+        id: result.jobItem.id,
+        jobId: result.job.id,
+        name: result.jobItem.name,
+        kind: result.jobItem.kind,
+        plannedQuantity: result.jobItem.plannedQuantity,
+        jobItemStationId: result.jobItem.jobItemStationId,
+      });
+
+      // 3. Also set the job in context for display
+      setJob({
+        id: result.job.id,
+        job_number: result.job.jobNumber,
+        customer_name: result.job.clientName,
+        description: result.job.description,
+        created_at: new Date().toISOString(),
+      });
+
+      // 4. Now switch to production status and capture the event ID
+      setCurrentStatus(pendingProductionStatusId);
+      const statusEvent = await startStatusEventApi({
+        sessionId,
+        statusDefinitionId: pendingProductionStatusId,
+      });
+
+      // 5. Store the status event ID for quantity reporting later
+      if (statusEvent?.id) {
+        setCurrentStatusEventId(statusEvent.id);
+      }
+
+      // 6. Close dialog and reset state
+      setJobSelectionDialogOpen(false);
+      setPendingProductionStatusId(null);
+      setIsForceJobSelection(false);
+      setPendingQAJobSelection(null);
+    } catch (error) {
+      console.error("[work] Failed to bind job and start production:", error);
+      const message = error instanceof Error ? error.message : String(error);
+
+      // Provide specific error messages based on failure point
+      if (message.includes("bind") || message.includes("job_item")) {
+        setStatusError("שגיאה בקישור עבודה לתפק\"ע. נסה שנית.");
+      } else if (message.includes("status") || message.includes("event")) {
+        setStatusError("שגיאה במעבר לסטטוס ייצור. נסה שנית.");
+      } else {
+        setStatusError("שגיאה בתחילת ייצור. נסה שנית.");
+      }
+      throw error;
+    } finally {
+      setIsJobSelectionSubmitting(false);
+    }
+  };
+
+  const handleJobSelectionCancel = () => {
+    // If force mode is active, don't allow canceling
+    if (isForceJobSelection) {
+      return;
+    }
+    setJobSelectionDialogOpen(false);
+    setPendingProductionStatusId(null);
+  };
+
+  // Handler for quantity report dialog submission
+  const handleQuantityReportSubmit = async (result: QuantityReportResult) => {
+    if (!sessionId || !currentStatusEventId || !pendingExitStatusId) {
+      console.error("[work] Missing required data for quantity report");
+      return;
+    }
+
+    setIsQuantityReportSubmitting(true);
+    setStatusError(null);
+
+    try {
+      // Call the atomic API to end production and transition to next status
+      const response = await endProductionStatusApi({
+        sessionId,
+        statusEventId: currentStatusEventId,
+        quantityGood: result.additionalGood,
+        quantityScrap: result.additionalScrap,
+        nextStatusId: pendingExitStatusId,
+      });
+
+      // Update local totals to reflect the new values
+      updateTotals({
+        good: totals.good + result.additionalGood,
+        scrap: totals.scrap + result.additionalScrap,
+      });
+
+      // Update current status
+      setCurrentStatus(pendingExitStatusId);
+
+      // Update current status event ID to the new event
+      if (response.newStatusEvent?.id) {
+        setCurrentStatusEventId(response.newStatusEvent.id);
+      }
+
+      // Close dialog and reset state
+      setQuantityReportDialogOpen(false);
+      setPendingExitStatusId(null);
+
+      // If this was a job switch, open job selection dialog
+      if (isPendingJobSwitch) {
+        setIsPendingJobSwitch(false);
+        // Clear active job item since we're switching
+        setActiveJobItem(null);
+        // Open job selection for the production status we were in
+        setPendingProductionStatusId(currentStatus ?? null);
+        setJobSelectionDialogOpen(true);
+      }
+    } catch (error) {
+      console.error("[work] Failed to submit quantity report:", error);
+      setStatusError("שגיאה בשמירת הכמויות");
+    } finally {
+      setIsQuantityReportSubmitting(false);
+    }
+  };
+
+  const handleQuantityReportCancel = () => {
+    // Quantity reporting is required when leaving production
+    // But allow cancel if it was a job switch (user can stay with current job)
+    if (!isPendingJobSwitch) {
+      // Can't cancel when leaving production - keep dialog open
+      return;
+    }
+    setQuantityReportDialogOpen(false);
+    setPendingExitStatusId(null);
+    setIsPendingJobSwitch(false);
+  };
+
+  // Handler for QA dialog submission
+  const handleQADialogSubmit = async (data: { description?: string; image?: File | null }) => {
+    if (!station || !pendingQAJobSelection) return;
+
+    setIsQASubmitting(true);
+    setStatusError(null);
+
+    try {
+      // Submit the QA request
+      await submitFirstProductQARequestApi({
+        jobItemId: pendingQAJobSelection.jobItem.id,
+        stationId: station.id,
+        sessionId,
+        workerId: worker?.id,
+        description: data.description,
+        image: data.image,
+      });
+
+      // Switch to waiting mode
+      setQADialogMode("waiting");
+
+      // Re-check QA status to get the pending report
+      const newStatus = await checkFirstProductQAApi(
+        pendingQAJobSelection.jobItem.id,
+        station.id,
+      );
+      setQAStatus(newStatus);
+    } catch (error) {
+      console.error("[work] Failed to submit QA request:", error);
+      setStatusError("שגיאה בשליחת בקשת QA");
+    } finally {
+      setIsQASubmitting(false);
+    }
+  };
+
+  // Handler for QA dialog cancel
+  const handleQADialogCancel = () => {
+    // If in waiting mode or request mode, allow closing (but don't proceed to production)
+    setQADialogOpen(false);
+    setPendingQAJobSelection(null);
+    setPendingProductionStatusId(null);
+    setIsForceJobSelection(false);
+  };
+
+  // Periodic check for QA approval (when in waiting mode)
+  useEffect(() => {
+    if (!isQADialogOpen || qaDialogMode !== "waiting" || !pendingQAJobSelection || !station) {
+      return;
+    }
+
+    // Poll every 5 seconds for approval
+    const interval = setInterval(async () => {
+      try {
+        const newStatus = await checkFirstProductQAApi(
+          pendingQAJobSelection.jobItem.id,
+          station.id,
+        );
+        setQAStatus(newStatus);
+
+        if (newStatus.approved) {
+          // QA approved! Show approved mode briefly, then proceed
+          setQADialogMode("approved");
+          // After brief delay, proceed to production
+          setTimeout(() => {
+            setQADialogOpen(false);
+            void proceedWithProduction(pendingQAJobSelection);
+          }, 1500);
+        }
+      } catch (error) {
+        console.error("[work] Failed to check QA status:", error);
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [isQADialogOpen, qaDialogMode, pendingQAJobSelection, station]);
 
   const syncTotals = (key: "good" | "scrap", next: number, previous: number) => {
     if (!sessionId) {
@@ -514,7 +907,11 @@ function WorkPageContent() {
       <PageHeader
         eyebrow={worker.full_name}
         title={t("work.title")}
-        subtitle={`${t("common.job")} ${job.job_number}`}
+        subtitle={
+          job
+            ? `${t("common.job")} ${job.job_number}`
+            : "לא נבחרה עבודה"
+        }
         actions={
           <Badge variant="secondary" className="border-border bg-secondary text-base text-foreground/80">
             {`${t("common.station")}: ${station.name}`}
@@ -533,6 +930,17 @@ function WorkPageContent() {
             visual={activeVisual}
             startedAt={sessionStartedAt}
           />
+
+          {/* Production Context Banner - shown when in production with active job */}
+          {isInProduction && activeJobItem ? (
+            <ProductionContextBanner
+              job={job}
+              activeJobItem={activeJobItem}
+              sessionTotals={totals}
+              onSwitchJob={handleSwitchJob}
+              switchJobDisabled={isJobSelectionSubmitting}
+            />
+          ) : null}
 
           <Card className="rounded-xl border border-border bg-card/50 backdrop-blur-sm">
             <CardHeader>
@@ -600,12 +1008,14 @@ function WorkPageContent() {
             </CardContent>
           </Card>
 
-          <Card className="rounded-xl border border-border bg-card/50 backdrop-blur-sm">
-            <CardHeader className="pb-3 text-right">
-              <CardTitle className="text-foreground">{t("work.section.production")}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {station && (
+          {/* Production counters - only show for legacy sessions (no job item).
+              New flow: quantities are reported via QuantityReportDialog when exiting production. */}
+          {!pipelineContext.jobItem && station && (
+            <Card className="rounded-xl border border-border bg-card/50 backdrop-blur-sm">
+              <CardHeader className="pb-3 text-right">
+                <CardTitle className="text-foreground">{t("work.section.production")}</CardTitle>
+              </CardHeader>
+              <CardContent>
                 <ProductionPipeline
                   currentStation={station}
                   currentPosition={pipelineContext.currentPosition}
@@ -622,12 +1032,13 @@ function WorkPageContent() {
                   onScrapSet={(value) => handleManualCountChange("scrap", String(value))}
                   error={productionError}
                   isSingleStation={pipelineContext.isSingleStation}
-                  isLegacy={!pipelineContext.jobItem}
+                  isLegacy={true}
                   lastUpdated={pipelineContext.lastUpdated}
+                  readOnly={false}
                 />
-              )}
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         <div className="space-y-6">
@@ -969,6 +1380,40 @@ function WorkPageContent() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Job Selection Dialog - shown when entering production without job */}
+      <JobSelectionDialog
+        open={isJobSelectionDialogOpen}
+        stationId={station.id}
+        onSelect={handleJobSelectionComplete}
+        onCancel={handleJobSelectionCancel}
+        isSubmitting={isJobSelectionSubmitting}
+        required={isForceJobSelection}
+      />
+
+      {/* Quantity Report Dialog - shown when leaving production */}
+      <QuantityReportDialog
+        open={isQuantityReportDialogOpen}
+        sessionTotals={totals}
+        onSubmit={handleQuantityReportSubmit}
+        onCancel={handleQuantityReportCancel}
+        isSubmitting={isQuantityReportSubmitting}
+        required={!isPendingJobSwitch}
+        jobItemName={activeJobItem?.name}
+      />
+
+      {/* First Product QA Dialog - shown when station requires QA approval */}
+      <FirstProductQADialog
+        open={isQADialogOpen}
+        mode={qaDialogMode}
+        jobItemName={pendingQAJobSelection?.jobItem.name}
+        jobNumber={pendingQAJobSelection?.job.jobNumber}
+        pendingReport={qaStatus?.pendingReport}
+        onSubmit={handleQADialogSubmit}
+        onCancel={handleQADialogCancel}
+        isSubmitting={isQASubmitting}
+        required={false}
+      />
     </>
   );
 }

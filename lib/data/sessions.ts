@@ -35,7 +35,7 @@ function parseUtcMs(isoString: string): number {
 type SessionPayload = {
   worker_id: string;
   station_id: string;
-  job_id: string;
+  job_id: string | null;
   started_at?: string;
   active_instance_id?: string;
   // Job item tracking (for production line WIP)
@@ -264,6 +264,79 @@ export async function updateSessionQuantitiesAtomic(
   // If the RPC returned an error, don't throw - let the caller handle it
   // This allows for user-friendly error messages in the UI
   return result;
+}
+
+/**
+ * Bind a job item to an existing session.
+ * Used when worker enters production and selects a job + job item.
+ *
+ * Updates the session with:
+ * - job_id: The selected job
+ * - job_item_id: The specific job item to work on
+ * - job_item_station_id: The job_item_stations row linking the item to this station
+ *
+ * Also updates the job-related snapshot fields for historical records.
+ */
+export async function bindJobItemToSession(
+  sessionId: string,
+  jobId: string,
+  jobItemId: string,
+  jobItemStationId: string,
+): Promise<Session> {
+  const supabase = createServiceSupabase();
+
+  // Verify job item exists and belongs to this job
+  const { data: jobItem, error: jobItemError } = await supabase
+    .from("job_items")
+    .select("id, job_id, is_active")
+    .eq("id", jobItemId)
+    .maybeSingle();
+
+  if (jobItemError || !jobItem) {
+    throw new Error(`JOB_ITEM_NOT_FOUND: ${jobItemError?.message ?? "Job item does not exist"}`);
+  }
+
+  if (jobItem.job_id !== jobId) {
+    throw new Error("JOB_ITEM_JOB_MISMATCH: Job item does not belong to the specified job");
+  }
+
+  if (!jobItem.is_active) {
+    throw new Error("JOB_ITEM_INACTIVE: Job item is not active");
+  }
+
+  // Verify job_item_station exists and links the job_item to a station
+  const { data: jis, error: jisError } = await supabase
+    .from("job_item_stations")
+    .select("id, job_item_id")
+    .eq("id", jobItemStationId)
+    .maybeSingle();
+
+  if (jisError || !jis) {
+    throw new Error(`JOB_ITEM_STATION_NOT_FOUND: ${jisError?.message ?? "Job item station does not exist"}`);
+  }
+
+  if (jis.job_item_id !== jobItemId) {
+    throw new Error("JOB_ITEM_STATION_MISMATCH: Job item station does not match job item");
+  }
+
+  // Update the session
+  const { data, error } = await supabase
+    .from("sessions")
+    .update({
+      job_id: jobId,
+      job_item_id: jobItemId,
+      job_item_station_id: jobItemStationId,
+    })
+    .eq("id", sessionId)
+    .eq("status", "active")
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to bind job item to session: ${error.message}`);
+  }
+
+  return data as Session;
 }
 
 /**

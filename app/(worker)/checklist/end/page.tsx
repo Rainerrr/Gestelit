@@ -78,11 +78,8 @@ export default function ClosingChecklistPage() {
       router.replace("/station");
       return;
     }
-    if (worker && station && !job) {
-      router.replace("/job");
-      return;
-    }
-  }, [worker, station, job, router]);
+    // Job is now optional - bound when entering production status
+  }, [worker, station, router]);
 
   useEffect(() => {
     if (!station) {
@@ -104,7 +101,7 @@ export default function ClosingChecklistPage() {
     };
   }, [station]);
 
-  if (!worker || !station || !job || !sessionId) {
+  if (!worker || !station || !sessionId) {
     return null;
   }
 
@@ -187,7 +184,7 @@ export default function ClosingChecklistPage() {
     <>
       <BackButton href="/work" />
       <PageHeader
-        eyebrow={job.job_number}
+        eyebrow={station.name}
         title={t("checklist.end.title")}
         subtitle={t("checklist.end.subtitle")}
       />

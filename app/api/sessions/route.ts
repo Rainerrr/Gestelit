@@ -19,10 +19,11 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   const workerId = body?.workerId as string | undefined;
   const stationId = body?.stationId as string | undefined;
-  const jobId = body?.jobId as string | undefined;
+  const jobId = body?.jobId as string | null | undefined; // Now optional
   const instanceId = body?.instanceId as string | undefined;
 
-  if (!workerId || !stationId || !jobId) {
+  // workerId and stationId are required, jobId is now optional
+  if (!workerId || !stationId) {
     return NextResponse.json(
       { error: "MISSING_FIELDS" },
       { status: 400 },
@@ -45,34 +46,44 @@ export async function POST(request: Request) {
       );
     }
 
-    // Check if job has job_items configured
-    const hasItems = await jobHasJobItems(jobId);
-    if (!hasItems) {
-      // Job is not configured with production items
-      // This is now a hard block - consistent with UI behavior in station page
-      return NextResponse.json(
-        { error: "JOB_NOT_CONFIGURED", message: "Job has no production items configured" },
-        { status: 400 },
-      );
-    }
+    // Job item resolution (only if jobId is provided)
+    let jobItemId: string | null = null;
+    let jobItemStationId: string | null = null;
 
-    // Validate station is allowed for this job and worker
-    const isAllowed = await isStationAllowedForJobAndWorker(stationId, jobId, workerId);
-    if (!isAllowed) {
-      return NextResponse.json(
-        { error: "STATION_NOT_ALLOWED", message: "Station is not part of this job's production line" },
-        { status: 400 },
-      );
-    }
+    if (jobId) {
+      // Check if job has job_items configured
+      const hasItems = await jobHasJobItems(jobId);
+      if (!hasItems) {
+        // Job is not configured with production items
+        return NextResponse.json(
+          { error: "JOB_NOT_CONFIGURED", message: "Job has no production items configured" },
+          { status: 400 },
+        );
+      }
 
-    // Resolve job item and step for this job + station combination
-    const resolution = await resolveJobItemForStation(jobId, stationId);
-    if (!resolution) {
-      return NextResponse.json(
-        { error: "JOB_ITEM_NOT_FOUND", message: "No job item found for this station" },
-        { status: 400 },
-      );
+      // Validate station is allowed for this job and worker
+      const isAllowed = await isStationAllowedForJobAndWorker(stationId, jobId, workerId);
+      if (!isAllowed) {
+        return NextResponse.json(
+          { error: "STATION_NOT_ALLOWED", message: "Station is not part of this job's production line" },
+          { status: 400 },
+        );
+      }
+
+      // Resolve job item and step for this job + station combination
+      const resolution = await resolveJobItemForStation(jobId, stationId);
+      if (!resolution) {
+        return NextResponse.json(
+          { error: "JOB_ITEM_NOT_FOUND", message: "No job item found for this station" },
+          { status: 400 },
+        );
+      }
+
+      jobItemId = resolution.jobItem.id;
+      jobItemStationId = resolution.jobItemStation.id;
     }
+    // If no jobId, session is created without job binding
+    // Job/job item will be bound later when entering production status
 
     // Use atomic RPC to close existing sessions and create new one in single transaction
     // This eliminates race conditions where multiple tabs could create simultaneous sessions
@@ -84,10 +95,10 @@ export async function POST(request: Request) {
     const { data, error } = await supabase.rpc("create_session_atomic", {
       p_worker_id: workerId,
       p_station_id: stationId,
-      p_job_id: jobId,
+      p_job_id: jobId ?? null,
       p_instance_id: instanceId ?? null,
-      p_job_item_id: resolution.jobItem.id,
-      p_job_item_station_id: resolution.jobItemStation.id,
+      p_job_item_id: jobItemId,
+      p_job_item_station_id: jobItemStationId,
       p_initial_status_id: stopStatus.id,
     });
 

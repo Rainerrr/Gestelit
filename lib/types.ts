@@ -32,6 +32,8 @@ export interface Station {
   end_checklist?: StationChecklistItem[] | null;
   station_reasons?: StationReason[] | null;
   station_statuses?: StatusDefinition[] | null;
+  /** If true, first product QA approval required before production */
+  requires_first_product_qa?: boolean;
   created_at?: string;
   updated_at?: string;
 }
@@ -56,7 +58,7 @@ export interface Session {
   id: string;
   worker_id: string;
   station_id: string;
-  job_id: string;
+  job_id: string | null;
   status: SessionStatus;
   current_status_id?: StatusEventState | null;
   started_at: string;
@@ -91,6 +93,10 @@ export interface StatusEvent {
   report_id?: string | null;
   started_at: string;
   ended_at?: string | null;
+  /** Good units produced during this status event period */
+  quantity_good?: number | null;
+  /** Scrap units during this status event period */
+  quantity_scrap?: number | null;
 }
 
 export interface StationReason {
@@ -128,6 +134,10 @@ export interface Report {
   station_reason_id?: string | null;
   report_reason_id?: string | null;
   status_event_id?: string | null;
+  /** Links QA reports to specific job items */
+  job_item_id?: string | null;
+  /** True for first product QA approval requests */
+  is_first_product_qa?: boolean;
   status: ReportStatus;
   status_changed_at?: string | null;
   status_changed_by?: string | null;

@@ -30,7 +30,6 @@ import {
   abandonSessionApi,
   createSessionApi,
   fetchStationsWithOccupancyApi,
-  fetchStationSelectionForJobApi,
 } from "@/lib/api/client";
 import { persistSessionState, clearPersistedSessionState } from "@/lib/utils/session-storage";
 import type { SessionAbandonReason, StationSelectionJobItem } from "@/lib/types";
@@ -171,60 +170,38 @@ export default function StationPage() {
       router.replace("/login");
       return;
     }
-    // Job is required before station selection (unless recovering a session)
-    if (!job && !pendingRecovery) {
-      router.replace("/job");
-      return;
-    }
+    // Job is no longer required before station selection
+    // Job/job item selection happens when entering production status
 
     let active = true;
     dispatch({ type: "start" });
 
-    // Fetch stations based on whether we have a job with job_items
+    // Fetch stations - always use legacy mode (flat station list)
+    // Job item binding happens when entering production status
     const fetchStations = async () => {
       try {
-        // If recovering a session, use the legacy endpoint (all worker stations)
-        if (pendingRecovery || !job) {
-          const result = await fetchStationsWithOccupancyApi(worker.id);
-          if (!active) return;
-          // Convert legacy flat stations to job items format for display
-          const legacyJobItems: StationSelectionJobItem[] = result.map((s) => ({
-            id: s.id,
-            kind: "station" as const,
-            name: s.name,
-            plannedQuantity: 0,
-            pipelineStations: [
-              {
-                id: s.id,
-                name: s.name,
-                code: s.code,
-                position: 1,
-                isTerminal: true,
-                isWorkerAssigned: true,
-                occupancy: s.occupancy,
-                jobItemStationId: "", // Not applicable in legacy mode
-              },
-            ],
-          }));
-          dispatch({ type: "success", payload: legacyJobItems, legacyMode: true });
-        } else {
-          // Use the new job-specific station selection endpoint
-          try {
-            const result = await fetchStationSelectionForJobApi(job.id, worker.id);
-            if (!active) return;
-            dispatch({ type: "success", payload: result.jobItems });
-          } catch (error) {
-            if (!active) return;
-            const errorMsg = error instanceof Error ? error.message : "UNKNOWN";
-            if (errorMsg === "JOB_NOT_CONFIGURED") {
-              // Job has no job_items - block with specific error
-              dispatch({ type: "error", errorCode: "JOB_NOT_CONFIGURED" });
-            } else {
-              // Other error - dispatch generic error
-              dispatch({ type: "error", errorCode: errorMsg });
-            }
-          }
-        }
+        const result = await fetchStationsWithOccupancyApi(worker.id);
+        if (!active) return;
+        // Convert flat stations to job items format for display
+        const legacyJobItems: StationSelectionJobItem[] = result.map((s) => ({
+          id: s.id,
+          kind: "station" as const,
+          name: s.name,
+          plannedQuantity: 0,
+          pipelineStations: [
+            {
+              id: s.id,
+              name: s.name,
+              code: s.code,
+              position: 1,
+              isTerminal: true,
+              isWorkerAssigned: true,
+              occupancy: s.occupancy,
+              jobItemStationId: "", // Not applicable - job item binding deferred
+            },
+          ],
+        }));
+        dispatch({ type: "success", payload: legacyJobItems, legacyMode: true });
       } catch {
         if (!active) return;
         dispatch({ type: "error" });
@@ -236,7 +213,7 @@ export default function StationPage() {
     return () => {
       active = false;
     };
-  }, [worker, job, pendingRecovery, router]);
+  }, [worker, pendingRecovery, router]);
 
   useEffect(() => {
     if (!pendingRecovery?.graceExpiresAt) {
@@ -294,7 +271,7 @@ export default function StationPage() {
   };
 
   const handleContinue = async () => {
-    if (!selection || !worker || !job || pendingRecovery) {
+    if (!selection || !worker || pendingRecovery) {
       return;
     }
 
@@ -302,11 +279,12 @@ export default function StationPage() {
     setSessionError(null);
 
     try {
-      // Create the session with worker, job, and station
+      // Create the session with worker and station (job binding deferred)
+      // jobId is now optional - will be bound when entering production status
       const session = await createSessionApi(
         worker.id,
         selection.stationId,
-        job.id,
+        job?.id ?? null, // Optional job ID
         instanceId,
       );
 
@@ -333,8 +311,8 @@ export default function StationPage() {
         stationId: selection.stationId,
         stationName: selection.stationName,
         stationCode: selection.stationCode,
-        jobId: job.id,
-        jobNumber: job.job_number,
+        jobId: job?.id ?? null,
+        jobNumber: job?.job_number ?? null,
         startedAt: session.started_at ?? new Date().toISOString(),
         totals: { good: 0, scrap: 0 },
       });
@@ -344,10 +322,6 @@ export default function StationPage() {
       const message = error instanceof Error ? error.message : "SESSION_FAILED";
       if (message === "STATION_OCCUPIED") {
         setSessionError(t("station.error.occupied"));
-      } else if (message === "JOB_ITEM_NOT_FOUND") {
-        setSessionError(t("station.error.jobItemNotFound"));
-      } else if (message === "JOB_NOT_CONFIGURED") {
-        setSessionError(t("station.error.jobNotConfigured"));
       } else {
         setSessionError(t("station.error.sessionFailed"));
       }
@@ -380,7 +354,8 @@ export default function StationPage() {
     if (!pendingRecovery) {
       return;
     }
-    if (!pendingRecovery.station || !pendingRecovery.job) {
+    // Station is required, job is now optional
+    if (!pendingRecovery.station) {
       setResumeError(t("station.resume.missing"));
       return;
     }
@@ -397,8 +372,8 @@ export default function StationPage() {
         stationId: pendingRecovery.station.id,
         stationName: pendingRecovery.station.name,
         stationCode: pendingRecovery.station.code,
-        jobId: pendingRecovery.job.id,
-        jobNumber: pendingRecovery.job.job_number,
+        jobId: pendingRecovery.job?.id ?? null,
+        jobNumber: pendingRecovery.job?.job_number ?? null,
         startedAt: pendingRecovery.session.started_at,
         totals: {
           good: pendingRecovery.session.total_good ?? 0,
@@ -430,7 +405,7 @@ export default function StationPage() {
 
   return (
     <>
-      <BackButton href="/job" />
+      <BackButton href="/login" />
       <PageHeader
         eyebrow={worker.full_name}
         title={t("station.title")}

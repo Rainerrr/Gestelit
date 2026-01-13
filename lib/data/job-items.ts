@@ -591,6 +591,154 @@ export async function getUpstreamWipBalance(
 }
 
 // ============================================
+// AVAILABLE JOBS FOR STATION (Deferred Job Selection)
+// ============================================
+
+export type AvailableJob = {
+  id: string;
+  jobNumber: string;
+  clientName: string | null;
+  description: string | null;
+  jobItemCount: number;
+};
+
+/**
+ * Get all jobs that have active job items for a specific station.
+ * Used when worker enters production status and needs to select a job.
+ */
+export async function getAvailableJobsForStation(
+  stationId: string,
+): Promise<AvailableJob[]> {
+  const supabase = createServiceSupabase();
+
+  // Find all active job items that include this station, grouped by job
+  const { data, error } = await supabase
+    .from("job_item_stations")
+    .select(`
+      job_items!inner(
+        job_id,
+        is_active,
+        jobs:job_id(id, job_number, customer_name, description)
+      )
+    `)
+    .eq("station_id", stationId)
+    .eq("job_items.is_active", true);
+
+  if (error) {
+    throw new Error(`Failed to fetch available jobs: ${error.message}`);
+  }
+
+  // Group by job and count items
+  type JobRow = { id: string; job_number: string; customer_name: string | null; description: string | null };
+  const jobMap = new Map<string, { job: JobRow; itemCount: number }>();
+
+  for (const row of data ?? []) {
+    const jobItems = row.job_items as unknown as {
+      job_id: string;
+      jobs: JobRow | null;
+    };
+
+    if (!jobItems.jobs) continue;
+
+    const jobId = jobItems.jobs.id;
+    const existing = jobMap.get(jobId);
+    if (existing) {
+      existing.itemCount++;
+    } else {
+      jobMap.set(jobId, { job: jobItems.jobs, itemCount: 1 });
+    }
+  }
+
+  return Array.from(jobMap.values()).map(({ job, itemCount }) => ({
+    id: job.id,
+    jobNumber: job.job_number,
+    clientName: job.customer_name,
+    description: job.description,
+    jobItemCount: itemCount,
+  }));
+}
+
+export type AvailableJobItem = {
+  id: string;
+  jobId: string;
+  name: string;
+  kind: JobItemKind;
+  plannedQuantity: number;
+  completedGood: number;
+  remaining: number;
+  jobItemStationId: string;
+};
+
+/**
+ * Get job items for a specific job that include a specific station.
+ * Used when worker selects a job and needs to choose a job item.
+ */
+export async function getJobItemsForStationAndJob(
+  stationId: string,
+  jobId: string,
+): Promise<AvailableJobItem[]> {
+  const supabase = createServiceSupabase();
+
+  // Find job items that include this station
+  const { data, error } = await supabase
+    .from("job_item_stations")
+    .select(`
+      id,
+      job_item_id,
+      job_items!inner(
+        id,
+        job_id,
+        kind,
+        planned_quantity,
+        is_active,
+        stations:station_id(name),
+        production_lines:production_line_id(name),
+        job_item_progress(completed_good)
+      )
+    `)
+    .eq("station_id", stationId)
+    .eq("job_items.job_id", jobId)
+    .eq("job_items.is_active", true);
+
+  if (error) {
+    throw new Error(`Failed to fetch job items: ${error.message}`);
+  }
+
+  return (data ?? []).map((row) => {
+    const typedRow = row as unknown as {
+      id: string;
+      job_item_id: string;
+      job_items: {
+        id: string;
+        job_id: string;
+        kind: JobItemKind;
+        planned_quantity: number;
+        stations: { name: string } | null;
+        production_lines: { name: string } | null;
+        job_item_progress: { completed_good: number } | null;
+      };
+    };
+
+    const item = typedRow.job_items;
+    const completedGood = item.job_item_progress?.completed_good ?? 0;
+    const name = item.kind === "line"
+      ? item.production_lines?.name ?? "Production Line"
+      : item.stations?.name ?? "Station";
+
+    return {
+      id: item.id,
+      jobId: item.job_id,
+      name,
+      kind: item.kind,
+      plannedQuantity: item.planned_quantity,
+      completedGood,
+      remaining: Math.max(0, item.planned_quantity - completedGood),
+      jobItemStationId: typedRow.id,
+    };
+  });
+}
+
+// ============================================
 // STATION SELECTION (Worker Flow)
 // ============================================
 
