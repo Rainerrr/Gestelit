@@ -11,7 +11,11 @@
       "mcp__plugin_supabase_supabase__apply_migration",
       "Bash(npx supabase:*)",
       "mcp__plugin_supabase_supabase__list_migrations",
-      "mcp__plugin_supabase_supabase__execute_sql"
+      "mcp__plugin_supabase_supabase__execute_sql",
+      "Bash(npm run lint)",
+      "Bash(gh pr list:*)",
+      "mcp__plugin_supabase_supabase__list_branches",
+      "Bash(npx tsc:*)"
     ]
   }
 }

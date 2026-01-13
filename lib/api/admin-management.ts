@@ -7,6 +7,7 @@ import type {
   SessionStatusEvent,
   JobThroughput,
 } from "@/lib/data/admin-dashboard";
+import type { LiveJobProgress } from "@/lib/types";
 import { clearAdminLoggedIn } from "./auth-helpers";
 
 type WorkerPayload = {
@@ -432,6 +433,16 @@ export async function fetchMonthlyJobThroughputAdminApi(params: {
   return handleResponse(response);
 }
 
+export async function fetchJobProgressAdminApi(): Promise<{
+  jobs: LiveJobProgress[];
+}> {
+  const response = await fetch(
+    "/api/admin/dashboard/job-progress",
+    createAdminRequestInit()
+  );
+  return handleResponse(response);
+}
+
 // ============================================
 // JOBS MANAGEMENT API FUNCTIONS
 // ============================================
@@ -636,6 +647,212 @@ export async function updateReportReasonAdminApi(
 export async function deleteReportReasonAdminApi(id: string): Promise<{ success: boolean }> {
   const response = await fetch(
     `/api/admin/reports/reasons/${id}`,
+    createAdminRequestInit({ method: "DELETE" })
+  );
+  return handleResponse(response);
+}
+
+// Fetch all reports data (for SSE fallback polling)
+export async function fetchAllReportsAdminApi(): Promise<{
+  general: ReportWithDetails[];
+  malfunction: StationWithReports[];
+  scrap: StationWithScrapReports[];
+}> {
+  const [generalRes, malfunctionRes, scrapRes] = await Promise.all([
+    fetchGeneralReportsAdminApi(),
+    fetchMalfunctionReportsAdminApi(),
+    fetchScrapReportsAdminApi(),
+  ]);
+
+  return {
+    general: generalRes.reports,
+    malfunction: malfunctionRes.stations,
+    scrap: scrapRes.stations,
+  };
+}
+
+// ============================================
+// PRODUCTION LINES MANAGEMENT API FUNCTIONS
+// ============================================
+
+import type {
+  ProductionLineWithStations,
+  ProductionLine,
+  JobItemWithDetails,
+  JobItem,
+  JobItemKind,
+} from "@/lib/types";
+
+type ProductionLinePayload = {
+  name: string;
+  code?: string | null;
+  is_active?: boolean;
+};
+
+type ProductionLineUpdatePayload = Partial<ProductionLinePayload>;
+
+export async function fetchProductionLinesAdminApi(params?: {
+  includeInactive?: boolean;
+}): Promise<{ lines: ProductionLineWithStations[] }> {
+  const query = new URLSearchParams();
+  if (params?.includeInactive) query.set("includeInactive", "true");
+
+  const queryString = query.toString();
+  const response = await fetch(
+    `/api/admin/production-lines${queryString ? `?${queryString}` : ""}`,
+    createAdminRequestInit()
+  );
+  return handleResponse(response);
+}
+
+export async function getProductionLineAdminApi(
+  id: string
+): Promise<{ line: ProductionLineWithStations }> {
+  const response = await fetch(
+    `/api/admin/production-lines/${id}`,
+    createAdminRequestInit()
+  );
+  return handleResponse(response);
+}
+
+export async function createProductionLineAdminApi(
+  payload: ProductionLinePayload
+): Promise<{ line: ProductionLine }> {
+  const response = await fetch(
+    "/api/admin/production-lines",
+    createAdminRequestInit({
+      method: "POST",
+      body: JSON.stringify(payload),
+    })
+  );
+  return handleResponse(response);
+}
+
+export async function updateProductionLineAdminApi(
+  id: string,
+  payload: ProductionLineUpdatePayload
+): Promise<{ line: ProductionLine }> {
+  const response = await fetch(
+    `/api/admin/production-lines/${id}`,
+    createAdminRequestInit({
+      method: "PUT",
+      body: JSON.stringify(payload),
+    })
+  );
+  return handleResponse(response);
+}
+
+export async function deleteProductionLineAdminApi(
+  id: string
+): Promise<{ success: boolean }> {
+  const response = await fetch(
+    `/api/admin/production-lines/${id}`,
+    createAdminRequestInit({ method: "DELETE" })
+  );
+  return handleResponse(response);
+}
+
+export async function updateProductionLineStationsAdminApi(
+  lineId: string,
+  stationIds: string[]
+): Promise<{ line: ProductionLineWithStations }> {
+  const response = await fetch(
+    `/api/admin/production-lines/${lineId}/stations`,
+    createAdminRequestInit({
+      method: "PUT",
+      body: JSON.stringify({ stationIds }),
+    })
+  );
+  return handleResponse(response);
+}
+
+export async function fetchAvailableStationsForLineAdminApi(
+  lineId?: string
+): Promise<{ stations: Station[] }> {
+  const query = new URLSearchParams();
+  if (lineId) query.set("lineId", lineId);
+
+  const queryString = query.toString();
+  const response = await fetch(
+    `/api/admin/production-lines/available-stations${queryString ? `?${queryString}` : ""}`,
+    createAdminRequestInit()
+  );
+  return handleResponse(response);
+}
+
+// ============================================
+// JOB ITEMS MANAGEMENT API FUNCTIONS
+// ============================================
+
+type JobItemPayload = {
+  kind: JobItemKind;
+  station_id?: string | null;
+  production_line_id?: string | null;
+  planned_quantity: number;
+  is_active?: boolean;
+};
+
+type JobItemUpdatePayload = {
+  planned_quantity?: number;
+  is_active?: boolean;
+};
+
+export async function fetchJobItemsAdminApi(
+  jobId: string,
+  params?: {
+    includeProgress?: boolean;
+    includeStations?: boolean;
+    includeWipBalances?: boolean;
+  }
+): Promise<{ items: JobItemWithDetails[] }> {
+  const query = new URLSearchParams();
+  if (params?.includeProgress) query.set("includeProgress", "true");
+  if (params?.includeStations) query.set("includeStations", "true");
+  if (params?.includeWipBalances) query.set("includeWipBalances", "true");
+
+  const queryString = query.toString();
+  const response = await fetch(
+    `/api/admin/jobs/${jobId}/items${queryString ? `?${queryString}` : ""}`,
+    createAdminRequestInit()
+  );
+  return handleResponse(response);
+}
+
+export async function createJobItemAdminApi(
+  jobId: string,
+  payload: JobItemPayload
+): Promise<{ item: JobItemWithDetails }> {
+  const response = await fetch(
+    `/api/admin/jobs/${jobId}/items`,
+    createAdminRequestInit({
+      method: "POST",
+      body: JSON.stringify(payload),
+    })
+  );
+  return handleResponse(response);
+}
+
+export async function updateJobItemAdminApi(
+  jobId: string,
+  itemId: string,
+  payload: JobItemUpdatePayload
+): Promise<{ item: JobItem }> {
+  const response = await fetch(
+    `/api/admin/jobs/${jobId}/items/${itemId}`,
+    createAdminRequestInit({
+      method: "PUT",
+      body: JSON.stringify(payload),
+    })
+  );
+  return handleResponse(response);
+}
+
+export async function deleteJobItemAdminApi(
+  jobId: string,
+  itemId: string
+): Promise<{ success: boolean }> {
+  const response = await fetch(
+    `/api/admin/jobs/${jobId}/items/${itemId}`,
     createAdminRequestInit({ method: "DELETE" })
   );
   return handleResponse(response);

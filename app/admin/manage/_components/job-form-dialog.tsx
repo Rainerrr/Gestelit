@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import {
   Dialog,
   DialogContent,
@@ -38,6 +38,8 @@ export const JobFormDialog = ({
   onOpenChange,
 }: JobFormDialogProps) => {
   const [localOpen, setLocalOpen] = useState(false);
+  // Use job.id as key to reset form state when editing different jobs
+  const [formKey, setFormKey] = useState(job?.id ?? "new");
   const [jobNumber, setJobNumber] = useState(job?.job_number ?? "");
   const [customerName, setCustomerName] = useState(job?.customer_name ?? "");
   const [description, setDescription] = useState(job?.description ?? "");
@@ -49,13 +51,15 @@ export const JobFormDialog = ({
   const [error, setError] = useState<string | null>(null);
   const controlledOpen = open ?? localOpen;
 
-  useEffect(() => {
-    if (!job || mode !== "edit") return;
-    setJobNumber(job.job_number);
-    setCustomerName(job.customer_name ?? "");
-    setDescription(job.description ?? "");
-    setPlannedQuantity(job.planned_quantity?.toString() ?? "");
-  }, [job, mode]);
+  // Reset form when job changes (for edit mode switching between jobs)
+  const currentJobId = job?.id ?? "new";
+  if (formKey !== currentJobId) {
+    setFormKey(currentJobId);
+    setJobNumber(job?.job_number ?? "");
+    setCustomerName(job?.customer_name ?? "");
+    setDescription(job?.description ?? "");
+    setPlannedQuantity(job?.planned_quantity?.toString() ?? "");
+  }
 
   const handleSubmit = async () => {
     if (!jobNumber.trim()) {

@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo } from "react";
+import { format, isSameDay } from "date-fns";
+import { he } from "date-fns/locale";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -10,7 +12,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Search, User, MapPin, FileText, X } from "lucide-react";
+import { DateRangePicker } from "@/components/ui/date-range-picker";
+import { Search, User, MapPin, FileText, X, Calendar } from "lucide-react";
+import type { DateRange } from "react-day-picker";
 
 type Option = { id: string; label: string };
 
@@ -18,6 +22,7 @@ export type HistoryFiltersState = {
   workerId?: string;
   stationId?: string;
   jobNumber?: string;
+  dateRange?: DateRange;
 };
 
 type HistoryFiltersProps = {
@@ -51,9 +56,12 @@ export const HistoryFilters = ({
   const handleJobNumberChange = (jobNumber?: string) =>
     onChange({ ...value, jobNumber });
 
+  const handleDateRangeChange = (dateRange?: DateRange) =>
+    onChange({ ...value, dateRange });
+
   const handleClear = () => onChange({});
 
-  const activeFiltersCount = [value.workerId, value.stationId, value.jobNumber].filter(Boolean).length;
+  const activeFiltersCount = [value.workerId, value.stationId, value.jobNumber, value.dateRange?.from].filter(Boolean).length;
 
   const getWorkerLabel = () => {
     if (!value.workerId) return null;
@@ -63,6 +71,16 @@ export const HistoryFilters = ({
   const getStationLabel = () => {
     if (!value.stationId) return null;
     return stations.find((station) => station.id === value.stationId)?.label;
+  };
+
+  const getDateRangeLabel = () => {
+    if (!value.dateRange?.from) return null;
+    const fromStr = format(value.dateRange.from, "d/M/yy", { locale: he });
+    if (!value.dateRange.to || isSameDay(value.dateRange.from, value.dateRange.to)) {
+      return fromStr;
+    }
+    const toStr = format(value.dateRange.to, "d/M/yy", { locale: he });
+    return `${fromStr} - ${toStr}`;
   };
 
   return (
@@ -191,6 +209,22 @@ export const HistoryFilters = ({
           </Select>
         </div>
 
+        {/* Divider */}
+        <div className="h-6 w-px bg-border hidden sm:block" />
+
+        {/* Date range filter */}
+        <div className="flex items-center gap-2">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted shrink-0">
+            <Calendar className="h-4 w-4 text-muted-foreground" />
+          </div>
+          <DateRangePicker
+            value={value.dateRange}
+            onChange={handleDateRangeChange}
+            placeholder="סנן לפי תאריך"
+            className="w-[180px] sm:w-[220px]"
+          />
+        </div>
+
         {/* Spacer */}
         <div className="flex-1" />
 
@@ -242,6 +276,17 @@ export const HistoryFilters = ({
             >
               <FileText className="h-3 w-3" />
               <span>{value.jobNumber}</span>
+              <X className="h-3 w-3 mr-0.5" />
+            </button>
+          )}
+          {value.dateRange?.from && (
+            <button
+              type="button"
+              onClick={() => handleDateRangeChange(undefined)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/30 text-primary text-xs font-medium hover:bg-primary/20 transition-colors"
+            >
+              <Calendar className="h-3 w-3" />
+              <span>{getDateRangeLabel()}</span>
               <X className="h-3 w-3 mr-0.5" />
             </button>
           )}

@@ -1,19 +1,20 @@
 import { createServiceSupabase } from "@/lib/supabase/client";
 import {
   fetchActiveStatusDefinitions,
+  getProtectedStatusDefinition,
 } from "@/lib/data/status-definitions";
+import { SESSION_GRACE_MS } from "@/lib/constants";
 import type {
   Job,
   Session,
   SessionAbandonReason,
   SessionStatus,
+  SessionUpdateResult,
   Station,
   StatusDefinition,
   StatusEvent,
   StatusEventState,
 } from "@/lib/types";
-
-const SESSION_GRACE_MS = 5 * 60 * 1000;
 
 /**
  * Get current UTC timestamp in milliseconds.
@@ -36,20 +37,15 @@ type SessionPayload = {
   station_id: string;
   job_id: string;
   started_at?: string;
+  active_instance_id?: string;
+  // Job item tracking (for production line WIP)
+  job_item_id?: string | null;
+  job_item_station_id?: string | null;
 };
 
-async function getStoppedStatusId(): Promise<string> {
-  const definitions = await fetchActiveStatusDefinitions();
-  // Find a stoppage status by machine_state (language-agnostic approach)
-  const stopped = definitions.find(
-    (item) => item.machine_state === "stoppage",
-  ) ?? definitions[0];
-
-  if (!stopped) {
-    throw new Error("STOPPED_STATUS_NOT_FOUND");
-  }
-
-  return stopped.id;
+async function getStopStatusId(): Promise<string> {
+  const stopStatus = await getProtectedStatusDefinition("stop");
+  return stopStatus.id;
 }
 
 /**
@@ -81,14 +77,14 @@ export async function closeActiveSessionsForWorker(
   }
 
   const closedIds: string[] = [];
-  const stoppedId = await getStoppedStatusId();
+  const stopStatusId = await getStopStatusId();
 
   for (const session of activeSessions) {
     // Use atomic database function to create final status event
     // This closes open events and mirrors to sessions in a single transaction
     const { error: statusError } = await supabase.rpc("create_status_event_atomic", {
       p_session_id: session.id,
-      p_status_definition_id: stoppedId,
+      p_status_definition_id: stopStatusId,
       p_station_reason_id: null,
       p_note: "replaced-by-new-session",
       p_image_url: null,
@@ -117,33 +113,33 @@ export async function closeActiveSessionsForWorker(
   return closedIds;
 }
 
-async function getInitialStatusId(stationId: string): Promise<string> {
-  const definitions = await fetchActiveStatusDefinitions(stationId);
-  const sorted = definitions.sort(
-    (a, b) =>
-      new Date(a.created_at ?? 0).getTime() -
-      new Date(b.created_at ?? 0).getTime(),
-  );
-  const globalFirst = sorted.find((item) => item.scope === "global") ?? sorted[0];
-  if (!globalFirst) {
-    throw new Error("INITIAL_STATUS_NOT_FOUND");
-  }
-  return globalFirst.id;
+/**
+ * Get the initial status ID for a new session.
+ * Uses the protected "stop" status as the default starting status.
+ */
+async function getInitialStatusId(): Promise<string> {
+  return getStopStatusId();
 }
 
 export async function createSession(
   payload: SessionPayload,
 ): Promise<Session> {
   const supabase = createServiceSupabase();
-  const initialStatusId = await getInitialStatusId(payload.station_id);
+  const initialStatusId = await getInitialStatusId();
 
   const { data, error } = await supabase
     .from("sessions")
     .insert({
-      ...payload,
-      status: "active" satisfies SessionStatus,
+      worker_id: payload.worker_id,
+      station_id: payload.station_id,
+      job_id: payload.job_id,
       started_at: payload.started_at ?? new Date().toISOString(),
+      active_instance_id: payload.active_instance_id ?? null,
+      status: "active" satisfies SessionStatus,
       current_status_id: initialStatusId,
+      // Job item tracking (for production line WIP)
+      job_item_id: payload.job_item_id ?? null,
+      job_item_station_id: payload.job_item_station_id ?? null,
     })
     .select("*")
     .single();
@@ -171,11 +167,30 @@ export async function completeSession(
   sessionId: string,
 ): Promise<Session> {
   const supabase = createServiceSupabase();
+  const timestamp = new Date().toISOString();
+
+  // Close any open status events before completing the session
+  // This ensures reports linked to status events get proper ended_at timestamps
+  const stopStatusId = await getStopStatusId();
+  const { error: statusError } = await supabase.rpc("create_status_event_atomic", {
+    p_session_id: sessionId,
+    p_status_definition_id: stopStatusId,
+    p_station_reason_id: null,
+    p_note: "session-completed",
+    p_image_url: null,
+    p_report_id: null,
+  });
+
+  if (statusError) {
+    // Log but don't fail - session completion is more important
+    console.error(`[completeSession] Failed to close status events: ${statusError.message}`);
+  }
+
   const { data, error } = await supabase
     .from("sessions")
     .update({
       status: "completed" satisfies SessionStatus,
-      ended_at: new Date().toISOString(),
+      ended_at: timestamp,
     })
     .eq("id", sessionId)
     .select("*")
@@ -210,6 +225,81 @@ export async function updateSessionTotals(
   }
 
   return data as Session;
+}
+
+/**
+ * Update session quantities using the atomic WIP management RPC.
+ *
+ * This function calls `update_session_quantities_atomic_v2` which handles:
+ * - Atomic WIP balance updates across production line steps
+ * - LIFO consumption reversal for corrections
+ * - Terminal step completion tracking
+ * - Legacy session support (sessions without job_item_id)
+ *
+ * Error codes that may be returned:
+ * - SESSION_NOT_FOUND: Session doesn't exist
+ * - JOB_ITEM_STATION_NOT_FOUND: Invalid job_item_station_id reference
+ * - WIP_BALANCE_NOT_FOUND: Missing WIP balance row (data integrity issue)
+ * - WIP_DOWNSTREAM_CONSUMED: Cannot reduce good - already consumed downstream
+ */
+export async function updateSessionQuantitiesAtomic(
+  sessionId: string,
+  totalGood: number,
+  totalScrap: number,
+): Promise<SessionUpdateResult> {
+  const supabase = createServiceSupabase();
+
+  const { data, error } = await supabase.rpc("update_session_quantities_atomic_v2", {
+    p_session_id: sessionId,
+    p_total_good: totalGood,
+    p_total_scrap: totalScrap,
+  });
+
+  if (error) {
+    throw new Error(`Failed to update session quantities: ${error.message}`);
+  }
+
+  const result = data as SessionUpdateResult;
+
+  // If the RPC returned an error, don't throw - let the caller handle it
+  // This allows for user-friendly error messages in the UI
+  return result;
+}
+
+/**
+ * Get the WIP accounting for a session (pulled vs originated for both good and scrap).
+ * Returns null for legacy sessions without job_item_id.
+ */
+export async function getSessionWipAccounting(
+  sessionId: string,
+): Promise<{
+  pulled_good: number;
+  originated_good: number;
+  pulled_scrap: number;
+  originated_scrap: number;
+} | null> {
+  const supabase = createServiceSupabase();
+
+  const { data, error } = await supabase
+    .from("v_session_wip_accounting")
+    .select("pulled_good, originated_good, pulled_scrap, originated_scrap")
+    .eq("session_id", sessionId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to fetch session WIP accounting: ${error.message}`);
+  }
+
+  if (!data) {
+    return null; // Legacy session or session not found
+  }
+
+  return {
+    pulled_good: data.pulled_good as number,
+    originated_good: data.originated_good as number,
+    pulled_scrap: data.pulled_scrap as number,
+    originated_scrap: data.originated_scrap as number,
+  };
 }
 
 export async function markSessionStarted(
@@ -340,6 +430,64 @@ export async function recordSessionHeartbeat(sessionId: string): Promise<void> {
   }
 }
 
+export type HeartbeatResult =
+  | { success: true }
+  | { success: false; error: "INSTANCE_MISMATCH" | "SESSION_NOT_FOUND" | "SESSION_NOT_ACTIVE" };
+
+/**
+ * Record a heartbeat with instance validation.
+ * Returns error if the instance ID doesn't match the session's active instance.
+ * This prevents multiple tabs/devices from running the same session.
+ */
+export async function recordSessionHeartbeatWithInstance(
+  sessionId: string,
+  instanceId: string,
+): Promise<HeartbeatResult> {
+  const supabase = createServiceSupabase();
+  const timestamp = new Date().toISOString();
+
+  // First, fetch the current session to check instance
+  const { data: session, error: fetchError } = await supabase
+    .from("sessions")
+    .select("id, active_instance_id, status")
+    .eq("id", sessionId)
+    .maybeSingle();
+
+  if (fetchError) {
+    throw new Error(`Failed to fetch session: ${fetchError.message}`);
+  }
+
+  if (!session) {
+    return { success: false, error: "SESSION_NOT_FOUND" };
+  }
+
+  // If session is no longer active (completed, aborted, force-closed), reject
+  // This handles the case where the session was discarded/abandoned
+  if (session.status !== "active") {
+    return { success: false, error: "SESSION_NOT_ACTIVE" };
+  }
+
+  // If session has an active instance and it doesn't match, reject
+  if (session.active_instance_id && session.active_instance_id !== instanceId) {
+    return { success: false, error: "INSTANCE_MISMATCH" };
+  }
+
+  // Update heartbeat and set instance ID if not set
+  const { error: updateError } = await supabase
+    .from("sessions")
+    .update({
+      last_seen_at: timestamp,
+      active_instance_id: instanceId,
+    })
+    .eq("id", sessionId);
+
+  if (updateError) {
+    throw new Error(`Failed to record session heartbeat: ${updateError.message}`);
+  }
+
+  return { success: true };
+}
+
 type WorkerActiveSessionRow = {
   id: string;
   worker_id: string;
@@ -460,13 +608,13 @@ export async function abandonActiveSession(
   const note =
     reason === "worker_choice" ? "worker-abandon" : "grace-window-expired";
 
-  const stoppedId = await getStoppedStatusId();
+  const stopStatusId = await getStopStatusId();
 
   // Use atomic database function to create the final status event
   // This closes open events and mirrors to sessions in a single transaction
   const { error: statusError } = await supabase.rpc("create_status_event_atomic", {
     p_session_id: sessionId,
-    p_status_definition_id: stoppedId,
+    p_status_definition_id: stopStatusId,
     p_station_reason_id: null,
     p_note: note,
     p_image_url: null,
@@ -492,4 +640,256 @@ export async function abandonActiveSession(
   if (sessionError) {
     throw new Error(`Failed to abandon session: ${sessionError.message}`);
   }
+}
+
+// ============================================
+// PRODUCTION PIPELINE CONTEXT
+// ============================================
+
+export type PipelineNeighborStation = {
+  id: string;
+  name: string;
+  code: string;
+  position: number;
+  isTerminal: boolean;
+  wipAvailable: number;
+  occupiedBy: string | null;
+};
+
+export type SessionPipelineContext = {
+  /** Is this session part of a production line? */
+  isProductionLine: boolean;
+  /** Is this a single station job item? */
+  isSingleStation: boolean;
+  /** Current position in the line (1-indexed) */
+  currentPosition: number;
+  /** Is this the terminal (last) station? */
+  isTerminal: boolean;
+  /** Previous station in line (null if first) */
+  prevStation: PipelineNeighborStation | null;
+  /** Next station in line (null if terminal) */
+  nextStation: PipelineNeighborStation | null;
+  /** WIP available from upstream */
+  upstreamWip: number;
+  /** Our output waiting for downstream consumption */
+  waitingOutput: number;
+  /** Job item details */
+  jobItem: {
+    id: string;
+    kind: "station" | "line";
+    plannedQuantity: number;
+  } | null;
+};
+
+/**
+ * Get the production pipeline context for a session.
+ * Returns information about neighboring stations, WIP balances, and flow state.
+ *
+ * For sessions without job_item_id (legacy), returns a minimal context.
+ */
+export async function getSessionPipelineContext(
+  sessionId: string,
+): Promise<SessionPipelineContext> {
+  const supabase = createServiceSupabase();
+
+  // Fetch session with job item details
+  const { data: session, error: sessionError } = await supabase
+    .from("sessions")
+    .select(`
+      id,
+      job_item_id,
+      job_item_station_id,
+      station_id,
+      total_good
+    `)
+    .eq("id", sessionId)
+    .maybeSingle();
+
+  if (sessionError) {
+    throw new Error(`Failed to fetch session: ${sessionError.message}`);
+  }
+
+  if (!session) {
+    throw new Error("SESSION_NOT_FOUND");
+  }
+
+  // Legacy session without job item - return minimal context
+  if (!session.job_item_id || !session.job_item_station_id) {
+    return {
+      isProductionLine: false,
+      isSingleStation: false,
+      currentPosition: 1,
+      isTerminal: true,
+      prevStation: null,
+      nextStation: null,
+      upstreamWip: 0,
+      waitingOutput: 0,
+      jobItem: null,
+    };
+  }
+
+  // Fetch job item details
+  const { data: jobItem, error: jobItemError } = await supabase
+    .from("job_items")
+    .select("id, kind, planned_quantity")
+    .eq("id", session.job_item_id)
+    .maybeSingle();
+
+  if (jobItemError || !jobItem) {
+    throw new Error(`Failed to fetch job item: ${jobItemError?.message ?? "NOT_FOUND"}`);
+  }
+
+  // Fetch current job item station
+  const { data: currentJis, error: currentJisError } = await supabase
+    .from("job_item_stations")
+    .select("id, position, is_terminal")
+    .eq("id", session.job_item_station_id)
+    .maybeSingle();
+
+  if (currentJisError || !currentJis) {
+    throw new Error(`Failed to fetch current station: ${currentJisError?.message ?? "NOT_FOUND"}`);
+  }
+
+  const currentPosition = currentJis.position;
+  const isTerminal = currentJis.is_terminal;
+  const isSingleStation = jobItem.kind === "station";
+
+  // For single stations, return simplified context
+  if (isSingleStation) {
+    // Get our WIP balance (waiting output)
+    const { data: wipBalance } = await supabase
+      .from("wip_balances")
+      .select("good_available")
+      .eq("job_item_station_id", session.job_item_station_id)
+      .maybeSingle();
+
+    return {
+      isProductionLine: false,
+      isSingleStation: true,
+      currentPosition: 1,
+      isTerminal: true,
+      prevStation: null,
+      nextStation: null,
+      upstreamWip: 0,
+      waitingOutput: wipBalance?.good_available ?? 0,
+      jobItem: {
+        id: jobItem.id,
+        kind: jobItem.kind,
+        plannedQuantity: jobItem.planned_quantity,
+      },
+    };
+  }
+
+  // Production line - fetch all stations and WIP balances
+  const { data: allStations, error: stationsError } = await supabase
+    .from("job_item_stations")
+    .select(`
+      id,
+      position,
+      is_terminal,
+      station_id,
+      stations(id, name, code)
+    `)
+    .eq("job_item_id", session.job_item_id)
+    .order("position", { ascending: true });
+
+  if (stationsError) {
+    throw new Error(`Failed to fetch stations: ${stationsError.message}`);
+  }
+
+  // Fetch all WIP balances for this job item
+  const { data: wipBalances, error: wipError } = await supabase
+    .from("wip_balances")
+    .select("job_item_station_id, good_available")
+    .eq("job_item_id", session.job_item_id);
+
+  if (wipError) {
+    throw new Error(`Failed to fetch WIP balances: ${wipError.message}`);
+  }
+
+  // Create a map of station ID -> WIP balance
+  const wipMap = new Map<string, number>();
+  for (const wip of wipBalances ?? []) {
+    wipMap.set(wip.job_item_station_id, wip.good_available);
+  }
+
+  // Find active workers at stations
+  const stationIds = (allStations ?? []).map((s) => s.station_id);
+  const { data: activeSessions } = await supabase
+    .from("sessions")
+    .select(`
+      station_id,
+      workers:worker_id(full_name)
+    `)
+    .in("station_id", stationIds)
+    .eq("status", "active")
+    .neq("id", sessionId);
+
+  // Map station_id -> worker name
+  const occupancyMap = new Map<string, string>();
+  for (const sess of activeSessions ?? []) {
+    // Supabase single-relation join returns object, not array
+    const workerData = sess.workers as unknown as { full_name: string } | null;
+    if (workerData?.full_name) {
+      occupancyMap.set(sess.station_id, workerData.full_name);
+    }
+  }
+
+  // Find previous and next stations
+  let prevStation: PipelineNeighborStation | null = null;
+  let nextStation: PipelineNeighborStation | null = null;
+  let upstreamWip = 0;
+  let waitingOutput = 0;
+
+  for (const jis of allStations ?? []) {
+    // Supabase single-relation join returns object, not array
+    const station = jis.stations as unknown as { id: string; name: string; code: string } | null;
+    if (!station) continue;
+
+    const wipAvailable = wipMap.get(jis.id) ?? 0;
+
+    if (jis.position === currentPosition - 1) {
+      // Previous station
+      prevStation = {
+        id: station.id,
+        name: station.name,
+        code: station.code,
+        position: jis.position,
+        isTerminal: jis.is_terminal,
+        wipAvailable,
+        occupiedBy: occupancyMap.get(station.id) ?? null,
+      };
+      upstreamWip = wipAvailable;
+    } else if (jis.position === currentPosition + 1) {
+      // Next station
+      nextStation = {
+        id: station.id,
+        name: station.name,
+        code: station.code,
+        position: jis.position,
+        isTerminal: jis.is_terminal,
+        wipAvailable,
+        occupiedBy: occupancyMap.get(station.id) ?? null,
+      };
+    } else if (jis.id === session.job_item_station_id) {
+      // Current station - our waiting output is our WIP balance
+      waitingOutput = wipAvailable;
+    }
+  }
+
+  return {
+    isProductionLine: true,
+    isSingleStation: false,
+    currentPosition,
+    isTerminal,
+    prevStation,
+    nextStation,
+    upstreamWip,
+    waitingOutput,
+    jobItem: {
+      id: jobItem.id,
+      kind: jobItem.kind,
+      plannedQuantity: jobItem.planned_quantity,
+    },
+  };
 }

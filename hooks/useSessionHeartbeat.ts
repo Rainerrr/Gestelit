@@ -1,16 +1,26 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 
 const HEARTBEAT_INTERVAL_MS = 15_000;
 
+// Use useLayoutEffect on client, useEffect on server (SSR safety)
+const useIsomorphicLayoutEffect =
+  typeof window !== "undefined" ? useLayoutEffect : useEffect;
+
 type HeartbeatBody = {
   sessionId: string;
+  instanceId?: string;
 };
 
-const sendHeartbeat = async (body: HeartbeatBody) => {
+type HeartbeatResponse = {
+  ok: boolean;
+  error?: "INSTANCE_MISMATCH" | "SESSION_NOT_FOUND" | "SESSION_NOT_ACTIVE";
+};
+
+const sendHeartbeat = async (body: HeartbeatBody): Promise<HeartbeatResponse> => {
   try {
-    await fetch("/api/sessions/heartbeat", {
+    const response = await fetch("/api/sessions/heartbeat", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -18,26 +28,69 @@ const sendHeartbeat = async (body: HeartbeatBody) => {
       body: JSON.stringify(body),
       keepalive: true,
     });
+
+    if (!response.ok) {
+      const data = (await response.json()) as HeartbeatResponse;
+      return data;
+    }
+
+    return { ok: true };
   } catch (error) {
     console.error("[heartbeat] Failed to send heartbeat", error);
+    return { ok: false };
   }
 };
 
-export const useSessionHeartbeat = (sessionId?: string) => {
+type UseSessionHeartbeatOptions = {
+  sessionId?: string;
+  instanceId?: string;
+  onInstanceMismatch?: () => void;
+};
+
+export const useSessionHeartbeat = (options: UseSessionHeartbeatOptions) => {
+  const { sessionId, instanceId, onInstanceMismatch } = options;
+
+  // Use ref to avoid stale closure in interval
+  const onInstanceMismatchRef = useRef(onInstanceMismatch);
+  useIsomorphicLayoutEffect(() => {
+    onInstanceMismatchRef.current = onInstanceMismatch;
+  });
+
   useEffect(() => {
     if (!sessionId || typeof window === "undefined") {
       return undefined;
     }
 
     let hasClosed = false;
-    const closingPayload = JSON.stringify({ sessionId });
+    const closingPayload = JSON.stringify({ sessionId, instanceId });
 
-    const tick = () => {
-      void sendHeartbeat({ sessionId });
+    const tick = async () => {
+      const result = await sendHeartbeat({ sessionId, instanceId });
+
+      // Handle instance mismatch - another tab/device took over
+      if (!result.ok && result.error === "INSTANCE_MISMATCH") {
+        onInstanceMismatchRef.current?.();
+      }
+
+      // Handle session no longer active - session was abandoned/discarded
+      // Treat the same as instance mismatch (redirect to session-transferred)
+      if (!result.ok && result.error === "SESSION_NOT_ACTIVE") {
+        onInstanceMismatchRef.current?.();
+      }
     };
 
-    tick();
-    const intervalId = window.setInterval(tick, HEARTBEAT_INTERVAL_MS);
+    void tick();
+    const intervalId = window.setInterval(() => void tick(), HEARTBEAT_INTERVAL_MS);
+
+    // When tab becomes visible, immediately check session ownership
+    // This catches cases where BroadcastChannel messages were missed while in background
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void tick();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     const handleClose = () => {
       if (hasClosed) {
@@ -53,7 +106,7 @@ export const useSessionHeartbeat = (sessionId?: string) => {
         navigator.sendBeacon("/api/sessions/heartbeat", blob);
 
       if (!didSend) {
-        void sendHeartbeat({ sessionId });
+        void sendHeartbeat({ sessionId, instanceId });
       }
     };
 
@@ -63,9 +116,10 @@ export const useSessionHeartbeat = (sessionId?: string) => {
     return () => {
       handleClose();
       window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("pagehide", handleClose);
       window.removeEventListener("beforeunload", handleClose);
     };
-  }, [sessionId]);
+  }, [sessionId, instanceId]);
 };
 

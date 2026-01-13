@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { CheckCircle2, Users, Cpu, Briefcase, Wrench } from "lucide-react";
+import { CheckCircle2, Users, Cpu, Briefcase, Wrench, GitBranch } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,8 +28,14 @@ import {
   createJobAdminApi,
   updateJobAdminApi,
   deleteJobAdminApi,
+  fetchProductionLinesAdminApi,
+  createProductionLineAdminApi,
+  updateProductionLineAdminApi,
+  deleteProductionLineAdminApi,
+  updateProductionLineStationsAdminApi,
+  fetchAvailableStationsForLineAdminApi,
 } from "@/lib/api/admin-management";
-import type { Job, Station, Worker } from "@/lib/types";
+import type { Job, Station, Worker, ProductionLineWithStations } from "@/lib/types";
 import type { StationWithStats, WorkerWithStats } from "@/lib/data/admin-management";
 import type { JobWithStats } from "@/lib/data/jobs";
 import { WorkersManagement } from "./workers-management";
@@ -38,9 +44,12 @@ import { JobsManagement } from "./jobs-management";
 import { DepartmentManager } from "./department-manager";
 import { StationTypeManager } from "./station-type-manager";
 import { GlobalStatusesManagement } from "./global-statuses-management";
+import { ProductionLinesManagement } from "./production-lines-management";
+import { ProductionLineStationsDialog } from "./production-line-stations-dialog";
 import { AdminLayout } from "../../_components/admin-layout";
+import { AdminPageHeader, MobileBottomBar } from "../../_components/admin-page-header";
 
-type ActiveTab = "workers" | "stations" | "jobs";
+type ActiveTab = "workers" | "stations" | "jobs" | "lines";
 type JobStatusFilter = "all" | "active" | "completed";
 
 const errorCopy: Record<string, string> = {
@@ -58,6 +67,13 @@ const errorCopy: Record<string, string> = {
   JOB_CREATE_FAILED: "יצירת עבודה נכשלה.",
   JOB_UPDATE_FAILED: "עדכון עבודה נכשל.",
   JOB_DELETE_FAILED: "מחיקת עבודה נכשלה.",
+  CODE_ALREADY_EXISTS: "קוד קו ייצור כבר קיים במערכת.",
+  HAS_ACTIVE_JOBS: "לא ניתן למחוק קו ייצור עם עבודות פעילות.",
+  PRODUCTION_LINE_NOT_FOUND: "קו ייצור לא נמצא.",
+  PRODUCTION_LINE_CREATE_FAILED: "יצירת קו ייצור נכשלה.",
+  PRODUCTION_LINE_UPDATE_FAILED: "עדכון קו ייצור נכשל.",
+  PRODUCTION_LINE_DELETE_FAILED: "מחיקת קו ייצור נכשלה.",
+  STATION_ALREADY_IN_LINE: "אחת או יותר מהתחנות כבר משויכת לקו אחר.",
 };
 
 export const ManagementDashboard = () => {
@@ -76,8 +92,14 @@ export const ManagementDashboard = () => {
   const [jobs, setJobs] = useState<JobWithStats[]>([]);
   const [isLoadingJobs, setIsLoadingJobs] = useState<boolean>(true);
   const [jobStatusFilter, setJobStatusFilter] = useState<JobStatusFilter>("all");
+  const [productionLines, setProductionLines] = useState<ProductionLineWithStations[]>([]);
+  const [isLoadingLines, setIsLoadingLines] = useState<boolean>(true);
+  const [editingLineStations, setEditingLineStations] = useState<ProductionLineWithStations | null>(null);
   const [bannerError, setBannerError] = useState<string | null>(null);
   const [bannerSuccess, setBannerSuccess] = useState<string | null>(null);
+
+  // Track if initial data has been loaded to prevent re-running on callback changes
+  const initialLoadDoneRef = useRef(false);
 
   const hebrewLetters = useMemo(
     () => ["א", "ב", "ג", "ד", "ה", "ו", "ז", "ח", "ט", "י", "כ", "ל", "מ", "נ", "ס", "ע", "פ", "צ", "ק", "ר", "ש", "ת"],
@@ -156,27 +178,52 @@ export const ManagementDashboard = () => {
     }
   }, [friendlyError, search, jobStatusFilter]);
 
+  const loadProductionLines = useCallback(async () => {
+    setIsLoadingLines(true);
+    setBannerError(null);
+    try {
+      const { lines } = await fetchProductionLinesAdminApi({ includeInactive: true });
+      setProductionLines(lines);
+    } catch (error) {
+      friendlyError(error);
+    } finally {
+      setIsLoadingLines(false);
+    }
+  }, [friendlyError]);
+
+  // Initial load - runs ONCE when hasAccess becomes true
+  // Loads departments, station types, and stations (needed for worker permissions)
   useEffect(() => {
-    if (hasAccess !== true) return;
+    if (hasAccess !== true || initialLoadDoneRef.current) return;
+    initialLoadDoneRef.current = true;
     void loadDepartments();
     void loadStationTypes();
     void loadStations();
   }, [hasAccess, loadDepartments, loadStationTypes, loadStations]);
 
+  // Load workers when on workers tab (handles filter changes)
   useEffect(() => {
     if (hasAccess !== true || activeTab !== "workers") return;
     void loadWorkers();
   }, [hasAccess, activeTab, loadWorkers]);
 
+  // Load stations when on stations tab (handles filter changes)
   useEffect(() => {
     if (hasAccess !== true || activeTab !== "stations") return;
     void loadStations();
   }, [hasAccess, activeTab, loadStations]);
 
+  // Load jobs when on jobs tab (handles filter changes)
   useEffect(() => {
     if (hasAccess !== true || activeTab !== "jobs") return;
     void loadJobs();
   }, [hasAccess, activeTab, loadJobs]);
+
+  // Load production lines when on lines tab
+  useEffect(() => {
+    if (hasAccess !== true || activeTab !== "lines") return;
+    void loadProductionLines();
+  }, [hasAccess, activeTab, loadProductionLines]);
 
   const handleAddWorker = async (payload: Partial<Worker>) => {
     setBannerError(null);
@@ -382,6 +429,73 @@ export const ManagementDashboard = () => {
     }
   };
 
+  // Production Lines Handlers
+  const handleAddProductionLine = async (payload: { name: string; code?: string | null; is_active?: boolean }) => {
+    setBannerError(null);
+    try {
+      await createProductionLineAdminApi(payload);
+      await loadProductionLines();
+    } catch (error) {
+      friendlyError(error);
+      throw error; // Re-throw for dialog to show error
+    }
+  };
+
+  const handleUpdateProductionLine = async (id: string, payload: { name?: string; code?: string | null; is_active?: boolean }) => {
+    setBannerError(null);
+    try {
+      await updateProductionLineAdminApi(id, payload);
+    } catch (error) {
+      friendlyError(error);
+      throw error;
+    }
+  };
+
+  const handleDeleteProductionLine = async (id: string) => {
+    setBannerError(null);
+    setBannerSuccess(null);
+    try {
+      await deleteProductionLineAdminApi(id);
+      setBannerSuccess("קו הייצור נמחק בהצלחה.");
+      await loadProductionLines();
+      setTimeout(() => setBannerSuccess(null), 5000);
+    } catch (error) {
+      friendlyError(error);
+      throw error;
+    }
+  };
+
+  const handleEditLineStations = (lineId: string) => {
+    const line = productionLines.find((l) => l.id === lineId);
+    if (line) {
+      setEditingLineStations(line);
+    }
+  };
+
+  const handleSaveLineStations = async (lineId: string, stationIds: string[]) => {
+    setBannerError(null);
+    try {
+      await updateProductionLineStationsAdminApi(lineId, stationIds);
+      await loadProductionLines();
+    } catch (error) {
+      friendlyError(error);
+      throw error;
+    }
+  };
+
+  const handleFetchAvailableStations = async (lineId?: string) => {
+    const { stations } = await fetchAvailableStationsForLineAdminApi(lineId);
+    return stations;
+  };
+
+  const handleCheckLineLocked = async (lineId: string) => {
+    // Check if line has active job items
+    const line = productionLines.find((l) => l.id === lineId);
+    // For now, we'll let the API determine if the line is locked
+    // This will be handled by the API when trying to modify stations
+    return false;
+  };
+
   if (hasAccess === null) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center rounded-xl border border-border bg-card/50 text-muted-foreground">
@@ -399,73 +513,29 @@ export const ManagementDashboard = () => {
     return null;
   }
 
+  const capsuleConfig = {
+    options: [
+      { id: "workers", label: "עובדים", icon: Users },
+      { id: "stations", label: "תחנות", icon: Cpu },
+      { id: "jobs", label: "עבודות", icon: Briefcase },
+      { id: "lines", label: "קווי ייצור", icon: GitBranch },
+    ],
+    activeId: activeTab,
+    onChange: (id: string) => setActiveTab(id as ActiveTab),
+  };
+
   return (
     <AdminLayout
       header={
-        <div className="flex flex-col gap-4 text-right">
-          {/* Mobile simplified title */}
-          <div className="flex items-center gap-3 lg:hidden">
-            <Wrench className="h-5 w-5 text-primary" />
-            <h1 className="text-xl font-bold text-foreground">ניהול</h1>
-          </div>
-          {/* Desktop full header */}
-          <div className="hidden lg:block space-y-1 text-right">
-            <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-[0.2em]">ניהול</p>
-            <h1 className="text-2xl font-bold text-foreground tracking-tight lg:text-3xl">
-              ניהול עובדים ותחנות
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              הוספה, עריכה והרשאות של עובדים ומכונות.
-            </p>
-          </div>
-        </div>
+        <AdminPageHeader
+          icon={Wrench}
+          title="ניהול"
+          capsules={capsuleConfig}
+        />
       }
+      mobileBottomBar={<MobileBottomBar capsules={capsuleConfig} />}
     >
-      <div className="space-y-4">
-        {/* Tab Switcher */}
-        <div className="flex justify-center">
-          <div className="inline-flex items-center gap-1 p-1.5 rounded-xl border border-border bg-card backdrop-blur-sm shadow-xl shadow-black/20 sm:gap-2 sm:p-2 sm:rounded-2xl">
-            <button
-              type="button"
-              onClick={() => setActiveTab("workers")}
-              aria-label="עובדים"
-              className={`relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold rounded-lg transition-all duration-200 sm:gap-3 sm:px-8 sm:py-3.5 sm:text-base sm:rounded-xl ${
-                activeTab === "workers"
-                  ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25"
-                  : "text-muted-foreground hover:text-foreground hover:bg-accent"
-              }`}
-            >
-              <Users className={`h-4 w-4 sm:h-5 sm:w-5 ${activeTab === "workers" ? "text-primary-foreground" : ""}`} />
-              <span className="hidden xs:inline sm:inline">עובדים</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab("stations")}
-              aria-label="תחנות"
-              className={`relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold rounded-lg transition-all duration-200 sm:gap-3 sm:px-8 sm:py-3.5 sm:text-base sm:rounded-xl ${
-                activeTab === "stations"
-                  ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25"
-                  : "text-muted-foreground hover:text-foreground hover:bg-accent"
-              }`}
-            >
-              <Cpu className={`h-4 w-4 sm:h-5 sm:w-5 ${activeTab === "stations" ? "text-primary-foreground" : ""}`} />
-              <span className="hidden xs:inline sm:inline">תחנות</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab("jobs")}
-              aria-label="עבודות"
-              className={`relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold rounded-lg transition-all duration-200 sm:gap-3 sm:px-8 sm:py-3.5 sm:text-base sm:rounded-xl ${
-                activeTab === "jobs"
-                  ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25"
-                  : "text-muted-foreground hover:text-foreground hover:bg-accent"
-              }`}
-            >
-              <Briefcase className={`h-4 w-4 sm:h-5 sm:w-5 ${activeTab === "jobs" ? "text-primary-foreground" : ""}`} />
-              <span className="hidden xs:inline sm:inline">עבודות</span>
-            </button>
-          </div>
-        </div>
+      <div className="space-y-4 pb-mobile-nav">
 
         {/* Filters */}
         <div className="space-y-3 rounded-xl border border-border bg-card/50 backdrop-blur-sm p-4">
@@ -645,7 +715,7 @@ export const ManagementDashboard = () => {
             <Separator />
             <GlobalStatusesManagement />
           </>
-        ) : (
+        ) : activeTab === "jobs" ? (
           <JobsManagement
             jobs={jobs}
             isLoading={isLoadingJobs}
@@ -654,6 +724,31 @@ export const ManagementDashboard = () => {
             onDelete={handleDeleteJob}
             onRefresh={loadJobs}
           />
+        ) : (
+          <>
+            <ProductionLinesManagement
+              lines={productionLines}
+              isLoading={isLoadingLines}
+              onAdd={handleAddProductionLine}
+              onEdit={handleUpdateProductionLine}
+              onDelete={handleDeleteProductionLine}
+              onEditStations={handleEditLineStations}
+              onCheckLocked={handleCheckLineLocked}
+              onRefresh={loadProductionLines}
+            />
+            <ProductionLineStationsDialog
+              line={editingLineStations}
+              open={editingLineStations !== null}
+              onOpenChange={(open) => {
+                if (!open) {
+                  setEditingLineStations(null);
+                }
+              }}
+              onSave={handleSaveLineStations}
+              onFetchAvailableStations={handleFetchAvailableStations}
+              onCheckLocked={handleCheckLineLocked}
+            />
+          </>
         )}
       </div>
     </AdminLayout>

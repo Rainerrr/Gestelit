@@ -2,22 +2,19 @@
 
 import { memo, useMemo, useState } from "react";
 import {
-  Bar,
-  BarChart,
-  CartesianGrid,
   Cell,
   Pie,
   PieChart,
   ResponsiveContainer,
   Tooltip,
-  XAxis,
-  YAxis,
 } from "recharts";
 import type { StatusDictionary } from "@/lib/status";
-import { PieChartIcon, BarChart3 } from "lucide-react";
+import { PieChartIcon } from "lucide-react";
 import {
   getStatusColorFromDictionary,
 } from "./status-dictionary";
+import { LiveJobProgress } from "./live-job-progress";
+import type { ReactNode } from "react";
 
 type StatusDataPoint = {
   key: string;
@@ -25,18 +22,12 @@ type StatusDataPoint = {
   value: number;
 };
 
-type ThroughputDataPoint = {
-  name: string;
-  label: string;
-  good: number;
-  scrap: number;
-};
-
 type StatusChartsProps = {
   statusData: StatusDataPoint[];
-  throughputData: ThroughputDataPoint[];
   isLoading: boolean;
   dictionary: StatusDictionary;
+  /** Optional widget to render alongside the pie chart on desktop */
+  sideWidget?: ReactNode;
 };
 
 const tooltipStyle = {
@@ -52,11 +43,6 @@ const getStatusColor = (
   statusKey: string,
   dictionary: StatusDictionary,
 ): string => getStatusColorFromDictionary(statusKey, dictionary);
-
-const throughputColors = {
-  good: "#10b981",
-  scrap: "#ef4444",
-};
 
 const ChartCard = ({
   title,
@@ -82,9 +68,9 @@ const ChartCard = ({
 
 const StatusChartsComponent = ({
   statusData,
-  throughputData,
   isLoading,
   dictionary,
+  sideWidget,
 }: StatusChartsProps) => {
   const [activeIndex, setActiveIndex] = useState<number | undefined>(undefined);
 
@@ -97,17 +83,6 @@ const StatusChartsComponent = ({
         }))
         .filter((item) => item.value > 0),
     [statusData],
-  );
-
-  const normalizedThroughput = useMemo(
-    () =>
-      throughputData.map((item) => ({
-        ...item,
-        label: item.label ?? item.name,
-        good: item.good ?? 0,
-        scrap: item.scrap ?? 0,
-      })),
-    [throughputData],
   );
 
   const renderStatusPie = () => {
@@ -217,114 +192,23 @@ const StatusChartsComponent = ({
     );
   };
 
-  const renderThroughputBars = () => {
-    if (isLoading) {
-      return (
-        <div className="flex items-center justify-center h-64">
-          <div className="flex flex-col items-center gap-3">
-            <div className="relative h-8 w-8">
-              <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-primary" />
-            </div>
-            <p className="text-sm text-muted-foreground">טוען נתוני תפוקה...</p>
-          </div>
-        </div>
-      );
-    }
-
-    if (normalizedThroughput.length === 0) {
-      return (
-        <div className="flex flex-col items-center justify-center h-64">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-muted mb-4">
-            <BarChart3 className="h-6 w-6 text-muted-foreground" />
-          </div>
-          <p className="text-sm text-muted-foreground">אין נתוני תפוקה להצגה</p>
-        </div>
-      );
-    }
-
-    return (
-      <div dir="ltr" className="w-full overflow-visible [direction:ltr]">
-        <div className="flex justify-center">
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart
-              data={normalizedThroughput}
-              margin={{ top: 16, right: 16, bottom: 28, left: 16 }}
-              barCategoryGap={20}
-            >
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--chart-grid))" />
-              <XAxis
-                dataKey="label"
-                tick={{ fontSize: 11, fill: "hsl(var(--chart-axis))" }}
-                interval={0}
-                axisLine={{ stroke: "hsl(var(--chart-grid))" }}
-                tickLine={{ stroke: "hsl(var(--chart-grid))" }}
-              />
-              <YAxis
-                type="number"
-                tick={{ fontSize: 11, fill: "hsl(var(--chart-axis))" }}
-                allowDecimals={false}
-                axisLine={{ stroke: "hsl(var(--chart-grid))" }}
-                tickLine={{ stroke: "hsl(var(--chart-grid))" }}
-              />
-              <Tooltip
-                cursor={{ fill: "hsl(var(--muted) / 0.5)" }}
-                contentStyle={tooltipStyle}
-                itemStyle={{ color: "hsl(var(--tooltip-text))" }}
-                labelStyle={{ color: "hsl(var(--tooltip-text-muted))", marginBottom: "4px" }}
-                formatter={(value, name) =>
-                  [value as number, name === "good" ? "כמות תקינה" : "כמות פסולה"]
-                }
-                labelFormatter={(label) => `תחנה: ${label}`}
-              />
-              <Bar
-                dataKey="good"
-                name="כמות תקינה"
-                radius={[6, 6, 0, 0]}
-                fill={throughputColors.good}
-                isAnimationActive
-                animationDuration={600}
-              />
-              <Bar
-                dataKey="scrap"
-                name="כמות פסולה"
-                radius={[6, 6, 0, 0]}
-                fill={throughputColors.scrap}
-                isAnimationActive
-                animationDuration={600}
-              />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        <div className="mt-4 flex justify-center gap-6 text-xs" dir="rtl">
-          <div className="flex items-center gap-2">
-            <span
-              className="h-2.5 w-2.5 rounded-full shrink-0 ring-1 ring-border"
-              style={{ backgroundColor: throughputColors.good }}
-            />
-            <span className="text-foreground/80">כמות תקינה</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span
-              className="h-2.5 w-2.5 rounded-full shrink-0 ring-1 ring-border"
-              style={{ backgroundColor: throughputColors.scrap }}
-            />
-            <span className="text-foreground/80">כמות פסולה</span>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
   return (
-    <div className="grid grid-cols-1 gap-4 lg:gap-6 xl:grid-cols-2">
-      <ChartCard title="פיזור סטטוסים" icon={PieChartIcon}>
-        {renderStatusPie()}
-      </ChartCard>
+    <div className="space-y-4 lg:space-y-6">
+      {/* Top row: Side widget first on mobile (for visibility), then pie chart */}
+      <div className="grid grid-cols-1 gap-4 lg:gap-6 xl:grid-cols-2">
+        {/* On mobile: widget shows first. On desktop: shown second (order-last) */}
+        {sideWidget && (
+          <div className="xl:order-last">
+            {sideWidget}
+          </div>
+        )}
+        <ChartCard title="פיזור סטטוסים" icon={PieChartIcon}>
+          {renderStatusPie()}
+        </ChartCard>
+      </div>
 
-      <ChartCard title="תפוקה לפי תחנה" icon={BarChart3}>
-        {renderThroughputBars()}
-      </ChartCard>
+      {/* Bottom row: Live Job Progress - full width */}
+      <LiveJobProgress />
     </div>
   );
 };
@@ -341,27 +225,11 @@ const statusDataEqual = (a: StatusDataPoint[], b: StatusDataPoint[]) => {
   return true;
 };
 
-const throughputDataEqual = (
-  a: ThroughputDataPoint[],
-  b: ThroughputDataPoint[],
-) => {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i += 1) {
-    const prev = a[i];
-    const next = b[i];
-    if (prev.name !== next.name) return false;
-    if (prev.label !== next.label) return false;
-    if (prev.good !== next.good) return false;
-    if (prev.scrap !== next.scrap) return false;
-  }
-  return true;
-};
-
 const areEqual = (prev: StatusChartsProps, next: StatusChartsProps) => {
   if (prev.isLoading !== next.isLoading) return false;
   if (prev.dictionary !== next.dictionary) return false;
+  if (prev.sideWidget !== next.sideWidget) return false;
   if (!statusDataEqual(prev.statusData, next.statusData)) return false;
-  if (!throughputDataEqual(prev.throughputData, next.throughputData)) return false;
   return true;
 };
 

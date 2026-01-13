@@ -9,6 +9,7 @@ import {
   HistoryCharts,
   type StatusSummary,
 } from "./history-charts";
+import { HistoryStatistics } from "./history-statistics";
 import {
   ThroughputChart,
   type ThroughputSummary,
@@ -358,8 +359,30 @@ export const HistoryDashboard = () => {
     [sessions],
   );
 
+  const filteredSessions = useMemo(() => {
+    if (!filters.dateRange?.from) return sessions;
+
+    const fromDate = new Date(filters.dateRange.from);
+    fromDate.setHours(0, 0, 0, 0);
+
+    const toDate = filters.dateRange.to
+      ? new Date(filters.dateRange.to)
+      : new Date(filters.dateRange.from);
+    toDate.setHours(23, 59, 59, 999);
+
+    return sessions.filter((session) => {
+      const sessionDate = new Date(session.startedAt);
+      return sessionDate >= fromDate && sessionDate <= toDate;
+    });
+  }, [sessions, filters.dateRange]);
+
+  const filteredStatusEvents = useMemo(() => {
+    const filteredIds = new Set(filteredSessions.map((s) => s.id));
+    return statusEvents.filter((event) => filteredIds.has(event.sessionId));
+  }, [filteredSessions, statusEvents]);
+
   const sortedSessions = useMemo(() => {
-    const list = [...sessions];
+    const list = [...filteredSessions];
     const direction = sort.direction === "asc" ? 1 : -1;
 
     const getValue = (session: CompletedSession) => {
@@ -402,7 +425,7 @@ export const HistoryDashboard = () => {
     });
 
     return list;
-  }, [sessions, sort]);
+  }, [filteredSessions, sort]);
 
   const sessionsTotalPages = useMemo(
     () => Math.max(1, Math.ceil(sortedSessions.length / SESSIONS_PAGE_SIZE)),
@@ -516,33 +539,20 @@ export const HistoryDashboard = () => {
   return (
     <AdminLayout
       header={
-        <div className="flex flex-col gap-3 text-right">
-          {/* Mobile simplified title */}
-          <div className="flex items-center gap-3 lg:hidden">
-            <History className="h-5 w-5 text-primary" />
-            <h1 className="text-xl font-bold text-foreground">היסטוריה</h1>
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <History className="h-5 w-5 text-primary shrink-0" />
+            <h1 className="text-lg font-semibold text-foreground sm:text-xl">היסטוריה</h1>
           </div>
-          {/* Desktop full header */}
-          <div className="hidden lg:flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="space-y-1 text-right">
-              <p className="text-xs text-muted-foreground">היסטוריה ודוחות</p>
-              <h1 className="text-xl font-semibold text-foreground sm:text-2xl">
-                מעקב עבודות שהושלמו
-              </h1>
-              <p className="text-xs text-muted-foreground sm:text-sm">
-                פילוח עבודות סגורות, חיפוש לפי עובד, תחנה ופק&quot;ע.
-              </p>
-            </div>
-            <Button
-              variant="outline"
-              onClick={() => setFilters({})}
-              aria-label="איפוס מסננים"
-              className="w-full sm:w-auto border-input bg-secondary text-foreground/80 hover:bg-accent hover:text-foreground"
-              size="sm"
-            >
-              איפוס
-            </Button>
-          </div>
+          <Button
+            variant="outline"
+            onClick={() => setFilters({})}
+            aria-label="איפוס מסננים"
+            className="border-input bg-secondary text-foreground/80 hover:bg-accent hover:text-foreground"
+            size="sm"
+          >
+            איפוס
+          </Button>
         </div>
       }
     >
@@ -569,6 +579,19 @@ export const HistoryDashboard = () => {
           onChange={setFilters}
         />
 
+        {/* Statistics cards - affected by filters */}
+        <HistoryStatistics
+          sessions={filteredSessions}
+          statusEvents={filteredStatusEvents}
+          dictionary={dictionary}
+          isLoading={
+            isLoading ||
+            isLoadingFilters ||
+            isLoadingStatusEvents ||
+            isStatusesLoading
+          }
+        />
+
         {/* Status distribution chart - affected by filters */}
         <HistoryCharts
           statusData={statusData}
@@ -586,7 +609,11 @@ export const HistoryDashboard = () => {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="text-right">
               <p className="text-sm text-foreground/80">עבודות שהושלמו</p>
-              <p className="text-xs text-muted-foreground">{sessions.length} עבודות</p>
+              <p className="text-xs text-muted-foreground">
+                {sortedSessions.length === sessions.length
+                  ? `${sessions.length} עבודות`
+                  : `${sortedSessions.length} מתוך ${sessions.length} עבודות`}
+              </p>
               {deleteError ? (
                 <p className="text-sm text-red-400">{deleteError}</p>
               ) : null}

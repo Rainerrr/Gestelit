@@ -293,6 +293,90 @@ export const useAdminSessionStats = () =>
 export const useAdminSessionCount = () =>
   useAdminSessionsSelector((state) => state.sessionIds.length);
 
+// Derived job progress data from active sessions
+export type StationWorkerInfo = {
+  stationId: string;
+  workerNames: string[];
+};
+
+export type JobSessionSummary = {
+  jobId: string;
+  jobNumber: string;
+  sessionCount: number;
+  activeStationIds: string[];
+  stationWorkers: StationWorkerInfo[];
+  totalGood: number;
+  totalScrap: number;
+};
+
+export const useAdminActiveJobsSummary = (): JobSessionSummary[] =>
+  useAdminSessionsSelector((state) => {
+    const jobMap = new Map<string, JobSessionSummary>();
+
+    state.sessionsMap.forEach((session) => {
+      if (!session.jobId) return;
+
+      const existing = jobMap.get(session.jobId);
+      if (existing) {
+        existing.sessionCount += 1;
+        if (session.stationId) {
+          if (!existing.activeStationIds.includes(session.stationId)) {
+            existing.activeStationIds.push(session.stationId);
+          }
+          // Add worker to station mapping
+          const stationWorker = existing.stationWorkers.find(
+            (sw) => sw.stationId === session.stationId
+          );
+          if (stationWorker) {
+            if (!stationWorker.workerNames.includes(session.workerName)) {
+              stationWorker.workerNames.push(session.workerName);
+            }
+          } else {
+            existing.stationWorkers.push({
+              stationId: session.stationId,
+              workerNames: [session.workerName],
+            });
+          }
+        }
+        existing.totalGood += session.totalGood ?? 0;
+        existing.totalScrap += session.totalScrap ?? 0;
+      } else {
+        const stationWorkers: StationWorkerInfo[] = [];
+        if (session.stationId) {
+          stationWorkers.push({
+            stationId: session.stationId,
+            workerNames: [session.workerName],
+          });
+        }
+        jobMap.set(session.jobId, {
+          jobId: session.jobId,
+          jobNumber: session.jobNumber,
+          sessionCount: 1,
+          activeStationIds: session.stationId ? [session.stationId] : [],
+          stationWorkers,
+          totalGood: session.totalGood ?? 0,
+          totalScrap: session.totalScrap ?? 0,
+        });
+      }
+    });
+
+    // Sort by session count descending
+    return Array.from(jobMap.values()).sort(
+      (a, b) => b.sessionCount - a.sessionCount
+    );
+  });
+
+export const useAdminActiveJobIds = (): string[] =>
+  useAdminSessionsSelector((state) => {
+    const jobIds = new Set<string>();
+    state.sessionsMap.forEach((session) => {
+      if (session.jobId) {
+        jobIds.add(session.jobId);
+      }
+    });
+    return Array.from(jobIds);
+  });
+
 const AdminSessionsActionsProvider = ({
   children,
   value,

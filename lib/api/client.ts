@@ -6,13 +6,16 @@ import type {
   ReportType,
   Station,
   StationChecklist,
+  StationSelectionJobItem,
   StatusDefinition,
+  StatusEvent,
   StatusEventState,
   Session,
   SessionAbandonReason,
   Worker,
   WorkerResumeSession,
 } from "@/lib/types";
+import type { StationWithOccupancy } from "@/lib/data/stations";
 import { getWorkerCode } from "./auth-helpers";
 
 async function handleResponse<T>(response: Response): Promise<T> {
@@ -83,18 +86,121 @@ export async function fetchStationsApi(workerId: string) {
   return data.stations;
 }
 
+export async function fetchStationsWithOccupancyApi(
+  workerId: string,
+): Promise<StationWithOccupancy[]> {
+  const response = await fetch(
+    `/api/stations/with-occupancy?workerId=${encodeURIComponent(workerId)}`,
+    {
+      headers: createWorkerHeaders(),
+    },
+  );
+  return handleResponse<StationWithOccupancy[]>(response);
+}
+
+/**
+ * Fetch stations that are BOTH assigned to the worker AND part of the job's job_items.
+ * This implements the intersection permission model for production line jobs.
+ *
+ * Returns:
+ * - List of allowed stations with occupancy info
+ * - Throws JOB_NOT_CONFIGURED if job has no job_items (legacy job)
+ */
+export async function fetchAllowedStationsForJobApi(
+  jobId: string,
+  workerId: string,
+): Promise<StationWithOccupancy[]> {
+  const response = await fetch(
+    `/api/jobs/${encodeURIComponent(jobId)}/allowed-stations?workerId=${encodeURIComponent(workerId)}`,
+    {
+      headers: createWorkerHeaders(),
+    },
+  );
+  return handleResponse<StationWithOccupancy[]>(response);
+}
+
+/**
+ * Fetch job items structured for station selection UI.
+ * Returns job items with pipeline stations, worker assignment flags, and occupancy.
+ */
+export async function fetchStationSelectionForJobApi(
+  jobId: string,
+  workerId: string,
+): Promise<{ jobItems: StationSelectionJobItem[] }> {
+  const response = await fetch(
+    `/api/jobs/${encodeURIComponent(jobId)}/station-selection?workerId=${encodeURIComponent(workerId)}`,
+    {
+      headers: createWorkerHeaders(),
+    },
+  );
+  return handleResponse<{ jobItems: StationSelectionJobItem[] }>(response);
+}
+
+/**
+ * Validate that a job exists in the database.
+ * Returns the job if found, or exists: false if not.
+ */
+export async function validateJobApi(
+  jobNumber: string,
+): Promise<{ exists: boolean; job?: Job }> {
+  const response = await fetch(
+    `/api/jobs/validate?jobNumber=${encodeURIComponent(jobNumber)}`,
+    {
+      headers: createWorkerHeaders(),
+    },
+  );
+  const data = await handleResponse<{ exists: boolean; job?: Job }>(response);
+  return data;
+}
+
+/**
+ * Create a new session with worker, station, and job.
+ * Called after station selection when the job has already been selected.
+ */
+export async function createSessionApi(
+  workerId: string,
+  stationId: string,
+  jobId: string,
+  instanceId?: string,
+): Promise<Session> {
+  const response = await fetch("/api/sessions", {
+    method: "POST",
+    headers: createWorkerHeaders(),
+    body: JSON.stringify({ workerId, stationId, jobId, instanceId }),
+  });
+  const data = await handleResponse<{ session: Session }>(response);
+  return data.session;
+}
+
+/**
+ * @deprecated Use getOrCreateJobApi + createSessionApi instead.
+ * Legacy function that combines job lookup and session creation.
+ */
 export async function createJobSessionApi(
   workerId: string,
   stationId: string,
   jobNumber: string,
+  instanceId?: string,
 ) {
   const response = await fetch("/api/jobs", {
     method: "POST",
     headers: createWorkerHeaders(),
-    body: JSON.stringify({ workerId, stationId, jobNumber }),
+    body: JSON.stringify({ workerId, stationId, jobNumber, instanceId }),
   });
   const data = await handleResponse<{ job: Job; session: Session }>(response);
   return data;
+}
+
+export async function takeoverSessionApi(
+  sessionId: string,
+  instanceId: string,
+): Promise<{ success: boolean }> {
+  const response = await fetch("/api/sessions/takeover", {
+    method: "POST",
+    headers: createWorkerHeaders(),
+    body: JSON.stringify({ sessionId, instanceId }),
+  });
+  return handleResponse<{ success: boolean }>(response);
 }
 
 export async function fetchChecklistApi(
@@ -140,7 +246,7 @@ export async function startStatusEventApi(options: {
   note?: string | null;
   imageUrl?: string | null;
   reportId?: string | null;
-}) {
+}): Promise<StatusEvent> {
   const response = await fetch("/api/status-events", {
     method: "POST",
     headers: createWorkerHeaders(),
@@ -153,7 +259,8 @@ export async function startStatusEventApi(options: {
       reportId: options.reportId,
     }),
   });
-  await handleResponse(response);
+  const data = await handleResponse<{ event: StatusEvent }>(response);
+  return data.event;
 }
 
 export async function fetchStationStatusesApi(
@@ -226,6 +333,7 @@ export async function createReportApi(input: {
   description?: string;
   image?: File | null;
   workerId?: string;
+  statusEventId?: string;
 }): Promise<Report> {
   const formData = new FormData();
   formData.append("type", input.type);
@@ -250,6 +358,9 @@ export async function createReportApi(input: {
   if (input.workerId) {
     formData.append("workerId", input.workerId);
   }
+  if (input.statusEventId) {
+    formData.append("statusEventId", input.statusEventId);
+  }
 
   const response = await fetch("/api/reports", {
     method: "POST",
@@ -260,8 +371,104 @@ export async function createReportApi(input: {
 }
 
 export async function fetchReportReasonsApi(): Promise<ReportReason[]> {
-  const response = await fetch("/api/admin/reports/reasons?activeOnly=true");
+  const response = await fetch("/api/reports/reasons");
   const data = await handleResponse<{ reasons: ReportReason[] }>(response);
   return data.reasons ?? [];
+}
+
+/**
+ * Atomically creates a status event and report together.
+ * If report creation fails, the status event is rolled back.
+ */
+export async function createStatusEventWithReportApi(input: {
+  sessionId: string;
+  statusDefinitionId: string;
+  reportType: ReportType;
+  stationId?: string;
+  stationReasonId?: string;
+  reportReasonId?: string;
+  description?: string;
+  image?: File | null;
+  workerId?: string;
+}): Promise<{ event: StatusEvent; report: Report }> {
+  const formData = new FormData();
+  formData.append("sessionId", input.sessionId);
+  formData.append("statusDefinitionId", input.statusDefinitionId);
+  formData.append("reportType", input.reportType);
+
+  if (input.stationId) {
+    formData.append("stationId", input.stationId);
+  }
+  if (input.stationReasonId) {
+    formData.append("stationReasonId", input.stationReasonId);
+  }
+  if (input.reportReasonId) {
+    formData.append("reportReasonId", input.reportReasonId);
+  }
+  if (input.description) {
+    formData.append("description", input.description);
+  }
+  if (input.image) {
+    formData.append("image", input.image);
+  }
+  if (input.workerId) {
+    formData.append("workerId", input.workerId);
+  }
+
+  const response = await fetch("/api/status-events/with-report", {
+    method: "POST",
+    headers: {
+      "X-Worker-Code": getWorkerCode() ?? "",
+    },
+    body: formData,
+  });
+  return handleResponse<{ event: StatusEvent; report: Report }>(response);
+}
+
+// ============================================
+// PRODUCTION PIPELINE API
+// ============================================
+
+export type PipelineNeighborStation = {
+  id: string;
+  name: string;
+  code: string;
+  position: number;
+  isTerminal: boolean;
+  wipAvailable: number;
+  occupiedBy: string | null;
+};
+
+export type SessionPipelineContext = {
+  isProductionLine: boolean;
+  isSingleStation: boolean;
+  currentPosition: number;
+  isTerminal: boolean;
+  prevStation: PipelineNeighborStation | null;
+  nextStation: PipelineNeighborStation | null;
+  upstreamWip: number;
+  waitingOutput: number;
+  jobItem: {
+    id: string;
+    kind: "station" | "line";
+    plannedQuantity: number;
+  } | null;
+};
+
+/**
+ * Fetch the production pipeline context for a session.
+ * Returns neighboring stations, WIP balances, and position info.
+ */
+export async function fetchSessionPipelineContextApi(
+  sessionId: string,
+): Promise<SessionPipelineContext> {
+  const response = await fetch(
+    `/api/sessions/pipeline?sessionId=${encodeURIComponent(sessionId)}`,
+    {
+      headers: createWorkerHeaders(),
+    },
+  );
+  const data = await handleResponse<{ context: SessionPipelineContext }>(response);
+  return data.context;
 }
 

@@ -152,3 +152,54 @@
 ::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--muted-foreground) / 0.5);
 }
+
+/* Safe area padding for mobile bottom bars */
+.safe-area-pb {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Bottom bar spacing utility - add to content that has a mobile bottom nav */
+.pb-mobile-nav {
+  padding-bottom: 4rem; /* ~64px for bottom nav height */
+}
+
+@media (min-width: 640px) {
+  .pb-mobile-nav {
+    padding-bottom: 0;
+  }
+}
+
+/* Date Range Picker - Continuous capsule band styling */
+/* Styled on buttons directly (no :has() for better compatibility) */
+/* RTL: Start on right, End on left */
+
+/* === MIDDLE DATES: neutral band, no circle === */
+.rdp-range_middle {
+  background-color: hsl(var(--muted)) !important;
+  border-radius: 0 !important;
+}
+
+/* === START DATE: blue circle + accent band behind === */
+.rdp-range_start::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-color: hsl(var(--primary) / 0.25);
+  border-radius: 0 9999px 9999px 0; /* Rounded right (outer edge in RTL) */
+  z-index: -1;
+}
+
+/* === END DATE: blue circle + accent band behind === */
+.rdp-range_end::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-color: hsl(var(--primary) / 0.25);
+  border-radius: 9999px 0 0 9999px; /* Rounded left (outer edge in RTL) */
+  z-index: -1;
+}
+
+/* === SAME DAY (start + end): fully rounded band === */
+.rdp-range_start.rdp-range_end::before {
+  border-radius: 9999px;
+}

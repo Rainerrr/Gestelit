@@ -8,6 +8,8 @@ import {
   useRef,
   useState,
 } from "react";
+import { useSessionClaimListener } from "@/hooks/useSessionBroadcast";
+import { getOrCreateInstanceId } from "@/lib/utils/instance-id";
 import { useRouter } from "next/navigation";
 import { PageHeader } from "@/components/layout/page-header";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -24,11 +26,16 @@ import {
 } from "@/components/ui/dialog";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useWorkerSession } from "@/contexts/WorkerSessionContext";
-import { abandonSessionApi, fetchStationsApi } from "@/lib/api/client";
-import { cn } from "@/lib/utils";
-import type { SessionAbandonReason, Station } from "@/lib/types";
-import type { TranslationKey } from "@/lib/i18n/translations";
+import {
+  abandonSessionApi,
+  createSessionApi,
+  fetchStationsWithOccupancyApi,
+  fetchStationSelectionForJobApi,
+} from "@/lib/api/client";
+import { persistSessionState, clearPersistedSessionState } from "@/lib/utils/session-storage";
+import type { SessionAbandonReason, StationSelectionJobItem } from "@/lib/types";
 import { BackButton } from "@/components/navigation/back-button";
+import { JobItemCard } from "@/components/worker/job-item-card";
 
 const formatDuration = (totalSeconds: number) => {
   const safeSeconds = Math.max(0, Math.floor(totalSeconds));
@@ -49,49 +56,94 @@ export default function StationPage() {
   const { t } = useTranslation();
   const {
     worker,
+    job,
     station,
     setStation,
+    setSessionId,
+    setSessionStartedAt,
+    setCurrentStatus,
     pendingRecovery,
     setPendingRecovery,
     hydrateFromSnapshot,
   } = useWorkerSession();
 
-  type StationsState = {
+  type JobItemsState = {
     loading: boolean;
-    items: Station[];
+    items: StationSelectionJobItem[];
     error: string | null;
+    errorCode: string | null;
+    // Legacy mode for session recovery (flat station list)
+    legacyMode: boolean;
   };
 
   const [state, dispatch] = useReducer(
     (
-      prev: StationsState,
+      prev: JobItemsState,
       action:
         | { type: "start" }
-        | { type: "success"; payload: Station[] }
-        | { type: "error" },
+        | { type: "success"; payload: StationSelectionJobItem[]; legacyMode?: boolean }
+        | { type: "error"; errorCode?: string },
     ) => {
       switch (action.type) {
         case "start":
-          return { ...prev, loading: true, error: null };
+          return { ...prev, loading: true, error: null, errorCode: null };
         case "success":
-          return { loading: false, items: action.payload, error: null };
+          return {
+            loading: false,
+            items: action.payload,
+            error: null,
+            errorCode: null,
+            legacyMode: action.legacyMode ?? false,
+          };
         case "error":
-          return { ...prev, loading: false, error: "error" };
+          return { ...prev, loading: false, error: "error", errorCode: action.errorCode ?? null };
         default:
           return prev;
       }
     },
-    { loading: true, items: [], error: null },
+    { loading: true, items: [], error: null, errorCode: null, legacyMode: false },
   );
-  const [selectedStation, setSelectedStation] = useState<string | undefined>(
-    station?.id,
+
+  // Track both station ID and job item station ID for session creation
+  type Selection = {
+    stationId: string;
+    jobItemStationId: string;
+    stationName: string;
+    stationCode: string;
+  } | null;
+
+  const [selection, setSelection] = useState<Selection>(
+    station
+      ? {
+          stationId: station.id,
+          jobItemStationId: "", // Will be set on actual selection
+          stationName: station.name,
+          stationCode: station.code,
+        }
+      : null,
   );
   const [resumeCountdownMs, setResumeCountdownMs] = useState(0);
   const [resumeActionLoading, setResumeActionLoading] = useState(false);
   const [resumeError, setResumeError] = useState<string | null>(null);
+  const [isCreatingSession, setIsCreatingSession] = useState(false);
+  const [sessionError, setSessionError] = useState<string | null>(null);
   const expirationHandledRef = useRef(false);
 
   const isRecoveryBlocking = Boolean(pendingRecovery);
+  const instanceId = useMemo(() => getOrCreateInstanceId(), []);
+
+  // Handle when another tab claims the session we're showing in recovery dialog
+  const handleSessionClaimed = useCallback(() => {
+    setPendingRecovery(null);
+    router.replace("/session-transferred");
+  }, [setPendingRecovery, router]);
+
+  // Listen for session takeover from other tabs
+  useSessionClaimListener(
+    pendingRecovery?.session.id,
+    instanceId,
+    handleSessionClaimed,
+  );
 
   const handleDiscardSession = useCallback(
     async (reason: SessionAbandonReason = "worker_choice") => {
@@ -102,6 +154,8 @@ export default function StationPage() {
       setResumeError(null);
       try {
         await abandonSessionApi(pendingRecovery.session.id, reason);
+        // Clear any persisted state since the session is being discarded
+        clearPersistedSessionState();
         setPendingRecovery(null);
       } catch {
         setResumeError(t("station.resume.error"));
@@ -117,23 +171,72 @@ export default function StationPage() {
       router.replace("/login");
       return;
     }
+    // Job is required before station selection (unless recovering a session)
+    if (!job && !pendingRecovery) {
+      router.replace("/job");
+      return;
+    }
 
     let active = true;
     dispatch({ type: "start" });
-    fetchStationsApi(worker.id)
-      .then((result) => {
-        if (!active) return;
-        dispatch({ type: "success", payload: result });
-      })
-      .catch(() => {
+
+    // Fetch stations based on whether we have a job with job_items
+    const fetchStations = async () => {
+      try {
+        // If recovering a session, use the legacy endpoint (all worker stations)
+        if (pendingRecovery || !job) {
+          const result = await fetchStationsWithOccupancyApi(worker.id);
+          if (!active) return;
+          // Convert legacy flat stations to job items format for display
+          const legacyJobItems: StationSelectionJobItem[] = result.map((s) => ({
+            id: s.id,
+            kind: "station" as const,
+            name: s.name,
+            plannedQuantity: 0,
+            pipelineStations: [
+              {
+                id: s.id,
+                name: s.name,
+                code: s.code,
+                position: 1,
+                isTerminal: true,
+                isWorkerAssigned: true,
+                occupancy: s.occupancy,
+                jobItemStationId: "", // Not applicable in legacy mode
+              },
+            ],
+          }));
+          dispatch({ type: "success", payload: legacyJobItems, legacyMode: true });
+        } else {
+          // Use the new job-specific station selection endpoint
+          try {
+            const result = await fetchStationSelectionForJobApi(job.id, worker.id);
+            if (!active) return;
+            dispatch({ type: "success", payload: result.jobItems });
+          } catch (error) {
+            if (!active) return;
+            const errorMsg = error instanceof Error ? error.message : "UNKNOWN";
+            if (errorMsg === "JOB_NOT_CONFIGURED") {
+              // Job has no job_items - block with specific error
+              dispatch({ type: "error", errorCode: "JOB_NOT_CONFIGURED" });
+            } else {
+              // Other error - dispatch generic error
+              dispatch({ type: "error", errorCode: errorMsg });
+            }
+          }
+        }
+      } catch {
         if (!active) return;
         dispatch({ type: "error" });
-      });
+      }
+    };
+
+    void fetchStations();
 
     return () => {
       active = false;
     };
-  }, [worker, router]);
+  }, [worker, job, pendingRecovery, router]);
 
   useEffect(() => {
     if (!pendingRecovery?.graceExpiresAt) {
@@ -165,7 +268,7 @@ export default function StationPage() {
 
     const graceExpiryTime = new Date(pendingRecovery.graceExpiresAt).getTime();
     const now = Date.now();
-    
+
     if (now < graceExpiryTime) {
       return;
     }
@@ -174,26 +277,83 @@ export default function StationPage() {
     void handleDiscardSession("expired");
   }, [pendingRecovery, resumeCountdownMs, handleDiscardSession]);
 
-  const typeLabel = (stationType: Station["station_type"]) =>
-    t(`station.type.${stationType}` as TranslationKey);
+  const handleStationSelect = (stationId: string, jobItemStationId: string) => {
+    // Find the station details from job items
+    for (const item of state.items) {
+      const pipelineStation = item.pipelineStations.find((s) => s.id === stationId);
+      if (pipelineStation) {
+        setSelection({
+          stationId,
+          jobItemStationId,
+          stationName: pipelineStation.name,
+          stationCode: pipelineStation.code,
+        });
+        break;
+      }
+    }
+  };
 
-  const stations = state.items;
-  const selectedStationEntity = stations.find(
-    (entry) => entry.id === selectedStation,
-  );
-
-  const handleContinue = () => {
-    if (!selectedStation || !worker || pendingRecovery) {
+  const handleContinue = async () => {
+    if (!selection || !worker || !job || pendingRecovery) {
       return;
     }
-    const stationEntity = stations.find(
-      (entry) => entry.id === selectedStation,
-    );
-    if (!stationEntity) {
-      return;
+
+    setIsCreatingSession(true);
+    setSessionError(null);
+
+    try {
+      // Create the session with worker, job, and station
+      const session = await createSessionApi(
+        worker.id,
+        selection.stationId,
+        job.id,
+        instanceId,
+      );
+
+      // Create a minimal station object for context
+      const stationForContext = {
+        id: selection.stationId,
+        name: selection.stationName,
+        code: selection.stationCode,
+        station_type: "other" as const,
+        is_active: true,
+      };
+
+      setStation(stationForContext);
+      setSessionId(session.id);
+      setSessionStartedAt(session.started_at ?? null);
+      setCurrentStatus(undefined);
+
+      // Persist session state to sessionStorage for recovery on page refresh
+      persistSessionState({
+        sessionId: session.id,
+        workerId: worker.id,
+        workerCode: worker.worker_code,
+        workerFullName: worker.full_name,
+        stationId: selection.stationId,
+        stationName: selection.stationName,
+        stationCode: selection.stationCode,
+        jobId: job.id,
+        jobNumber: job.job_number,
+        startedAt: session.started_at ?? new Date().toISOString(),
+        totals: { good: 0, scrap: 0 },
+      });
+
+      router.push("/checklist/start");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "SESSION_FAILED";
+      if (message === "STATION_OCCUPIED") {
+        setSessionError(t("station.error.occupied"));
+      } else if (message === "JOB_ITEM_NOT_FOUND") {
+        setSessionError(t("station.error.jobItemNotFound"));
+      } else if (message === "JOB_NOT_CONFIGURED") {
+        setSessionError(t("station.error.jobNotConfigured"));
+      } else {
+        setSessionError(t("station.error.sessionFailed"));
+      }
+    } finally {
+      setIsCreatingSession(false);
     }
-    setStation(stationEntity);
-    router.push("/job");
   };
 
   const countdownLabel = useMemo(
@@ -226,6 +386,27 @@ export default function StationPage() {
     }
     hydrateFromSnapshot(pendingRecovery);
     setResumeError(null);
+
+    // Persist session state for future refreshes
+    if (worker) {
+      persistSessionState({
+        sessionId: pendingRecovery.session.id,
+        workerId: worker.id,
+        workerCode: worker.worker_code,
+        workerFullName: worker.full_name,
+        stationId: pendingRecovery.station.id,
+        stationName: pendingRecovery.station.name,
+        stationCode: pendingRecovery.station.code,
+        jobId: pendingRecovery.job.id,
+        jobNumber: pendingRecovery.job.job_number,
+        startedAt: pendingRecovery.session.started_at,
+        totals: {
+          good: pendingRecovery.session.total_good ?? 0,
+          scrap: pendingRecovery.session.total_scrap ?? 0,
+        },
+      });
+    }
+
     router.push("/work");
   };
 
@@ -236,17 +417,31 @@ export default function StationPage() {
     }
   };
 
+  // Check if worker has any assigned stations in any job item
+  const hasAnyAssignedStations = useMemo(() => {
+    return state.items.some((item) =>
+      item.pipelineStations.some((s) => s.isWorkerAssigned)
+    );
+  }, [state.items]);
+
   if (!worker) {
     return null;
   }
 
   return (
     <>
-      <BackButton href="/login" />
+      <BackButton href="/job" />
       <PageHeader
         eyebrow={worker.full_name}
         title={t("station.title")}
         subtitle={t("station.subtitle")}
+        actions={
+          job ? (
+            <Badge variant="secondary" className="border-border bg-secondary text-foreground/80">
+              {`${t("common.job")}: ${job.job_number}`}
+            </Badge>
+          ) : null
+        }
       />
 
       {pendingRecovery ? (
@@ -262,89 +457,92 @@ export default function StationPage() {
       ) : null}
 
       {state.loading ? (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 3 }).map((_, index) => (
+        <div className="space-y-4 max-w-3xl">
+          {Array.from({ length: 2 }).map((_, index) => (
             <div
               key={`skeleton-${index}`}
-              className="h-32 rounded-xl border border-dashed border-border bg-card/50"
+              className="h-40 rounded-xl border border-dashed border-border bg-card/50"
             >
               <div className="h-full w-full animate-pulse rounded-xl bg-muted" />
             </div>
           ))}
         </div>
+      ) : state.errorCode === "JOB_NOT_CONFIGURED" ? (
+        <Card className="max-w-3xl border border-amber-500/30 bg-amber-50/10 text-right dark:border-amber-500/20 dark:bg-amber-500/5">
+          <CardHeader className="space-y-3">
+            <CardTitle className="text-lg text-amber-700 dark:text-amber-400">
+              {t("station.error.jobNotConfigured")}
+            </CardTitle>
+            <p className="text-sm text-amber-600/80 dark:text-amber-500/80">
+              {t("station.error.jobNotConfiguredDesc")}
+            </p>
+            <Button
+              variant="outline"
+              className="w-fit border-amber-500/30 text-amber-700 hover:bg-amber-50 dark:border-amber-500/20 dark:text-amber-400 dark:hover:bg-amber-500/10"
+              onClick={() => router.push("/job")}
+            >
+              {t("station.error.selectAnotherJob")}
+            </Button>
+          </CardHeader>
+        </Card>
       ) : state.items.length === 0 ? (
         <Card className="max-w-3xl border border-dashed border-border bg-card/50 text-right">
           <CardHeader>
             <CardTitle className="text-lg text-muted-foreground">
-              {state.error ? t("station.error.load") : t("station.empty")}
+              {state.error ? t("station.error.load") : t("station.noJobItems")}
             </CardTitle>
           </CardHeader>
         </Card>
+      ) : !hasAnyAssignedStations ? (
+        <Card className="max-w-3xl border border-amber-500/30 bg-amber-50/10 text-right dark:border-amber-500/20 dark:bg-amber-500/5">
+          <CardHeader className="space-y-3">
+            <CardTitle className="text-lg text-amber-700 dark:text-amber-400">
+              {t("station.noAssignedStations")}
+            </CardTitle>
+            <Button
+              variant="outline"
+              className="w-fit border-amber-500/30 text-amber-700 hover:bg-amber-50 dark:border-amber-500/20 dark:text-amber-400 dark:hover:bg-amber-500/10"
+              onClick={() => router.push("/job")}
+            >
+              {t("station.error.selectAnotherJob")}
+            </Button>
+          </CardHeader>
+        </Card>
       ) : (
-        <section className="space-y-6">
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {stations.map((stationOption) => {
-              const isSelected = selectedStation === stationOption.id;
-              return (
-                <button
-                  key={stationOption.id}
-                  type="button"
-                  onClick={() => {
-                    if (isRecoveryBlocking) {
-                      return;
-                    }
-                    setSelectedStation(stationOption.id);
-                  }}
-                  className={cn(
-                    "rounded-xl border border-border bg-card/50 p-4 text-right backdrop-blur-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
-                    isSelected
-                      ? "border-primary/50 bg-primary/10 ring-2 ring-primary/20"
-                      : "hover:border-primary/40 hover:bg-accent",
-                    isRecoveryBlocking ? "cursor-not-allowed opacity-60" : "",
-                  )}
-                  aria-pressed={isSelected}
-                  disabled={isRecoveryBlocking}
-                >
-                  <div className="space-y-2">
-                    <p className="text-xl font-semibold text-foreground">
-                      {stationOption.name}
-                    </p>
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{typeLabel(stationOption.station_type)}</span>
-                      <span
-                        aria-hidden
-                        className={cn(
-                          "inline-flex h-2.5 w-2.5 rounded-full transition",
-                          isSelected ? "bg-primary" : "bg-muted-foreground/50",
-                        )}
-                      />
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
+        <section className="space-y-6 max-w-4xl">
+          {/* Job Item Cards */}
+          <div className="space-y-4">
+            {state.items.map((jobItem) => (
+              <JobItemCard
+                key={jobItem.id}
+                jobItem={jobItem}
+                selectedStationId={selection?.stationId ?? null}
+                onStationSelect={handleStationSelect}
+                disabled={isRecoveryBlocking}
+              />
+            ))}
           </div>
+
+          {/* Selection Summary & Continue Button */}
           <div className="rounded-xl border border-border bg-card/50 p-4 backdrop-blur-sm">
             <div className="flex flex-col gap-3 text-right md:flex-row md:items-center md:justify-between">
               <div className="space-y-1">
                 <p className="text-sm text-foreground/80">
-                  {selectedStationEntity
-                    ? `${t("station.selected")} · ${selectedStationEntity.name}`
+                  {selection
+                    ? `${t("station.selected")} · ${selection.stationName}`
                     : t("station.subtitle")}
                 </p>
-                {selectedStationEntity ? (
-                  <p className="text-xs text-muted-foreground">
-                    {typeLabel(selectedStationEntity.station_type)}
-                  </p>
+                {sessionError ? (
+                  <p className="text-xs text-rose-600 dark:text-rose-400">{sessionError}</p>
                 ) : null}
               </div>
               <Button
                 size="lg"
                 className="w-full justify-center bg-primary font-medium text-primary-foreground hover:bg-primary/90 sm:w-auto sm:min-w-48"
-                disabled={!selectedStation || isRecoveryBlocking}
+                disabled={!selection || isRecoveryBlocking || isCreatingSession}
                 onClick={handleContinue}
               >
-                {t("station.continue")}
+                {isCreatingSession ? t("station.creating") : t("station.continue")}
               </Button>
             </div>
           </div>
@@ -423,4 +621,3 @@ export default function StationPage() {
     </>
   );
 }
-

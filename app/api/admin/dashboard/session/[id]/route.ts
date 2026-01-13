@@ -20,6 +20,28 @@ export type SessionMalfunctionReport = {
   createdAt: string;
   reporterName: string | null;
   reporterCode: string | null;
+  statusEventId: string | null;
+  statusEventStartedAt: string | null;
+  statusEventEndedAt: string | null;
+  statusDefinitionLabelHe: string | null;
+  statusDefinitionColorHex: string | null;
+};
+
+export type SessionGeneralReport = {
+  id: string;
+  reportReasonId: string | null;
+  reportReasonLabel: string | null;
+  description: string | null;
+  imageUrl: string | null;
+  status: "new" | "approved";
+  createdAt: string;
+  reporterName: string | null;
+  reporterCode: string | null;
+  statusEventId: string | null;
+  statusEventStartedAt: string | null;
+  statusEventEndedAt: string | null;
+  statusDefinitionLabelHe: string | null;
+  statusDefinitionColorHex: string | null;
 };
 
 export type SessionDetail = {
@@ -44,6 +66,7 @@ export type SessionDetail = {
   stoppageTimeSeconds: number;
   setupTimeSeconds: number;
   malfunctions: SessionMalfunctionReport[];
+  generalReports: SessionGeneralReport[];
 };
 
 type RawSession = {
@@ -191,7 +214,13 @@ export async function GET(
       image_url: string | null;
       status: MalfunctionReportStatus;
       created_at: string;
+      status_event_id: string | null;
       workers: { full_name: string | null; worker_code: string | null } | null;
+      status_events: {
+        started_at: string;
+        ended_at: string | null;
+        status_definitions: { label_he: string | null; color_hex: string | null } | null;
+      } | null;
     };
 
     const { data: malfunctionsData } = await supabase
@@ -203,7 +232,9 @@ export async function GET(
         image_url,
         status,
         created_at,
-        workers:reported_by_worker_id(full_name, worker_code)
+        status_event_id,
+        workers:reported_by_worker_id(full_name, worker_code),
+        status_events:status_event_id(started_at, ended_at, status_definitions(label_he, color_hex))
       `)
       .eq("session_id", sessionId)
       .eq("type", "malfunction")
@@ -220,6 +251,66 @@ export async function GET(
       createdAt: m.created_at,
       reporterName: m.workers?.full_name ?? null,
       reporterCode: m.workers?.worker_code ?? null,
+      statusEventId: m.status_event_id,
+      statusEventStartedAt: m.status_events?.started_at ?? null,
+      statusEventEndedAt: m.status_events?.ended_at ?? null,
+      statusDefinitionLabelHe: m.status_events?.status_definitions?.label_he ?? null,
+      statusDefinitionColorHex: m.status_events?.status_definitions?.color_hex ?? null,
+    }));
+
+    // Fetch general reports linked to this session
+    type RawGeneralReport = {
+      id: string;
+      report_reason_id: string | null;
+      description: string | null;
+      image_url: string | null;
+      status: "new" | "approved";
+      created_at: string;
+      status_event_id: string | null;
+      workers: { full_name: string | null; worker_code: string | null } | null;
+      report_reasons: { label_he: string | null } | null;
+      status_events: {
+        started_at: string;
+        ended_at: string | null;
+        status_definitions: { label_he: string | null; color_hex: string | null } | null;
+      } | null;
+    };
+
+    const { data: generalReportsData } = await supabase
+      .from("reports")
+      .select(`
+        id,
+        report_reason_id,
+        description,
+        image_url,
+        status,
+        created_at,
+        status_event_id,
+        workers:reported_by_worker_id(full_name, worker_code),
+        report_reasons:report_reason_id(label_he),
+        status_events:status_event_id(started_at, ended_at, status_definitions(label_he, color_hex))
+      `)
+      .eq("session_id", sessionId)
+      .eq("type", "general")
+      .order("created_at", { ascending: false });
+
+    const generalReports: SessionGeneralReport[] = (
+      (generalReportsData as unknown as RawGeneralReport[]) ?? []
+    ).map((r) => ({
+      id: r.id,
+      reportReasonId: r.report_reason_id,
+      reportReasonLabel: r.report_reasons?.label_he ?? null,
+      description: r.description,
+      imageUrl: r.image_url,
+      status: r.status,
+      createdAt: r.created_at,
+      reporterName: r.workers?.full_name ?? null,
+      reporterCode: r.workers?.worker_code ?? null,
+      statusEventId: r.status_event_id,
+      statusEventStartedAt: r.status_events?.started_at ?? null,
+      statusEventEndedAt: r.status_events?.ended_at ?? null,
+      statusDefinitionLabelHe: r.status_events?.status_definitions?.label_he ?? null,
+      statusDefinitionColorHex: r.status_events?.status_definitions?.color_hex ?? null,
     }));
 
     const session: SessionDetail = {
@@ -244,6 +335,7 @@ export async function GET(
       stoppageTimeSeconds,
       setupTimeSeconds,
       malfunctions,
+      generalReports,
     };
 
     return NextResponse.json({ session });

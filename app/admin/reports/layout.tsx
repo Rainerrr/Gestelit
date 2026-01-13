@@ -15,7 +15,7 @@ const reportsTabs = [
   },
   {
     href: "/admin/reports/general",
-    label: "דיווחים כלליים",
+    label: "כלליים",
     icon: FileText,
   },
   {
@@ -24,6 +24,43 @@ const reportsTabs = [
     icon: Trash2,
   },
 ];
+
+// Moved outside component to avoid creating during render
+const MobileBottomBar = ({ pathname }: { pathname: string }) => (
+  <div className="fixed bottom-0 left-0 right-0 z-50 sm:hidden">
+    <div className="border-t border-border/80 bg-card/95 backdrop-blur-md px-2 py-1.5 safe-area-pb">
+      <div className="flex items-center justify-around">
+        {reportsTabs.map((tab) => {
+          const isActive = pathname === tab.href;
+          const Icon = tab.icon;
+          return (
+            <Link
+              key={tab.href}
+              href={tab.href}
+              className={cn(
+                "flex flex-col items-center gap-0.5 px-4 py-1.5 rounded-lg transition-colors min-w-[4rem]",
+                isActive
+                  ? "text-primary"
+                  : "text-muted-foreground active:bg-accent"
+              )}
+            >
+              <Icon className={cn(
+                "h-5 w-5",
+                isActive ? "text-primary" : ""
+              )} />
+              <span className={cn(
+                "text-[11px] font-medium",
+                isActive ? "text-primary" : ""
+              )}>
+                {tab.label}
+              </span>
+            </Link>
+          );
+        })}
+      </div>
+    </div>
+  </div>
+);
 
 export default function ReportsLayout({
   children,
@@ -56,50 +93,47 @@ export default function ReportsLayout({
   return (
     <AdminLayout
       header={
-        <div className="flex flex-col gap-4 text-right">
-          {/* Mobile simplified title */}
-          <div className="flex items-center gap-3 lg:hidden">
-            <LayoutList className="h-5 w-5 text-primary" />
-            <h1 className="text-xl font-bold text-foreground">דיווחים</h1>
+        <div className="flex items-center justify-between gap-4">
+          {/* Left: Title group */}
+          <div className="flex items-center gap-2.5 shrink-0">
+            <LayoutList className="h-5 w-5 text-primary shrink-0" />
+            <h1 className="text-lg font-semibold text-foreground sm:text-xl">דיווחים</h1>
           </div>
-          {/* Desktop full header */}
-          <div className="hidden lg:block space-y-1 text-right">
-            <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-[0.2em]">מערכת דיווחים</p>
-            <h1 className="text-2xl font-bold text-foreground tracking-tight lg:text-3xl">
-              ניהול דיווחים ותקלות
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              צפייה וניהול תקלות, דיווחים כלליים ודיווחי פסולים מהתחנות
-            </p>
+
+          {/* Center: Capsule-style tabs - desktop only */}
+          <div className="hidden sm:flex flex-1 justify-center">
+            <div className="inline-flex items-center gap-0.5 p-1 rounded-xl border border-border/80 bg-muted/50 shadow-sm">
+              {reportsTabs.map((tab) => {
+                const isActive = pathname === tab.href;
+                const Icon = tab.icon;
+                return (
+                  <Link
+                    key={tab.href}
+                    href={tab.href}
+                    className={cn(
+                      "relative flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200",
+                      isActive
+                        ? "bg-background text-foreground shadow-sm border border-border/50"
+                        : "text-muted-foreground hover:text-foreground hover:bg-background/50"
+                    )}
+                  >
+                    <Icon className={cn(
+                      "h-4 w-4 shrink-0",
+                      isActive ? "text-primary" : ""
+                    )} />
+                    <span>{tab.label}</span>
+                  </Link>
+                );
+              })}
+            </div>
           </div>
+
+          {/* Right: Empty spacer for balance */}
+          <div className="hidden sm:block shrink-0 w-[100px]" />
         </div>
       }
+      mobileBottomBar={<MobileBottomBar pathname={pathname} />}
     >
-      {/* Tabs navigation */}
-      <div className="mb-6">
-        <div className="flex items-center gap-1 overflow-x-auto scrollbar-none pb-1">
-          {reportsTabs.map((tab) => {
-            const isActive = pathname === tab.href;
-            const Icon = tab.icon;
-            return (
-              <Link
-                key={tab.href}
-                href={tab.href}
-                className={cn(
-                  "flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all shrink-0",
-                  isActive
-                    ? "bg-primary/10 text-primary border border-primary/30"
-                    : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
-                )}
-              >
-                <Icon className="h-4 w-4" />
-                <span>{tab.label}</span>
-              </Link>
-            );
-          })}
-        </div>
-      </div>
-
       {/* Page content */}
       {children}
     </AdminLayout>

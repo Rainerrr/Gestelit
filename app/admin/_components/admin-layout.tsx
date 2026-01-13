@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { Menu, Settings, LayoutDashboard, History, Wrench, ChevronLeft, FileText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,8 @@ import type { ReactNode } from "react";
 type AdminLayoutProps = {
   children: ReactNode;
   header: ReactNode;
+  /** Mobile bottom navigation bar - rendered outside header context */
+  mobileBottomBar?: ReactNode;
 };
 
 const navItems = [
@@ -31,29 +33,36 @@ const navItems = [
   { label: "ניהול", href: "/admin/manage", disabled: false, icon: Wrench },
 ];
 
-export const AdminLayout = ({ children, header }: AdminLayoutProps) => {
+export const AdminLayout = ({ children, header, mobileBottomBar }: AdminLayoutProps) => {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [pendingReportsCount, setPendingReportsCount] = useState(0);
   const { scrollDirection, isAtTop } = useScrollDirection();
 
-  const fetchReportsCount = useCallback(async () => {
-    try {
-      const { counts } = await fetchReportsCountsAdminApi();
-      // Total pending = open malfunctions + pending general + pending scrap
-      setPendingReportsCount(counts.total);
-    } catch {
-      // Silently fail - badge just won't show
-    }
-  }, []);
-
   useEffect(() => {
-    fetchReportsCount();
+    let cancelled = false;
+
+    const fetchReportsCount = async () => {
+      try {
+        const { counts } = await fetchReportsCountsAdminApi();
+        // Total pending = open malfunctions + pending general + pending scrap
+        if (!cancelled) {
+          setPendingReportsCount(counts.total);
+        }
+      } catch {
+        // Silently fail - badge just won't show
+      }
+    };
+
+    void fetchReportsCount();
     // Refresh count every 30 seconds
-    const interval = setInterval(fetchReportsCount, 30000);
-    return () => clearInterval(interval);
-  }, [fetchReportsCount]);
+    const interval = setInterval(() => void fetchReportsCount(), 30000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
 
   const renderNavItem = (item: (typeof navItems)[number]) => {
     // For /admin/reports, also highlight when on sub-routes
@@ -203,7 +212,7 @@ export const AdminLayout = ({ children, header }: AdminLayoutProps) => {
         <div className="flex min-w-0 flex-1 flex-col">
           <header
             className={cn(
-              "shrink-0 border-b border-border/60 bg-card/80 backdrop-blur-sm px-4 py-5 sm:px-6 lg:px-8",
+              "shrink-0 border-b border-border/60 bg-card/80 backdrop-blur-sm px-4 py-3 sm:px-6 lg:px-8",
               "sticky top-0 z-40 transform transition-transform duration-300",
               scrollDirection === "down" && !isAtTop
                 ? "-translate-y-full lg:translate-y-0"
@@ -227,6 +236,9 @@ export const AdminLayout = ({ children, header }: AdminLayoutProps) => {
         isOpen={passwordDialogOpen}
         onOpenChange={setPasswordDialogOpen}
       />
+
+      {/* Mobile bottom navigation - rendered outside header context */}
+      {mobileBottomBar}
     </section>
   );
 };

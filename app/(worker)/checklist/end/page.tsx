@@ -19,6 +19,7 @@ import {
 } from "@/lib/api/client";
 import { SESSION_FLAG_THRESHOLDS } from "@/lib/config/session-flags";
 import type { StationChecklist, StationChecklistItem } from "@/lib/types";
+import { clearPersistedSessionState } from "@/lib/utils/session-storage";
 import { ScrapReportDialog } from "../_components/scrap-report-dialog";
 
 export default function ClosingChecklistPage() {
@@ -156,6 +157,8 @@ export default function ClosingChecklistPage() {
       );
       await completeSessionApi(sessionId);
       completeChecklist("end");
+      // Clear persisted session state since session is now complete
+      clearPersistedSessionState();
       setIsSubmitted(true);
     } catch {
       setSubmitError(t("checklist.error.submit"));
@@ -174,6 +177,8 @@ export default function ClosingChecklistPage() {
     }
     const currentWorker = worker;
     reset();
+    // Ensure persisted state is cleared when starting new session
+    clearPersistedSessionState();
     setWorker(currentWorker);
     router.push("/station");
   };

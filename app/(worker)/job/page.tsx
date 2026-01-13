@@ -5,20 +5,18 @@ import { useRouter } from "next/navigation";
 import { FormSection } from "@/components/forms/form-section";
 import { PageHeader } from "@/components/layout/page-header";
 import { BackButton } from "@/components/navigation/back-button";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useWorkerSession } from "@/contexts/WorkerSessionContext";
-import { createJobSessionApi, validateJobExistsApi } from "@/lib/api/client";
+import { validateJobApi } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 
 export default function JobPage() {
   const router = useRouter();
   const { t } = useTranslation();
-  const { worker, station, setJob, setSessionId, setSessionStartedAt, setCurrentStatus } =
-    useWorkerSession();
+  const { worker, setJob } = useWorkerSession();
   const [jobNumber, setJobNumber] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -26,12 +24,8 @@ export default function JobPage() {
   useEffect(() => {
     if (!worker) {
       router.replace("/login");
-      return;
     }
-    if (worker && !station) {
-      router.replace("/station");
-    }
-  }, [worker, station, router]);
+  }, [worker, router]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -41,31 +35,23 @@ export default function JobPage() {
       return;
     }
 
-    if (!worker || !station) {
+    if (!worker) {
       return;
     }
 
     setIsSubmitting(true);
     try {
-      // Validate that job exists before creating session
-      const jobExists = await validateJobExistsApi(trimmed);
-      if (!jobExists) {
+      // Validate that job exists in the database
+      const result = await validateJobApi(trimmed);
+      if (!result.exists || !result.job) {
         setError(t("job.error.notFound"));
         setIsSubmitting(false);
         return;
       }
-
-      const { job, session } = await createJobSessionApi(
-        worker.id,
-        station.id,
-        trimmed,
-      );
-      setJob(job);
-      setSessionId(session.id);
-      setSessionStartedAt(session.started_at ?? null);
-      setCurrentStatus(undefined);
+      setJob(result.job);
       setError(null);
-      router.push("/checklist/start");
+      // Navigate to station selection (session will be created there)
+      router.push("/station");
     } catch {
       setError(t("job.error.generic"));
     } finally {
@@ -73,22 +59,17 @@ export default function JobPage() {
     }
   };
 
-  if (!worker || !station) {
+  if (!worker) {
     return null;
   }
 
   return (
     <>
-      <BackButton href="/station" />
+      <BackButton href="/login" />
       <PageHeader
         eyebrow={worker.full_name}
         title={t("job.title")}
         subtitle={t("job.subtitle")}
-        actions={
-          <Badge variant="secondary" className="border-border bg-secondary text-foreground/80">
-            {`${t("common.station")}: ${station.name}`}
-          </Badge>
-        }
       />
       <form onSubmit={handleSubmit} className="max-w-2xl space-y-6">
         <FormSection

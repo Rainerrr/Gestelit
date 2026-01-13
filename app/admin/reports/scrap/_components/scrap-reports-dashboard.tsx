@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState, useMemo, Suspense } from "react";
 import { Trash2, RefreshCw, CheckCircle2, AlertTriangle, Package } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -8,40 +8,41 @@ import {
   updateReportStatusAdminApi,
 } from "@/lib/api/admin-management";
 import type { StationWithScrapReports } from "@/lib/data/reports";
-import { StationScrapCard } from "./station-scrap-card";
+import { ViewToggle } from "@/app/admin/reports/_components/view-toggle";
+import { FeedView } from "@/app/admin/reports/_components/feed-view";
+import { PerStationView } from "@/app/admin/reports/_components/per-station-view";
+import { cn } from "@/lib/utils";
+import { useRealtimeReports } from "@/lib/hooks/useRealtimeReports";
+import { useViewToggle } from "@/lib/hooks/useViewToggle";
+import { flattenStationReports } from "@/lib/data/reports";
 
-export const ScrapReportsDashboard = () => {
-  const [stations, setStations] = useState<StationWithScrapReports[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
+const ScrapReportsDashboardInner = () => {
   const [isUpdating, setIsUpdating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useViewToggle("station");
 
-  const fetchData = useCallback(async (showRefreshing = false) => {
-    if (showRefreshing) setIsRefreshing(true);
-    setError(null);
-
-    try {
-      const data = await fetchScrapReportsAdminApi();
-      setStations(data.stations);
-    } catch (err) {
-      console.error("[scrap-reports] Failed to fetch:", err);
-      setError(err instanceof Error ? err.message : "FETCH_FAILED");
-    } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
-    }
+  // Real-time reports subscription
+  const fetchReportsData = useCallback(async () => {
+    const data = await fetchScrapReportsAdminApi();
+    return data.stations;
   }, []);
 
-  useEffect(() => {
-    void fetchData();
-  }, [fetchData]);
+  const {
+    data: stations,
+    isLoading,
+    isRefreshing,
+    error,
+    refresh: handleRefresh,
+  } = useRealtimeReports<StationWithScrapReports[]>({
+    reportType: "scrap",
+    fetchData: fetchReportsData,
+  });
 
   const handleApprove = async (id: string) => {
     setIsUpdating(true);
     try {
       await updateReportStatusAdminApi(id, "approved");
-      await fetchData();
+      // Real-time will pick up the change, but refresh for immediate feedback
+      await handleRefresh();
     } catch (err) {
       console.error("[scrap-reports] Failed to approve:", err);
     } finally {
@@ -49,59 +50,99 @@ export const ScrapReportsDashboard = () => {
     }
   };
 
-  const handleRefresh = () => {
-    void fetchData(true);
-  };
+  const allStations = stations ?? [];
 
-  const totalNew = stations.reduce((sum, s) => sum + s.newCount, 0);
-  const totalApproved = stations.reduce((sum, s) => sum + s.approvedCount, 0);
+  // Flatten all reports for feed view
+  const allReports = useMemo(() => {
+    return flattenStationReports(allStations);
+  }, [allStations]);
+
+  const totalNew = allStations.reduce((sum, s) => sum + s.newCount, 0);
+  const totalApproved = allStations.reduce((sum, s) => sum + s.approvedCount, 0);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-mobile-nav">
       {/* Header with refresh button */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="text-lg font-semibold text-foreground">דיווחי פסולים</h2>
+        <div>
+          <h2 className="text-xl font-semibold text-foreground tracking-tight">
+            דיווחי פסולים
+          </h2>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            ניהול ואישור דיווחי פסולים
+          </p>
+        </div>
         <Button
           variant="outline"
           onClick={handleRefresh}
           disabled={isRefreshing}
           size="sm"
+          className="gap-2"
         >
-          <RefreshCw className={`h-4 w-4 ml-2 ${isRefreshing ? "animate-spin" : ""}`} />
+          <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
           רענון
         </Button>
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="flex items-center gap-4 rounded-xl border border-border bg-card/50 px-5 py-4">
-          <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-amber-500/10 border border-amber-500/20">
-            <Trash2 className="h-6 w-6 text-amber-400" />
+      <div className="grid grid-cols-3 gap-3">
+        {/* New */}
+        <div className="relative overflow-hidden rounded-xl border border-border/60 bg-card/30 p-4">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                ממתינים
+              </p>
+              <p className="text-3xl font-bold text-foreground mt-1 tabular-nums">
+                {totalNew}
+              </p>
+            </div>
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/10 border border-amber-500/20">
+              <Trash2 className="h-5 w-5 text-amber-400" />
+            </div>
           </div>
-          <div>
-            <p className="text-2xl font-bold text-foreground">{totalNew}</p>
-            <p className="text-xs text-muted-foreground">ממתינים לאישור</p>
+          {totalNew > 0 && (
+            <div className="absolute bottom-0 right-0 left-0 h-0.5 bg-amber-500/40" />
+          )}
+        </div>
+
+        {/* Approved */}
+        <div className="relative overflow-hidden rounded-xl border border-border/60 bg-card/30 p-4">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                אושרו
+              </p>
+              <p className="text-3xl font-bold text-foreground mt-1 tabular-nums">
+                {totalApproved}
+              </p>
+            </div>
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+              <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+            </div>
           </div>
         </div>
-        <div className="flex items-center gap-4 rounded-xl border border-border bg-card/50 px-5 py-4">
-          <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-            <CheckCircle2 className="h-6 w-6 text-emerald-400" />
-          </div>
-          <div>
-            <p className="text-2xl font-bold text-foreground">{totalApproved}</p>
-            <p className="text-xs text-muted-foreground">אושרו</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-4 rounded-xl border border-border bg-card/50 px-5 py-4">
-          <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 border border-primary/20">
-            <Package className="h-6 w-6 text-primary" />
-          </div>
-          <div>
-            <p className="text-2xl font-bold text-foreground">{stations.length}</p>
-            <p className="text-xs text-muted-foreground">תחנות עם דיווחים</p>
+
+        {/* Stations count */}
+        <div className="relative overflow-hidden rounded-xl border border-border/60 bg-card/30 p-4">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                תחנות
+              </p>
+              <p className="text-3xl font-bold text-foreground mt-1 tabular-nums">
+                {allStations.length}
+              </p>
+            </div>
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 border border-primary/20">
+              <Package className="h-5 w-5 text-primary" />
+            </div>
           </div>
         </div>
       </div>
+
+      {/* View Toggle */}
+      <ViewToggle value={view} onChange={setView} />
 
       {/* Content */}
       {isLoading ? (
@@ -125,7 +166,7 @@ export const ScrapReportsDashboard = () => {
             נסה שנית
           </Button>
         </div>
-      ) : stations.length === 0 ? (
+      ) : allReports.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
           <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/10 border border-emerald-500/20">
             <CheckCircle2 className="h-8 w-8 text-emerald-400" />
@@ -135,19 +176,40 @@ export const ScrapReportsDashboard = () => {
             <p className="text-sm text-muted-foreground">לא נמצאו דיווחים על פסולים</p>
           </div>
         </div>
+      ) : view === "feed" ? (
+        <FeedView
+          reports={allReports}
+          reportType="scrap"
+          onApprove={handleApprove}
+          isUpdating={isUpdating}
+        />
       ) : (
-        <div className="space-y-4">
-          {stations.map((stationData, index) => (
-            <StationScrapCard
-              key={stationData.station.id}
-              data={stationData}
-              onApprove={handleApprove}
-              isUpdating={isUpdating}
-              defaultExpanded={index === 0}
-            />
-          ))}
-        </div>
+        <PerStationView
+          reports={allReports}
+          reportType="scrap"
+          onApprove={handleApprove}
+          isUpdating={isUpdating}
+        />
       )}
     </div>
+  );
+};
+
+// Wrap with Suspense for useSearchParams
+export const ScrapReportsDashboard = () => {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex flex-col items-center justify-center py-20 gap-4">
+          <div className="relative h-10 w-10">
+            <div className="absolute inset-0 rounded-full border-2 border-primary/20" />
+            <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-primary" />
+          </div>
+          <p className="text-sm text-muted-foreground">טוען דיווחים...</p>
+        </div>
+      }
+    >
+      <ScrapReportsDashboardInner />
+    </Suspense>
   );
 };

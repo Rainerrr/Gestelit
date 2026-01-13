@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState, useRef } from "react";
+import { useCallback, useMemo, useState, useRef } from "react";
+import { FileText, AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { getStatusBadgeClass } from "@/lib/status";
 import type { TimelineSegment } from "@/hooks/useSessionTimeline";
@@ -37,10 +38,13 @@ const formatDuration = (ms: number) => {
 type TooltipData = {
   segment: TimelineSegment;
   x: number;
+  containerWidth: number;
 };
 
 const CustomTooltip = ({ segment }: { segment: TimelineSegment }) => {
   const duration = segment.end - segment.start;
+  const hasReport = segment.reportType && segment.reportReasonLabel;
+  const isMalfunction = segment.reportType === "malfunction";
 
   return (
     <div
@@ -57,6 +61,19 @@ const CustomTooltip = ({ segment }: { segment: TimelineSegment }) => {
         {segment.label}
       </div>
       <div className="px-3 py-2 space-y-1.5">
+        {/* Report info */}
+        {hasReport && (
+          <div className="flex items-center justify-center gap-2 text-xs pb-1.5 border-b border-border">
+            {isMalfunction ? (
+              <AlertTriangle className="h-3.5 w-3.5 text-red-400 shrink-0" />
+            ) : (
+              <FileText className="h-3.5 w-3.5 text-primary shrink-0" />
+            )}
+            <span className="text-foreground font-medium text-center">
+              {segment.reportReasonLabel}
+            </span>
+          </div>
+        )}
         <div className="flex justify-between items-center text-xs">
           <span className="text-muted-foreground">התחלה</span>
           <span className="text-foreground font-medium tabular-nums">
@@ -119,10 +136,10 @@ export const VisSessionTimeline = ({
   }, [startTs, endTs]);
 
   // Calculate percentage position for a timestamp
-  const getPosition = (ts: number): number => {
+  const getPosition = useCallback((ts: number): number => {
     if (!startTs || totalDuration === 0) return 0;
     return ((ts - startTs) / totalDuration) * 100;
-  };
+  }, [startTs, totalDuration]);
 
   // Calculate "now" marker position
   const nowPosition = useMemo(() => {
@@ -139,7 +156,8 @@ export const VisSessionTimeline = ({
     const containerRect = containerRef.current?.getBoundingClientRect();
     if (containerRect) {
       const x = rect.left + rect.width / 2 - containerRect.left;
-      setTooltip({ segment, x });
+      const containerWidth = containerRect.width;
+      setTooltip({ segment, x, containerWidth });
     }
   };
 
@@ -165,6 +183,8 @@ export const VisSessionTimeline = ({
           const badgeClass = dictionary
             ? getStatusBadgeClass(seg.status, dictionary, stationId)
             : undefined;
+          const hasReport = seg.reportType && seg.reportReasonLabel;
+          const isMalfunction = seg.reportType === "malfunction";
 
           return (
             <div
@@ -190,7 +210,17 @@ export const VisSessionTimeline = ({
             >
               {/* Show status badge if segment is wide enough */}
               {width > 15 && (
-                <div className="absolute inset-0 flex items-center justify-center px-2">
+                <div className="absolute inset-0 flex items-center justify-center px-2 gap-1.5">
+                  {/* Report icon */}
+                  {hasReport && (
+                    <div className="flex h-5 w-5 items-center justify-center rounded-full bg-white/20 shrink-0 pointer-events-none">
+                      {isMalfunction ? (
+                        <AlertTriangle className="h-3 w-3 text-white drop-shadow-sm" />
+                      ) : (
+                        <FileText className="h-3 w-3 text-white drop-shadow-sm" />
+                      )}
+                    </div>
+                  )}
                   {badgeClass ? (
                     <Badge
                       className={`${badgeClass} text-[10px] px-2 py-0 h-5 truncate max-w-full shadow-sm pointer-events-none`}
@@ -202,6 +232,18 @@ export const VisSessionTimeline = ({
                       {seg.label}
                     </span>
                   )}
+                </div>
+              )}
+              {/* Show just icon if segment is narrow but has report */}
+              {width <= 15 && width > 5 && hasReport && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="flex h-5 w-5 items-center justify-center rounded-full bg-white/20">
+                    {isMalfunction ? (
+                      <AlertTriangle className="h-3 w-3 text-white drop-shadow-sm" />
+                    ) : (
+                      <FileText className="h-3 w-3 text-white drop-shadow-sm" />
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -245,7 +287,7 @@ export const VisSessionTimeline = ({
         <div
           className="absolute z-50 pointer-events-none"
           style={{
-            left: Math.max(80, Math.min(tooltip.x, containerRef.current?.offsetWidth ? containerRef.current.offsetWidth - 80 : tooltip.x)),
+            left: Math.max(80, Math.min(tooltip.x, tooltip.containerWidth ? tooltip.containerWidth - 80 : tooltip.x)),
             top: -8,
             transform: "translate(-50%, -100%)",
           }}

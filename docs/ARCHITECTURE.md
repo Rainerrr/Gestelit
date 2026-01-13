@@ -1,255 +1,403 @@
 # Gestelit Work Monitor - Architecture Reference
 
+> System architecture, data flow, and key patterns
 > Manufacturing floor real-time worker session tracking system
-> Stack: Next.js 16 + React 19 + TypeScript + Supabase (PostgreSQL)
-> Updated: December 2025
+> Last updated: January 2026
 
 ---
 
-## Quick Reference
+## Table of Contents
 
-### Commands
-```bash
-npm run dev       # Development server (localhost:3000)
-npm run build     # Production build
-npm run test:run  # Run integration tests
-npx supabase db push  # Apply migrations to remote
+1. [Tech Stack](#1-tech-stack)
+2. [System Architecture](#2-system-architecture)
+3. [Directory Structure](#3-directory-structure)
+4. [Data Flow](#4-data-flow)
+5. [Key Patterns](#5-key-patterns)
+6. [Domain Model](#6-domain-model)
+7. [Worker Flow](#7-worker-flow)
+8. [Admin System](#8-admin-system)
+9. [Commands](#9-commands)
+10. [Related Documentation](#10-related-documentation)
+
+---
+
+## 1. Tech Stack
+
+| Layer | Technology | Version |
+|-------|------------|---------|
+| Framework | Next.js (App Router) | 16 |
+| UI | React | 19 |
+| Language | TypeScript | 5.x |
+| Database | Supabase (PostgreSQL) | 17 |
+| Styling | TailwindCSS | 3.x |
+| Components | shadcn/ui | Latest |
+| Testing | Vitest | 4.x |
+| Charts | Recharts, vis-timeline | - |
+
+**Language Direction:** RTL-first (Hebrew primary, Russian secondary)
+**Path Alias:** `@/` resolves to project root
+
+---
+
+## 2. System Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        Client Layer                              │
+│  ┌───────────────┐   ┌───────────────┐   ┌───────────────┐     │
+│  │ Worker Pages  │   │ Admin Pages   │   │ Landing Page  │     │
+│  │  app/(worker) │   │   app/admin   │   │     app/      │     │
+│  └───────┬───────┘   └───────┬───────┘   └───────────────┘     │
+│          │                   │                                   │
+│  ┌───────┴───────────────────┴──────────────────────────────┐  │
+│  │                  React Components                          │  │
+│  │              (shadcn/ui + TailwindCSS)                    │  │
+│  └──────────────────────────┬───────────────────────────────┘  │
+│                             │                                    │
+│  ┌──────────────────────────┴───────────────────────────────┐  │
+│  │                 lib/api/client.ts                          │  │
+│  │          (Client-side API wrappers, adds auth)            │  │
+│  └──────────────────────────┬───────────────────────────────┘  │
+└─────────────────────────────┼───────────────────────────────────┘
+                              │ HTTP
+┌─────────────────────────────┼───────────────────────────────────┐
+│                        API Layer                                 │
+│  ┌──────────────────────────┴───────────────────────────────┐  │
+│  │                    app/api/                                │  │
+│  │            (Next.js API Routes, validates auth)           │  │
+│  └──────────────────────────┬───────────────────────────────┘  │
+│                             │                                    │
+│  ┌──────────────────────────┴───────────────────────────────┐  │
+│  │                    lib/data/                               │  │
+│  │         (Business logic, Supabase queries)                │  │
+│  └──────────────────────────┬───────────────────────────────┘  │
+└─────────────────────────────┼───────────────────────────────────┘
+                              │ Service Role
+┌─────────────────────────────┼───────────────────────────────────┐
+│                     Database Layer                               │
+│  ┌──────────────────────────┴───────────────────────────────┐  │
+│  │                Supabase (PostgreSQL 17)                    │  │
+│  │           Row Level Security + RPC Functions              │  │
+│  └──────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### Key Directories
+---
+
+## 3. Directory Structure
+
 ```
-app/(worker)/     # Worker flow: login → station → job → checklist → work
-app/admin/        # Admin dashboard, history, management
-app/api/          # Backend API routes (service role)
-lib/data/         # Server-side Supabase queries
-lib/api/          # Client-side API wrappers
-lib/types.ts      # TypeScript domain types
-tests/integration/  # Vitest integration tests
+app/
+  (worker)/           # Worker flow pages
+    login/            # Worker authentication
+    job/              # Job entry
+    station/          # Station selection (with production lines)
+    checklist/        # Start/end checklists
+    work/             # Active session
+  admin/              # Admin dashboard and management
+    _components/      # Admin-specific components
+    history/          # Historical analytics
+    manage/           # Entity management
+    reports/          # Malfunction/general/scrap reports
+    session/[id]/     # Session detail
+  api/                # API routes
+
+lib/
+  data/               # Server-side Supabase queries
+    sessions.ts       # Session lifecycle
+    jobs.ts           # Job operations
+    job-items.ts      # Production line items
+    production-lines.ts
+    stations.ts
+    status-definitions.ts
+    reports.ts
+    workers.ts
+    checklists.ts
+    admin-dashboard.ts
+    admin-management.ts
+  api/                # Client-side API wrappers
+    client.ts
+    auth-helpers.ts
+  auth/               # Authentication helpers
+    permissions.ts
+    admin-session.ts
+  hooks/              # Realtime subscription hooks
+  supabase/           # Client creation
+  types.ts            # TypeScript types
+  constants.ts        # App constants
+  status.ts           # Status color utilities
+  utils.ts            # General utilities
+
+components/
+  ui/                 # shadcn/ui components
+  worker/             # Worker UI components
+  work/               # Work page components
+  forms/              # Form components
+  layout/             # Layout components
+  providers/          # Context providers
+
+contexts/             # React contexts
+  WorkerSessionContext.tsx
+  PipelineContext.tsx
+  AdminSessionsContext.tsx
+  LanguageContext.tsx
+
+hooks/                # Page-level hooks
+  useSessionHeartbeat.ts
+  useSessionBroadcast.ts
+  useAdminGuard.ts
+
+tests/integration/    # Vitest tests
 supabase/migrations/  # Database migrations
+docs/                 # Documentation
 ```
 
 ---
 
-## 1. Core Concepts
+## 4. Data Flow
 
-### Domain Types
-```typescript
-SessionStatus: "active" | "completed" | "aborted"
-MachineState: "production" | "setup" | "stoppage"
-StatusScope: "global" | "station"
-MalfunctionStatus: "open" | "known" | "solved"
+### Read Operations
+
+```
+Component → lib/api/client.ts → API Route → lib/data/*.ts → Supabase
 ```
 
-### Authentication
-| Actor | Method | Header |
-|-------|--------|--------|
-| Worker | Worker code lookup | `X-Worker-Code` |
-| Admin | Password validation | `X-Admin-Password` |
-| API Routes | Service role key | Bypasses RLS |
+### Write Operations (Standard)
+
+```
+Component → lib/api/client.ts → API Route → lib/data/*.ts → Supabase
+```
+
+### Write Operations (Atomic)
+
+```
+Component → API Route → lib/data/*.ts → Supabase RPC Function
+```
+
+Atomic operations (status changes, quantity updates) use PostgreSQL RPC functions to ensure transactional consistency.
+
+### Real-Time Updates
+
+```
+Supabase → SSE Stream (API Route) → EventSource (Component) → State Update
+```
+
+Or:
+
+```
+Supabase Realtime → lib/hooks/useRealtime*.ts → State Update
+```
 
 ---
 
-## 2. Database Schema
+## 5. Key Patterns
 
-### Core Tables
+### Status Mirroring
 
-| Table | Purpose | Key Columns |
-|-------|---------|-------------|
-| `workers` | Worker metadata | `worker_code`, `full_name`, `is_active`, `department` |
-| `stations` | Station definitions | `code`, `station_type`, `start_checklist`, `end_checklist`, `station_reasons` |
-| `jobs` | Job metadata | `job_number`, `customer_name`, `planned_quantity` |
-| `sessions` | Active work sessions | `worker_id`, `station_id`, `job_id`, `status`, `current_status_id` |
-| `status_events` | Status timeline | `session_id`, `status_definition_id`, `started_at`, `ended_at` |
-| `status_definitions` | Configurable statuses | `scope`, `station_id`, `label_he`, `machine_state`, `is_protected` |
-| `malfunctions` | Malfunction records | `station_id`, `status`, `description` |
+`sessions.current_status_id` mirrors the latest status event for efficient dashboard queries:
 
-### Important Constraints
-
-**Status Definitions:**
-- `is_protected` column marks non-editable statuses (production, malfunction, other)
-- `color_hex` constrained to 15 allowed palette values
-- `scope` = 'station' requires `station_id`
-
-**Malfunctions:**
-- State machine trigger enforces: `open` → `known` → `solved`
-- Invalid transitions (e.g., `solved` → `open`) rejected by database
-
-**Sessions:**
-- `current_status_id` FK to `status_definitions` with `ON DELETE RESTRICT`
-- Snapshot columns preserve historical worker/station names
-
-### Indexes
 ```sql
-sessions_current_status_idx ON sessions(current_status_id)
-sessions_job_idx ON sessions(job_id)
-sessions_started_at_idx ON sessions(started_at)
-malfunctions_status_idx ON malfunctions(status)
-status_definitions_machine_state_idx ON status_definitions(machine_state)
+-- Dashboard query: single table, no joins
+SELECT * FROM sessions WHERE status = 'active';
+
+-- Status change: atomic RPC ensures consistency
+SELECT create_status_event_atomic(session_id, status_id, ...);
 ```
 
----
+### Snapshot vs FK Join
 
-## 3. Critical Patterns
-
-### Atomic Status Mirroring
-Status changes use `create_status_event_atomic()` PostgreSQL function:
-1. Closes open status events for session
-2. Inserts new status event
-3. Updates `sessions.current_status_id` and `last_status_change_at`
-
-**Usage in TypeScript:**
-```typescript
-await supabase.rpc("create_status_event_atomic", {
-  p_session_id: sessionId,
-  p_status_definition_id: statusId,
-  p_note: note,
-  // ... other params
-});
-```
-
-### Session Lifecycle
-```
-Login → Station Select → Job Entry → Start Checklist → Active Work → End Checklist → Complete
-         ↓                                    ↓
-    Grace Period (5 min)              Heartbeat (15s)
-         ↓                                    ↓
-    Auto-abandon if expired          Auto-close if idle >5 min
-```
-
-### Snapshot vs FK Strategy
-| Use Snapshots | Use FK Joins |
-|---------------|--------------|
-| Historical records | Active sessions |
-| Completed session display | Real-time updates |
-| Audit trails | Current worker/station info |
+| Use Case | Pattern |
+|----------|---------|
+| Active session display | FK join to workers, stations |
+| Historical reports | Snapshot columns |
+| Audit trails | Snapshot columns |
+| Real-time dashboards | FK join |
 
 Snapshot columns: `worker_full_name_snapshot`, `worker_code_snapshot`, `station_name_snapshot`, `station_code_snapshot`
 
----
+### Production Line WIP
 
-## 4. API Routes
+Balance-based tracking with LIFO corrections:
 
-### Worker Routes
-| Route | Method | Purpose |
-|-------|--------|---------|
-| `/api/workers/login` | POST | Authenticate by worker code |
-| `/api/workers/active-session` | GET | Get active session for recovery |
-| `/api/sessions/heartbeat` | POST | Update `last_seen_at` |
-| `/api/sessions/complete` | POST | Mark session completed |
-| `/api/status-events` | POST | Create status event (uses atomic function) |
+```
+Session reports +10 good
+  → Pull from upstream WIP (if available)
+  → Record consumption in ledger
+  → Add to current step balance
+  → If terminal, increment completion
 
-### Admin Routes (require `X-Admin-Password`)
-| Route | Method | Purpose |
-|-------|--------|---------|
-| `/api/admin/dashboard/active-sessions` | GET | All active sessions |
-| `/api/admin/dashboard/active-sessions/stream` | GET | SSE real-time stream |
-| `/api/admin/status-definitions` | GET/POST | List/create statuses |
-| `/api/admin/status-definitions/[id]` | PUT/DELETE | Update/delete status |
-| `/api/admin/sessions/close-all` | POST | Force-close all sessions |
-
-### Cron Routes
-| Route | Purpose |
-|-------|---------|
-| `/api/cron/close-idle-sessions` | Close sessions idle >5 minutes |
-
----
-
-## 5. Data Layer
-
-### Service Layer (`lib/data/`)
-```typescript
-// Sessions
-createSession(payload)
-startStatusEvent(payload)  // Uses atomic RPC
-completeSession(sessionId)
-abandonActiveSession(sessionId, reason)
-getGracefulActiveSession(workerId)
-
-// Status Definitions
-fetchActiveStatusDefinitions(stationId?)
-createStatusDefinition(payload)
-deleteStatusDefinition(id)  // Reassigns to fallback
-
-// Admin
-fetchActiveSessions()
-fetchRecentSessions(filters)
+Session decreases -5 good
+  → Check downstream hasn't consumed
+  → Reduce originated first (no return)
+  → Return pulled via LIFO
 ```
 
-### Client Layer (`lib/api/`)
-```typescript
-// Auto-adds X-Worker-Code header
-startStatusEventApi(sessionId, statusId)
-completeSessionApi(sessionId)
+### Instance Tracking
 
-// Auto-adds X-Admin-Password header
-fetchActiveSessionsAdminApi()
-createStatusDefinitionAdminApi(payload)
+Prevents same session in multiple tabs:
+
+```typescript
+// Each tab has unique instanceId
+session.active_instance_id = instanceId;
+
+// Heartbeat validates match
+if (session.active_instance_id !== requestInstanceId) {
+  throw new Error('INSTANCE_MISMATCH');
+}
 ```
 
 ---
 
-## 6. Testing
+## 6. Domain Model
 
-### Integration Tests (`tests/integration/`)
-| File | Coverage |
-|------|----------|
-| `session-lifecycle.test.ts` | Session creation, status mirroring, concurrent updates |
-| `status-definitions.test.ts` | Protected status rules, deletion reassignment, scoping |
-| `malfunctions.test.ts` | State machine transitions |
+### Core Entities
 
-### Test Utilities (`tests/helpers.ts`)
+```
+Worker ─────────┬────────── Session ─────────┬────────── StatusEvent
+                │                            │
+                │                            ├────────── Report
+                │                            │
+Station ────────┤                            └────────── ChecklistResponse
+                │
+Job ────────────┴────────── JobItem ─────────┬────────── JobItemStation
+                                             │
+ProductionLine ──────────────────────────────┤
+                                             │
+                                             └────────── WipBalance
+```
+
+### Type Definitions
+
 ```typescript
-TestFactory.createWorker(suffix)
-TestFactory.createStation(suffix)
-TestFactory.getProductionStatus()
-TestCleanup.cleanupSessions(ids)
+// Session lifecycle
+type SessionStatus = "active" | "completed" | "aborted"
+
+// Status configuration
+type MachineState = "production" | "setup" | "stoppage"
+type StatusScope = "global" | "station"
+
+// Reports
+type ReportType = "malfunction" | "general" | "scrap"
+type MalfunctionStatus = "open" | "known" | "solved"
+type SimpleStatus = "new" | "approved"
+
+// Production lines
+type JobItemKind = "station" | "line"
+
+// Checklists
+type ChecklistKind = "start" | "end"
 ```
 
 ---
 
-## 7. Security
+## 7. Worker Flow
 
-### Row Level Security (RLS)
-- Enabled on all tables
-- Service role bypasses RLS (used by API routes)
-- Anon key has limited read access (stations, jobs, status_definitions)
+Sequential progression through the application:
 
-### Rate Limiting (Not Implemented)
-Priority endpoints:
-- `POST /api/sessions` - Session creation
-- `POST /api/admin/login` - Admin authentication
-- `POST /api/malfunctions` - Malfunction reports
+```
+Login → Job Entry → Station Selection → Start Checklist → Work → End Checklist → Complete
+```
 
-### Session Security
-- Heartbeat every 15 seconds
-- 5-minute grace period for recovery
-- UTC timestamps for all comparisons
+### Key Features
 
----
+| Feature | Implementation |
+|---------|----------------|
+| Session recovery | 5-minute grace period, `getGracefulActiveSession()` |
+| Multi-tab prevention | `active_instance_id` + BroadcastChannel |
+| Heartbeat | 15-second interval, updates `last_seen_at` |
+| Idle detection | 5-minute threshold, cron-based cleanup |
+| Status changes | Atomic via `create_status_event_atomic()` |
+| Quantity updates | Atomic via `update_session_quantities_atomic_v2()` |
 
-## 8. Conventions
+### Production Line Flow
 
-### Hebrew Text
-- UTF-8 encoded, no BOM
-- Output Hebrew literally (א–ת)
-- No HTML entities or Unicode escapes
-
-### Styling
-- RTL-first: `dir="rtl"`
-- shadcn/ui + Tailwind only
-- No custom CSS frameworks
-
-### Code Style
-- Early returns for readability
-- `handle` prefix for event handlers
-- Const arrow functions
+When job has job items:
+1. Show pipeline view with WIP distribution
+2. Worker selects station within line
+3. Session links to `job_item_id` and `job_item_station_id`
+4. Quantities update WIP balances atomically
 
 ---
 
-## 9. Environment Variables
+## 8. Admin System
 
-```env
-NEXT_PUBLIC_SUPABASE_URL=<project-url>
+### Dashboard Features
+
+| Feature | Implementation |
+|---------|----------------|
+| Active sessions | SSE stream + Supabase subscription |
+| Reports widget | Counts by type and status |
+| Job progress | WIP distribution per station |
+| KPI cards | Aggregated statistics |
+| Session detail | Timeline visualization |
+
+### Management Entities
+
+- Workers (CRUD + station assignments)
+- Stations (CRUD + checklists + reasons)
+- Jobs (CRUD + job items)
+- Status definitions (protected + custom)
+- Production lines (station sequences)
+- Report reasons (for general reports)
+
+### Report Types
+
+| Type | Status Flow | Purpose |
+|------|-------------|---------|
+| Malfunction | open → known → solved | Equipment issues |
+| General | new → approved | Observations |
+| Scrap | new → approved | Scrap tracking |
+
+---
+
+## 9. Commands
+
+### Development
+
+```bash
+npm run dev          # Start dev server (localhost:3000)
+npm run build        # Production build
+npm run lint         # ESLint check
+```
+
+### Testing
+
+```bash
+npm run test:run     # Run tests once
+npm run test         # Watch mode
+npm run test -- tests/integration/file.test.ts  # Single file
+```
+
+### Database
+
+```bash
+npx supabase db push           # Apply migrations
+npx supabase migration new X   # Create migration
+```
+
+---
+
+## 10. Related Documentation
+
+| Document | Description |
+|----------|-------------|
+| [README.md](./README.md) | Documentation index |
+| [DATABASE_SCHEMA.md](./DATABASE_SCHEMA.md) | Complete database schema |
+| [API_REFERENCE.md](./API_REFERENCE.md) | All API endpoints |
+| [WORKER_FLOW.md](./WORKER_FLOW.md) | Worker application guide |
+| [ADMIN_SYSTEM.md](./ADMIN_SYSTEM.md) | Admin dashboard guide |
+| [PRODUCTION_LINES.md](./PRODUCTION_LINES.md) | WIP tracking system |
+| [REALTIME_STREAMING.md](./REALTIME_STREAMING.md) | Real-time features |
+| [AUTHENTICATION.md](./AUTHENTICATION.md) | Security patterns |
+| [COMPONENTS.md](./COMPONENTS.md) | React components |
+| [QUICK_REFERENCE.md](./QUICK_REFERENCE.md) | AI agent cheat sheet |
+
+---
+
+## Environment Variables
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=<supabase-project-url>
 NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon-key>
 SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
 ADMIN_PASSWORD=<admin-password>
@@ -257,81 +405,23 @@ ADMIN_PASSWORD=<admin-password>
 
 ---
 
-## 10. Common Operations
+## Conventions
 
-### Add New Status Definition
-```typescript
-await createStatusDefinition({
-  scope: "global",  // or "station"
-  station_id: null, // required if scope="station"
-  label_he: "סטטוס חדש",
-  color_hex: "#3b82f6",  // must be from allowed palette
-  machine_state: "setup",  // production | setup | stoppage
-});
-```
+### Hebrew Text
+- UTF-8 encoded, no BOM
+- Literal Hebrew characters (א-ת)
+- No nikud (vowels)
+- No HTML entities or Unicode escapes
 
-### Create Session with Status Event
-```typescript
-const session = await createSession({
-  worker_id,
-  station_id,
-  job_id,
-});
-// Initial status automatically set from first global status
+### Styling
+- RTL-first: root layout `dir="rtl"`
+- shadcn/ui + TailwindCSS only
+- No custom CSS frameworks
+- Clean design: no gradients, blobs, glowing effects
+- Neutral backgrounds, 1-2 accent colors
 
-await startStatusEvent({
-  session_id: session.id,
-  status_definition_id: productionStatusId,
-});
-```
-
-### Handle Malfunction
-```typescript
-// Create malfunction
-const malfunction = await createMalfunction({
-  station_id,
-  status: "open",
-  description: "Machine stopped",
-});
-
-// Update status (enforced by trigger)
-// Valid: open → known, open → solved, known → solved
-// Invalid: solved → anything, known → open
-```
-
----
-
-## 11. Migrations Reference
-
-| Migration | Purpose |
-|-----------|---------|
-| `20251215112227_enable_rls_policies.sql` | Enable RLS on all tables |
-| `20251227233054_ensure_status_definitions.sql` | Idempotent table creation |
-| `20251227233140_add_missing_indexes.sql` | Performance indexes |
-| `20251227233201_add_protected_column.sql` | `is_protected` column |
-| `20251227233225_atomic_status_event_function.sql` | Atomic status function |
-| `20251227233718_station_type_constraint.sql` | Station type validation |
-| `20251227233746_malfunction_state_machine.sql` | State machine trigger |
-| `20251227233819_jsonb_validation.sql` | Checklist JSONB validation |
-
----
-
-## 12. Troubleshooting
-
-### Status Event Creation Fails
-- Verify `status_definition_id` exists and is allowed for station
-- Check `create_status_event_atomic` function exists in database
-- Ensure session is active
-
-### Protected Status Cannot Be Modified
-- Check `is_protected` column in `status_definitions`
-- Protected labels: אחר, ייצור, תקלה
-
-### Malfunction Transition Rejected
-- State machine enforces: open → known → solved
-- Cannot revert from `solved` or `known` → `open`
-
-### Session Not Closing
-- Check `last_seen_at` timestamp
-- Verify cron job is running
-- Grace period is 5 minutes from last heartbeat
+### Code Style
+- Early returns for readability
+- `handle` prefix for event handlers
+- Const arrow functions over function declarations
+- Tailwind classes only, no inline styles

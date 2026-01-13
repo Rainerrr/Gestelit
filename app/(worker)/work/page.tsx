@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { PageHeader } from "@/components/layout/page-header";
@@ -33,22 +33,32 @@ import { Input } from "@/components/ui/input";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useWorkerSession } from "@/contexts/WorkerSessionContext";
 import {
+  PipelineProvider,
+  usePipelineContext,
+} from "@/contexts/PipelineContext";
+import {
   createReportApi,
+  createStatusEventWithReportApi,
   fetchReportReasonsApi,
   startStatusEventApi,
+  takeoverSessionApi,
   updateSessionTotalsApi,
 } from "@/lib/api/client";
 import { getActiveStationReasons } from "@/lib/data/station-reasons";
+import { ProductionPipeline, type PipelineStation } from "@/components/work/production-pipeline";
 import {
   buildStatusDictionary,
   getStatusHex,
   getStatusLabel,
+  sortStatusDefinitions,
 } from "@/lib/status";
 import { cn } from "@/lib/utils";
+import { getOrCreateInstanceId } from "@/lib/utils/instance-id";
+import { updatePersistedTotals } from "@/lib/utils/session-storage";
 import type { ReportReason, StationReason, StatusDefinition } from "@/lib/types";
 import { useSessionHeartbeat } from "@/hooks/useSessionHeartbeat";
+import { useSessionBroadcast } from "@/hooks/useSessionBroadcast";
 import { fetchStationStatusesApi } from "@/lib/api/client";
-import { useRef } from "react";
 
 type StatusVisual = {
   dotColor: string;
@@ -102,6 +112,46 @@ function formatDuration(elapsedSeconds: number) {
 }
 
 export default function WorkPage() {
+  const { worker, station, job, sessionId } = useWorkerSession();
+  const router = useRouter();
+
+  // Route guards - must come before any conditional returns that use hooks
+  useEffect(() => {
+    if (!worker) {
+      router.replace("/login");
+      return;
+    }
+    if (worker && !station) {
+      router.replace("/station");
+      return;
+    }
+    if (worker && station && !job) {
+      router.replace("/job");
+      return;
+    }
+    if (worker && station && job && !sessionId) {
+      router.replace("/job");
+    }
+  }, [worker, station, job, sessionId, router]);
+
+  // Guard render - don't render content until session is ready
+  if (!worker || !station || !job || !sessionId) {
+    return null;
+  }
+
+  // Wrap with PipelineProvider so inner content can use usePipelineContext()
+  return (
+    <PipelineProvider sessionId={sessionId}>
+      <WorkPageContent />
+    </PipelineProvider>
+  );
+}
+
+/**
+ * Inner component that uses the pipeline context.
+ * Must be rendered inside PipelineProvider.
+ */
+function WorkPageContent() {
   const router = useRouter();
   const { t, language } = useTranslation();
   const {
@@ -145,6 +195,23 @@ export default function WorkPage() {
   const [isGeneralReportSubmitting, setIsGeneralReportSubmitting] = useState(false);
   const [generalReportError, setGeneralReportError] = useState<string | null>(null);
   const [pendingGeneralStatusId, setPendingGeneralStatusId] = useState<string | null>(null);
+
+  // Pipeline context from real-time SSE provider (now inside PipelineProvider)
+  const pipelineContext = usePipelineContext();
+
+  // DEBUG: Log pipeline context to trace the issue
+  useEffect(() => {
+    console.log("[WorkPageContent] Pipeline context:", {
+      jobItem: pipelineContext.jobItem,
+      isProductionLine: pipelineContext.isProductionLine,
+      isSingleStation: pipelineContext.isSingleStation,
+      connectionState: pipelineContext.connectionState,
+      currentPosition: pipelineContext.currentPosition,
+      prevStation: pipelineContext.prevStation,
+      nextStation: pipelineContext.nextStation,
+    });
+  }, [pipelineContext]);
+
   const reasons = useMemo<StationReason[]>(
     () => getActiveStationReasons(station?.station_reasons ?? []),
     [station?.station_reasons],
@@ -172,49 +239,71 @@ export default function WorkPage() {
       })
       .finally(() => setStatusesLoading(false));
   }, [station?.id, statuses.length, isStatusesLoading, setStatuses]);
-  useEffect(() => {
-    if (!faultReason && reasons.length > 0) {
-      setFaultReason(reasons[0].id);
-    }
-  }, [faultReason, reasons]);
+  // NOTE: We intentionally do NOT auto-select the first reason
+  // to force workers to explicitly pick a reason for reports
 
-  useEffect(() => {
-    if (!worker) {
-      router.replace("/login");
-      return;
-    }
-    if (worker && !station) {
-      router.replace("/station");
-      return;
-    }
-    if (worker && station && !job) {
-      router.replace("/job");
-      return;
-    }
-    if (worker && station && job && !sessionId) {
-      router.replace("/job");
-    }
-  }, [worker, station, job, sessionId, router]);
+  // Generate instance ID for this tab
+  const instanceId = useMemo(() => getOrCreateInstanceId(), []);
 
-  useSessionHeartbeat(sessionId);
+  // Track whether this tab has successfully claimed the session
+  const [isTakeoverComplete, setIsTakeoverComplete] = useState(false);
+
+  // Handle session takeover (another tab/device took over)
+  const handleSessionTakeover = useCallback(() => {
+    router.replace("/session-transferred");
+  }, [router]);
+
+  // Claim session on mount (takeover from any previous instance)
+  // MUST complete before heartbeat starts to avoid race condition
+  useEffect(() => {
+    if (!sessionId || !instanceId) return;
+
+    let cancelled = false;
+
+    const claimSession = async () => {
+      try {
+        await takeoverSessionApi(sessionId, instanceId);
+        if (!cancelled) {
+          setIsTakeoverComplete(true);
+        }
+      } catch (err) {
+        console.warn("[work] Failed to claim session:", err);
+        // Still mark as complete to allow heartbeat to run
+        // The heartbeat will handle the mismatch if takeover truly failed
+        if (!cancelled) {
+          setIsTakeoverComplete(true);
+        }
+      }
+    };
+
+    void claimSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, instanceId]);
+
+  // Heartbeat with instance validation
+  // Only start AFTER takeover is complete to avoid race condition
+  useSessionHeartbeat({
+    sessionId: isTakeoverComplete ? sessionId : undefined,
+    instanceId,
+    onInstanceMismatch: handleSessionTakeover,
+  });
+
+  // Cross-tab coordination via BroadcastChannel
+  useSessionBroadcast(sessionId, instanceId, handleSessionTakeover);
 
   const formatReason = (reason: StationReason) =>
     language === "he" ? reason.label_he : reason.label_ru;
 
   const orderedStatuses = useMemo(() => {
-    const globals = Array.from(dictionary.global.values()).sort(
-      (a, b) =>
-        new Date(a.created_at ?? 0).getTime() -
-        new Date(b.created_at ?? 0).getTime(),
-    );
+    const globals = Array.from(dictionary.global.values());
     const stationSpecific = station?.id
-      ? Array.from(dictionary.station.get(station.id)?.values() ?? []).sort(
-          (a, b) =>
-            new Date(a.created_at ?? 0).getTime() -
-            new Date(b.created_at ?? 0).getTime(),
-        )
+      ? Array.from(dictionary.station.get(station.id)?.values() ?? [])
       : [];
-    return [...globals, ...stationSpecific];
+    // Sort: stoppage → production → malfunction → global → station → other
+    return sortStatusDefinitions([...globals, ...stationSpecific]);
   }, [dictionary, station?.id]);
 
   const getStatusDefinition = (statusId: string): StatusDefinition | undefined => {
@@ -226,6 +315,8 @@ export default function WorkPage() {
     return undefined;
   };
 
+  // These are guaranteed to exist by the guard in WorkPage
+  // but TypeScript needs help knowing that
   if (!worker || !station || !job || !sessionId) {
     return null;
   }
@@ -246,27 +337,29 @@ export default function WorkPage() {
       return;
     }
 
-    // Check the report_type to determine dialog
+    // Check the target status's report_type to determine if a report dialog is needed
+    // Handle empty strings and null/undefined - only valid values are "malfunction", "general", or "none"
     const statusDef = getStatusDefinition(statusId);
-    const reportType = statusDef?.report_type ?? "none";
+    const rawReportType = statusDef?.report_type;
+    const reportType = (rawReportType === "malfunction" || rawReportType === "general")
+      ? rawReportType
+      : "none";
 
+    // If target status requires a report and none provided, open the appropriate dialog
     if (reportType === "malfunction" && !reportId) {
-      // Store the pending status and open the malfunction dialog
       setPendingStatusId(statusId);
       setFaultDialogOpen(true);
       return;
     }
 
     if (reportType === "general" && !reportId) {
-      // Store the pending status and open the general report dialog
       setPendingGeneralStatusId(statusId);
       // Fetch report reasons if not already loaded
       if (generalReportReasons.length === 0) {
         fetchReportReasonsApi().then((reasons) => {
           setGeneralReportReasons(reasons);
-          if (reasons.length > 0 && !generalReportReason) {
-            setGeneralReportReason(reasons[0].id);
-          }
+          // NOTE: We intentionally do NOT auto-select the first reason
+          // to force workers to explicitly pick a reason
         }).catch(console.error);
       }
       setGeneralReportDialogOpen(true);
@@ -286,24 +379,39 @@ export default function WorkPage() {
     }
   };
 
-  const syncTotals = (key: "good" | "scrap", next: number) => {
+  const syncTotals = (key: "good" | "scrap", next: number, previous: number) => {
     if (!sessionId) {
       return;
     }
     setProductionError(null);
-    updateSessionTotalsApi(
-      sessionId,
-      key === "good" ? { total_good: next } : { total_scrap: next },
-    ).catch(() => {
-      setProductionError(t("work.error.production"));
+    // IMPORTANT: Always send BOTH totals to the API.
+    // The RPC function calculates deltas, so sending only one value
+    // would cause the other to be interpreted as 0 (massive reversal).
+    const newTotals = {
+      total_good: key === "good" ? next : totals.good,
+      total_scrap: key === "scrap" ? next : totals.scrap,
+    };
+    updateSessionTotalsApi(sessionId, newTotals).catch((error) => {
+      const errorMsg = error instanceof Error ? error.message : "";
+      if (errorMsg === "WIP_DOWNSTREAM_CONSUMED") {
+        // Revert local state when downstream has already consumed the WIP
+        setLocalTotal(key, previous);
+        setProductionError(t("work.error.wipDownstreamConsumed"));
+      } else {
+        setProductionError(t("work.error.production"));
+      }
     });
   };
 
   const setLocalTotal = (key: "good" | "scrap", value: number) => {
     if (key === "good") {
       updateTotals({ good: value });
+      // Persist updated totals to sessionStorage for refresh recovery
+      updatePersistedTotals({ good: value, scrap: totals.scrap });
     } else {
       updateTotals({ scrap: value });
+      // Persist updated totals to sessionStorage for refresh recovery
+      updatePersistedTotals({ good: totals.good, scrap: value });
     }
   };
 
@@ -314,7 +422,7 @@ export default function WorkPage() {
       return;
     }
     setLocalTotal(key, next);
-    syncTotals(key, next);
+    syncTotals(key, next, current);
   };
 
   const handleManualCountChange = (key: "good" | "scrap", rawValue: string) => {
@@ -322,12 +430,13 @@ export default function WorkPage() {
     if (Number.isNaN(parsed)) {
       return;
     }
+    const current = totals[key];
     const next = Math.max(0, Math.floor(parsed));
-    if (next === totals[key]) {
+    if (next === current) {
       return;
     }
     setLocalTotal(key, next);
-    syncTotals(key, next);
+    syncTotals(key, next, current);
   };
 
   const handleFaultImageChange = (file: File | null) => {
@@ -355,29 +464,43 @@ export default function WorkPage() {
   };
 
   const handleGeneralReportSubmit = async () => {
-    if (!sessionId || !station) return;
+    if (!sessionId || !station || !generalReportReason) return;
     setGeneralReportError(null);
     setIsGeneralReportSubmitting(true);
     try {
-      const report = await createReportApi({
-        type: "general",
-        sessionId,
-        stationId: station.id,
-        reportReasonId: generalReportReason,
-        description: generalReportNote,
-        image: generalReportImage,
-        workerId: worker?.id,
-      });
+      if (pendingGeneralStatusId) {
+        // Use atomic endpoint - status change + report in one transaction
+        // If report fails, status change is rolled back
+        await createStatusEventWithReportApi({
+          sessionId,
+          statusDefinitionId: pendingGeneralStatusId,
+          reportType: "general",
+          stationId: station.id,
+          reportReasonId: generalReportReason,
+          description: generalReportNote,
+          image: generalReportImage,
+          workerId: worker?.id,
+        });
+        // Only update UI status after successful atomic operation
+        setCurrentStatus(pendingGeneralStatusId);
+      } else {
+        // No status change - just create the report
+        await createReportApi({
+          type: "general",
+          sessionId,
+          stationId: station.id,
+          reportReasonId: generalReportReason,
+          description: generalReportNote,
+          image: generalReportImage,
+          workerId: worker?.id,
+        });
+      }
+
       setGeneralReportDialogOpen(false);
       setGeneralReportReason(undefined);
       setGeneralReportNote("");
       handleGeneralReportImageChange(null);
-
-      // If there's a pending status change, complete it with the report ID
-      if (pendingGeneralStatusId) {
-        await handleStatusChange(pendingGeneralStatusId, report.id);
-        setPendingGeneralStatusId(null);
-      }
+      setPendingGeneralStatusId(null);
     } catch {
       setGeneralReportError(t("work.error.report"));
     } finally {
@@ -478,122 +601,32 @@ export default function WorkPage() {
           </Card>
 
           <Card className="rounded-xl border border-border bg-card/50 backdrop-blur-sm">
-            <CardHeader className="text-right">
+            <CardHeader className="pb-3 text-right">
               <CardTitle className="text-foreground">{t("work.section.production")}</CardTitle>
-              <CardDescription className="text-muted-foreground">
-                {t("work.counters.good")} / {t("work.counters.scrap")}
-              </CardDescription>
             </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-2">
-              <div className="overflow-hidden rounded-xl border border-emerald-600/30 bg-emerald-50 dark:border-emerald-500/20 dark:bg-emerald-500/5">
-                <div className="p-4 pb-3 text-right">
-                  <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">
-                    {t("work.counters.good")}
-                  </p>
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    min={0}
-                    value={totals.good}
-                    onChange={(event) =>
-                      handleManualCountChange("good", event.target.value)
-                    }
-                    className="mt-3 w-full appearance-none rounded-xl border border-emerald-600/30 bg-white py-6 text-center text-7xl font-semibold leading-tight text-emerald-600 outline-none transition focus:border-emerald-600/50 focus:ring-0 dark:border-emerald-500/30 dark:bg-card dark:text-emerald-400 dark:focus:border-emerald-500/50 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                  />
-                </div>
-                <div className="flex border-t border-emerald-600/20 bg-emerald-50 dark:border-emerald-500/20 dark:bg-emerald-500/5">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="h-14 flex-1 rounded-none border-l border-emerald-600/20 text-lg font-semibold text-slate-500 hover:bg-emerald-100 hover:text-slate-700 dark:border-emerald-500/20 dark:text-muted-foreground dark:hover:bg-accent dark:hover:text-foreground"
-                    onClick={() => handleCountDelta("good", -10)}
-                  >
-                    -10
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="h-14 flex-1 rounded-none border-l border-emerald-600/20 text-lg font-semibold text-slate-500 hover:bg-emerald-100 hover:text-slate-700 dark:border-emerald-500/20 dark:text-muted-foreground dark:hover:bg-accent dark:hover:text-foreground"
-                    onClick={() => handleCountDelta("good", -1)}
-                  >
-                    -1
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="h-14 flex-1 rounded-none border-l border-emerald-600/20 text-lg font-semibold text-emerald-600 hover:bg-emerald-100 hover:text-emerald-700 dark:border-emerald-500/20 dark:text-emerald-400 dark:hover:bg-emerald-500/20 dark:hover:text-emerald-300"
-                    onClick={() => handleCountDelta("good", 1)}
-                  >
-                    +1
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="h-14 flex-1 rounded-none text-lg font-semibold text-emerald-600 hover:bg-emerald-100 hover:text-emerald-700 dark:text-emerald-400 dark:hover:bg-emerald-500/20 dark:hover:text-emerald-300"
-                    onClick={() => handleCountDelta("good", 10)}
-                  >
-                    +10
-                  </Button>
-                </div>
-              </div>
-
-              <div className="overflow-hidden rounded-xl border border-rose-600/30 bg-rose-50 dark:border-rose-500/20 dark:bg-rose-500/5">
-                <div className="p-4 pb-3 text-right">
-                  <p className="text-sm font-medium text-rose-600 dark:text-rose-400">
-                    {t("work.counters.scrap")}
-                  </p>
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    min={0}
-                    value={totals.scrap}
-                    onChange={(event) =>
-                      handleManualCountChange("scrap", event.target.value)
-                    }
-                    className="mt-3 w-full appearance-none rounded-xl border border-rose-600/30 bg-white py-6 text-center text-7xl font-semibold leading-tight text-rose-600 outline-none transition focus:border-rose-600/50 focus:ring-0 dark:border-rose-500/30 dark:bg-card dark:text-rose-400 dark:focus:border-rose-500/50 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                  />
-                </div>
-                <div className="flex border-t border-rose-600/20 bg-rose-50 dark:border-rose-500/20 dark:bg-rose-500/5">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="h-14 flex-1 rounded-none border-l border-rose-600/20 text-lg font-semibold text-slate-500 hover:bg-rose-100 hover:text-slate-700 dark:border-rose-500/20 dark:text-muted-foreground dark:hover:bg-accent dark:hover:text-foreground"
-                    onClick={() => handleCountDelta("scrap", -10)}
-                  >
-                    -10
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="h-14 flex-1 rounded-none border-l border-rose-600/20 text-lg font-semibold text-slate-500 hover:bg-rose-100 hover:text-slate-700 dark:border-rose-500/20 dark:text-muted-foreground dark:hover:bg-accent dark:hover:text-foreground"
-                    onClick={() => handleCountDelta("scrap", -1)}
-                  >
-                    -1
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="h-14 flex-1 rounded-none border-l border-rose-600/20 text-lg font-semibold text-rose-600 hover:bg-rose-100 hover:text-rose-700 dark:border-rose-500/20 dark:text-rose-400 dark:hover:bg-rose-500/20 dark:hover:text-rose-300"
-                    onClick={() => handleCountDelta("scrap", 1)}
-                  >
-                    +1
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="h-14 flex-1 rounded-none text-lg font-semibold text-rose-600 hover:bg-rose-100 hover:text-rose-700 dark:text-rose-400 dark:hover:bg-rose-500/20 dark:hover:text-rose-300"
-                    onClick={() => handleCountDelta("scrap", 10)}
-                  >
-                    +10
-                  </Button>
-                </div>
-              </div>
+            <CardContent>
+              {station && (
+                <ProductionPipeline
+                  currentStation={station}
+                  currentPosition={pipelineContext.currentPosition}
+                  isTerminal={pipelineContext.isTerminal}
+                  prevStation={pipelineContext.prevStation as PipelineStation | null}
+                  nextStation={pipelineContext.nextStation as PipelineStation | null}
+                  upstreamWip={pipelineContext.upstreamWip}
+                  waitingOutput={pipelineContext.waitingOutput}
+                  goodCount={totals.good}
+                  scrapCount={totals.scrap}
+                  onGoodChange={(delta) => handleCountDelta("good", delta)}
+                  onGoodSet={(value) => handleManualCountChange("good", String(value))}
+                  onScrapChange={(delta) => handleCountDelta("scrap", delta)}
+                  onScrapSet={(value) => handleManualCountChange("scrap", String(value))}
+                  error={productionError}
+                  isSingleStation={pipelineContext.isSingleStation}
+                  isLegacy={!pipelineContext.jobItem}
+                  lastUpdated={pipelineContext.lastUpdated}
+                />
+              )}
             </CardContent>
-            {productionError ? (
-              <p className="px-6 pb-4 text-right text-sm text-rose-600 dark:text-rose-400">
-                {productionError}
-              </p>
-            ) : null}
           </Card>
         </div>
 
@@ -642,7 +675,10 @@ export default function WorkPage() {
         </div>
       </section>
 
-      <Dialog open={isFaultDialogOpen} onOpenChange={setFaultDialogOpen}>
+      <Dialog open={isFaultDialogOpen} onOpenChange={(open) => {
+        setFaultDialogOpen(open);
+        if (!open) setPendingStatusId(null);
+      }}>
         <DialogContent dir="rtl" className="border-border bg-card">
           <DialogHeader>
             <DialogTitle className="text-foreground">{t("work.dialog.fault.title")}</DialogTitle>
@@ -737,32 +773,45 @@ export default function WorkPage() {
             <Button
               type="button"
               className="bg-primary font-medium text-primary-foreground hover:bg-primary/90"
-              disabled={isFaultSubmitting}
+              disabled={isFaultSubmitting || !faultReason}
               onClick={async () => {
-                if (!station) return;
+                if (!station || !faultReason) return;
                 setFaultError(null);
                 setIsFaultSubmitting(true);
                 try {
-                  const report = await createReportApi({
-                    type: "malfunction",
-                    stationId: station.id,
-                    stationReasonId: faultReason,
-                    description: faultNote,
-                    image: faultImage,
-                    workerId: worker?.id,
-                    sessionId: sessionId,
-                  });
+                  if (pendingStatusId) {
+                    // Use atomic endpoint - status change + report in one transaction
+                    // If report fails, status change is rolled back
+                    await createStatusEventWithReportApi({
+                      sessionId,
+                      statusDefinitionId: pendingStatusId,
+                      reportType: "malfunction",
+                      stationId: station.id,
+                      stationReasonId: faultReason,
+                      description: faultNote,
+                      image: faultImage,
+                      workerId: worker?.id,
+                    });
+                    // Only update UI status after successful atomic operation
+                    setCurrentStatus(pendingStatusId);
+                  } else {
+                    // No status change - just create the report
+                    await createReportApi({
+                      type: "malfunction",
+                      stationId: station.id,
+                      stationReasonId: faultReason,
+                      description: faultNote,
+                      image: faultImage,
+                      workerId: worker?.id,
+                      sessionId: sessionId,
+                    });
+                  }
+
                   setFaultDialogOpen(false);
                   setFaultReason(undefined);
                   setFaultNote("");
                   handleFaultImageChange(null);
-
-                  // If there's a pending status change that required malfunction report,
-                  // now complete the status change with the report ID
-                  if (pendingStatusId) {
-                    await handleStatusChange(pendingStatusId, report.id);
-                    setPendingStatusId(null);
-                  }
+                  setPendingStatusId(null);
                 } catch {
                   setFaultError(t("work.error.fault"));
                 } finally {
@@ -780,7 +829,10 @@ export default function WorkPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isGeneralReportDialogOpen} onOpenChange={setGeneralReportDialogOpen}>
+      <Dialog open={isGeneralReportDialogOpen} onOpenChange={(open) => {
+        setGeneralReportDialogOpen(open);
+        if (!open) setPendingGeneralStatusId(null);
+      }}>
         <DialogContent dir="rtl" className="border-border bg-card">
           <DialogHeader>
             <DialogTitle className="text-foreground">{t("work.dialog.report.title")}</DialogTitle>
@@ -875,7 +927,7 @@ export default function WorkPage() {
             <Button
               type="button"
               className="bg-primary font-medium text-primary-foreground hover:bg-primary/90"
-              disabled={isGeneralReportSubmitting}
+              disabled={isGeneralReportSubmitting || !generalReportReason}
               onClick={() => void handleGeneralReportSubmit()}
             >
               {isGeneralReportSubmitting

@@ -93,17 +93,41 @@ export async function logoutAdmin(): Promise<void> {
 }
 
 // ============================================
-// WORKER AUTH (localStorage-based)
+// WORKER AUTH (sessionStorage preferred, localStorage fallback)
 // ============================================
 
+const SESSION_STATE_KEY = "gestelit_session_state";
+
 /**
- * Get worker code from localStorage or context
- * Workers are stored in the WorkerSessionContext
+ * Get worker code for API authentication.
+ *
+ * IMPORTANT: Prefers sessionStorage (per-tab) over localStorage (shared).
+ * This prevents 403 errors when a different worker logged in previously,
+ * which would overwrite the shared localStorage value.
+ *
+ * Priority:
+ * 1. sessionStorage session state (per-tab, most reliable)
+ * 2. localStorage workerCode (fallback for initial login before session)
  */
 export function getWorkerCode(): string | null {
   if (typeof window === "undefined") {
     return null;
   }
+
+  // Prefer per-tab sessionStorage (stored with active session)
+  try {
+    const sessionState = sessionStorage.getItem(SESSION_STATE_KEY);
+    if (sessionState) {
+      const parsed = JSON.parse(sessionState) as { workerCode?: string };
+      if (parsed?.workerCode) {
+        return parsed.workerCode;
+      }
+    }
+  } catch {
+    // Fall through to localStorage
+  }
+
+  // Fallback to localStorage (used during initial login before session creation)
   return window.localStorage.getItem("workerCode") ?? null;
 }
 
