@@ -336,19 +336,24 @@ const SessionRow = memo(
         {/* Divider after flags */}
         <div className="w-px h-8 bg-border" />
 
-        {/* Time + Progress */}
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-1.5 text-muted-foreground">
-            <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-            <span className="font-mono text-sm tabular-nums">{duration}</span>
-          </div>
+        {/* Time */}
+        <div className="flex items-center gap-1.5 text-muted-foreground shrink-0">
+          <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="font-mono text-sm tabular-nums">{duration}</span>
+        </div>
 
-          {/* Progress bar: completed / required */}
-          {stationProgress ? (
-            <div className="flex items-center gap-2 min-w-[120px]">
-              <div className="flex-1 h-2 bg-zinc-800 rounded-full overflow-hidden">
+        {/* Progress bar: integrated text overlay design */}
+        {stationProgress ? (
+          <div className="flex flex-col items-center min-w-[160px] w-[180px]">
+            {/* Job item name - centered above progress bar */}
+            <span className="text-xs text-muted-foreground truncate w-full text-center leading-tight mb-0.5" title={stationProgress.jobItemName}>
+              {stationProgress.jobItemName}
+            </span>
+            <div className="relative w-full">
+              {/* Progress bar background */}
+              <div className="h-5 bg-zinc-800/80 rounded overflow-hidden">
                 <div
-                  className="h-full bg-emerald-500 rounded-full transition-all"
+                  className="h-full bg-emerald-500/30 transition-all duration-300"
                   style={{
                     width: `${Math.min(100, stationProgress.plannedQuantity > 0
                       ? (stationProgress.totalCompleted / stationProgress.plannedQuantity) * 100
@@ -356,29 +361,34 @@ const SessionRow = memo(
                   }}
                 />
               </div>
-              <span className="font-mono text-xs tabular-nums text-muted-foreground whitespace-nowrap">
-                {stationProgress.totalCompleted.toLocaleString()}/{stationProgress.plannedQuantity.toLocaleString()}
-              </span>
+              {/* Text overlay */}
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="font-mono text-xs tabular-nums text-foreground/90 font-medium">
+                  {stationProgress.totalCompleted.toLocaleString()}
+                  <span className="text-muted-foreground mx-0.5">/</span>
+                  {stationProgress.plannedQuantity.toLocaleString()}
+                </span>
+              </div>
             </div>
-          ) : (
-            <div className="flex items-center gap-1.5">
-              <Package className="h-3.5 w-3.5 text-emerald-500" />
-              <span className="font-mono text-sm tabular-nums text-emerald-400">{session.totalGood}</span>
-            </div>
-          )}
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 min-w-[80px]">
+            <Package className="h-3.5 w-3.5 text-emerald-500" />
+            <span className="font-mono text-sm tabular-nums text-emerald-400">{session.totalGood.toLocaleString()}</span>
+          </div>
+        )}
 
-          {/* Scrap - only show if there's scrap, with link to reports */}
-          {session.totalScrap > 0 && (
-            <Link
-              href={`/admin/reports/scrap?sessionId=${session.id}`}
-              onClick={(e) => e.stopPropagation()}
-              className="flex items-center gap-1.5 hover:bg-red-500/10 px-1.5 py-0.5 rounded transition-colors"
-            >
-              <Trash2 className="h-3.5 w-3.5 text-red-500" />
-              <span className="font-mono text-sm tabular-nums text-red-400">{session.totalScrap}</span>
-            </Link>
-          )}
-        </div>
+        {/* Scrap - only show if there's scrap, with link to reports */}
+        {session.totalScrap > 0 && (
+          <Link
+            href={`/admin/reports/scrap?sessionId=${session.id}`}
+            onClick={(e) => e.stopPropagation()}
+            className="flex items-center gap-1.5 hover:bg-red-500/10 px-1.5 py-0.5 rounded transition-colors shrink-0"
+          >
+            <Trash2 className="h-3.5 w-3.5 text-red-500" />
+            <span className="font-mono text-sm tabular-nums text-red-400">{session.totalScrap.toLocaleString()}</span>
+          </Link>
+        )}
 
         {/* Navigation arrow */}
         <ChevronLeft className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -442,8 +452,6 @@ const MobileSessionCard = memo(
     const statusStyle = getStatusStyle(statusHex);
 
     const hasMalfunctions = session.malfunctionCount > 0;
-    const hasPerformanceFlags = flags && hasAnyFlag(flags);
-    const hasAnyFlags = hasMalfunctions || isIdle || hasPerformanceFlags;
 
     return (
       <div
@@ -610,32 +618,44 @@ const MobileSessionCard = memo(
                 className="flex items-center gap-1.5 hover:bg-red-500/10 px-2 py-1 rounded transition-colors"
               >
                 <Trash2 className="h-4 w-4 text-red-500" />
-                <span className="font-mono text-sm tabular-nums text-red-400 font-medium">{session.totalScrap}</span>
+                <span className="font-mono text-sm tabular-nums text-red-400 font-medium">{session.totalScrap.toLocaleString()}</span>
               </Link>
             )}
           </div>
 
-          {/* Progress bar: completed / required */}
+          {/* Progress bar: integrated text overlay design for mobile */}
           {stationProgress ? (
-            <div className="flex items-center gap-2">
-              <div className="flex-1 h-2.5 bg-zinc-800 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-emerald-500 rounded-full transition-all"
-                  style={{
-                    width: `${Math.min(100, stationProgress.plannedQuantity > 0
-                      ? (stationProgress.totalCompleted / stationProgress.plannedQuantity) * 100
-                      : 0)}%`,
-                  }}
-                />
-              </div>
-              <span className="font-mono text-xs tabular-nums text-muted-foreground whitespace-nowrap">
-                {stationProgress.totalCompleted.toLocaleString()}/{stationProgress.plannedQuantity.toLocaleString()}
+            <div className="flex flex-col gap-1 w-full">
+              {/* Job item name */}
+              <span className="text-xs text-muted-foreground truncate" title={stationProgress.jobItemName}>
+                {stationProgress.jobItemName}
               </span>
+              <div className="relative w-full">
+                {/* Progress bar background */}
+                <div className="h-7 bg-zinc-800/80 rounded overflow-hidden">
+                  <div
+                    className="h-full bg-emerald-500/30 transition-all duration-300"
+                    style={{
+                      width: `${Math.min(100, stationProgress.plannedQuantity > 0
+                        ? (stationProgress.totalCompleted / stationProgress.plannedQuantity) * 100
+                        : 0)}%`,
+                    }}
+                  />
+                </div>
+                {/* Text overlay */}
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="font-mono text-sm tabular-nums text-foreground/90 font-medium">
+                    {stationProgress.totalCompleted.toLocaleString()}
+                    <span className="text-muted-foreground mx-1">/</span>
+                    {stationProgress.plannedQuantity.toLocaleString()}
+                  </span>
+                </div>
+              </div>
             </div>
           ) : (
             <div className="flex items-center gap-1.5">
               <Package className="h-4 w-4 text-emerald-500" />
-              <span className="font-mono text-sm tabular-nums text-emerald-400 font-medium">{session.totalGood}</span>
+              <span className="font-mono text-sm tabular-nums text-emerald-400 font-medium">{session.totalGood.toLocaleString()}</span>
             </div>
           )}
         </div>

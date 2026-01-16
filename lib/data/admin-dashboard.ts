@@ -174,6 +174,40 @@ export const fetchMalfunctionCountsBySessionIds = async (
   return countMap;
 };
 
+/**
+ * Fetch derived totals (totalGood, totalScrap) for multiple sessions
+ * Uses v_session_derived_totals view which sums from status_events
+ */
+const fetchDerivedTotalsBySessionIds = async (
+  sessionIds: string[],
+): Promise<Map<string, { totalGood: number; totalScrap: number }>> => {
+  if (sessionIds.length === 0) {
+    return new Map();
+  }
+
+  const supabase = createServiceSupabase();
+  const { data, error } = await supabase
+    .from("v_session_derived_totals")
+    .select("session_id, total_good, total_scrap")
+    .in("session_id", sessionIds);
+
+  if (error) {
+    console.error("[admin-dashboard] Failed to fetch derived totals", error);
+    return new Map();
+  }
+
+  const totalsMap = new Map<string, { totalGood: number; totalScrap: number }>();
+  for (const row of data ?? []) {
+    if (row.session_id) {
+      totalsMap.set(row.session_id, {
+        totalGood: row.total_good ?? 0,
+        totalScrap: row.total_scrap ?? 0,
+      });
+    }
+  }
+  return totalsMap;
+};
+
 export const fetchActiveSessions = async (): Promise<ActiveSession[]> => {
   const supabase = createServiceSupabase();
 
@@ -212,12 +246,13 @@ export const fetchActiveSessions = async (): Promise<ActiveSession[]> => {
     rows.map((r) => ({ id: r.id, status: r.status, ended_at: r.ended_at })),
   );
 
-  // Fetch malfunction counts, stoppage times, and setup times for all sessions (in parallel)
+  // Fetch malfunction counts, stoppage times, setup times, and derived totals for all sessions (in parallel)
   const sessionIds = rows.map((row) => row.id);
-  const [malfunctionCounts, stoppageTimes, setupTimes] = await Promise.all([
+  const [malfunctionCounts, stoppageTimes, setupTimes, derivedTotals] = await Promise.all([
     fetchMalfunctionCountsBySessionIds(sessionIds),
     fetchStoppageTimeBySessionIds(sessionIds),
     fetchSetupTimeBySessionIds(sessionIds),
+    fetchDerivedTotalsBySessionIds(sessionIds),
   ]);
 
   return rows.map((row) =>
@@ -227,6 +262,7 @@ export const fetchActiveSessions = async (): Promise<ActiveSession[]> => {
       malfunctionCounts.get(row.id) ?? 0,
       stoppageTimes.get(row.id) ?? 0,
       setupTimes.get(row.id) ?? 0,
+      derivedTotals.get(row.id),
     ),
   );
 };
@@ -273,11 +309,12 @@ export const fetchActiveSessionById = async (
     return null;
   }
 
-  // Fetch malfunction count, stoppage time, and setup time for this session (in parallel)
-  const [malfunctionCounts, stoppageTimes, setupTimes] = await Promise.all([
+  // Fetch malfunction count, stoppage time, setup time, and derived totals for this session (in parallel)
+  const [malfunctionCounts, stoppageTimes, setupTimes, derivedTotals] = await Promise.all([
     fetchMalfunctionCountsBySessionIds([row.id]),
     fetchStoppageTimeBySessionIds([row.id]),
     fetchSetupTimeBySessionIds([row.id]),
+    fetchDerivedTotalsBySessionIds([row.id]),
   ]);
 
   return mapActiveSession(
@@ -286,6 +323,7 @@ export const fetchActiveSessionById = async (
     malfunctionCounts.get(row.id) ?? 0,
     stoppageTimes.get(row.id) ?? 0,
     setupTimes.get(row.id) ?? 0,
+    derivedTotals.get(row.id),
   );
 };
 
