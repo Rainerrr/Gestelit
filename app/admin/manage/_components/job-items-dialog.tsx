@@ -15,35 +15,30 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   CheckCircle2,
   Package,
   Plus,
   Trash2,
-  GitBranch,
-  Cpu,
+  Workflow,
 } from "lucide-react";
 import type {
   Job,
-  JobItemKind,
   JobItemWithDetails,
-  ProductionLineWithStations,
+  PipelinePresetWithSteps,
   Station,
 } from "@/lib/types";
 import {
   createJobItemAdminApi,
   deleteJobItemAdminApi,
   fetchJobItemsAdminApi,
-  fetchProductionLinesAdminApi,
+  fetchPipelinePresetsAdminApi,
   fetchStationsAdminApi,
   updateJobItemAdminApi,
 } from "@/lib/api/admin-management";
+import {
+  PipelineFlowEditor,
+  type PipelineStation,
+} from "@/components/admin/pipeline-flow-editor";
 
 type JobItemsDialogProps = {
   job: Job | null;
@@ -57,19 +52,20 @@ export const JobItemsDialog = ({
   onOpenChange,
 }: JobItemsDialogProps) => {
   const [items, setItems] = useState<JobItemWithDetails[]>([]);
-  const [productionLines, setProductionLines] = useState<ProductionLineWithStations[]>([]);
+  const [pipelinePresets, setPipelinePresets] = useState<PipelinePresetWithSteps[]>([]);
   const [stations, setStations] = useState<Station[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // New item form state
-  const [newItemKind, setNewItemKind] = useState<JobItemKind>("station");
-  const [newItemStationId, setNewItemStationId] = useState<string>("");
-  const [newItemLineId, setNewItemLineId] = useState<string>("");
-  const [newItemQuantity, setNewItemQuantity] = useState<string>("");
+  // New product form state
   const [showAddForm, setShowAddForm] = useState(false);
+  const [newProductName, setNewProductName] = useState("");
+  const [newProductQuantity, setNewProductQuantity] = useState("");
+  const [pipelineStations, setPipelineStations] = useState<PipelineStation[]>([]);
+  const [selectedPresetId, setSelectedPresetId] = useState("");
+  const [selectedStationId, setSelectedStationId] = useState("");
 
   // Edit quantity state
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
@@ -82,14 +78,14 @@ export const JobItemsDialog = ({
     setError(null);
 
     try {
-      const [itemsRes, linesRes, stationsRes] = await Promise.all([
+      const [itemsRes, presetsRes, stationsRes] = await Promise.all([
         fetchJobItemsAdminApi(job.id, { includeProgress: true, includeStations: true }),
-        fetchProductionLinesAdminApi({ includeInactive: false }),
+        fetchPipelinePresetsAdminApi({ includeInactive: false }),
         fetchStationsAdminApi(),
       ]);
 
       setItems(itemsRes.items);
-      setProductionLines(linesRes.lines);
+      setPipelinePresets(presetsRes.presets);
       setStations(stationsRes.stations.map((s) => s.station));
     } catch {
       setError("שגיאה בטעינת הנתונים");
@@ -104,21 +100,67 @@ export const JobItemsDialog = ({
     }
   }, [open, job, loadData]);
 
+  const handleLoadPreset = useCallback(() => {
+    if (!selectedPresetId) return;
+
+    const preset = pipelinePresets.find((p) => p.id === selectedPresetId);
+    if (!preset) return;
+
+    const loadedStations = preset.steps
+      .sort((a, b) => a.position - b.position)
+      .map((presetStep) => ({
+        id: presetStep.station_id,
+        station: presetStep.station!,
+        position: presetStep.position,
+      }))
+      .filter((item) => item.station);
+
+    setPipelineStations(loadedStations);
+    // Auto-fill name from preset if empty
+    if (!newProductName.trim()) {
+      setNewProductName(preset.name);
+    }
+  }, [selectedPresetId, pipelinePresets, newProductName]);
+
+  const handleAddStationToPipeline = useCallback(() => {
+    if (!selectedStationId) return;
+
+    const station = stations.find((s) => s.id === selectedStationId);
+    if (!station) return;
+
+    if (pipelineStations.some((ps) => ps.id === station.id)) {
+      setError("התחנה כבר קיימת בצינור");
+      return;
+    }
+
+    setPipelineStations((prev) => [
+      ...prev,
+      {
+        id: station.id,
+        station,
+        position: prev.length + 1,
+      },
+    ]);
+
+    setSelectedStationId("");
+    setError(null);
+  }, [selectedStationId, stations, pipelineStations]);
+
   const handleAddItem = async () => {
     if (!job) return;
 
-    if (!newItemQuantity || parseInt(newItemQuantity) <= 0) {
+    if (!newProductName.trim()) {
+      setError("יש להזין שם מוצר");
+      return;
+    }
+
+    if (!newProductQuantity || parseInt(newProductQuantity) <= 0) {
       setError("יש להזין כמות מתוכננת חיובית");
       return;
     }
 
-    if (newItemKind === "station" && !newItemStationId) {
-      setError("יש לבחור תחנה");
-      return;
-    }
-
-    if (newItemKind === "line" && !newItemLineId) {
-      setError("יש לבחור קו ייצור");
+    if (pipelineStations.length === 0) {
+      setError("יש להוסיף לפחות תחנה אחת למוצר");
       return;
     }
 
@@ -126,24 +168,25 @@ export const JobItemsDialog = ({
     setError(null);
 
     try {
+      // Post Phase 5: pipeline-only model
       await createJobItemAdminApi(job.id, {
-        kind: newItemKind,
-        station_id: newItemKind === "station" ? newItemStationId : null,
-        production_line_id: newItemKind === "line" ? newItemLineId : null,
-        planned_quantity: parseInt(newItemQuantity),
+        name: newProductName.trim(),
+        station_ids: pipelineStations.map((ps) => ps.id),
+        planned_quantity: parseInt(newProductQuantity),
       });
 
-      setSuccessMessage("הפריט נוסף בהצלחה");
+      setSuccessMessage("המוצר נוסף בהצלחה");
       setShowAddForm(false);
-      setNewItemKind("station");
-      setNewItemStationId("");
-      setNewItemLineId("");
-      setNewItemQuantity("");
+      setNewProductName("");
+      setNewProductQuantity("");
+      setPipelineStations([]);
+      setSelectedPresetId("");
+      setSelectedStationId("");
       await loadData();
 
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "שגיאה בהוספת פריט";
+      const message = err instanceof Error ? err.message : "שגיאה בהוספת מוצר";
       setError(message);
     } finally {
       setIsSaving(false);
@@ -189,14 +232,14 @@ export const JobItemsDialog = ({
     try {
       await deleteJobItemAdminApi(job.id, itemId);
 
-      setSuccessMessage("הפריט נמחק בהצלחה");
+      setSuccessMessage("המוצר נמחק בהצלחה");
       await loadData();
 
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "שגיאה במחיקת פריט";
+      const message = err instanceof Error ? err.message : "שגיאה במחיקת מוצר";
       if (message === "HAS_ACTIVE_SESSIONS") {
-        setError("לא ניתן למחוק פריט עם סשנים פעילים");
+        setError("לא ניתן למחוק מוצר עם סשנים פעילים");
       } else {
         setError(message);
       }
@@ -210,6 +253,11 @@ export const JobItemsDialog = ({
     setSuccessMessage(null);
     setShowAddForm(false);
     setEditingItemId(null);
+    setNewProductName("");
+    setNewProductQuantity("");
+    setPipelineStations([]);
+    setSelectedPresetId("");
+    setSelectedStationId("");
     onOpenChange(false);
   };
 
@@ -218,25 +266,23 @@ export const JobItemsDialog = ({
     return Math.min(100, Math.round((completed / item.planned_quantity) * 100));
   };
 
-  if (!job) return null;
+  const getItemDisplayName = (item: JobItemWithDetails) => {
+    // Post Phase 5: Prefer explicit name, then pipeline preset name
+    return item.name || item.pipeline_preset?.name || "מוצר";
+  };
 
-  // Filter out stations that are already in production lines (for single station items)
-  const lineStationIds = new Set(
-    productionLines.flatMap((line) => line.stations.map((s) => s.station_id))
-  );
-  const availableStations = stations.filter((s) => !lineStationIds.has(s.id) && s.is_active);
+  if (!job) return null;
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="text-right sm:max-w-2xl border-border bg-card max-h-[90vh] overflow-y-auto">
+      <DialogContent className="text-right sm:max-w-3xl border-border bg-card max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-foreground flex items-center gap-2">
             <Package className="h-5 w-5" />
-            פריטי עבודה - {job.job_number}
+            מוצרים - {job.job_number}
           </DialogTitle>
           <DialogDescription className="text-muted-foreground">
-            הגדרת תחנות/קווי ייצור לעבודה זו. עובדים יוכלו לעבוד רק בתחנות שהוגדרו
-            כאן.
+            הגדרת מוצרים וצינורות הייצור שלהם. עובדים יוכלו לעבוד רק בתחנות שהוגדרו כאן.
           </DialogDescription>
         </DialogHeader>
 
@@ -271,7 +317,7 @@ export const JobItemsDialog = ({
               <div className="space-y-2 rounded-lg border border-input bg-secondary/30 p-3">
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-medium text-foreground/80">
-                    פריטים מוגדרים ({items.length})
+                    מוצרים מוגדרים ({items.length})
                   </p>
                   {!showAddForm && (
                     <Button
@@ -282,7 +328,7 @@ export const JobItemsDialog = ({
                       className="h-7 border-input bg-secondary text-foreground/80 hover:bg-muted"
                     >
                       <Plus className="h-3.5 w-3.5 ml-1" />
-                      הוסף פריט
+                      הוסף מוצר
                     </Button>
                   )}
                 </div>
@@ -290,9 +336,9 @@ export const JobItemsDialog = ({
                 {items.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
                     <Package className="h-8 w-8 mb-2 opacity-50" />
-                    <p className="text-sm">לא הוגדרו פריטים לעבודה זו.</p>
+                    <p className="text-sm">לא הוגדרו מוצרים לעבודה זו.</p>
                     <p className="text-xs mt-1">
-                      הוסיפו פריטים כדי שעובדים יוכלו לעבוד על עבודה זו.
+                      הוסיפו מוצרים כדי שעובדים יוכלו לעבוד על עבודה זו.
                     </p>
                   </div>
                 ) : (
@@ -307,29 +353,25 @@ export const JobItemsDialog = ({
                           className="flex items-start gap-3 rounded-md border border-input bg-card p-3"
                         >
                           <div className="flex-shrink-0 mt-1">
-                            {item.kind === "line" ? (
-                              <GitBranch className="h-4 w-4 text-blue-400" />
-                            ) : (
-                              <Cpu className="h-4 w-4 text-emerald-400" />
-                            )}
+                            <Workflow className="h-4 w-4 text-purple-400" />
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
                               <p className="text-sm font-medium text-foreground">
-                                {item.kind === "line"
-                                  ? item.production_line?.name ?? "קו ייצור"
-                                  : item.station?.name ?? "תחנה"}
+                                {getItemDisplayName(item)}
                               </p>
-                              <Badge
-                                variant="secondary"
-                                className="text-xs bg-secondary/50 text-foreground/70 border-input"
-                              >
-                                {item.kind === "line" ? "קו ייצור" : "תחנה בודדת"}
-                              </Badge>
+                              {item.is_pipeline_locked && (
+                                <Badge
+                                  variant="secondary"
+                                  className="text-[10px] bg-amber-500/10 text-amber-400 border-amber-500/30"
+                                >
+                                  נעול
+                                </Badge>
+                              )}
                             </div>
-                            {item.kind === "line" && item.job_item_stations && (
+                            {item.job_item_stations && item.job_item_stations.length > 0 && (
                               <p className="text-xs text-muted-foreground mt-1">
-                                {item.job_item_stations.length} תחנות:{" "}
+                                {item.job_item_stations.length} שלבים:{" "}
                                 {item.job_item_stations
                                   .slice(0, 3)
                                   .map((s) => s.station?.name ?? "—")
@@ -423,137 +465,79 @@ export const JobItemsDialog = ({
                 )}
               </div>
 
-              {/* Add Item Form */}
+              {/* Add Product Form */}
               {showAddForm && (
-                <div className="space-y-3 rounded-lg border border-primary/30 bg-primary/5 p-4">
-                  <p className="text-sm font-medium text-foreground">הוספת פריט חדש</p>
+                <div className="space-y-4 rounded-lg border border-primary/30 bg-primary/5 p-4">
+                  <p className="text-sm font-medium text-foreground">הוספת מוצר חדש</p>
 
+                  {/* Product Name */}
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-foreground/80">סוג</Label>
-                    <div className="flex rounded-lg border border-input bg-secondary/30 p-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setNewItemKind("station");
-                          setNewItemLineId("");
-                        }}
-                        className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all ${
-                          newItemKind === "station"
-                            ? "bg-emerald-500 text-white shadow-sm"
-                            : "text-muted-foreground hover:text-foreground/80 hover:bg-muted"
-                        }`}
-                      >
-                        <Cpu className="h-4 w-4" />
-                        תחנה בודדת
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setNewItemKind("line");
-                          setNewItemStationId("");
-                        }}
-                        className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all ${
-                          newItemKind === "line"
-                            ? "bg-blue-500 text-white shadow-sm"
-                            : "text-muted-foreground hover:text-foreground/80 hover:bg-muted"
-                        }`}
-                      >
-                        <GitBranch className="h-4 w-4" />
-                        קו ייצור
-                      </button>
-                    </div>
+                    <Label className="text-xs text-foreground/80">שם המוצר *</Label>
+                    <Input
+                      placeholder="הזן שם מוצר"
+                      value={newProductName}
+                      onChange={(e) => setNewProductName(e.target.value)}
+                      className="border-input bg-secondary text-foreground placeholder:text-muted-foreground"
+                    />
                   </div>
 
-                  {newItemKind === "station" ? (
-                    <div className="space-y-1.5">
-                      <Label className="text-xs text-foreground/80">תחנה</Label>
-                      <Select
-                        value={newItemStationId}
-                        onValueChange={setNewItemStationId}
-                        disabled={availableStations.length === 0}
-                      >
-                        <SelectTrigger className="border-input bg-secondary text-foreground">
-                          <SelectValue
-                            placeholder={
-                              availableStations.length === 0
-                                ? "אין תחנות זמינות (כולן בקווי ייצור)"
-                                : "בחר תחנה..."
-                            }
-                          />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {availableStations.map((station) => (
-                            <SelectItem key={station.id} value={station.id}>
-                              {station.name} ({station.code})
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {availableStations.length === 0 && (
-                        <p className="text-xs text-amber-400">
-                          כל התחנות משויכות לקווי ייצור. השתמשו בסוג &quot;קו
-                          ייצור&quot;.
-                        </p>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="space-y-1.5">
-                      <Label className="text-xs text-foreground/80">קו ייצור</Label>
-                      <Select
-                        value={newItemLineId}
-                        onValueChange={setNewItemLineId}
-                        disabled={productionLines.length === 0}
-                      >
-                        <SelectTrigger className="border-input bg-secondary text-foreground">
-                          <SelectValue
-                            placeholder={
-                              productionLines.length === 0
-                                ? "אין קווי ייצור"
-                                : "בחר קו ייצור..."
-                            }
-                          />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {productionLines.map((line) => (
-                            <SelectItem key={line.id} value={line.id}>
-                              {line.name} ({line.stations.length} תחנות)
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-
+                  {/* Pipeline Flow Editor */}
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-foreground/80">כמות מתוכננת</Label>
+                    <Label className="text-xs text-foreground/80">צינור הייצור *</Label>
+                    <PipelineFlowEditor
+                      stations={pipelineStations}
+                      onStationsChange={setPipelineStations}
+                      availableStations={stations}
+                      presets={pipelinePresets}
+                      selectedPresetId={selectedPresetId}
+                      onPresetSelect={setSelectedPresetId}
+                      onLoadPreset={handleLoadPreset}
+                      selectedStationId={selectedStationId}
+                      onStationSelect={setSelectedStationId}
+                      onAddStation={handleAddStationToPipeline}
+                      disabled={isSaving}
+                      variant="default"
+                    />
+                  </div>
+
+                  {/* Quantity */}
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-foreground/80">כמות מתוכננת *</Label>
                     <Input
                       type="number"
                       min="1"
-                      value={newItemQuantity}
-                      onChange={(e) => setNewItemQuantity(e.target.value)}
+                      value={newProductQuantity}
+                      onChange={(e) => setNewProductQuantity(e.target.value)}
                       placeholder="כמות יחידות"
                       className="border-input bg-secondary text-foreground"
                     />
                   </div>
 
+                  {/* Action Buttons */}
                   <div className="flex items-center gap-2 pt-2">
                     <Button
                       onClick={() => void handleAddItem()}
-                      disabled={isSaving}
+                      disabled={
+                        isSaving ||
+                        !newProductName.trim() ||
+                        pipelineStations.length === 0 ||
+                        !newProductQuantity
+                      }
                       size="sm"
                       className="bg-primary text-primary-foreground hover:bg-primary/90"
                     >
-                      {isSaving ? "מוסיף..." : "הוסף"}
+                      {isSaving ? "מוסיף..." : "הוסף מוצר"}
                     </Button>
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => {
                         setShowAddForm(false);
-                        setNewItemKind("station");
-                        setNewItemStationId("");
-                        setNewItemLineId("");
-                        setNewItemQuantity("");
+                        setNewProductName("");
+                        setNewProductQuantity("");
+                        setPipelineStations([]);
+                        setSelectedPresetId("");
+                        setSelectedStationId("");
                         setError(null);
                       }}
                       disabled={isSaving}

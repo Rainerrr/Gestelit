@@ -43,9 +43,7 @@ export const JobFormDialog = ({
   const [jobNumber, setJobNumber] = useState(job?.job_number ?? "");
   const [customerName, setCustomerName] = useState(job?.customer_name ?? "");
   const [description, setDescription] = useState(job?.description ?? "");
-  const [plannedQuantity, setPlannedQuantity] = useState<string>(
-    job?.planned_quantity?.toString() ?? "",
-  );
+  // planned_quantity removed from jobs - now tracked per job_item
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -58,7 +56,6 @@ export const JobFormDialog = ({
     setJobNumber(job?.job_number ?? "");
     setCustomerName(job?.customer_name ?? "");
     setDescription(job?.description ?? "");
-    setPlannedQuantity(job?.planned_quantity?.toString() ?? "");
   }
 
   const handleSubmit = async () => {
@@ -85,16 +82,11 @@ export const JobFormDialog = ({
     }
 
     try {
-      const parsedQuantity = plannedQuantity.trim()
-        ? parseInt(plannedQuantity.trim(), 10)
-        : null;
-
       await onSubmit({
         job_number: jobNumber.trim(),
         customer_name: customerName.trim() || null,
         description: description.trim() || null,
-        planned_quantity:
-          parsedQuantity && !isNaN(parsedQuantity) ? parsedQuantity : null,
+        // planned_quantity removed - now tracked per job_item
       });
 
       setSuccessMessage("העבודה נשמרה בהצלחה.");
@@ -107,7 +99,6 @@ export const JobFormDialog = ({
         setJobNumber("");
         setCustomerName("");
         setDescription("");
-        setPlannedQuantity("");
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
@@ -203,24 +194,6 @@ export const JobFormDialog = ({
               onChange={(event) => setDescription(event.target.value)}
               className="border-input bg-secondary text-foreground placeholder:text-muted-foreground min-h-[80px]"
             />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="planned_quantity" className="text-foreground/80">
-              כמות מתוכננת
-            </Label>
-            <Input
-              id="planned_quantity"
-              aria-label="כמות מתוכננת"
-              type="number"
-              min="0"
-              placeholder="כמות יחידות מתוכננת (אופציונלי)"
-              value={plannedQuantity}
-              onChange={(event) => setPlannedQuantity(event.target.value)}
-              className="border-input bg-secondary text-foreground placeholder:text-muted-foreground"
-            />
-            <p className="text-xs text-muted-foreground">
-              כאשר מספר הטובים יגיע לכמות המתוכננת, העבודה תסומן כהושלמה
-            </p>
           </div>
         </div>
         <DialogFooter className="justify-start">

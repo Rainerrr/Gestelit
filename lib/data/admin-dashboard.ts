@@ -5,6 +5,7 @@ import type {
   LiveJobProgress,
   MachineState,
   SessionStatus,
+  Station,
   StationType,
   StatusEventState,
   WipStationData,
@@ -48,8 +49,7 @@ type SessionRow = {
   status: SessionStatus;
   started_at: string;
   ended_at: string | null;
-  total_good: number;
-  total_scrap: number;
+  // total_good/total_scrap removed - derive from status_events
   forced_closed_at: string | null;
 };
 
@@ -75,8 +75,6 @@ const ACTIVE_SESSIONS_SELECT = `
   status,
   started_at,
   ended_at,
-  total_good,
-  total_scrap,
   current_status_id,
   last_status_change_at,
   last_seen_at,
@@ -98,8 +96,6 @@ const LEGACY_ACTIVE_SESSIONS_SELECT = `
   status,
   started_at,
   ended_at,
-  total_good,
-  total_scrap,
   current_status_code,
   last_status_change_at,
   last_seen_at,
@@ -119,6 +115,7 @@ const mapActiveSession = (
   malfunctionCount: number = 0,
   stoppageTimeSeconds: number = 0,
   setupTimeSeconds: number = 0,
+  derivedTotals?: { totalGood: number; totalScrap: number },
 ): ActiveSession => ({
   id: row.id,
   jobId: row.job_id,
@@ -135,8 +132,8 @@ const mapActiveSession = (
     null,
   lastStatusChangeAt: row.last_status_change_at ?? row.started_at,
   startedAt: row.started_at,
-  totalGood: row.total_good ?? 0,
-  totalScrap: row.total_scrap ?? 0,
+  totalGood: derivedTotals?.totalGood ?? 0,
+  totalScrap: derivedTotals?.totalScrap ?? 0,
   forcedClosedAt: row.forced_closed_at,
   lastEventNote,
   lastSeenAt: row.last_seen_at,
@@ -177,6 +174,40 @@ export const fetchMalfunctionCountsBySessionIds = async (
   return countMap;
 };
 
+/**
+ * Fetch derived totals (totalGood, totalScrap) for multiple sessions
+ * Uses v_session_derived_totals view which sums from status_events
+ */
+const fetchDerivedTotalsBySessionIds = async (
+  sessionIds: string[],
+): Promise<Map<string, { totalGood: number; totalScrap: number }>> => {
+  if (sessionIds.length === 0) {
+    return new Map();
+  }
+
+  const supabase = createServiceSupabase();
+  const { data, error } = await supabase
+    .from("v_session_derived_totals")
+    .select("session_id, total_good, total_scrap")
+    .in("session_id", sessionIds);
+
+  if (error) {
+    console.error("[admin-dashboard] Failed to fetch derived totals", error);
+    return new Map();
+  }
+
+  const totalsMap = new Map<string, { totalGood: number; totalScrap: number }>();
+  for (const row of data ?? []) {
+    if (row.session_id) {
+      totalsMap.set(row.session_id, {
+        totalGood: row.total_good ?? 0,
+        totalScrap: row.total_scrap ?? 0,
+      });
+    }
+  }
+  return totalsMap;
+};
+
 export const fetchActiveSessions = async (): Promise<ActiveSession[]> => {
   const supabase = createServiceSupabase();
 
@@ -215,12 +246,13 @@ export const fetchActiveSessions = async (): Promise<ActiveSession[]> => {
     rows.map((r) => ({ id: r.id, status: r.status, ended_at: r.ended_at })),
   );
 
-  // Fetch malfunction counts, stoppage times, and setup times for all sessions (in parallel)
+  // Fetch malfunction counts, stoppage times, setup times, and derived totals for all sessions (in parallel)
   const sessionIds = rows.map((row) => row.id);
-  const [malfunctionCounts, stoppageTimes, setupTimes] = await Promise.all([
+  const [malfunctionCounts, stoppageTimes, setupTimes, derivedTotals] = await Promise.all([
     fetchMalfunctionCountsBySessionIds(sessionIds),
     fetchStoppageTimeBySessionIds(sessionIds),
     fetchSetupTimeBySessionIds(sessionIds),
+    fetchDerivedTotalsBySessionIds(sessionIds),
   ]);
 
   return rows.map((row) =>
@@ -230,6 +262,7 @@ export const fetchActiveSessions = async (): Promise<ActiveSession[]> => {
       malfunctionCounts.get(row.id) ?? 0,
       stoppageTimes.get(row.id) ?? 0,
       setupTimes.get(row.id) ?? 0,
+      derivedTotals.get(row.id),
     ),
   );
 };
@@ -276,11 +309,12 @@ export const fetchActiveSessionById = async (
     return null;
   }
 
-  // Fetch malfunction count, stoppage time, and setup time for this session (in parallel)
-  const [malfunctionCounts, stoppageTimes, setupTimes] = await Promise.all([
+  // Fetch malfunction count, stoppage time, setup time, and derived totals for this session (in parallel)
+  const [malfunctionCounts, stoppageTimes, setupTimes, derivedTotals] = await Promise.all([
     fetchMalfunctionCountsBySessionIds([row.id]),
     fetchStoppageTimeBySessionIds([row.id]),
     fetchSetupTimeBySessionIds([row.id]),
+    fetchDerivedTotalsBySessionIds([row.id]),
   ]);
 
   return mapActiveSession(
@@ -289,6 +323,7 @@ export const fetchActiveSessionById = async (
     malfunctionCounts.get(row.id) ?? 0,
     stoppageTimes.get(row.id) ?? 0,
     setupTimes.get(row.id) ?? 0,
+    derivedTotals.get(row.id),
   );
 };
 
@@ -641,13 +676,16 @@ type FetchMonthlyJobThroughputArgs = {
 };
 
 type MonthlySessionRow = {
+  id: string;
   job_id: string | null;
-  total_good: number | null;
-  total_scrap: number | null;
   ended_at: string | null;
   jobs: {
     job_number: string | null;
-    planned_quantity: number | null;
+  } | null;
+  // Derived from status_events
+  derived_totals: {
+    total_good: number;
+    total_scrap: number;
   } | null;
 };
 
@@ -661,15 +699,15 @@ export const fetchMonthlyJobThroughput = async (
   const monthStart = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0));
   const monthEnd = new Date(Date.UTC(year, month, 1, 0, 0, 0));
 
+  // Step 1: Query sessions
   let query = supabase
     .from("sessions")
     .select(
       `
+      id,
       job_id,
-      total_good,
-      total_scrap,
       ended_at,
-      jobs:jobs(job_number, planned_quantity)
+      jobs:jobs(job_number)
     `,
     )
     .eq("status", "completed")
@@ -695,6 +733,34 @@ export const fetchMonthlyJobThroughput = async (
   }
 
   const rows = (data as unknown as MonthlySessionRow[]) ?? [];
+  if (rows.length === 0) return [];
+
+  // Step 2: Get derived totals from status_events for these sessions
+  const sessionIds = rows.map((r) => r.id).filter(Boolean);
+  const { data: totalsData } = await supabase
+    .from("v_session_derived_totals")
+    .select("session_id, total_good, total_scrap")
+    .in("session_id", sessionIds);
+
+  const totalsMap = new Map<string, { total_good: number; total_scrap: number }>();
+  (totalsData ?? []).forEach((t: { session_id: string; total_good: number; total_scrap: number }) => {
+    totalsMap.set(t.session_id, { total_good: t.total_good, total_scrap: t.total_scrap });
+  });
+
+  // Step 3: Get planned quantities from job_items (summed per job)
+  const jobIds = [...new Set(rows.map((r) => r.job_id).filter(Boolean))] as string[];
+  const { data: jobItemsData } = await supabase
+    .from("job_items")
+    .select("job_id, planned_quantity")
+    .in("job_id", jobIds)
+    .eq("is_active", true);
+
+  const plannedQtyMap = new Map<string, number>();
+  (jobItemsData ?? []).forEach((ji: { job_id: string; planned_quantity: number }) => {
+    const current = plannedQtyMap.get(ji.job_id) ?? 0;
+    plannedQtyMap.set(ji.job_id, current + (ji.planned_quantity ?? 0));
+  });
+
   const map = new Map<string, JobThroughput>();
 
   const pickMockPlannedQuantity = (jobNum: string | null | undefined) => {
@@ -712,24 +778,24 @@ export const fetchMonthlyJobThroughput = async (
     if (!row.job_id || !row.ended_at) {
       return;
     }
-    const jobNumber = row.jobs?.job_number ?? "לא ידוע";
+    const jobNum = row.jobs?.job_number ?? "לא ידוע";
     const plannedQuantity =
-      row.jobs?.planned_quantity != null
-        ? row.jobs.planned_quantity
-        : pickMockPlannedQuantity(jobNumber);
+      plannedQtyMap.get(row.job_id) ?? pickMockPlannedQuantity(jobNum);
+    const totals = totalsMap.get(row.id) ?? { total_good: 0, total_scrap: 0 };
+
     const current =
       map.get(row.job_id) ??
       ({
         jobId: row.job_id,
-        jobNumber,
+        jobNumber: jobNum,
         plannedQuantity,
         totalGood: 0,
         totalScrap: 0,
         lastEndedAt: row.ended_at,
       } satisfies JobThroughput);
 
-    current.totalGood += row.total_good ?? 0;
-    current.totalScrap += row.total_scrap ?? 0;
+    current.totalGood += totals.total_good ?? 0;
+    current.totalScrap += totals.total_scrap ?? 0;
 
     if (new Date(row.ended_at).getTime() > new Date(current.lastEndedAt).getTime()) {
       current.lastEndedAt = row.ended_at;
@@ -753,10 +819,19 @@ type ActiveJobSessionRow = {
   jobs: Job | null;
 };
 
-type JobItemRow = JobItemWithDetails & {
-  stations?: { id: string; name: string; code: string } | null;
-  production_lines?: { id: string; name: string; code: string | null } | null;
-  job_item_stations?: Array<{
+// Post Phase 5: job_items no longer has station_id, production_line_id, or kind columns
+type JobItemRow = {
+  id: string;
+  job_id: string;
+  name: string;
+  pipeline_preset_id?: string | null;
+  is_pipeline_locked?: boolean;
+  planned_quantity: number;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+  pipeline_presets?: { id: string; name: string } | null;
+  job_item_steps?: Array<{
     id: string;
     job_item_id: string;
     station_id: string;
@@ -767,7 +842,7 @@ type JobItemRow = JobItemWithDetails & {
   wip_balances?: Array<{
     id: string;
     job_item_id: string;
-    job_item_station_id: string;
+    job_item_step_id: string;
     good_available: number;
   }>;
   job_item_progress?: { completed_good: number } | null;
@@ -829,13 +904,13 @@ export async function fetchActiveJobsWithProgress(): Promise<LiveJobProgress[]> 
   // Step 3: For each job, fetch the first active job item with details
   const jobIds = Array.from(jobSessionMap.keys());
 
+  // Post Phase 5: station_id, production_line_id, kind columns removed from job_items
   const { data: jobItemsData, error: itemsError } = await supabase
     .from("job_items")
     .select(`
       *,
-      stations:station_id(id, name, code),
-      production_lines:production_line_id(id, name, code),
-      job_item_stations(id, job_item_id, station_id, position, is_terminal, stations(id, name, code)),
+      pipeline_presets:pipeline_preset_id(id, name),
+      job_item_steps(id, job_item_id, station_id, position, is_terminal, stations(id, name, code)),
       wip_balances(*),
       job_item_progress(*)
     `)
@@ -869,6 +944,7 @@ export async function fetchActiveJobsWithProgress(): Promise<LiveJobProgress[]> 
     const activeStationIdsArray = Array.from(activeStationIds);
 
     // Build assignments for all job items
+    // Post Phase 5: All items are pipelines with job_item_steps
     const jobItemAssignments = jobItemsList.map((jobItem) => {
       const wipDistribution: WipStationData[] = [];
       let completedGood = 0;
@@ -876,18 +952,19 @@ export async function fetchActiveJobsWithProgress(): Promise<LiveJobProgress[]> 
       // Get progress (completed good from terminal station)
       completedGood = jobItem.job_item_progress?.completed_good ?? 0;
 
-      if (jobItem.kind === "line" && jobItem.job_item_stations) {
-        // Production line: build WIP for each station in order
-        const sortedStations = [...jobItem.job_item_stations].sort(
+      // All items now have job_item_steps (pipeline model)
+      if (jobItem.job_item_steps && jobItem.job_item_steps.length > 0) {
+        const sortedStations = [...jobItem.job_item_steps].sort(
           (a, b) => a.position - b.position
         );
         const wipMap = new Map(
-          (jobItem.wip_balances ?? []).map((wb) => [wb.job_item_station_id, wb.good_available])
+          (jobItem.wip_balances ?? []).map((wb) => [wb.job_item_step_id, wb.good_available])
         );
 
         sortedStations.forEach((jis) => {
           wipDistribution.push({
             jobItemStationId: jis.id,
+            jobItemStepId: jis.id,
             stationId: jis.station_id,
             stationName: jis.stations?.name ?? `שלב ${jis.position}`,
             position: jis.position,
@@ -896,42 +973,34 @@ export async function fetchActiveJobsWithProgress(): Promise<LiveJobProgress[]> 
             hasActiveSession: activeStationIds.has(jis.station_id),
           });
         });
-      } else if (jobItem.kind === "station" && jobItem.station_id) {
-        // Single station: simple WIP distribution
-        wipDistribution.push({
-          jobItemStationId: jobItem.id, // Use job item ID for single station
-          stationId: jobItem.station_id,
-          stationName: jobItem.stations?.name ?? "תחנה",
-          position: 1,
-          isTerminal: true,
-          goodAvailable: completedGood,
-          hasActiveSession: activeStationIds.has(jobItem.station_id),
-        });
       }
 
       // Build jobItem with partial station data (only name/code needed for display)
       const mappedJobItem: JobItemWithDetails = {
         id: jobItem.id,
         job_id: jobItem.job_id,
-        kind: jobItem.kind,
-        station_id: jobItem.station_id,
-        production_line_id: jobItem.production_line_id,
+        name: jobItem.name,
+        pipeline_preset_id: jobItem.pipeline_preset_id,
+        is_pipeline_locked: jobItem.is_pipeline_locked,
         planned_quantity: jobItem.planned_quantity,
         is_active: jobItem.is_active,
-        station: jobItem.stations as JobItemWithDetails["station"],
-        production_line: jobItem.production_lines ?? undefined,
-        job_item_stations: jobItem.job_item_stations?.map((jis) => {
-          // jis.stations comes from Supabase join (named "stations")
-          const stationData = (jis as { stations?: { id: string; name: string; code: string } | null }).stations;
-          return {
-            id: jis.id,
-            job_item_id: jis.job_item_id,
-            station_id: jis.station_id,
-            position: jis.position,
-            is_terminal: jis.is_terminal,
-            station: stationData as JobItemWithDetails["station"],
-          };
-        }),
+        pipeline_preset: jobItem.pipeline_presets ?? undefined,
+        job_item_stations: jobItem.job_item_steps?.map((jis) => ({
+          id: jis.id,
+          job_item_id: jis.job_item_id,
+          station_id: jis.station_id,
+          position: jis.position,
+          is_terminal: jis.is_terminal,
+          station: jis.stations as Station | undefined,
+        })),
+        job_item_steps: jobItem.job_item_steps?.map((jis) => ({
+          id: jis.id,
+          job_item_id: jis.job_item_id,
+          station_id: jis.station_id,
+          position: jis.position,
+          is_terminal: jis.is_terminal,
+          station: jis.stations as Station | undefined,
+        })),
         wip_balances: jobItem.wip_balances,
         progress: jobItem.job_item_progress
           ? {

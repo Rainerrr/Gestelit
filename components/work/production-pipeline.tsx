@@ -55,6 +55,8 @@ export type ProductionPipelineProps = {
   isLegacy?: boolean;
   /** Timestamp for detecting real-time updates (for animations) */
   lastUpdated?: number;
+  /** If true, counters are display-only (used when quantities are entered via dialog) */
+  readOnly?: boolean;
 };
 
 // ============================================
@@ -403,6 +405,61 @@ const ProductionControls = ({
 };
 
 // ============================================
+// READ-ONLY COUNTER DISPLAY
+// ============================================
+
+type ReadOnlyCountersProps = {
+  goodCount: number;
+  scrapCount: number;
+  goodLabel: string;
+  scrapLabel: string;
+  hintLabel: string;
+};
+
+const ReadOnlyCounters = ({
+  goodCount,
+  scrapCount,
+  goodLabel,
+  scrapLabel,
+  hintLabel,
+}: ReadOnlyCountersProps) => {
+  return (
+    <div className="space-y-3">
+      {/* Good counter - display only */}
+      <div className="overflow-hidden rounded-xl border-2 border-emerald-500/40 bg-gradient-to-b from-emerald-50 to-emerald-50/30 shadow-sm dark:border-emerald-500/30 dark:from-emerald-500/10 dark:to-emerald-500/5">
+        <div className="p-3">
+          <p className="text-right text-xs font-bold text-emerald-700 dark:text-emerald-400">
+            {goodLabel}
+          </p>
+          <div className="mt-2 flex items-center justify-center rounded-lg border-2 border-emerald-500/30 bg-white py-4 dark:border-emerald-500/20 dark:bg-card">
+            <span className="font-mono text-5xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+              {goodCount.toLocaleString()}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Scrap counter - display only */}
+      <div className="overflow-hidden rounded-xl border border-rose-500/20 bg-rose-50/30 dark:border-rose-500/15 dark:bg-rose-500/5">
+        <div className="flex items-center justify-between p-2.5">
+          <span className="rounded-md bg-rose-500/10 px-2 py-0.5 font-mono text-base font-bold tabular-nums text-rose-600 dark:bg-rose-500/20 dark:text-rose-400">
+            {scrapCount.toLocaleString()}
+          </span>
+          <p className="text-xs font-medium text-rose-600/70 dark:text-rose-400/70">
+            {scrapLabel}
+          </p>
+        </div>
+      </div>
+
+      {/* Hint text */}
+      <p className="text-center text-xs text-muted-foreground">
+        {hintLabel}
+      </p>
+    </div>
+  );
+};
+
+// ============================================
 // FLOW ARROW CONNECTOR - RTL aware
 // ============================================
 
@@ -509,6 +566,7 @@ export const ProductionPipeline = ({
   isSingleStation = false,
   isLegacy = false,
   lastUpdated,
+  readOnly = false,
 }: ProductionPipelineProps) => {
   const { t } = useTranslation();
 
@@ -531,19 +589,29 @@ export const ProductionPipeline = ({
           </div>
         )}
 
-        {/* Production controls */}
-        <ProductionControls
-          goodCount={goodCount}
-          scrapCount={scrapCount}
-          onGoodChange={onGoodChange}
-          onGoodSet={onGoodSet}
-          onScrapChange={onScrapChange}
-          onScrapSet={onScrapSet}
-          goodLabel={t("work.counters.good")}
-          scrapLabel={t("work.counters.scrap")}
-          collapseLabel={t("work.pipeline.collapse")}
-          expandLabel={t("work.pipeline.expand")}
-        />
+        {/* Production controls or read-only display */}
+        {readOnly ? (
+          <ReadOnlyCounters
+            goodCount={goodCount}
+            scrapCount={scrapCount}
+            goodLabel={t("work.counters.good")}
+            scrapLabel={t("work.counters.scrap")}
+            hintLabel={t("work.pipeline.quantityHint")}
+          />
+        ) : (
+          <ProductionControls
+            goodCount={goodCount}
+            scrapCount={scrapCount}
+            onGoodChange={onGoodChange}
+            onGoodSet={onGoodSet}
+            onScrapChange={onScrapChange}
+            onScrapSet={onScrapSet}
+            goodLabel={t("work.counters.good")}
+            scrapLabel={t("work.counters.scrap")}
+            collapseLabel={t("work.pipeline.collapse")}
+            expandLabel={t("work.pipeline.expand")}
+          />
+        )}
 
         {/* Error display */}
         {error && (
@@ -560,18 +628,28 @@ export const ProductionPipeline = ({
   return (
     <div className="space-y-4">
       {/* Section 1: Production Counter */}
-      <ProductionControls
-        goodCount={goodCount}
-        scrapCount={scrapCount}
-        onGoodChange={onGoodChange}
-        onGoodSet={onGoodSet}
-        onScrapChange={onScrapChange}
-        onScrapSet={onScrapSet}
-        goodLabel={t("work.counters.good")}
-        scrapLabel={t("work.counters.scrap")}
-        collapseLabel={t("work.pipeline.collapse")}
-        expandLabel={t("work.pipeline.expand")}
-      />
+      {readOnly ? (
+        <ReadOnlyCounters
+          goodCount={goodCount}
+          scrapCount={scrapCount}
+          goodLabel={t("work.counters.good")}
+          scrapLabel={t("work.counters.scrap")}
+          hintLabel={t("work.pipeline.quantityHint")}
+        />
+      ) : (
+        <ProductionControls
+          goodCount={goodCount}
+          scrapCount={scrapCount}
+          onGoodChange={onGoodChange}
+          onGoodSet={onGoodSet}
+          onScrapChange={onScrapChange}
+          onScrapSet={onScrapSet}
+          goodLabel={t("work.counters.good")}
+          scrapLabel={t("work.counters.scrap")}
+          collapseLabel={t("work.pipeline.collapse")}
+          expandLabel={t("work.pipeline.expand")}
+        />
+      )}
 
       {/* Section 2: Production Line Flow Visualization */}
       <div className="rounded-xl border border-border/50 bg-muted/20 p-3">

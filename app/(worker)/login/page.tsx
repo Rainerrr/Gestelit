@@ -83,8 +83,8 @@ export default function LoginPage() {
         router.push("/station");
         return;
       }
-      // New flow: job entry before station selection
-      router.push("/job");
+      // New flow: station selection first, job selection deferred to production entry
+      router.push("/station");
     } catch {
       setError(t("login.error.notFound"));
       // Clear persisted state if auto-login fails (worker code no longer valid)

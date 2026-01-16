@@ -13,7 +13,7 @@ type JobPayload = {
   job_number?: string;
   customer_name?: string | null;
   description?: string | null;
-  planned_quantity?: number | null;
+  // planned_quantity removed - now set per job_item
 };
 
 const respondWithError = (error: unknown) => {
@@ -79,7 +79,6 @@ export async function POST(request: Request) {
       job_number: body.job_number.trim(),
       customer_name: body.customer_name ?? null,
       description: body.description ?? null,
-      planned_quantity: body.planned_quantity ?? null,
     });
 
     return NextResponse.json({ job });

@@ -9,7 +9,7 @@ import type { PipelineStationOption } from "@/lib/types";
 type ProductionLineStepperProps = {
   stations: PipelineStationOption[];
   selectedStationId: string | null;
-  onStationSelect: (stationId: string, jobItemStationId: string) => void;
+  onStationSelect: (stationId: string, jobItemStepId: string) => void;
   disabled?: boolean;
 };
 
@@ -51,7 +51,7 @@ export const ProductionLineStepper = ({
               showPosition={true}
               onClick={() => {
                 if (!isDisabled) {
-                  onStationSelect(station.id, station.jobItemStationId);
+                  onStationSelect(station.id, station.jobItemStepId);
                 }
               }}
             />

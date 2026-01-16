@@ -19,16 +19,19 @@ describe("Report State Machine", () => {
   });
 
   /**
-   * Helper to create a malfunction report with a given status
+   * Helper to create a malfunction report with a given status.
+   * Note: The set_report_default_status trigger forces malfunction reports to start as 'open',
+   * so we must transition to the desired status after creation.
    */
   async function createMalfunctionReport(status: "open" | "known" | "solved") {
     const supabase = getTestSupabase();
+
+    // Create report (will start as 'open' due to default status trigger)
     const { data, error } = await supabase
       .from("reports")
       .insert({
         type: "malfunction",
         station_id: testStation.id,
-        status: status,
         description: testId(`report_${status}`),
       })
       .select("*")
@@ -36,6 +39,31 @@ describe("Report State Machine", () => {
 
     if (error) throw new Error(`Failed to create report: ${error.message}`);
     createdReportIds.push(data.id);
+
+    // If requested status is not 'open', transition to it
+    if (status === "known") {
+      const { data: updated, error: updateError } = await supabase
+        .from("reports")
+        .update({ status: "known" })
+        .eq("id", data.id)
+        .select("*")
+        .single();
+      if (updateError) throw new Error(`Failed to transition to known: ${updateError.message}`);
+      return updated;
+    }
+
+    if (status === "solved") {
+      // Transition open -> solved (valid direct resolution)
+      const { data: updated, error: updateError } = await supabase
+        .from("reports")
+        .update({ status: "solved" })
+        .eq("id", data.id)
+        .select("*")
+        .single();
+      if (updateError) throw new Error(`Failed to transition to solved: ${updateError.message}`);
+      return updated;
+    }
+
     return data;
   }
 

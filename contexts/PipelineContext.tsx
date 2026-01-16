@@ -34,6 +34,7 @@ type PipelineContextValue = {
   isProductionLine: boolean;
   isSingleStation: boolean;
   currentPosition: number;
+  totalSteps: number;
   isTerminal: boolean;
   prevStation: PipelineNeighborStation | null;
   nextStation: PipelineNeighborStation | null;
@@ -147,6 +148,7 @@ const defaultPipelineValue: PipelineContextValue = {
   isProductionLine: false,
   isSingleStation: false,
   currentPosition: 1,
+  totalSteps: 1,
   isTerminal: true,
   prevStation: null,
   nextStation: null,
@@ -179,6 +181,7 @@ export const usePipelineContext = (): PipelineContextValue => {
       isProductionLine: ctx?.isProductionLine ?? false,
       isSingleStation: ctx?.isSingleStation ?? false,
       currentPosition: ctx?.currentPosition ?? 1,
+      totalSteps: ctx?.totalSteps ?? 1,
       isTerminal: ctx?.isTerminal ?? true,
       prevStation: ctx?.prevStation ?? null,
       nextStation: ctx?.nextStation ?? null,

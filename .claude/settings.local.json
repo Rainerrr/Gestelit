@@ -15,7 +15,15 @@
       "Bash(npm run lint)",
       "Bash(gh pr list:*)",
       "mcp__plugin_supabase_supabase__list_branches",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(wc:*)",
+      "Bash(dir /s \"C:\\\\Users\\\\reneb\\\\Documents\\\\GitHub\\\\GestelitWorkMonitor\")",
+      "Bash(findstr:*)",
+      "Bash(fi)",
+      "Bash(done)",
+      "Bash(npm run test:run:*)",
+      "Bash(node diagnose-wip.js:*)",
+      "Bash(node:*)"
     ]
   }
 }

@@ -10,7 +10,7 @@ import type { StationSelectionJobItem } from "@/lib/types";
 type JobItemCardProps = {
   jobItem: StationSelectionJobItem;
   selectedStationId: string | null;
-  onStationSelect: (stationId: string, jobItemStationId: string) => void;
+  onStationSelect: (stationId: string, jobItemStepId: string) => void;
   disabled?: boolean;
 };
 
@@ -26,8 +26,10 @@ export const JobItemCard = ({
 }: JobItemCardProps) => {
   const { t } = useTranslation();
 
-  const isProductionLine = jobItem.kind === "line";
+  // Post Phase 5: All items are pipelines. Determine if it's a multi-station pipeline
+  // by checking the station count (single station vs production line UX)
   const stationCount = jobItem.pipelineStations.length;
+  const isProductionLine = stationCount > 1;
 
   // Check if any station in this job item is selected
   const hasSelection = jobItem.pipelineStations.some(
@@ -111,7 +113,7 @@ export const JobItemCard = ({
               showPosition={false}
               onClick={() => {
                 if (!isSingleStationDisabled) {
-                  onStationSelect(singleStation.id, singleStation.jobItemStationId);
+                  onStationSelect(singleStation.id, singleStation.jobItemStepId);
                 }
               }}
             />

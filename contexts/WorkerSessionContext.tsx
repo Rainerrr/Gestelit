@@ -17,6 +17,20 @@ import type {
   WorkerResumeSession,
 } from "@/lib/types";
 
+// Lightweight type for active job item context during production
+// Post Phase 5: kind column removed, all items are pipelines
+export type ActiveJobItemContext = {
+  id: string;
+  jobId: string;
+  name: string;
+  plannedQuantity: number;
+  /** Total completed good (all sessions combined) */
+  completedGood?: number;
+  /** @deprecated Use jobItemStepId */
+  jobItemStationId?: string;
+  jobItemStepId: string;
+};
+
 type WorkerSessionState = {
   worker?: Worker;
   station?: Station;
@@ -34,6 +48,14 @@ type WorkerSessionState = {
     endCompleted: boolean;
   };
   pendingRecovery: WorkerResumeSession | null;
+  // New state for deferred job binding
+  activeJobItem?: ActiveJobItemContext | null;
+  currentStatusEventId?: string | null;
+  productionTotals: {
+    good: number;
+    scrap: number;
+    lastReportedAt?: string;
+  };
 };
 
 type WorkerSessionAction =
@@ -48,7 +70,12 @@ type WorkerSessionAction =
   | { type: "completeChecklist"; payload: "start" | "end" }
   | { type: "setPendingRecovery"; payload?: WorkerResumeSession | null }
   | { type: "hydrateFromSnapshot"; payload: WorkerResumeSession }
-  | { type: "reset" };
+  | { type: "reset" }
+  // New actions for deferred job binding
+  | { type: "setActiveJobItem"; payload?: ActiveJobItemContext | null }
+  | { type: "setCurrentStatusEventId"; payload?: string | null }
+  | { type: "setProductionTotals"; payload: Partial<WorkerSessionState["productionTotals"]> }
+  | { type: "resetProductionTotals" };
 
 const WorkerSessionContext = createContext<
   | (WorkerSessionState & {
@@ -64,6 +91,11 @@ const WorkerSessionContext = createContext<
       setPendingRecovery: (payload?: WorkerResumeSession | null) => void;
       hydrateFromSnapshot: (payload: WorkerResumeSession) => void;
       reset: () => void;
+      // New actions for deferred job binding
+      setActiveJobItem: (jobItem?: ActiveJobItemContext | null) => void;
+      setCurrentStatusEventId: (eventId?: string | null) => void;
+      updateProductionTotals: (totals: Partial<WorkerSessionState["productionTotals"]>) => void;
+      resetProductionTotals: () => void;
     })
   | undefined
 >(undefined);
@@ -80,6 +112,13 @@ const initialState: WorkerSessionState = {
     endCompleted: false,
   },
   pendingRecovery: null,
+  // New state for deferred job binding
+  activeJobItem: null,
+  currentStatusEventId: null,
+  productionTotals: {
+    good: 0,
+    scrap: 0,
+  },
 };
 
 function reducer(
@@ -128,10 +167,8 @@ function reducer(
         sessionId: session.id,
         sessionStartedAt: session.started_at,
         currentStatus: session.current_status_id ?? state.currentStatus,
-        totals: {
-          good: session.total_good ?? 0,
-          scrap: session.total_scrap ?? 0,
-        },
+        // totals now derived from status_events - start at 0, will be accumulated through status changes
+        totals: { good: 0, scrap: 0 },
         checklist: {
           ...state.checklist,
           startCompleted: true,
@@ -141,6 +178,21 @@ function reducer(
     }
     case "reset":
       return initialState;
+    // New cases for deferred job binding
+    case "setActiveJobItem":
+      return { ...state, activeJobItem: action.payload ?? null };
+    case "setCurrentStatusEventId":
+      return { ...state, currentStatusEventId: action.payload ?? null };
+    case "setProductionTotals":
+      return {
+        ...state,
+        productionTotals: { ...state.productionTotals, ...action.payload },
+      };
+    case "resetProductionTotals":
+      return {
+        ...state,
+        productionTotals: { good: 0, scrap: 0 },
+      };
     default:
       return state;
   }
@@ -206,6 +258,26 @@ export function WorkerSessionProvider({
     [],
   );
   const reset = useCallback(() => dispatch({ type: "reset" }), []);
+  // New callbacks for deferred job binding
+  const setActiveJobItem = useCallback(
+    (jobItem?: ActiveJobItemContext | null) =>
+      dispatch({ type: "setActiveJobItem", payload: jobItem }),
+    [],
+  );
+  const setCurrentStatusEventId = useCallback(
+    (eventId?: string | null) =>
+      dispatch({ type: "setCurrentStatusEventId", payload: eventId }),
+    [],
+  );
+  const updateProductionTotals = useCallback(
+    (totals: Partial<WorkerSessionState["productionTotals"]>) =>
+      dispatch({ type: "setProductionTotals", payload: totals }),
+    [],
+  );
+  const resetProductionTotals = useCallback(
+    () => dispatch({ type: "resetProductionTotals" }),
+    [],
+  );
 
   const value = useMemo(
     () => ({
@@ -222,6 +294,11 @@ export function WorkerSessionProvider({
       setPendingRecovery,
       hydrateFromSnapshot,
       reset,
+      // New actions
+      setActiveJobItem,
+      setCurrentStatusEventId,
+      updateProductionTotals,
+      resetProductionTotals,
     }),
     [
       state,
@@ -237,6 +314,10 @@ export function WorkerSessionProvider({
       setStatuses,
       setWorker,
       updateTotals,
+      setActiveJobItem,
+      setCurrentStatusEventId,
+      updateProductionTotals,
+      resetProductionTotals,
     ],
   );
 

@@ -7,6 +7,8 @@ export type JobWithStats = {
   totalScrap: number;
   sessionCount: number;
   isCompleted: boolean;
+  /** Derived from SUM(job_items.planned_quantity) */
+  plannedQuantity: number | null;
 };
 
 export async function findJobByNumber(
@@ -28,7 +30,8 @@ export async function findJobByNumber(
 }
 
 type JobInput = Partial<
-  Pick<Job, "customer_name" | "description" | "planned_quantity">
+  Pick<Job, "customer_name" | "description">
+  // planned_quantity removed - now tracked per job_item
 >;
 
 export async function getOrCreateJob(
@@ -77,16 +80,17 @@ export async function fetchAllJobsWithStats(options?: {
   }
 
   // Transform raw data to JobWithStats
+  // Note: planned_quantity is now derived from SUM(job_items.planned_quantity) by the RPC
   let jobs: JobWithStats[] = (data ?? []).map((row: {
     id: string;
     job_number: string;
     customer_name: string | null;
     description: string | null;
-    planned_quantity: number | null;
+    planned_quantity: number | null; // Now derived from job_items
     created_at: string;
     updated_at: string;
-    total_good: number;
-    total_scrap: number;
+    total_good: number; // Now derived from status_events
+    total_scrap: number; // Now derived from status_events
     session_count: number;
   }) => ({
     job: {
@@ -94,7 +98,6 @@ export async function fetchAllJobsWithStats(options?: {
       job_number: row.job_number,
       customer_name: row.customer_name,
       description: row.description,
-      planned_quantity: row.planned_quantity,
       created_at: row.created_at,
       updated_at: row.updated_at,
     },
@@ -105,6 +108,7 @@ export async function fetchAllJobsWithStats(options?: {
       row.planned_quantity !== null &&
       row.planned_quantity > 0 &&
       (row.total_good ?? 0) >= row.planned_quantity,
+    plannedQuantity: row.planned_quantity,
   }));
 
   // Apply search filter
@@ -131,7 +135,7 @@ export async function createJobAdmin(payload: {
   job_number: string;
   customer_name?: string | null;
   description?: string | null;
-  planned_quantity?: number | null;
+  // planned_quantity removed - now set per job_item
 }): Promise<Job> {
   const supabase = createServiceSupabase();
 
@@ -147,7 +151,6 @@ export async function createJobAdmin(payload: {
       job_number: payload.job_number.trim(),
       customer_name: payload.customer_name ?? null,
       description: payload.description ?? null,
-      planned_quantity: payload.planned_quantity ?? null,
     })
     .select("*")
     .single();
@@ -164,7 +167,7 @@ export async function updateJob(
   payload: Partial<{
     customer_name: string | null;
     description: string | null;
-    planned_quantity: number | null;
+    // planned_quantity removed - now set per job_item
   }>,
 ): Promise<Job> {
   const supabase = createServiceSupabase();

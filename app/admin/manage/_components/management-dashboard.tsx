@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { CheckCircle2, Users, Cpu, Briefcase, Wrench, GitBranch } from "lucide-react";
+import { CheckCircle2, Users, Cpu, Briefcase, Wrench, Workflow } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,14 +28,15 @@ import {
   createJobAdminApi,
   updateJobAdminApi,
   deleteJobAdminApi,
-  fetchProductionLinesAdminApi,
-  createProductionLineAdminApi,
-  updateProductionLineAdminApi,
-  deleteProductionLineAdminApi,
-  updateProductionLineStationsAdminApi,
-  fetchAvailableStationsForLineAdminApi,
+  fetchPipelinePresetsAdminApi,
+  createPipelinePresetAdminApi,
+  updatePipelinePresetAdminApi,
+  deletePipelinePresetAdminApi,
+  checkPipelinePresetInUseAdminApi,
+  updatePipelinePresetStepsAdminApi,
+  fetchAvailableStationsForPresetAdminApi,
 } from "@/lib/api/admin-management";
-import type { Job, Station, Worker, ProductionLineWithStations } from "@/lib/types";
+import type { Job, Station, Worker, PipelinePresetWithSteps } from "@/lib/types";
 import type { StationWithStats, WorkerWithStats } from "@/lib/data/admin-management";
 import type { JobWithStats } from "@/lib/data/jobs";
 import { WorkersManagement } from "./workers-management";
@@ -44,12 +45,12 @@ import { JobsManagement } from "./jobs-management";
 import { DepartmentManager } from "./department-manager";
 import { StationTypeManager } from "./station-type-manager";
 import { GlobalStatusesManagement } from "./global-statuses-management";
-import { ProductionLinesManagement } from "./production-lines-management";
-import { ProductionLineStationsDialog } from "./production-line-stations-dialog";
+import { PipelinePresetsManagement } from "./pipeline-presets-management";
+import { PipelinePresetStepsDialog } from "./pipeline-preset-steps-dialog";
 import { AdminLayout } from "../../_components/admin-layout";
 import { AdminPageHeader, MobileBottomBar } from "../../_components/admin-page-header";
 
-type ActiveTab = "workers" | "stations" | "jobs" | "lines";
+type ActiveTab = "workers" | "stations" | "jobs" | "presets";
 type JobStatusFilter = "all" | "active" | "completed";
 
 const errorCopy: Record<string, string> = {
@@ -74,6 +75,12 @@ const errorCopy: Record<string, string> = {
   PRODUCTION_LINE_UPDATE_FAILED: "עדכון קו ייצור נכשל.",
   PRODUCTION_LINE_DELETE_FAILED: "מחיקת קו ייצור נכשלה.",
   STATION_ALREADY_IN_LINE: "אחת או יותר מהתחנות כבר משויכת לקו אחר.",
+  PRESET_IN_USE: "לא ניתן למחוק תבנית שבשימוש בעבודות פעילות.",
+  PRESET_NOT_FOUND: "תבנית לא נמצאה.",
+  PIPELINE_PRESET_CREATE_FAILED: "יצירת תבנית צינור נכשלה.",
+  PIPELINE_PRESET_UPDATE_FAILED: "עדכון תבנית צינור נכשל.",
+  PIPELINE_PRESET_DELETE_FAILED: "מחיקת תבנית צינור נכשלה.",
+  DUPLICATE_STATION: "לא ניתן להוסיף את אותה תחנה פעמיים.",
 };
 
 export const ManagementDashboard = () => {
@@ -92,9 +99,9 @@ export const ManagementDashboard = () => {
   const [jobs, setJobs] = useState<JobWithStats[]>([]);
   const [isLoadingJobs, setIsLoadingJobs] = useState<boolean>(true);
   const [jobStatusFilter, setJobStatusFilter] = useState<JobStatusFilter>("all");
-  const [productionLines, setProductionLines] = useState<ProductionLineWithStations[]>([]);
-  const [isLoadingLines, setIsLoadingLines] = useState<boolean>(true);
-  const [editingLineStations, setEditingLineStations] = useState<ProductionLineWithStations | null>(null);
+  const [pipelinePresets, setPipelinePresets] = useState<PipelinePresetWithSteps[]>([]);
+  const [isLoadingPresets, setIsLoadingPresets] = useState<boolean>(true);
+  const [editingPresetSteps, setEditingPresetSteps] = useState<PipelinePresetWithSteps | null>(null);
   const [bannerError, setBannerError] = useState<string | null>(null);
   const [bannerSuccess, setBannerSuccess] = useState<string | null>(null);
 
@@ -178,16 +185,16 @@ export const ManagementDashboard = () => {
     }
   }, [friendlyError, search, jobStatusFilter]);
 
-  const loadProductionLines = useCallback(async () => {
-    setIsLoadingLines(true);
+  const loadPipelinePresets = useCallback(async () => {
+    setIsLoadingPresets(true);
     setBannerError(null);
     try {
-      const { lines } = await fetchProductionLinesAdminApi({ includeInactive: true });
-      setProductionLines(lines);
+      const { presets } = await fetchPipelinePresetsAdminApi({ includeInactive: true });
+      setPipelinePresets(presets);
     } catch (error) {
       friendlyError(error);
     } finally {
-      setIsLoadingLines(false);
+      setIsLoadingPresets(false);
     }
   }, [friendlyError]);
 
@@ -219,11 +226,11 @@ export const ManagementDashboard = () => {
     void loadJobs();
   }, [hasAccess, activeTab, loadJobs]);
 
-  // Load production lines when on lines tab
+  // Load pipeline presets when on presets tab
   useEffect(() => {
-    if (hasAccess !== true || activeTab !== "lines") return;
-    void loadProductionLines();
-  }, [hasAccess, activeTab, loadProductionLines]);
+    if (hasAccess !== true || activeTab !== "presets") return;
+    void loadPipelinePresets();
+  }, [hasAccess, activeTab, loadPipelinePresets]);
 
   const handleAddWorker = async (payload: Partial<Worker>) => {
     setBannerError(null);
@@ -395,7 +402,6 @@ export const ManagementDashboard = () => {
         job_number: payload.job_number ?? "",
         customer_name: payload.customer_name ?? null,
         description: payload.description ?? null,
-        planned_quantity: payload.planned_quantity ?? null,
       });
       await loadJobs();
     } catch (error) {
@@ -409,7 +415,6 @@ export const ManagementDashboard = () => {
       await updateJobAdminApi(id, {
         customer_name: payload.customer_name,
         description: payload.description,
-        planned_quantity: payload.planned_quantity,
       });
     } catch (error) {
       friendlyError(error);
@@ -429,35 +434,35 @@ export const ManagementDashboard = () => {
     }
   };
 
-  // Production Lines Handlers
-  const handleAddProductionLine = async (payload: { name: string; code?: string | null; is_active?: boolean }) => {
+  // Pipeline Presets Handlers
+  const handleAddPipelinePreset = async (payload: { name: string; description?: string | null; is_active?: boolean }) => {
     setBannerError(null);
     try {
-      await createProductionLineAdminApi(payload);
-      await loadProductionLines();
-    } catch (error) {
-      friendlyError(error);
-      throw error; // Re-throw for dialog to show error
-    }
-  };
-
-  const handleUpdateProductionLine = async (id: string, payload: { name?: string; code?: string | null; is_active?: boolean }) => {
-    setBannerError(null);
-    try {
-      await updateProductionLineAdminApi(id, payload);
+      await createPipelinePresetAdminApi(payload);
+      await loadPipelinePresets();
     } catch (error) {
       friendlyError(error);
       throw error;
     }
   };
 
-  const handleDeleteProductionLine = async (id: string) => {
+  const handleUpdatePipelinePreset = async (id: string, payload: { name?: string; description?: string | null; is_active?: boolean }) => {
+    setBannerError(null);
+    try {
+      await updatePipelinePresetAdminApi(id, payload);
+    } catch (error) {
+      friendlyError(error);
+      throw error;
+    }
+  };
+
+  const handleDeletePipelinePreset = async (id: string) => {
     setBannerError(null);
     setBannerSuccess(null);
     try {
-      await deleteProductionLineAdminApi(id);
-      setBannerSuccess("קו הייצור נמחק בהצלחה.");
-      await loadProductionLines();
+      await deletePipelinePresetAdminApi(id);
+      setBannerSuccess("התבנית נמחקה בהצלחה.");
+      await loadPipelinePresets();
       setTimeout(() => setBannerSuccess(null), 5000);
     } catch (error) {
       friendlyError(error);
@@ -465,35 +470,36 @@ export const ManagementDashboard = () => {
     }
   };
 
-  const handleEditLineStations = (lineId: string) => {
-    const line = productionLines.find((l) => l.id === lineId);
-    if (line) {
-      setEditingLineStations(line);
+  const handleEditPresetSteps = (presetId: string) => {
+    const preset = pipelinePresets.find((p) => p.id === presetId);
+    if (preset) {
+      setEditingPresetSteps(preset);
     }
   };
 
-  const handleSaveLineStations = async (lineId: string, stationIds: string[]) => {
+  const handleSavePresetSteps = async (presetId: string, stationIds: string[]) => {
     setBannerError(null);
     try {
-      await updateProductionLineStationsAdminApi(lineId, stationIds);
-      await loadProductionLines();
+      await updatePipelinePresetStepsAdminApi(presetId, stationIds);
+      await loadPipelinePresets();
     } catch (error) {
       friendlyError(error);
       throw error;
     }
   };
 
-  const handleFetchAvailableStations = async (lineId?: string) => {
-    const { stations } = await fetchAvailableStationsForLineAdminApi(lineId);
+  const handleFetchAvailableStationsForPreset = async () => {
+    const { stations } = await fetchAvailableStationsForPresetAdminApi();
     return stations;
   };
 
-  const handleCheckLineLocked = async (lineId: string) => {
-    // Check if line has active job items
-    const line = productionLines.find((l) => l.id === lineId);
-    // For now, we'll let the API determine if the line is locked
-    // This will be handled by the API when trying to modify stations
-    return false;
+  const handleCheckPresetInUse = async (presetId: string) => {
+    try {
+      const { inUse } = await checkPipelinePresetInUseAdminApi(presetId);
+      return inUse;
+    } catch {
+      return false;
+    }
   };
 
   if (hasAccess === null) {
@@ -518,7 +524,7 @@ export const ManagementDashboard = () => {
       { id: "workers", label: "עובדים", icon: Users },
       { id: "stations", label: "תחנות", icon: Cpu },
       { id: "jobs", label: "עבודות", icon: Briefcase },
-      { id: "lines", label: "קווי ייצור", icon: GitBranch },
+      { id: "presets", label: "תבניות צינור", icon: Workflow },
     ],
     activeId: activeTab,
     onChange: (id: string) => setActiveTab(id as ActiveTab),
@@ -726,27 +732,26 @@ export const ManagementDashboard = () => {
           />
         ) : (
           <>
-            <ProductionLinesManagement
-              lines={productionLines}
-              isLoading={isLoadingLines}
-              onAdd={handleAddProductionLine}
-              onEdit={handleUpdateProductionLine}
-              onDelete={handleDeleteProductionLine}
-              onEditStations={handleEditLineStations}
-              onCheckLocked={handleCheckLineLocked}
-              onRefresh={loadProductionLines}
+            <PipelinePresetsManagement
+              presets={pipelinePresets}
+              isLoading={isLoadingPresets}
+              onAdd={handleAddPipelinePreset}
+              onEdit={handleUpdatePipelinePreset}
+              onDelete={handleDeletePipelinePreset}
+              onEditSteps={handleEditPresetSteps}
+              onCheckInUse={handleCheckPresetInUse}
+              onRefresh={loadPipelinePresets}
             />
-            <ProductionLineStationsDialog
-              line={editingLineStations}
-              open={editingLineStations !== null}
+            <PipelinePresetStepsDialog
+              preset={editingPresetSteps}
+              open={editingPresetSteps !== null}
               onOpenChange={(open) => {
                 if (!open) {
-                  setEditingLineStations(null);
+                  setEditingPresetSteps(null);
                 }
               }}
-              onSave={handleSaveLineStations}
-              onFetchAvailableStations={handleFetchAvailableStations}
-              onCheckLocked={handleCheckLineLocked}
+              onSave={handleSavePresetSteps}
+              onFetchAvailableStations={handleFetchAvailableStationsForPreset}
             />
           </>
         )}

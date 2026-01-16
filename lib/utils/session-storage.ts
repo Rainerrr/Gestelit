@@ -16,8 +16,8 @@ export type PersistedSessionState = {
   stationId: string;
   stationName: string;
   stationCode: string;
-  jobId: string;
-  jobNumber: string;
+  jobId: string | null; // Optional - job binding deferred to production entry
+  jobNumber: string | null; // Optional - job binding deferred to production entry
   startedAt: string;
   totals: { good: number; scrap: number };
 };

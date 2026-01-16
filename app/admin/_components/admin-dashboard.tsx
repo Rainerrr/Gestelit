@@ -21,6 +21,7 @@ import {
   useAdminStationIds,
   useAdminConnectionState,
 } from "@/contexts/AdminSessionsContext";
+import { JobProgressProvider } from "@/contexts/JobProgressContext";
 import { useAdminGuard } from "@/hooks/useAdminGuard";
 import { useIdleSessionCleanup } from "@/hooks/useIdleSessionCleanup";
 import { KpiCards } from "./kpi-cards";
@@ -37,7 +38,9 @@ import { AdminLayout } from "./admin-layout";
 
 export const AdminDashboard = () => (
   <AdminSessionsProvider>
-    <AdminDashboardContent />
+    <JobProgressProvider>
+      <AdminDashboardContent />
+    </JobProgressProvider>
   </AdminSessionsProvider>
 );
 

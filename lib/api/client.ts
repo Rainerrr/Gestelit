@@ -99,6 +99,63 @@ export async function fetchStationsWithOccupancyApi(
 }
 
 /**
+ * Fetch job item counts for all stations assigned to a worker.
+ * Returns a map of station IDs to uncompleted job item counts.
+ */
+export async function fetchStationJobItemCountsApi(
+  workerId: string,
+): Promise<Record<string, number>> {
+  const response = await fetch(
+    `/api/stations/job-item-counts?workerId=${encodeURIComponent(workerId)}`,
+    {
+      headers: createWorkerHeaders(),
+    },
+  );
+  const data = await handleResponse<{ counts: Record<string, number> }>(response);
+  return data.counts;
+}
+
+/**
+ * Job item data returned from station job items endpoint.
+ */
+export type JobItemAtStation = {
+  id: string;
+  jobId: string;
+  jobNumber: string;
+  customerName: string | null;
+  name: string;
+  plannedQuantity: number;
+  completedGood: number;
+  jobItemStepId: string;
+};
+
+/**
+ * Fetch all job items available at a specific station.
+ * Used for station-first selection flow.
+ */
+export async function fetchJobItemsAtStationApi(
+  stationId: string,
+): Promise<JobItemAtStation[]> {
+  const response = await fetch(
+    `/api/stations/${encodeURIComponent(stationId)}/job-items`,
+    {
+      headers: createWorkerHeaders(),
+    },
+  );
+  const data = await handleResponse<{ jobItems: {
+    id: string;
+    jobId: string;
+    jobNumber: string;
+    customerName: string | null;
+    name: string;
+    plannedQuantity: number;
+    completedGood: number;
+    jobItemStepId: string;
+  }[] }>(response);
+  return data.jobItems;
+}
+
+/**
  * Fetch stations that are BOTH assigned to the worker AND part of the job's job_items.
  * This implements the intersection permission model for production line jobs.
  *
@@ -154,13 +211,13 @@ export async function validateJobApi(
 }
 
 /**
- * Create a new session with worker, station, and job.
- * Called after station selection when the job has already been selected.
+ * Create a new session with worker and station.
+ * Job binding is now optional - if not provided, job will be bound when entering production.
  */
 export async function createSessionApi(
   workerId: string,
   stationId: string,
-  jobId: string,
+  jobId: string | null,
   instanceId?: string,
 ): Promise<Session> {
   const response = await fetch("/api/sessions", {
@@ -271,18 +328,6 @@ export async function fetchStationStatusesApi(
   );
   const data = await handleResponse<{ statuses: StatusDefinition[] }>(response);
   return data.statuses ?? [];
-}
-
-export async function updateSessionTotalsApi(
-  sessionId: string,
-  totals: { total_good?: number; total_scrap?: number },
-) {
-  const response = await fetch("/api/sessions/quantities", {
-    method: "POST",
-    headers: createWorkerHeaders(),
-    body: JSON.stringify({ sessionId, ...totals }),
-  });
-  await handleResponse(response);
 }
 
 export async function completeSessionApi(sessionId: string) {
@@ -443,6 +488,7 @@ export type SessionPipelineContext = {
   isProductionLine: boolean;
   isSingleStation: boolean;
   currentPosition: number;
+  totalSteps: number;
   isTerminal: boolean;
   prevStation: PipelineNeighborStation | null;
   nextStation: PipelineNeighborStation | null;
@@ -450,7 +496,7 @@ export type SessionPipelineContext = {
   waitingOutput: number;
   jobItem: {
     id: string;
-    kind: "station" | "line";
+    name: string;
     plannedQuantity: number;
   } | null;
 };
@@ -470,5 +516,214 @@ export async function fetchSessionPipelineContextApi(
   );
   const data = await handleResponse<{ context: SessionPipelineContext }>(response);
   return data.context;
+}
+
+// Scrap report type for session scrap section
+export type SessionScrapReport = {
+  id: string;
+  description: string;
+  image_url?: string | null;
+  created_at: string;
+  status: "new" | "approved";
+};
+
+/**
+ * Fetch scrap reports for a specific session.
+ * Used by the ScrapSection component on the work page.
+ */
+export async function fetchSessionScrapReportsApi(
+  sessionId: string,
+): Promise<SessionScrapReport[]> {
+  const response = await fetch(
+    `/api/sessions/scrap-reports?sessionId=${encodeURIComponent(sessionId)}`,
+    {
+      headers: createWorkerHeaders(),
+    },
+  );
+  const data = await handleResponse<{ reports: SessionScrapReport[] }>(response);
+  return data.reports ?? [];
+}
+
+// ============================================
+// JOB SELECTION API (Deferred Job Selection)
+// ============================================
+
+export type AvailableJob = {
+  id: string;
+  jobNumber: string;
+  clientName: string | null;
+  description: string | null;
+  jobItemCount: number;
+};
+
+export type AvailableJobItem = {
+  id: string;
+  jobId: string;
+  name: string;
+  plannedQuantity: number;
+  completedGood: number;
+  remaining: number;
+  /** @deprecated Use jobItemStepId */
+  jobItemStationId?: string;
+  jobItemStepId: string;
+};
+
+/**
+ * Fetch jobs that have active job items for a specific station.
+ * Used when worker enters production and needs to select a job.
+ */
+export async function fetchAvailableJobsForStationApi(
+  stationId: string,
+): Promise<AvailableJob[]> {
+  const response = await fetch(
+    `/api/stations/${encodeURIComponent(stationId)}/available-jobs`,
+    {
+      headers: createWorkerHeaders(),
+    },
+  );
+  const data = await handleResponse<{ jobs: AvailableJob[] }>(response);
+  return data.jobs;
+}
+
+/**
+ * Fetch job items for a specific job at a specific station.
+ * Used when worker selects a job and needs to choose a job item.
+ */
+export async function fetchJobItemsForStationJobApi(
+  stationId: string,
+  jobId: string,
+): Promise<AvailableJobItem[]> {
+  const response = await fetch(
+    `/api/stations/${encodeURIComponent(stationId)}/jobs/${encodeURIComponent(jobId)}/job-items`,
+    {
+      headers: createWorkerHeaders(),
+    },
+  );
+  const data = await handleResponse<{ jobItems: AvailableJobItem[] }>(response);
+  return data.jobItems;
+}
+
+/**
+ * Bind a job item to an existing session.
+ * Called when worker enters production and selects a job + job item.
+ */
+export async function bindJobItemToSessionApi(
+  sessionId: string,
+  jobId: string,
+  jobItemId: string,
+  jobItemStepId: string,
+): Promise<Session> {
+  const response = await fetch("/api/sessions/bind-job-item", {
+    method: "POST",
+    headers: createWorkerHeaders(),
+    body: JSON.stringify({
+      sessionId,
+      jobId,
+      jobItemId,
+      jobItemStepId,
+    }),
+  });
+  const data = await handleResponse<{ session: Session }>(response);
+  return data.session;
+}
+
+// ============================================
+// QUANTITY REPORTING API (End of Production)
+// ============================================
+
+export type EndProductionResult = {
+  success: boolean;
+  newStatusEvent: StatusEvent;
+};
+
+/**
+ * End a production status event with quantity reporting.
+ * Atomically records quantities, ends the current status event,
+ * and transitions to the next status.
+ */
+export async function endProductionStatusApi(options: {
+  sessionId: string;
+  statusEventId: string;
+  quantityGood: number;
+  quantityScrap: number;
+  nextStatusId: string;
+}): Promise<EndProductionResult> {
+  const response = await fetch("/api/status-events/end-production", {
+    method: "POST",
+    headers: createWorkerHeaders(),
+    body: JSON.stringify({
+      sessionId: options.sessionId,
+      statusEventId: options.statusEventId,
+      quantityGood: options.quantityGood,
+      quantityScrap: options.quantityScrap,
+      nextStatusId: options.nextStatusId,
+    }),
+  });
+  return handleResponse<EndProductionResult>(response);
+}
+
+// ============================================
+// FIRST PRODUCT QA API
+// ============================================
+
+export type FirstProductQAStatus = {
+  approved: boolean;
+  pendingReport: Report | null;
+  approvedReport: Report | null;
+};
+
+/**
+ * Check if first product QA has been approved for a job item at a station.
+ */
+export async function checkFirstProductQAApi(
+  jobItemId: string,
+  stationId: string,
+): Promise<FirstProductQAStatus> {
+  const response = await fetch(
+    `/api/first-product-qa/check?jobItemId=${encodeURIComponent(jobItemId)}&stationId=${encodeURIComponent(stationId)}`,
+    {
+      headers: createWorkerHeaders(),
+    },
+  );
+  return handleResponse<FirstProductQAStatus>(response);
+}
+
+/**
+ * Submit a first product QA request.
+ */
+export async function submitFirstProductQARequestApi(input: {
+  jobItemId: string;
+  stationId: string;
+  sessionId?: string;
+  workerId?: string;
+  description?: string;
+  image?: File | null;
+}): Promise<Report> {
+  const formData = new FormData();
+  formData.append("jobItemId", input.jobItemId);
+  formData.append("stationId", input.stationId);
+
+  if (input.sessionId) {
+    formData.append("sessionId", input.sessionId);
+  }
+  if (input.workerId) {
+    formData.append("workerId", input.workerId);
+  }
+  if (input.description) {
+    formData.append("description", input.description);
+  }
+  if (input.image) {
+    formData.append("image", input.image);
+  }
+
+  const response = await fetch("/api/first-product-qa/request", {
+    method: "POST",
+    headers: {
+      "X-Worker-Code": getWorkerCode() ?? "",
+    },
+    body: formData,
+  });
+  const data = await handleResponse<{ report: Report }>(response);
+  return data.report;
 }
 
