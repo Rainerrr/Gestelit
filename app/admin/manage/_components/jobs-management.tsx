@@ -70,9 +70,9 @@ const getProgressTier = (percent: number | null, isBlocked: boolean): ProgressTi
   if (percent === null) {
     return {
       label: "ללא יעד",
-      color: "text-zinc-500",
-      bgColor: "bg-zinc-800/50",
-      borderColor: "border-zinc-700",
+      color: "text-muted-foreground",
+      bgColor: "bg-secondary/50",
+      borderColor: "border-input",
     };
   }
   if (percent >= 100) {
@@ -175,8 +175,8 @@ export const JobsManagement = ({
   }, [jobs, loadJobItems]);
 
   const getProgressPercent = useCallback((job: JobWithStats) => {
-    if (!job.job.planned_quantity || job.job.planned_quantity <= 0) return null;
-    return Math.min(100, Math.round((job.totalGood / job.job.planned_quantity) * 100));
+    if (!job.plannedQuantity || job.plannedQuantity <= 0) return null;
+    return Math.min(100, Math.round((job.totalGood / job.plannedQuantity) * 100));
   }, []);
 
   const isJobBlocked = useCallback((jobId: string) => {
@@ -300,40 +300,35 @@ export const JobsManagement = ({
     { id: "complete", label: "הושלם", icon: CheckCircle2, count: filterCounts.complete },
   ];
 
-  // Get assignments summary for a job
+  // Get assignments summary for a job (pipeline-only)
   const getJobAssignments = useCallback((jobId: string): string => {
     const items = jobItems[jobId];
     if (!items || items.length === 0) return "—";
 
-    const lines = items.filter((i) => i.kind === "line").length;
-    const stations = items.filter((i) => i.kind === "station").length;
-
-    const parts: string[] = [];
-    if (lines > 0) parts.push(`${lines} קווים`);
-    if (stations > 0) parts.push(`${stations} תחנות`);
-    return parts.join(", ");
+    const count = items.length;
+    return `${count} מוצרים`;
   }, [jobItems]);
 
   return (
     <div className="space-y-4">
       {/* Header Panel */}
-      <div className="rounded-xl border border-zinc-800 bg-gradient-to-b from-zinc-900 to-zinc-950 overflow-hidden">
+      <div className="rounded-xl border border-border bg-gradient-to-b from-card to-card/50 overflow-hidden">
         {/* Title Bar */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between px-5 py-4 border-b border-zinc-800/80 gap-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between px-5 py-4 border-b border-border/80 gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-teal-500/20 to-cyan-500/20 border border-teal-500/30 flex items-center justify-center">
-              <Gauge className="h-5 w-5 text-teal-400" />
+            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary/20 to-primary/10 border border-primary/30 flex items-center justify-center">
+              <Gauge className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-zinc-100 tracking-tight">
+              <h3 className="text-lg font-semibold text-foreground tracking-tight">
                 לוח בקרה - עבודות
               </h3>
-              <p className="text-sm text-zinc-500">ניהול ומעקב התקדמות ייצור</p>
+              <p className="text-sm text-muted-foreground">ניהול ומעקב התקדמות ייצור</p>
             </div>
           </div>
           <Button
             onClick={() => setShowWizard(true)}
-            className="bg-teal-600 text-white hover:bg-teal-500 font-medium shadow-lg shadow-teal-900/30"
+            className="bg-primary text-primary-foreground hover:bg-primary/90 font-medium shadow-lg shadow-primary/20"
           >
             <Plus className="h-4 w-4 ml-2" />
             עבודה חדשה
@@ -341,24 +336,24 @@ export const JobsManagement = ({
         </div>
 
         {/* Filter Bar */}
-        <div className="flex flex-wrap items-center gap-2 px-5 py-3 bg-zinc-950/70 border-b border-zinc-800/50">
-          <Filter className="h-4 w-4 text-zinc-600" />
+        <div className="flex flex-wrap items-center gap-2 px-5 py-3 bg-secondary/30 border-b border-border/50">
+          <Filter className="h-4 w-4 text-muted-foreground/60" />
           {quickFilters.map((filter) => (
             <button
               key={filter.id}
               onClick={() => setQuickFilter(filter.id)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                 quickFilter === filter.id
-                  ? "bg-teal-500/20 text-teal-300 border border-teal-500/40 shadow-sm shadow-teal-500/20"
-                  : "bg-zinc-800/60 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 border border-zinc-800"
+                  ? "bg-primary/20 text-primary border border-primary/40 shadow-sm shadow-primary/20"
+                  : "bg-secondary/60 text-muted-foreground hover:text-foreground/80 hover:bg-secondary border border-input"
               }`}
             >
               <filter.icon className="h-3.5 w-3.5" />
               {filter.label}
               <span className={`font-mono text-[10px] px-1.5 py-0.5 rounded ${
                 quickFilter === filter.id
-                  ? "bg-teal-500/30 text-teal-200"
-                  : "bg-zinc-700/50 text-zinc-500"
+                  ? "bg-primary/30 text-primary"
+                  : "bg-muted/50 text-muted-foreground"
               }`}>
                 {filter.count}
               </span>
@@ -370,25 +365,25 @@ export const JobsManagement = ({
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-20 gap-4">
             <div className="relative h-12 w-12">
-              <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-teal-500" />
-              <div className="absolute inset-2 animate-spin rounded-full border-2 border-transparent border-b-cyan-500" style={{ animationDirection: "reverse", animationDuration: "1.5s" }} />
+              <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-primary" />
+              <div className="absolute inset-2 animate-spin rounded-full border-2 border-transparent border-b-primary/50" style={{ animationDirection: "reverse", animationDuration: "1.5s" }} />
             </div>
-            <p className="text-sm text-zinc-500">טוען עבודות...</p>
+            <p className="text-sm text-muted-foreground">טוען עבודות...</p>
           </div>
         ) : sortedJobs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 gap-4 text-zinc-500">
-            <div className="w-16 h-16 rounded-xl bg-zinc-800/50 border border-zinc-700 flex items-center justify-center">
-              <Package className="h-8 w-8 text-zinc-600" />
+          <div className="flex flex-col items-center justify-center py-20 gap-4 text-muted-foreground">
+            <div className="w-16 h-16 rounded-xl bg-secondary/50 border border-input flex items-center justify-center">
+              <Package className="h-8 w-8 text-muted-foreground/60" />
             </div>
             <div className="text-center">
-              <p className="text-base font-medium text-zinc-400">אין עבודות להצגה</p>
+              <p className="text-base font-medium text-foreground/80">אין עבודות להצגה</p>
               <p className="text-sm mt-1">התחל ביצירת עבודה חדשה</p>
             </div>
           </div>
         ) : (
-          <div className="divide-y divide-zinc-800/60">
+          <div className="divide-y divide-border/60">
             {/* Table Header */}
-            <div className="hidden md:grid grid-cols-[40px_1fr_140px_100px_160px_100px_120px] gap-3 px-5 py-3 bg-zinc-900/50 text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">
+            <div className="hidden md:grid grid-cols-[40px_1fr_140px_100px_160px_100px_120px] gap-3 px-5 py-3 bg-card/50 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
               <div></div>
               <div>פק"ע / לקוח</div>
               <div>שיוך</div>
@@ -414,19 +409,19 @@ export const JobsManagement = ({
                   <div
                     className={`grid grid-cols-1 md:grid-cols-[40px_1fr_140px_100px_160px_100px_120px] gap-3 px-5 py-3 transition-all cursor-pointer ${
                       isExpanded
-                        ? "bg-zinc-800/40"
-                        : "hover:bg-zinc-800/20"
+                        ? "bg-secondary/40"
+                        : "hover:bg-secondary/20"
                     }`}
                     onClick={() => handleExpand(jobWithStats.job.id)}
                   >
                     {/* Expand Toggle */}
                     <div className="hidden md:flex items-center justify-center">
                       <div
-                        className={`w-6 h-6 rounded-md bg-zinc-800/80 border border-zinc-700 flex items-center justify-center transition-transform ${
+                        className={`w-6 h-6 rounded-md bg-secondary/80 border border-input flex items-center justify-center transition-transform ${
                           isExpanded ? "rotate-180" : ""
                         }`}
                       >
-                        <ChevronDown className="h-3.5 w-3.5 text-zinc-500" />
+                        <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
                       </div>
                     </div>
 
@@ -434,7 +429,7 @@ export const JobsManagement = ({
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <span className="font-mono font-bold text-zinc-100 text-sm tracking-tight">
+                          <span className="font-mono font-bold text-foreground text-sm tracking-tight">
                             {jobWithStats.job.job_number}
                           </span>
                           {blocked && !isLoadingJobItems && (
@@ -442,7 +437,7 @@ export const JobsManagement = ({
                           )}
                         </div>
                         {jobWithStats.job.customer_name && (
-                          <p className="text-xs text-zinc-500 truncate mt-0.5">
+                          <p className="text-xs text-muted-foreground truncate mt-0.5">
                             {jobWithStats.job.customer_name}
                           </p>
                         )}
@@ -451,9 +446,9 @@ export const JobsManagement = ({
 
                     {/* Assignments */}
                     <div className="hidden md:flex items-center">
-                      <span className="text-xs text-zinc-400 truncate">
+                      <span className="text-xs text-foreground/70 truncate">
                         {isLoadingJobItems ? (
-                          <span className="text-zinc-600">...</span>
+                          <span className="text-muted-foreground/60">...</span>
                         ) : (
                           assignments
                         )}
@@ -462,8 +457,8 @@ export const JobsManagement = ({
 
                     {/* Planned Quantity */}
                     <div className="hidden md:flex items-center justify-center">
-                      <span className="font-mono text-sm text-zinc-300">
-                        {jobWithStats.job.planned_quantity?.toLocaleString() ?? "—"}
+                      <span className="font-mono text-sm text-foreground/80">
+                        {jobWithStats.plannedQuantity?.toLocaleString() ?? "—"}
                       </span>
                     </div>
 
@@ -471,18 +466,18 @@ export const JobsManagement = ({
                     <div className="hidden md:flex items-center gap-2">
                       {progressPercent !== null ? (
                         <div className="flex-1 flex items-center gap-2">
-                          <div className="flex-1 h-2 bg-zinc-800 rounded-full overflow-hidden">
+                          <div className="flex-1 h-2 bg-secondary rounded-full overflow-hidden">
                             <div
                               className={`h-full rounded-full transition-all ${getProgressBarColor(progressPercent)}`}
                               style={{ width: `${progressPercent}%` }}
                             />
                           </div>
-                          <span className="text-xs font-mono font-medium text-zinc-400 w-10 text-left">
+                          <span className="text-xs font-mono font-medium text-foreground/70 w-10 text-left">
                             {progressPercent}%
                           </span>
                         </div>
                       ) : (
-                        <span className="text-zinc-600 text-xs">ללא יעד</span>
+                        <span className="text-muted-foreground/60 text-xs">ללא יעד</span>
                       )}
                     </div>
 
@@ -512,7 +507,7 @@ export const JobsManagement = ({
                         size="icon"
                         onClick={() => setJobItemsJob(jobWithStats.job)}
                         aria-label="הוסף מוצר"
-                        className="h-7 w-7 text-zinc-500 hover:text-teal-400 hover:bg-teal-500/10"
+                        className="h-7 w-7 text-muted-foreground hover:text-primary hover:bg-primary/10"
                       >
                         <Plus className="h-3.5 w-3.5" />
                       </Button>
@@ -526,7 +521,7 @@ export const JobsManagement = ({
                             size="icon"
                             onClick={() => setEditingJob(jobWithStats.job)}
                             aria-label="עריכת עבודה"
-                            className="h-7 w-7 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-700/50"
+                            className="h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-muted/50"
                           >
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
@@ -550,23 +545,23 @@ export const JobsManagement = ({
                             size="icon"
                             disabled={isSubmitting}
                             aria-label="מחיקת עבודה"
-                            className="h-7 w-7 text-zinc-500 hover:text-red-400 hover:bg-red-500/10"
+                            className="h-7 w-7 text-muted-foreground hover:text-red-400 hover:bg-red-500/10"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </DialogTrigger>
-                        <DialogContent dir="rtl" className="border-zinc-800 bg-zinc-900">
+                        <DialogContent dir="rtl" className="border-border bg-card">
                           <DialogHeader>
-                            <DialogTitle className="text-zinc-100">
+                            <DialogTitle className="text-foreground">
                               האם למחוק את העבודה?
                             </DialogTitle>
-                            <DialogDescription className="text-zinc-500">
+                            <DialogDescription className="text-muted-foreground">
                               הפעולה תמחק את העבודה לחלוטין. סשנים קיימים ישמרו
                               אך לא יהיו משויכים לעבודה זו. לא ניתן לבטל.
                             </DialogDescription>
                           </DialogHeader>
                           {isCheckingDeleteSession ? (
-                            <p className="text-sm text-zinc-500">בודק סשנים פעילים...</p>
+                            <p className="text-sm text-muted-foreground">בודק סשנים פעילים...</p>
                           ) : deleteJobHasActiveSession ? (
                             <Alert
                               variant="destructive"
@@ -594,7 +589,7 @@ export const JobsManagement = ({
                               variant="outline"
                               onClick={() => setDeleteJobId(null)}
                               disabled={isSubmitting}
-                              className="border-zinc-700 bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+                              className="border-input bg-secondary text-foreground/80 hover:bg-muted"
                             >
                               ביטול
                             </Button>
@@ -604,7 +599,7 @@ export const JobsManagement = ({
                     </div>
 
                     {/* Mobile Summary Row */}
-                    <div className="md:hidden flex items-center justify-between mt-2 pt-2 border-t border-zinc-800/50">
+                    <div className="md:hidden flex items-center justify-between mt-2 pt-2 border-t border-border/50">
                       <div className="flex items-center gap-3">
                         <span
                           className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium ${tier.bgColor} border ${tier.borderColor} ${tier.color}`}
@@ -612,18 +607,18 @@ export const JobsManagement = ({
                           {tier.label}
                         </span>
                         {progressPercent !== null && (
-                          <span className="text-xs text-zinc-400 font-mono">
+                          <span className="text-xs text-foreground/70 font-mono">
                             {progressPercent}%
                           </span>
                         )}
                       </div>
-                      <ChevronDown className={`h-4 w-4 text-zinc-500 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+                      <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${isExpanded ? "rotate-180" : ""}`} />
                     </div>
                   </div>
 
                   {/* Expanded Content */}
                   {isExpanded && (
-                    <div className="px-5 py-4 bg-zinc-900/70 border-t border-zinc-800/40">
+                    <div className="px-5 py-4 bg-card/70 border-t border-border/40">
                       {/* Blocked Warning */}
                       {blocked && !isLoadingJobItems && (
                         <div className="mb-4 p-4 rounded-xl bg-gradient-to-r from-red-500/10 via-red-500/5 to-transparent border border-red-500/20">
@@ -634,7 +629,7 @@ export const JobsManagement = ({
                             <div className="flex-1">
                               <h4 className="font-semibold text-red-300">עבודה חסומה</h4>
                               <p className="text-sm text-red-400/80 mt-1">
-                                לא הוגדרו מוצרים (קו ייצור או תחנה) לעבודה זו.
+                                לא הוגדרו מוצרים לעבודה זו.
                                 עובדים לא יוכלו לעבוד על עבודה זו עד שיוגדר לפחות מוצר אחד.
                               </p>
                               <Button
@@ -652,26 +647,26 @@ export const JobsManagement = ({
 
                       {/* Description */}
                       {jobWithStats.job.description && (
-                        <div className="mb-4 p-3 rounded-lg bg-zinc-800/40 border border-zinc-800">
-                          <p className="text-sm text-zinc-400">{jobWithStats.job.description}</p>
+                        <div className="mb-4 p-3 rounded-lg bg-secondary/40 border border-input">
+                          <p className="text-sm text-foreground/70">{jobWithStats.job.description}</p>
                         </div>
                       )}
 
                       {/* Job Items */}
                       {isLoadingJobItems ? (
                         <div className="flex items-center justify-center py-8">
-                          <div className="animate-spin rounded-full h-6 w-6 border-2 border-transparent border-t-teal-500" />
+                          <div className="animate-spin rounded-full h-6 w-6 border-2 border-transparent border-t-primary" />
                         </div>
                       ) : items.length > 0 ? (
                         <div className="space-y-4">
                           {/* Header with toggle */}
                           <div className="flex items-center justify-between">
-                            <h4 className="text-sm font-semibold text-zinc-300 flex items-center gap-2">
-                              <Package className="h-4 w-4 text-teal-400" />
+                            <h4 className="text-sm font-semibold text-foreground/80 flex items-center gap-2">
+                              <Package className="h-4 w-4 text-primary" />
                               מוצרים ({items.length})
                             </h4>
                             <div className="flex items-center gap-3">
-                              <label className="flex items-center gap-2 text-xs text-zinc-500 cursor-pointer">
+                              <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
                                 <span>יחידות</span>
                                 <Switch
                                   checked={showPercentages}
@@ -684,7 +679,7 @@ export const JobsManagement = ({
                                 variant="outline"
                                 size="sm"
                                 onClick={() => setJobItemsJob(jobWithStats.job)}
-                                className="h-7 text-xs border-zinc-700 bg-zinc-800/50 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200"
+                                className="h-7 text-xs border-input bg-secondary/50 text-foreground/70 hover:bg-muted hover:text-foreground"
                               >
                                 <Pencil className="h-3 w-3 ml-1" />
                                 ערוך
@@ -698,13 +693,16 @@ export const JobsManagement = ({
                               const completed = item.progress?.completed_good ?? 0;
                               const planned = item.planned_quantity;
                               const percent = Math.min(100, Math.round((completed / planned) * 100));
-                              const stages = item.job_item_stations ?? [];
+                              // Use job_item_steps (new) with fallback to job_item_stations (deprecated)
+                              const stages = item.job_item_steps ?? item.job_item_stations ?? [];
                               const wipBalances = item.wip_balances ?? [];
+                              // Pipeline items always have multiple steps
+                              const isMultiStation = stages.length > 1;
 
                               // Build WIP distribution from actual balances
-                              // Maps job_item_station_id to good_available count
+                              // Maps job_item_step_id to good_available count
                               const wipByStationId = new Map(
-                                wipBalances.map((wb) => [wb.job_item_station_id, wb.good_available])
+                                wipBalances.map((wb) => [wb.job_item_step_id, wb.good_available])
                               );
 
                               // Get WIP for each stage in order
@@ -748,35 +746,33 @@ export const JobsManagement = ({
                               return (
                                 <div
                                   key={item.id}
-                                  className="p-4 rounded-xl bg-zinc-800/30 border border-zinc-800/60"
+                                  className="p-4 rounded-xl bg-secondary/30 border border-input/60"
                                 >
                                   {/* Item Header */}
                                   <div className="flex items-center justify-between mb-4">
                                     <div className="flex items-center gap-2">
                                       <div
                                         className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                                          item.kind === "line"
+                                          isMultiStation
                                             ? "bg-blue-500/20 border border-blue-500/30"
                                             : "bg-emerald-500/20 border border-emerald-500/30"
                                         }`}
                                       >
-                                        {item.kind === "line" ? (
+                                        {isMultiStation ? (
                                           <Factory className="h-4 w-4 text-blue-400" />
                                         ) : (
                                           <Zap className="h-4 w-4 text-emerald-400" />
                                         )}
                                       </div>
                                       <div>
-                                        <span className="font-medium text-zinc-200 text-sm">
-                                          {item.kind === "line"
-                                            ? item.production_line?.name ?? "קו ייצור"
-                                            : item.station?.name ?? "תחנה"}
+                                        <span className="font-medium text-foreground text-sm">
+                                          {item.name || item.pipeline_preset?.name || "מוצר"}
                                         </span>
                                         <Badge
                                           variant="secondary"
-                                          className="mr-2 text-[9px] bg-zinc-800/80 text-zinc-500 border-zinc-700"
+                                          className="mr-2 text-[9px] bg-secondary/80 text-muted-foreground border-input"
                                         >
-                                          {item.kind === "line" ? `${stages.length} שלבים` : "תחנה"}
+                                          {stages.length} שלבים
                                         </Badge>
                                       </div>
                                     </div>
@@ -784,15 +780,15 @@ export const JobsManagement = ({
                                       <div className="text-lg font-bold font-mono text-emerald-400">
                                         {showPercentages ? `${percent}%` : completed.toLocaleString()}
                                       </div>
-                                      <div className="text-[10px] text-zinc-500">
+                                      <div className="text-[10px] text-muted-foreground">
                                         הושלם מתוך {planned.toLocaleString()}
                                       </div>
                                     </div>
                                   </div>
 
-                                  {/* Single Station - Simple Progress Bar */}
-                                  {item.kind === "station" && (
-                                    <div className="h-10 rounded-xl overflow-hidden bg-zinc-900 flex items-center">
+                                  {/* Single-step Pipeline - Simple Progress Bar */}
+                                  {!isMultiStation && stages.length === 1 && (
+                                    <div className="h-10 rounded-xl overflow-hidden bg-secondary flex items-center">
                                       <div
                                         className="h-full bg-emerald-500 flex items-center justify-center transition-all relative"
                                         style={{ width: `${percent}%`, minWidth: percent > 0 ? "60px" : "0" }}
@@ -805,7 +801,7 @@ export const JobsManagement = ({
                                       </div>
                                       {percent < 100 && (
                                         <div className="flex-1 h-full flex items-center justify-center">
-                                          <span className="text-[10px] text-zinc-600 font-mono">
+                                          <span className="text-[10px] text-muted-foreground/60 font-mono">
                                             {(planned - completed).toLocaleString()} נותרו
                                           </span>
                                         </div>
@@ -813,11 +809,11 @@ export const JobsManagement = ({
                                     </div>
                                   )}
 
-                                  {/* Production Line - Segmented Bar */}
-                                  {item.kind === "line" && stages.length > 0 && (
+                                  {/* Multi-step Pipeline - Segmented Bar */}
+                                  {isMultiStation && (
                                     <div className="space-y-2">
                                       {/* Thick Segmented Progress Bar */}
-                                      <div className="h-12 rounded-xl overflow-hidden bg-zinc-900 flex">
+                                      <div className="h-12 rounded-xl overflow-hidden bg-secondary flex">
                                         {stages.map((stage, idx) => {
                                           const stageWip = wipDistribution[idx] ?? 0;
                                           const stagePercent = planned > 0 ? (stageWip / planned) * 100 : 0;
@@ -867,7 +863,7 @@ export const JobsManagement = ({
                                             className="h-full flex items-center justify-center flex-1"
                                             style={{ minWidth: "40px" }}
                                           >
-                                            <span className="text-[10px] text-zinc-600 font-mono">
+                                            <span className="text-[10px] text-muted-foreground/60 font-mono">
                                               {(planned - totalInSystem).toLocaleString()} נותרו
                                             </span>
                                           </div>
@@ -885,12 +881,12 @@ export const JobsManagement = ({
                                                   className="w-2 h-2 rounded-full"
                                                   style={{ backgroundColor: segmentStyle.color }}
                                                 />
-                                                <span className="text-[9px] text-zinc-500">
+                                                <span className="text-[9px] text-muted-foreground">
                                                   {stage.station?.name ?? `שלב ${stage.position}`}
                                                 </span>
                                               </div>
                                               {idx < stages.length - 1 && (
-                                                <ChevronLeft className="h-3 w-3 text-zinc-700 mx-1" />
+                                                <ChevronLeft className="h-3 w-3 text-muted-foreground/50 mx-1" />
                                               )}
                                             </div>
                                           );
@@ -906,12 +902,12 @@ export const JobsManagement = ({
                       ) : null}
 
                       {/* Mobile Actions */}
-                      <div className="md:hidden flex items-center gap-2 mt-4 pt-4 border-t border-zinc-800/50">
+                      <div className="md:hidden flex items-center gap-2 mt-4 pt-4 border-t border-border/50">
                         <Button
                           variant="outline"
                           size="sm"
                           onClick={() => setJobItemsJob(jobWithStats.job)}
-                          className="flex-1 border-zinc-700 bg-zinc-800/50 text-zinc-300 hover:bg-zinc-700"
+                          className="flex-1 border-input bg-secondary/50 text-foreground/80 hover:bg-muted"
                         >
                           <Package className="h-4 w-4 ml-2" />
                           מוצרים
@@ -925,7 +921,7 @@ export const JobsManagement = ({
                               variant="outline"
                               size="sm"
                               onClick={() => setEditingJob(jobWithStats.job)}
-                              className="flex-1 border-zinc-700 bg-zinc-800/50 text-zinc-300 hover:bg-zinc-700"
+                              className="flex-1 border-input bg-secondary/50 text-foreground/80 hover:bg-muted"
                             >
                               <Pencil className="h-4 w-4 ml-2" />
                               עריכה

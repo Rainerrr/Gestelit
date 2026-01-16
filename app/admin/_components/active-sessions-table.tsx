@@ -3,6 +3,7 @@
 import { memo, useMemo, useSyncExternalStore } from "react";
 import type { KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   ChevronLeft,
   Clock,
@@ -20,6 +21,7 @@ import {
   useAdminSessionIds,
   useAdminSessionsLoading,
 } from "@/contexts/AdminSessionsContext";
+import { useStationProgress } from "@/contexts/JobProgressContext";
 import {
   getStatusColorFromDictionary,
   getStatusLabelFromDictionary,
@@ -129,6 +131,13 @@ const SessionRow = memo(
   ({ sessionId, dictionary, onNavigate }: RowProps) => {
     const session = useAdminSession(sessionId);
     const now = useNow();
+
+    // Get station progress from job progress context
+    const { progress: stationProgress } = useStationProgress(
+      session?.jobId ?? "",
+      session?.stationId ?? null
+    );
+
     const duration = useMemo(
       () => (session ? getDurationLabel(session.startedAt, now) : "-"),
       [session, now],
@@ -327,20 +336,48 @@ const SessionRow = memo(
         {/* Divider after flags */}
         <div className="w-px h-8 bg-border" />
 
-        {/* Time + Quantities */}
+        {/* Time + Progress */}
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-1.5 text-muted-foreground">
             <Clock className="h-3.5 w-3.5 text-muted-foreground" />
             <span className="font-mono text-sm tabular-nums">{duration}</span>
           </div>
-          <div className="flex items-center gap-1.5">
-            <Package className="h-3.5 w-3.5 text-emerald-500" />
-            <span className="font-mono text-sm tabular-nums text-emerald-400">{session.totalGood}</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <Trash2 className="h-3.5 w-3.5 text-red-500" />
-            <span className="font-mono text-sm tabular-nums text-red-400">{session.totalScrap}</span>
-          </div>
+
+          {/* Progress bar: completed / required */}
+          {stationProgress ? (
+            <div className="flex items-center gap-2 min-w-[120px]">
+              <div className="flex-1 h-2 bg-zinc-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-emerald-500 rounded-full transition-all"
+                  style={{
+                    width: `${Math.min(100, stationProgress.plannedQuantity > 0
+                      ? (stationProgress.totalCompleted / stationProgress.plannedQuantity) * 100
+                      : 0)}%`,
+                  }}
+                />
+              </div>
+              <span className="font-mono text-xs tabular-nums text-muted-foreground whitespace-nowrap">
+                {stationProgress.totalCompleted.toLocaleString()}/{stationProgress.plannedQuantity.toLocaleString()}
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <Package className="h-3.5 w-3.5 text-emerald-500" />
+              <span className="font-mono text-sm tabular-nums text-emerald-400">{session.totalGood}</span>
+            </div>
+          )}
+
+          {/* Scrap - only show if there's scrap, with link to reports */}
+          {session.totalScrap > 0 && (
+            <Link
+              href={`/admin/reports/scrap?sessionId=${session.id}`}
+              onClick={(e) => e.stopPropagation()}
+              className="flex items-center gap-1.5 hover:bg-red-500/10 px-1.5 py-0.5 rounded transition-colors"
+            >
+              <Trash2 className="h-3.5 w-3.5 text-red-500" />
+              <span className="font-mono text-sm tabular-nums text-red-400">{session.totalScrap}</span>
+            </Link>
+          )}
         </div>
 
         {/* Navigation arrow */}
@@ -358,6 +395,13 @@ const MobileSessionCard = memo(
   ({ sessionId, dictionary, onNavigate }: RowProps) => {
     const session = useAdminSession(sessionId);
     const now = useNow();
+
+    // Get station progress from job progress context
+    const { progress: stationProgress } = useStationProgress(
+      session?.jobId ?? "",
+      session?.stationId ?? null
+    );
+
     const duration = useMemo(
       () => (session ? getDurationLabel(session.startedAt, now) : "-"),
       [session, now],
@@ -550,22 +594,50 @@ const MobileSessionCard = memo(
           </TooltipProvider>
         </div>
 
-        {/* Bottom row: Time + Quantities in a stats bar */}
-        <div className="flex items-center justify-between pt-2 border-t border-border/50">
-          <div className="flex items-center gap-1.5 text-muted-foreground">
-            <Clock className="h-4 w-4" />
-            <span className="font-mono text-sm tabular-nums">{duration}</span>
+        {/* Bottom row: Time + Progress in a stats bar */}
+        <div className="flex flex-col gap-2 pt-2 border-t border-border/50">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-muted-foreground">
+              <Clock className="h-4 w-4" />
+              <span className="font-mono text-sm tabular-nums">{duration}</span>
+            </div>
+
+            {/* Scrap - only show if there's scrap, with link to reports */}
+            {session.totalScrap > 0 && (
+              <Link
+                href={`/admin/reports/scrap?sessionId=${session.id}`}
+                onClick={(e) => e.stopPropagation()}
+                className="flex items-center gap-1.5 hover:bg-red-500/10 px-2 py-1 rounded transition-colors"
+              >
+                <Trash2 className="h-4 w-4 text-red-500" />
+                <span className="font-mono text-sm tabular-nums text-red-400 font-medium">{session.totalScrap}</span>
+              </Link>
+            )}
           </div>
-          <div className="flex items-center gap-4">
+
+          {/* Progress bar: completed / required */}
+          {stationProgress ? (
+            <div className="flex items-center gap-2">
+              <div className="flex-1 h-2.5 bg-zinc-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-emerald-500 rounded-full transition-all"
+                  style={{
+                    width: `${Math.min(100, stationProgress.plannedQuantity > 0
+                      ? (stationProgress.totalCompleted / stationProgress.plannedQuantity) * 100
+                      : 0)}%`,
+                  }}
+                />
+              </div>
+              <span className="font-mono text-xs tabular-nums text-muted-foreground whitespace-nowrap">
+                {stationProgress.totalCompleted.toLocaleString()}/{stationProgress.plannedQuantity.toLocaleString()}
+              </span>
+            </div>
+          ) : (
             <div className="flex items-center gap-1.5">
               <Package className="h-4 w-4 text-emerald-500" />
               <span className="font-mono text-sm tabular-nums text-emerald-400 font-medium">{session.totalGood}</span>
             </div>
-            <div className="flex items-center gap-1.5">
-              <Trash2 className="h-4 w-4 text-red-500" />
-              <span className="font-mono text-sm tabular-nums text-red-400 font-medium">{session.totalScrap}</span>
-            </div>
-          </div>
+          )}
         </div>
       </div>
     );

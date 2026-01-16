@@ -48,7 +48,7 @@ export async function POST(request: Request) {
 
     // Job item resolution (only if jobId is provided)
     let jobItemId: string | null = null;
-    let jobItemStationId: string | null = null;
+    let jobItemStepId: string | null = null;
 
     if (jobId) {
       // Check if job has job_items configured
@@ -80,7 +80,7 @@ export async function POST(request: Request) {
       }
 
       jobItemId = resolution.jobItem.id;
-      jobItemStationId = resolution.jobItemStation.id;
+      jobItemStepId = resolution.jobItemStation.id;
     }
     // If no jobId, session is created without job binding
     // Job/job item will be bound later when entering production status
@@ -98,7 +98,7 @@ export async function POST(request: Request) {
       p_job_id: jobId ?? null,
       p_instance_id: instanceId ?? null,
       p_job_item_id: jobItemId,
-      p_job_item_station_id: jobItemStationId,
+      p_job_item_step_id: jobItemStepId,
       p_initial_status_id: stopStatus.id,
     });
 

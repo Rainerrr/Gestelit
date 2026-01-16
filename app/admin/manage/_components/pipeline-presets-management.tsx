@@ -13,43 +13,43 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import type { ProductionLineWithStations, Station } from "@/lib/types";
-import { Pencil, Trash2, Settings2 } from "lucide-react";
-import { ProductionLineFormDialog } from "./production-line-form-dialog";
+import type { PipelinePresetWithSteps, Station } from "@/lib/types";
+import { Pencil, Trash2, Settings2, ArrowLeft } from "lucide-react";
+import { PipelinePresetFormDialog } from "./pipeline-preset-form-dialog";
 
-type ProductionLinesManagementProps = {
-  lines: ProductionLineWithStations[];
+type PipelinePresetsManagementProps = {
+  presets: PipelinePresetWithSteps[];
   isLoading: boolean;
-  onAdd: (payload: { name: string; code?: string | null; is_active?: boolean }) => Promise<void>;
-  onEdit: (id: string, payload: { name?: string; code?: string | null; is_active?: boolean }) => Promise<void>;
+  onAdd: (payload: { name: string; description?: string | null; is_active?: boolean }) => Promise<void>;
+  onEdit: (id: string, payload: { name?: string; description?: string | null; is_active?: boolean }) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
-  onEditStations: (lineId: string) => void;
-  onCheckLocked: (lineId: string) => Promise<boolean>;
+  onEditSteps: (presetId: string) => void;
+  onCheckInUse: (presetId: string) => Promise<boolean>;
   onRefresh?: () => Promise<void>;
 };
 
-export const ProductionLinesManagement = ({
-  lines,
+export const PipelinePresetsManagement = ({
+  presets,
   isLoading,
   onAdd,
   onEdit,
   onDelete,
-  onEditStations,
-  onCheckLocked,
+  onEditSteps,
+  onCheckInUse,
   onRefresh,
-}: ProductionLinesManagementProps) => {
-  const [editingLine, setEditingLine] = useState<ProductionLineWithStations | null>(null);
+}: PipelinePresetsManagementProps) => {
+  const [editingPreset, setEditingPreset] = useState<PipelinePresetWithSteps | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [deleteLineId, setDeleteLineId] = useState<string | null>(null);
-  const [deleteLineIsLocked, setDeleteLineIsLocked] = useState(false);
-  const [isCheckingLocked, setIsCheckingLocked] = useState(false);
+  const [deletePresetId, setDeletePresetId] = useState<string | null>(null);
+  const [deletePresetInUse, setDeletePresetInUse] = useState(false);
+  const [isCheckingInUse, setIsCheckingInUse] = useState(false);
 
-  const sortedLines = useMemo(
-    () => [...lines].sort((a, b) => a.name.localeCompare(b.name, "he")),
-    [lines],
+  const sortedPresets = useMemo(
+    () => [...presets].sort((a, b) => a.name.localeCompare(b.name, "he")),
+    [presets],
   );
 
-  const handleAdd = async (payload: { name: string; code?: string | null; is_active?: boolean }) => {
+  const handleAdd = async (payload: { name: string; description?: string | null; is_active?: boolean }) => {
     setIsSubmitting(true);
     try {
       await onAdd(payload);
@@ -58,63 +58,63 @@ export const ProductionLinesManagement = ({
     }
   };
 
-  const handleEdit = async (payload: { name?: string; code?: string | null; is_active?: boolean }) => {
-    if (!editingLine) return;
+  const handleEdit = async (payload: { name?: string; description?: string | null; is_active?: boolean }) => {
+    if (!editingPreset) return;
     setIsSubmitting(true);
     try {
-      await onEdit(editingLine.id, payload);
+      await onEdit(editingPreset.id, payload);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleDelete = async (lineId: string) => {
+  const handleDelete = async (presetId: string) => {
     setIsSubmitting(true);
-    setDeleteLineIsLocked(false);
+    setDeletePresetInUse(false);
     try {
-      const isLocked = await onCheckLocked(lineId);
-      if (isLocked) {
-        setDeleteLineIsLocked(true);
+      const inUse = await onCheckInUse(presetId);
+      if (inUse) {
+        setDeletePresetInUse(true);
         setIsSubmitting(false);
         return;
       }
-      await onDelete(lineId);
-      setDeleteLineId(null);
+      await onDelete(presetId);
+      setDeletePresetId(null);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleDeleteDialogOpenChange = async (open: boolean, lineId?: string) => {
-    if (open && lineId) {
-      setIsCheckingLocked(true);
+  const handleDeleteDialogOpenChange = async (open: boolean, presetId?: string) => {
+    if (open && presetId) {
+      setIsCheckingInUse(true);
       try {
-        const isLocked = await onCheckLocked(lineId);
-        setDeleteLineIsLocked(isLocked);
+        const inUse = await onCheckInUse(presetId);
+        setDeletePresetInUse(inUse);
       } catch {
-        setDeleteLineIsLocked(false);
+        setDeletePresetInUse(false);
       } finally {
-        setIsCheckingLocked(false);
+        setIsCheckingInUse(false);
       }
     } else {
-      setDeleteLineIsLocked(false);
+      setDeletePresetInUse(false);
     }
-    setDeleteLineId(open ? (lineId ?? null) : null);
+    setDeletePresetId(open ? (presetId ?? null) : null);
   };
 
   return (
     <div className="rounded-xl border border-border bg-card/50 backdrop-blur-sm overflow-hidden">
       <div className="flex items-center justify-between px-5 py-4 border-b border-border">
         <div>
-          <h3 className="text-base font-semibold text-foreground">קווי ייצור</h3>
-          <p className="text-sm text-muted-foreground">ניהול קווי ייצור ותחנות.</p>
+          <h3 className="text-base font-semibold text-foreground">תבניות צינור</h3>
+          <p className="text-sm text-muted-foreground">ניהול תבניות צינור ייצור לשימוש חוזר.</p>
         </div>
-        <ProductionLineFormDialog
+        <PipelinePresetFormDialog
           mode="create"
           onSubmit={handleAdd}
           trigger={
             <Button className="bg-primary text-primary-foreground hover:bg-primary/90 font-medium">
-              הוסף קו ייצור
+              הוסף תבנית
             </Button>
           }
           loading={isSubmitting}
@@ -125,11 +125,11 @@ export const ProductionLinesManagement = ({
           <div className="relative h-8 w-8">
             <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-primary" />
           </div>
-          <p className="text-sm text-muted-foreground">טוען קווי ייצור...</p>
+          <p className="text-sm text-muted-foreground">טוען תבניות...</p>
         </div>
-      ) : sortedLines.length === 0 ? (
+      ) : sortedPresets.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 gap-3 text-muted-foreground">
-          <p className="text-sm">אין קווי ייצור להצגה.</p>
+          <p className="text-sm">אין תבניות צינור להצגה.</p>
         </div>
       ) : (
         <div className="overflow-x-auto">
@@ -140,10 +140,7 @@ export const ProductionLinesManagement = ({
                   שם
                 </th>
                 <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
-                  קוד
-                </th>
-                <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
-                  תחנות
+                  שלבים
                 </th>
                 <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
                   מצב
@@ -154,39 +151,46 @@ export const ProductionLinesManagement = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {sortedLines.map((line) => (
-                <tr key={line.id} className="group hover:bg-accent transition-colors">
+              {sortedPresets.map((preset) => (
+                <tr key={preset.id} className="group hover:bg-accent transition-colors">
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-between gap-3">
-                      <span className="font-medium text-foreground">{line.name}</span>
+                      <div className="min-w-0">
+                        <span className="font-medium text-foreground block truncate">{preset.name}</span>
+                        {preset.description && (
+                          <span className="text-xs text-muted-foreground block truncate max-w-[200px]">
+                            {preset.description}
+                          </span>
+                        )}
+                      </div>
                       <div className="flex items-center gap-2 lg:hidden">
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => onEditStations(line.id)}
-                          aria-label="עריכת תחנות"
+                          onClick={() => onEditSteps(preset.id)}
+                          aria-label="עריכת שלבים"
                           className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted"
                         >
                           <Settings2 className="h-4 w-4" />
                         </Button>
-                        <ProductionLineFormDialog
+                        <PipelinePresetFormDialog
                           mode="edit"
-                          line={line}
+                          preset={preset}
                           onSubmit={handleEdit}
                           trigger={
                             <Button
                               variant="ghost"
                               size="icon"
-                              onClick={() => setEditingLine(line)}
-                              aria-label="עריכת קו ייצור"
+                              onClick={() => setEditingPreset(preset)}
+                              aria-label="עריכת תבנית"
                               className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted"
                             >
                               <Pencil className="h-4 w-4" />
                             </Button>
                           }
-                          open={editingLine?.id === line.id}
+                          open={editingPreset?.id === preset.id}
                           onOpenChange={async (open) => {
-                            setEditingLine(open ? line : null);
+                            setEditingPreset(open ? preset : null);
                             if (!open && onRefresh) {
                               await onRefresh();
                             }
@@ -194,15 +198,15 @@ export const ProductionLinesManagement = ({
                           loading={isSubmitting}
                         />
                         <Dialog
-                          open={deleteLineId === line.id}
-                          onOpenChange={(open) => handleDeleteDialogOpenChange(open, line.id)}
+                          open={deletePresetId === preset.id}
+                          onOpenChange={(open) => handleDeleteDialogOpenChange(open, preset.id)}
                         >
                           <DialogTrigger asChild>
                             <Button
                               variant="ghost"
                               size="icon"
                               disabled={isSubmitting}
-                              aria-label="מחיקת קו ייצור"
+                              aria-label="מחיקת תבנית"
                               className="h-8 w-8 text-muted-foreground hover:text-red-400 hover:bg-red-500/10"
                             >
                               <Trash2 className="h-4 w-4" />
@@ -211,35 +215,35 @@ export const ProductionLinesManagement = ({
                           <DialogContent dir="rtl" className="border-border bg-card">
                             <DialogHeader>
                               <DialogTitle className="text-foreground">
-                                האם למחוק את קו הייצור?
+                                האם למחוק את התבנית?
                               </DialogTitle>
                               <DialogDescription className="text-muted-foreground">
-                                הפעולה תמחק את קו הייצור לחלוטין. לא ניתן לבטל.
+                                הפעולה תמחק את התבנית לחלוטין. לא ניתן לבטל.
                               </DialogDescription>
                             </DialogHeader>
-                            {isCheckingLocked ? (
-                              <p className="text-sm text-muted-foreground">בודק עבודות פעילות...</p>
-                            ) : deleteLineIsLocked ? (
+                            {isCheckingInUse ? (
+                              <p className="text-sm text-muted-foreground">בודק שימוש...</p>
+                            ) : deletePresetInUse ? (
                               <Alert
                                 variant="destructive"
                                 className="border-primary/30 bg-primary/10 text-right text-sm text-primary"
                               >
                                 <AlertDescription>
-                                  לא ניתן למחוק קו ייצור עם עבודות פעילות. יש לסיים את העבודות הפעילות לפני מחיקה.
+                                  לא ניתן למחוק תבנית שבשימוש בעבודות פעילות.
                                 </AlertDescription>
                               </Alert>
                             ) : null}
                             <DialogFooter className="justify-start">
                               <Button
-                                onClick={() => void handleDelete(line.id)}
-                                disabled={isSubmitting || deleteLineIsLocked || isCheckingLocked}
+                                onClick={() => void handleDelete(preset.id)}
+                                disabled={isSubmitting || deletePresetInUse || isCheckingInUse}
                                 className="bg-red-500 text-white hover:bg-red-600"
                               >
                                 מחיקה סופית
                               </Button>
                               <Button
                                 variant="outline"
-                                onClick={() => setDeleteLineId(null)}
+                                onClick={() => setDeletePresetId(null)}
                                 disabled={isSubmitting}
                                 className="border-input bg-secondary text-foreground/80 hover:bg-muted hover:text-foreground"
                               >
@@ -252,29 +256,26 @@ export const ProductionLinesManagement = ({
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    {line.code ? (
-                      <span className="font-mono text-foreground/80">{line.code}</span>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <span className="text-foreground/80">{line.stations.length}</span>
-                      {line.stations.length > 0 && (
-                        <div className="hidden md:flex items-center gap-1 flex-wrap max-w-[300px]">
-                          {line.stations.slice(0, 3).map((pls, idx) => (
-                            <Badge
-                              key={pls.id}
-                              variant="secondary"
-                              className="text-xs bg-secondary/50 text-foreground/70 border-input"
-                            >
-                              {idx + 1}. {pls.station?.name ?? "—"}
-                            </Badge>
+                      <span className="text-foreground/80">{preset.steps.length}</span>
+                      {preset.steps.length > 0 && (
+                        <div className="hidden md:flex items-center gap-1 flex-wrap max-w-[350px]">
+                          {preset.steps.slice(0, 4).map((step, idx) => (
+                            <div key={step.id} className="flex items-center gap-1">
+                              <Badge
+                                variant="secondary"
+                                className="text-xs bg-secondary/50 text-foreground/70 border-input"
+                              >
+                                {idx + 1}. {step.station?.name ?? "—"}
+                              </Badge>
+                              {idx < Math.min(preset.steps.length - 1, 3) && (
+                                <ArrowLeft className="h-3 w-3 text-muted-foreground/50" />
+                              )}
+                            </div>
                           ))}
-                          {line.stations.length > 3 && (
+                          {preset.steps.length > 4 && (
                             <span className="text-xs text-muted-foreground">
-                              +{line.stations.length - 3}
+                              +{preset.steps.length - 4}
                             </span>
                           )}
                         </div>
@@ -282,7 +283,7 @@ export const ProductionLinesManagement = ({
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    {line.is_active ? (
+                    {preset.is_active ? (
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                         פעיל
@@ -299,30 +300,30 @@ export const ProductionLinesManagement = ({
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => onEditStations(line.id)}
-                        aria-label="עריכת תחנות"
+                        onClick={() => onEditSteps(preset.id)}
+                        aria-label="עריכת שלבים"
                         className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted"
                       >
                         <Settings2 className="h-4 w-4" />
                       </Button>
-                      <ProductionLineFormDialog
+                      <PipelinePresetFormDialog
                         mode="edit"
-                        line={line}
+                        preset={preset}
                         onSubmit={handleEdit}
                         trigger={
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => setEditingLine(line)}
-                            aria-label="עריכת קו ייצור"
+                            onClick={() => setEditingPreset(preset)}
+                            aria-label="עריכת תבנית"
                             className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted"
                           >
                             <Pencil className="h-4 w-4" />
                           </Button>
                         }
-                        open={editingLine?.id === line.id}
+                        open={editingPreset?.id === preset.id}
                         onOpenChange={async (open) => {
-                          setEditingLine(open ? line : null);
+                          setEditingPreset(open ? preset : null);
                           if (!open && onRefresh) {
                             await onRefresh();
                           }
@@ -330,15 +331,15 @@ export const ProductionLinesManagement = ({
                         loading={isSubmitting}
                       />
                       <Dialog
-                        open={deleteLineId === line.id}
-                        onOpenChange={(open) => handleDeleteDialogOpenChange(open, line.id)}
+                        open={deletePresetId === preset.id}
+                        onOpenChange={(open) => handleDeleteDialogOpenChange(open, preset.id)}
                       >
                         <DialogTrigger asChild>
                           <Button
                             variant="ghost"
                             size="icon"
                             disabled={isSubmitting}
-                            aria-label="מחיקת קו ייצור"
+                            aria-label="מחיקת תבנית"
                             className="h-8 w-8 text-muted-foreground hover:text-red-400 hover:bg-red-500/10"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -347,35 +348,35 @@ export const ProductionLinesManagement = ({
                         <DialogContent dir="rtl" className="border-border bg-card">
                           <DialogHeader>
                             <DialogTitle className="text-foreground">
-                              האם למחוק את קו הייצור?
+                              האם למחוק את התבנית?
                             </DialogTitle>
                             <DialogDescription className="text-muted-foreground">
-                              הפעולה תמחק את קו הייצור לחלוטין. לא ניתן לבטל.
+                              הפעולה תמחק את התבנית לחלוטין. לא ניתן לבטל.
                             </DialogDescription>
                           </DialogHeader>
-                          {isCheckingLocked ? (
-                            <p className="text-sm text-muted-foreground">בודק עבודות פעילות...</p>
-                          ) : deleteLineIsLocked ? (
+                          {isCheckingInUse ? (
+                            <p className="text-sm text-muted-foreground">בודק שימוש...</p>
+                          ) : deletePresetInUse ? (
                             <Alert
                               variant="destructive"
                               className="border-primary/30 bg-primary/10 text-right text-sm text-primary"
                             >
                               <AlertDescription>
-                                לא ניתן למחוק קו ייצור עם עבודות פעילות. יש לסיים את העבודות הפעילות לפני מחיקה.
+                                לא ניתן למחוק תבנית שבשימוש בעבודות פעילות.
                               </AlertDescription>
                             </Alert>
                           ) : null}
                           <DialogFooter className="justify-start">
                             <Button
-                              onClick={() => void handleDelete(line.id)}
-                              disabled={isSubmitting || deleteLineIsLocked || isCheckingLocked}
+                              onClick={() => void handleDelete(preset.id)}
+                              disabled={isSubmitting || deletePresetInUse || isCheckingInUse}
                               className="bg-red-500 text-white hover:bg-red-600"
                             >
                               מחיקה סופית
                             </Button>
                             <Button
                               variant="outline"
-                              onClick={() => setDeleteLineId(null)}
+                              onClick={() => setDeletePresetId(null)}
                               disabled={isSubmitting}
                               className="border-input bg-secondary text-foreground/80 hover:bg-muted hover:text-foreground"
                             >

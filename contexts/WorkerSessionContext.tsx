@@ -18,13 +18,17 @@ import type {
 } from "@/lib/types";
 
 // Lightweight type for active job item context during production
+// Post Phase 5: kind column removed, all items are pipelines
 export type ActiveJobItemContext = {
   id: string;
   jobId: string;
   name: string;
-  kind: "station" | "line";
   plannedQuantity: number;
-  jobItemStationId: string;
+  /** Total completed good (all sessions combined) */
+  completedGood?: number;
+  /** @deprecated Use jobItemStepId */
+  jobItemStationId?: string;
+  jobItemStepId: string;
 };
 
 type WorkerSessionState = {
@@ -163,10 +167,8 @@ function reducer(
         sessionId: session.id,
         sessionStartedAt: session.started_at,
         currentStatus: session.current_status_id ?? state.currentStatus,
-        totals: {
-          good: session.total_good ?? 0,
-          scrap: session.total_scrap ?? 0,
-        },
+        // totals now derived from status_events - start at 0, will be accumulated through status changes
+        totals: { good: 0, scrap: 0 },
         checklist: {
           ...state.checklist,
           startCompleted: true,

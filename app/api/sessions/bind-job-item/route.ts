@@ -15,7 +15,8 @@ import {
  * - sessionId: string - The session to update
  * - jobId: string - The selected job
  * - jobItemId: string - The specific job item to work on
- * - jobItemStationId: string - The job_item_stations row linking item to station
+ * - jobItemStepId: string - The job_item_steps row linking item to station
+ * - jobItemStationId: string - (deprecated) Alias for jobItemStepId
  */
 export async function POST(request: Request) {
   try {
@@ -23,7 +24,10 @@ export async function POST(request: Request) {
     await requireWorker(request);
 
     const body = await request.json();
-    const { sessionId, jobId, jobItemId, jobItemStationId } = body;
+    const { sessionId, jobId, jobItemId, jobItemStepId, jobItemStationId } = body;
+
+    // Support both new and deprecated parameter names
+    const stepId = jobItemStepId ?? jobItemStationId;
 
     // Validate required fields
     if (!sessionId || typeof sessionId !== "string") {
@@ -47,9 +51,9 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!jobItemStationId || typeof jobItemStationId !== "string") {
+    if (!stepId || typeof stepId !== "string") {
       return NextResponse.json(
-        { error: "JOB_ITEM_STATION_ID_REQUIRED" },
+        { error: "JOB_ITEM_STEP_ID_REQUIRED" },
         { status: 400 },
       );
     }
@@ -58,7 +62,7 @@ export async function POST(request: Request) {
       sessionId,
       jobId,
       jobItemId,
-      jobItemStationId,
+      stepId,
     );
 
     return NextResponse.json({ session });

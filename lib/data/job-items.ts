@@ -2,7 +2,6 @@ import { createServiceSupabase } from "@/lib/supabase/client";
 import { SESSION_GRACE_MS } from "@/lib/constants";
 import type {
   JobItem,
-  JobItemKind,
   JobItemProgress,
   JobItemStation,
   JobItemWithDetails,
@@ -21,17 +20,14 @@ type JobItemStationRow = JobItemStation & {
   stations: Station | null;
 };
 
-type ProductionLinePartial = {
+type PipelinePresetPartial = {
   id: string;
   name: string;
-  code?: string | null;
-  is_active?: boolean;
 };
 
 type JobItemRow = JobItem & {
-  stations?: Station | null;
-  production_lines?: ProductionLinePartial | null;
-  job_item_stations?: JobItemStationRow[];
+  pipeline_presets?: PipelinePresetPartial | null;
+  job_item_steps?: JobItemStationRow[];
   job_item_progress?: JobItemProgress | null;
   wip_balances?: WipBalance[];
 };
@@ -50,14 +46,15 @@ export async function fetchJobItemsForJob(
 ): Promise<JobItemWithDetails[]> {
   const supabase = createServiceSupabase();
 
+  // Post Phase 5: station_id, production_line_id, kind columns removed from job_items
+  // All job items are now pipeline-based with job_item_steps
   let selectParts = [
     "*",
-    "stations:station_id(*)",
-    "production_lines:production_line_id(id, name, code)",
+    "pipeline_presets:pipeline_preset_id(id, name)",
   ];
 
   if (options?.includeStations) {
-    selectParts.push("job_item_stations(*, stations(*))");
+    selectParts.push("job_item_steps(*, stations(*))");
   }
   if (options?.includeProgress) {
     selectParts.push("job_item_progress(*)");
@@ -85,7 +82,7 @@ export async function fetchJobItemsForJob(
   return (data ?? []).map((row) => {
     const item = row as unknown as JobItemRow;
 
-    const jobItemStations = (item.job_item_stations ?? [])
+    const jobItemSteps = (item.job_item_steps ?? [])
       .sort((a, b) => a.position - b.position)
       .map((jis) => ({
         id: jis.id,
@@ -100,16 +97,16 @@ export async function fetchJobItemsForJob(
     return {
       id: item.id,
       job_id: item.job_id,
-      kind: item.kind,
-      station_id: item.station_id,
-      production_line_id: item.production_line_id,
+      name: item.name,
+      pipeline_preset_id: item.pipeline_preset_id,
+      is_pipeline_locked: item.is_pipeline_locked,
       planned_quantity: item.planned_quantity,
       is_active: item.is_active,
       created_at: item.created_at,
       updated_at: item.updated_at,
-      station: item.stations ?? undefined,
-      production_line: item.production_lines ?? undefined,
-      job_item_stations: options?.includeStations ? jobItemStations : undefined,
+      pipeline_preset: item.pipeline_presets ?? undefined,
+      job_item_stations: options?.includeStations ? jobItemSteps : undefined,
+      job_item_steps: options?.includeStations ? jobItemSteps : undefined,
       progress: item.job_item_progress ?? undefined,
       wip_balances: options?.includeWipBalances ? (item.wip_balances ?? []) : undefined,
     };
@@ -124,13 +121,13 @@ export async function getJobItemById(
 ): Promise<JobItemWithDetails | null> {
   const supabase = createServiceSupabase();
 
+  // Post Phase 5: station_id, production_line_id, kind columns removed
   const { data, error } = await supabase
     .from("job_items")
     .select(`
       *,
-      stations:station_id(*),
-      production_lines:production_line_id(id, name, code),
-      job_item_stations(*, stations(*)),
+      pipeline_presets:pipeline_preset_id(id, name),
+      job_item_steps(*, stations(*)),
       job_item_progress(*)
     `)
     .eq("id", id)
@@ -146,7 +143,7 @@ export async function getJobItemById(
 
   const item = data as unknown as JobItemRow;
 
-  const jobItemStations = (item.job_item_stations ?? [])
+  const jobItemSteps = (item.job_item_steps ?? [])
     .sort((a, b) => a.position - b.position)
     .map((jis) => ({
       id: jis.id,
@@ -161,16 +158,16 @@ export async function getJobItemById(
   return {
     id: item.id,
     job_id: item.job_id,
-    kind: item.kind,
-    station_id: item.station_id,
-    production_line_id: item.production_line_id,
+    name: item.name,
+    pipeline_preset_id: item.pipeline_preset_id,
+    is_pipeline_locked: item.is_pipeline_locked,
     planned_quantity: item.planned_quantity,
     is_active: item.is_active,
     created_at: item.created_at,
     updated_at: item.updated_at,
-    station: item.stations ?? undefined,
-    production_line: item.production_lines ?? undefined,
-    job_item_stations: jobItemStations,
+    pipeline_preset: item.pipeline_presets ?? undefined,
+    job_item_stations: jobItemSteps,
+    job_item_steps: jobItemSteps,
     progress: item.job_item_progress ?? undefined,
   };
 }
@@ -184,7 +181,7 @@ export async function getJobItemStations(
   const supabase = createServiceSupabase();
 
   const { data, error } = await supabase
-    .from("job_item_stations")
+    .from("job_item_steps")
     .select("*, stations(*)")
     .eq("job_item_id", jobItemId)
     .order("position", { ascending: true });
@@ -217,7 +214,7 @@ export async function getJobAllowedStationIds(jobId: string): Promise<string[]> 
 
   // Single query with inner join to get all station IDs for active job items
   const { data, error } = await supabase
-    .from("job_item_stations")
+    .from("job_item_steps")
     .select("station_id, job_items!inner(job_id, is_active)")
     .eq("job_items.job_id", jobId)
     .eq("job_items.is_active", true);
@@ -254,69 +251,72 @@ export async function jobHasJobItems(jobId: string): Promise<boolean> {
 // JOB ITEM MUTATIONS
 // ============================================
 
+/**
+ * Payload for creating a job item.
+ * Post Phase 5: All items are pipeline-based. Must provide either:
+ * - pipeline_preset_id (uses preset's stations)
+ * - station_ids array (custom pipeline)
+ */
 export type CreateJobItemPayload = {
   job_id: string;
-  kind: JobItemKind;
-  station_id?: string | null;
-  production_line_id?: string | null;
+  name: string;  // Required product name
+  pipeline_preset_id?: string | null;
+  station_ids?: string[];  // Pipeline stations (required if no preset)
   planned_quantity: number;
   is_active?: boolean;
 };
 
 /**
  * Create a new job item and initialize its stations/WIP.
- * Calls the rebuild_job_item_stations RPC to set up job_item_stations and wip_balances.
+ * Post Phase 5: All items are pipeline-based. Supports:
+ * - preset-only: Uses pipeline_preset_id, calls rebuild_job_item_steps RPC
+ * - custom stations: Uses station_ids array, manually creates job_item_steps and wip_balances
  */
 export async function createJobItem(
   payload: CreateJobItemPayload,
 ): Promise<JobItemWithDetails> {
   const supabase = createServiceSupabase();
 
-  // Validate the XOR constraint
-  if (payload.kind === "station" && !payload.station_id) {
-    throw new Error("JOB_ITEM_STATION_REQUIRED");
-  }
-  if (payload.kind === "line" && !payload.production_line_id) {
-    throw new Error("JOB_ITEM_LINE_REQUIRED");
-  }
-  if (payload.kind === "station" && payload.production_line_id) {
-    throw new Error("JOB_ITEM_INVALID_XOR");
-  }
-  if (payload.kind === "line" && payload.station_id) {
-    throw new Error("JOB_ITEM_INVALID_XOR");
+  // Validate required name
+  if (!payload.name || payload.name.trim() === "") {
+    throw new Error("JOB_ITEM_NAME_REQUIRED");
   }
 
-  // Check for duplicate job items (same job + same station/line)
-  let duplicateQuery = supabase
-    .from("job_items")
-    .select("id")
-    .eq("job_id", payload.job_id)
-    .eq("is_active", true);
-
-  if (payload.kind === "station") {
-    duplicateQuery = duplicateQuery.eq("station_id", payload.station_id);
-  } else {
-    duplicateQuery = duplicateQuery.eq("production_line_id", payload.production_line_id);
+  // Either station_ids or pipeline_preset_id must be provided
+  const hasCustomStations = payload.station_ids && payload.station_ids.length > 0;
+  if (!payload.pipeline_preset_id && !hasCustomStations) {
+    throw new Error("JOB_ITEM_PIPELINE_STATIONS_REQUIRED");
   }
 
-  const { data: existingItem, error: dupError } = await duplicateQuery.maybeSingle();
+  // For preset (and no custom station_ids), verify the preset exists and has steps
+  if (payload.pipeline_preset_id && !hasCustomStations) {
+    const { data: preset, error: presetError } = await supabase
+      .from("pipeline_presets")
+      .select("id, is_active, pipeline_preset_steps(id, station_id, position)")
+      .eq("id", payload.pipeline_preset_id)
+      .maybeSingle();
 
-  if (dupError) {
-    throw new Error(`Failed to check for duplicate job items: ${dupError.message}`);
+    if (presetError) {
+      throw new Error(`Failed to verify pipeline preset: ${presetError.message}`);
+    }
+
+    if (!preset || !preset.is_active) {
+      throw new Error("PRESET_NOT_FOUND");
+    }
+
+    const steps = (preset as unknown as { pipeline_preset_steps: { id: string; station_id: string; position: number }[] }).pipeline_preset_steps;
+    if (!steps || steps.length === 0) {
+      throw new Error("PRESET_HAS_NO_STEPS");
+    }
   }
 
-  if (existingItem) {
-    throw new Error("JOB_ITEM_DUPLICATE");
-  }
-
-  // Insert the job item
+  // Insert the job item (Post Phase 5: no kind, station_id, or production_line_id columns)
   const { data: insertedItem, error: insertError } = await supabase
     .from("job_items")
     .insert({
       job_id: payload.job_id,
-      kind: payload.kind,
-      station_id: payload.kind === "station" ? payload.station_id : null,
-      production_line_id: payload.kind === "line" ? payload.production_line_id : null,
+      name: payload.name.trim(),
+      pipeline_preset_id: payload.pipeline_preset_id ?? null,
       planned_quantity: payload.planned_quantity,
       is_active: payload.is_active ?? true,
     })
@@ -329,15 +329,79 @@ export async function createJobItem(
 
   const jobItem = insertedItem as JobItem;
 
-  // Call RPC to set up job_item_stations and wip_balances
-  const { error: rpcError } = await supabase.rpc("rebuild_job_item_stations", {
-    p_job_item_id: jobItem.id,
-  });
+  // Handle station setup based on whether custom stations were provided
+  if (hasCustomStations && payload.station_ids) {
+    // Custom pipeline - manually insert job_item_steps and wip_balances
+    try {
+      const stationIds = payload.station_ids;
+      const totalStations = stationIds.length;
 
-  if (rpcError) {
-    // Clean up the job item if RPC fails
-    await supabase.from("job_items").delete().eq("id", jobItem.id);
-    throw new Error(`Failed to initialize job item stations: ${rpcError.message}`);
+      // Insert job_item_steps
+      const jobItemSteps = stationIds.map((stationId, index) => ({
+        job_item_id: jobItem.id,
+        station_id: stationId,
+        position: index + 1,
+        is_terminal: index === totalStations - 1,
+      }));
+
+      const { data: insertedSteps, error: stepsError } = await supabase
+        .from("job_item_steps")
+        .insert(jobItemSteps)
+        .select("id, station_id, position");
+
+      if (stepsError) {
+        // Clean up the job item
+        await supabase.from("job_items").delete().eq("id", jobItem.id);
+        throw new Error(`Failed to create job item steps: ${stepsError.message}`);
+      }
+
+      // Insert wip_balances for each step
+      const wipBalances = (insertedSteps ?? []).map((step) => ({
+        job_item_id: jobItem.id,
+        job_item_step_id: step.id,
+        good_available: 0,
+      }));
+
+      const { error: wipError } = await supabase
+        .from("wip_balances")
+        .insert(wipBalances);
+
+      if (wipError) {
+        // Clean up the job item (cascade will handle steps)
+        await supabase.from("job_items").delete().eq("id", jobItem.id);
+        throw new Error(`Failed to create WIP balances: ${wipError.message}`);
+      }
+
+      // Insert job_item_progress row (the RPC does this but custom path needs it too)
+      const { error: progressError } = await supabase
+        .from("job_item_progress")
+        .insert({
+          job_item_id: jobItem.id,
+          completed_good: 0,
+        });
+
+      if (progressError) {
+        // Clean up the job item (cascade will handle steps and wip_balances)
+        await supabase.from("job_items").delete().eq("id", jobItem.id);
+        throw new Error(`Failed to create job item progress: ${progressError.message}`);
+      }
+    } catch (err) {
+      // Clean up on any error
+      await supabase.from("job_items").delete().eq("id", jobItem.id);
+      throw err;
+    }
+  } else {
+    // Standard flow - call RPC to set up job_item_steps and wip_balances
+    // The RPC will use either production_line_id or pipeline_preset_id to get station list
+    const { error: rpcError } = await supabase.rpc("rebuild_job_item_steps", {
+      p_job_item_id: jobItem.id,
+    });
+
+    if (rpcError) {
+      // Clean up the job item if RPC fails
+      await supabase.from("job_items").delete().eq("id", jobItem.id);
+      throw new Error(`Failed to initialize job item stations: ${rpcError.message}`);
+    }
   }
 
   // Return the full job item with details
@@ -356,7 +420,7 @@ export type UpdateJobItemPayload = Partial<{
 
 /**
  * Update a job item.
- * Note: kind, station_id, and production_line_id cannot be changed after creation.
+ * Note: Pipeline steps cannot be changed after creation (use rebuild_job_item_steps RPC if needed).
  */
 export async function updateJobItem(
   id: string,
@@ -460,7 +524,7 @@ export async function getWipBalancesForJobItem(
  */
 export async function getWipBalanceForStep(
   jobItemId: string,
-  jobItemStationId: string,
+  jobItemStepId: string,
 ): Promise<WipBalance | null> {
   const supabase = createServiceSupabase();
 
@@ -468,7 +532,7 @@ export async function getWipBalanceForStep(
     .from("wip_balances")
     .select("*")
     .eq("job_item_id", jobItemId)
-    .eq("job_item_station_id", jobItemStationId)
+    .eq("job_item_step_id", jobItemStepId)
     .maybeSingle();
 
   if (error) {
@@ -494,7 +558,7 @@ export async function resolveJobItemForStation(
 
   // Find job items for this job that include this station
   const { data: jobItemStations, error } = await supabase
-    .from("job_item_stations")
+    .from("job_item_steps")
     .select(`
       *,
       job_items!inner(*)
@@ -552,7 +616,7 @@ export async function getUpstreamWipBalance(
 
   // Get the upstream step (position - 1)
   const { data: upstreamStep, error: stepError } = await supabase
-    .from("job_item_stations")
+    .from("job_item_steps")
     .select("*")
     .eq("job_item_id", jobItemId)
     .eq("position", currentPosition - 1)
@@ -573,7 +637,7 @@ export async function getUpstreamWipBalance(
     .from("wip_balances")
     .select("*")
     .eq("job_item_id", jobItemId)
-    .eq("job_item_station_id", step.id)
+    .eq("job_item_step_id", step.id)
     .maybeSingle();
 
   if (balanceError) {
@@ -613,7 +677,7 @@ export async function getAvailableJobsForStation(
 
   // Find all active job items that include this station, grouped by job
   const { data, error } = await supabase
-    .from("job_item_stations")
+    .from("job_item_steps")
     .select(`
       job_items!inner(
         job_id,
@@ -662,11 +726,12 @@ export type AvailableJobItem = {
   id: string;
   jobId: string;
   name: string;
-  kind: JobItemKind;
   plannedQuantity: number;
   completedGood: number;
   remaining: number;
+  /** @deprecated Use jobItemStepId */
   jobItemStationId: string;
+  jobItemStepId: string;
 };
 
 /**
@@ -679,20 +744,19 @@ export async function getJobItemsForStationAndJob(
 ): Promise<AvailableJobItem[]> {
   const supabase = createServiceSupabase();
 
-  // Find job items that include this station
+  // Post Phase 5: Find job items that include this station (via job_item_steps)
   const { data, error } = await supabase
-    .from("job_item_stations")
+    .from("job_item_steps")
     .select(`
       id,
       job_item_id,
       job_items!inner(
         id,
         job_id,
-        kind,
+        name,
         planned_quantity,
         is_active,
-        stations:station_id(name),
-        production_lines:production_line_id(name),
+        pipeline_presets:pipeline_preset_id(name),
         job_item_progress(completed_good)
       )
     `)
@@ -711,29 +775,173 @@ export async function getJobItemsForStationAndJob(
       job_items: {
         id: string;
         job_id: string;
-        kind: JobItemKind;
+        name: string;
         planned_quantity: number;
-        stations: { name: string } | null;
-        production_lines: { name: string } | null;
+        pipeline_presets: { name: string } | null;
         job_item_progress: { completed_good: number } | null;
       };
     };
 
     const item = typedRow.job_items;
     const completedGood = item.job_item_progress?.completed_good ?? 0;
-    const name = item.kind === "line"
-      ? item.production_lines?.name ?? "Production Line"
-      : item.stations?.name ?? "Station";
+    // Use explicit name, fallback to preset name if somehow name is missing
+    const name = item.name || item.pipeline_presets?.name || "מוצר";
 
     return {
       id: item.id,
       jobId: item.job_id,
       name,
-      kind: item.kind,
       plannedQuantity: item.planned_quantity,
       completedGood,
       remaining: Math.max(0, item.planned_quantity - completedGood),
       jobItemStationId: typedRow.id,
+      jobItemStepId: typedRow.id,
+    };
+  });
+}
+
+// ============================================
+// STATION JOB ITEM COUNTS (Station-First Flow)
+// ============================================
+
+/**
+ * Get count of uncompleted job items for each station assigned to a worker.
+ * Used for station-first selection flow to show job availability per station.
+ */
+export async function getJobItemCountsByStation(
+  workerId: string,
+): Promise<Map<string, number>> {
+  const supabase = createServiceSupabase();
+
+  // 1. Get worker's assigned station IDs
+  const { data: workerStations, error: workerError } = await supabase
+    .from("worker_stations")
+    .select("station_id")
+    .eq("worker_id", workerId);
+
+  if (workerError) {
+    throw new Error(`Failed to fetch worker stations: ${workerError.message}`);
+  }
+
+  const stationIds = (workerStations ?? []).map((ws) => ws.station_id);
+  if (stationIds.length === 0) {
+    return new Map();
+  }
+
+  // 2. For each station, count active job items that aren't completed
+  // A job item is "uncompleted" if: is_active AND (completed_good < planned_quantity OR no progress record)
+  const { data, error } = await supabase
+    .from("job_item_steps")
+    .select(`
+      station_id,
+      job_items!inner(
+        id,
+        is_active,
+        planned_quantity,
+        job_item_progress(completed_good)
+      )
+    `)
+    .in("station_id", stationIds)
+    .eq("job_items.is_active", true);
+
+  if (error) {
+    throw new Error(`Failed to fetch job item counts: ${error.message}`);
+  }
+
+  // 3. Count uncompleted items per station
+  const countMap = new Map<string, number>();
+
+  // Initialize all stations with 0
+  for (const stationId of stationIds) {
+    countMap.set(stationId, 0);
+  }
+
+  // Count items where completed < planned
+  for (const row of data ?? []) {
+    const typedRow = row as unknown as {
+      station_id: string;
+      job_items: {
+        id: string;
+        planned_quantity: number;
+        job_item_progress: { completed_good: number } | null;
+      };
+    };
+
+    const completedGood = typedRow.job_items.job_item_progress?.completed_good ?? 0;
+    const plannedQuantity = typedRow.job_items.planned_quantity;
+
+    // Only count if not completed
+    if (completedGood < plannedQuantity) {
+      const current = countMap.get(typedRow.station_id) ?? 0;
+      countMap.set(typedRow.station_id, current + 1);
+    }
+  }
+
+  return countMap;
+}
+
+/**
+ * Get all job items available at a specific station (for station-first flow sheet).
+ * Returns job items with progress info, grouped by job.
+ */
+export async function getJobItemsAtStation(
+  stationId: string,
+): Promise<{
+  id: string;
+  jobId: string;
+  jobNumber: string;
+  customerName: string | null;
+  name: string;
+  plannedQuantity: number;
+  completedGood: number;
+  jobItemStepId: string;
+}[]> {
+  const supabase = createServiceSupabase();
+
+  const { data, error } = await supabase
+    .from("job_item_steps")
+    .select(`
+      id,
+      job_items!inner(
+        id,
+        job_id,
+        name,
+        planned_quantity,
+        is_active,
+        job_item_progress(completed_good),
+        jobs:job_id(id, job_number, customer_name)
+      )
+    `)
+    .eq("station_id", stationId)
+    .eq("job_items.is_active", true);
+
+  if (error) {
+    throw new Error(`Failed to fetch job items at station: ${error.message}`);
+  }
+
+  return (data ?? []).map((row) => {
+    const typedRow = row as unknown as {
+      id: string;
+      job_items: {
+        id: string;
+        job_id: string;
+        name: string;
+        planned_quantity: number;
+        job_item_progress: { completed_good: number } | null;
+        jobs: { id: string; job_number: string; customer_name: string | null } | null;
+      };
+    };
+
+    const item = typedRow.job_items;
+    return {
+      id: item.id,
+      jobId: item.job_id,
+      jobNumber: item.jobs?.job_number ?? "",
+      customerName: item.jobs?.customer_name ?? null,
+      name: item.name,
+      plannedQuantity: item.planned_quantity,
+      completedGood: item.job_item_progress?.completed_good ?? 0,
+      jobItemStepId: typedRow.id,
     };
   });
 }
@@ -883,17 +1091,14 @@ export async function fetchJobItemsForStationSelection(
           isGracePeriod: false,
         },
         jobItemStationId: jis.id,
+        jobItemStepId: jis.id,
       }));
 
-    // Determine the display name
-    const name =
-      item.kind === "line"
-        ? item.production_line?.name ?? "Production Line"
-        : item.station?.name ?? "Station";
+    // Post Phase 5: Use explicit name, fallback to preset name
+    const name = item.name || item.pipeline_preset?.name || "מוצר";
 
     return {
       id: item.id,
-      kind: item.kind,
       name,
       plannedQuantity: item.planned_quantity,
       pipelineStations,

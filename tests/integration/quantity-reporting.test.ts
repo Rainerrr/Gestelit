@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { createSession, startStatusEvent } from "@/lib/data/sessions";
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import { createSession, startStatusEvent, closeActiveSessionsForWorker } from "@/lib/data/sessions";
 import { TestFactory, TestCleanup, getTestSupabase } from "../helpers";
 
 describe("Quantity Reporting", () => {
   // Test fixtures
   let testWorker: { id: string };
+  let testWorker2: { id: string };
   let testStation: { id: string };
   let testJob: { id: string };
   let productionStatus: { id: string };
@@ -16,10 +17,23 @@ describe("Quantity Reporting", () => {
   beforeAll(async () => {
     // Create test fixtures
     testWorker = await TestFactory.createWorker("qty_report");
+    testWorker2 = await TestFactory.createWorker("qty_report2");
     testStation = await TestFactory.createStation("qty_report");
     testJob = await TestFactory.createJob("qty_report");
     productionStatus = await TestFactory.getProductionStatus();
     stoppageStatus = await TestFactory.getStoppageStatus();
+  });
+
+  // Close active sessions before each test to ensure isolation
+  beforeEach(async () => {
+    if (testWorker?.id) {
+      const closedIds = await closeActiveSessionsForWorker(testWorker.id);
+      createdSessionIds.push(...closedIds);
+    }
+    if (testWorker2?.id) {
+      const closedIds = await closeActiveSessionsForWorker(testWorker2.id);
+      createdSessionIds.push(...closedIds);
+    }
   });
 
   afterAll(async () => {
@@ -27,7 +41,7 @@ describe("Quantity Reporting", () => {
     await TestCleanup.cleanupSessions(createdSessionIds);
     await TestCleanup.cleanupJobs([testJob.id]);
     await TestCleanup.cleanupStations([testStation.id]);
-    await TestCleanup.cleanupWorkers([testWorker.id]);
+    await TestCleanup.cleanupWorkers([testWorker.id, testWorker2.id]);
   });
 
   it("should create status event with zero quantities by default", async () => {
@@ -207,7 +221,7 @@ describe("Quantity Reporting", () => {
   it("should reject mismatched session/event IDs", async () => {
     const supabase = getTestSupabase();
 
-    // Create two sessions
+    // Create two sessions with different workers (unique_active_session_per_worker constraint)
     const session1 = await createSession({
       worker_id: testWorker.id,
       station_id: testStation.id,
@@ -216,7 +230,7 @@ describe("Quantity Reporting", () => {
     createdSessionIds.push(session1.id);
 
     const session2 = await createSession({
-      worker_id: testWorker.id,
+      worker_id: testWorker2.id,  // Different worker to allow concurrent sessions
       station_id: testStation.id,
       job_id: testJob.id,
     });

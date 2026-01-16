@@ -9,7 +9,6 @@ import {
   createErrorResponse,
 } from "@/lib/auth/permissions";
 import { isValidUUID } from "@/lib/utils/validation";
-import type { JobItemKind } from "@/lib/types";
 
 type RouteParams = {
   params: Promise<{ id: string }>;
@@ -66,10 +65,16 @@ export async function GET(request: Request, { params }: RouteParams) {
   }
 }
 
+/**
+ * Payload for creating job items.
+ * Post Phase 5: All items are pipeline-based. Provide either:
+ * - pipeline_preset_id (uses preset's stations)
+ * - station_ids array (custom pipeline)
+ */
 type CreateJobItemPayload = {
-  kind: JobItemKind;
-  station_id?: string;
-  production_line_id?: string;
+  name: string;  // Required product name
+  pipeline_preset_id?: string;
+  station_ids?: string[];  // Custom station order for pipelines (alternative to preset)
   planned_quantity: number;
   is_active?: boolean;
 };
@@ -77,11 +82,11 @@ type CreateJobItemPayload = {
 /**
  * POST /api/admin/jobs/[id]/items
  *
- * Create a new job item.
+ * Create a new job item (pipeline-based).
  * Body: {
- *   kind: "station" | "line",
- *   station_id?: string (required if kind="station"),
- *   production_line_id?: string (required if kind="line"),
+ *   name: string (required - product name),
+ *   pipeline_preset_id?: string (loads pipeline from preset),
+ *   station_ids?: string[] (custom pipeline - required if no preset),
  *   planned_quantity: number,
  *   is_active?: boolean
  * }
@@ -105,10 +110,10 @@ export async function POST(request: Request, { params }: RouteParams) {
 
   const body = (await request.json().catch(() => null)) as CreateJobItemPayload | null;
 
-  // Validate required fields
-  if (!body?.kind || !["station", "line"].includes(body.kind)) {
+  // Validate required name field
+  if (!body?.name || body.name.trim() === "") {
     return NextResponse.json(
-      { error: "INVALID_KIND", message: "kind must be 'station' or 'line'" },
+      { error: "NAME_REQUIRED", message: "name is required for job items" },
       { status: 400 },
     );
   }
@@ -120,34 +125,31 @@ export async function POST(request: Request, { params }: RouteParams) {
     );
   }
 
-  // Validate XOR constraint
-  if (body.kind === "station" && !body.station_id) {
+  // Either preset_id OR station_ids must be provided
+  if (!body.pipeline_preset_id && (!body.station_ids || body.station_ids.length === 0)) {
     return NextResponse.json(
-      { error: "STATION_ID_REQUIRED", message: "station_id is required for kind='station'" },
+      { error: "PIPELINE_STATIONS_REQUIRED", message: "Either pipeline_preset_id or station_ids is required" },
       { status: 400 },
     );
   }
 
-  if (body.kind === "line" && !body.production_line_id) {
+  // Validate preset ID format if provided
+  if (body.pipeline_preset_id && !isValidUUID(body.pipeline_preset_id)) {
     return NextResponse.json(
-      { error: "LINE_ID_REQUIRED", message: "production_line_id is required for kind='line'" },
+      { error: "INVALID_PRESET_ID", message: "Invalid pipeline preset ID format" },
       { status: 400 },
     );
   }
 
-  // Validate station_id or production_line_id format
-  if (body.kind === "station" && !isValidUUID(body.station_id)) {
-    return NextResponse.json(
-      { error: "INVALID_STATION_ID", message: "Invalid station ID format" },
-      { status: 400 },
-    );
-  }
-
-  if (body.kind === "line" && !isValidUUID(body.production_line_id)) {
-    return NextResponse.json(
-      { error: "INVALID_LINE_ID", message: "Invalid production line ID format" },
-      { status: 400 },
-    );
+  // Validate station_ids array if provided
+  if (body.station_ids && body.station_ids.length > 0) {
+    const invalidStationId = body.station_ids.find(id => !isValidUUID(id));
+    if (invalidStationId) {
+      return NextResponse.json(
+        { error: "INVALID_STATION_ID_IN_PIPELINE", message: `Invalid station ID format: ${invalidStationId}` },
+        { status: 400 },
+      );
+    }
   }
 
   try {
@@ -162,9 +164,9 @@ export async function POST(request: Request, { params }: RouteParams) {
 
     const item = await createJobItem({
       job_id: jobId,
-      kind: body.kind,
-      station_id: body.kind === "station" ? body.station_id : null,
-      production_line_id: body.kind === "line" ? body.production_line_id : null,
+      name: body.name.trim(),
+      pipeline_preset_id: body.pipeline_preset_id ?? null,
+      station_ids: body.station_ids,
       planned_quantity: body.planned_quantity,
       is_active: body.is_active ?? true,
     });
@@ -173,7 +175,7 @@ export async function POST(request: Request, { params }: RouteParams) {
   } catch (error) {
     if (error instanceof Error) {
       const message = error.message;
-      if (message.startsWith("JOB_ITEM_")) {
+      if (message.startsWith("JOB_ITEM_") || message === "PRESET_NOT_FOUND" || message === "PRESET_HAS_NO_STEPS") {
         return NextResponse.json(
           { error: message },
           { status: 400 },

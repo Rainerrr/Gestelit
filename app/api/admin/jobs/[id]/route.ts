@@ -8,7 +8,7 @@ import {
 type JobPayload = {
   customer_name?: string | null;
   description?: string | null;
-  planned_quantity?: number | null;
+  // planned_quantity removed - now set per job_item
 };
 
 const respondWithError = (error: unknown) => {
@@ -76,7 +76,6 @@ export async function PUT(
     const job = await updateJob(id, {
       customer_name: body.customer_name,
       description: body.description,
-      planned_quantity: body.planned_quantity,
     });
 
     return NextResponse.json({ job });

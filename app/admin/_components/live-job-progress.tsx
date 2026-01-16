@@ -3,8 +3,11 @@
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Briefcase,
+  CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Factory,
   Package,
   Zap,
@@ -48,9 +51,23 @@ const LiveJobProgressComponent = ({ className }: LiveJobProgressProps) => {
   const [isLoading, setIsLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [showPercentages, setShowPercentages] = useState(false);
+  const [collapsedItems, setCollapsedItems] = useState<Set<string>>(new Set());
 
   // Get real-time active session data from context
   const activeJobsSummary = useAdminActiveJobsSummary();
+
+  // Toggle collapsed state for a job item
+  const toggleCollapsed = useCallback((jobItemId: string) => {
+    setCollapsedItems((prev) => {
+      const next = new Set(prev);
+      if (next.has(jobItemId)) {
+        next.delete(jobItemId);
+      } else {
+        next.add(jobItemId);
+      }
+      return next;
+    });
+  }, []);
 
   // Fetch job progress data with polling
   const fetchData = useCallback(async () => {
@@ -284,10 +301,20 @@ const LiveJobProgressComponent = ({ className }: LiveJobProgressProps) => {
           </div>
         )}
 
-        {job.jobItems.map((assignment) => {
-          const isProductionLine = assignment.jobItem.kind === "line";
-          const isSingleStation = assignment.jobItem.kind === "station";
+        {/* Sort job items: incomplete first, completed at bottom */}
+        {[...job.jobItems]
+          .map((assignment) => {
+            const plannedQty = assignment.plannedQuantity || 0;
+            const completedQty = assignment.completedGood || 0;
+            const isComplete = plannedQty > 0 && completedQty >= plannedQty;
+            return { assignment, isComplete };
+          })
+          .sort((a, b) => (a.isComplete === b.isComplete ? 0 : a.isComplete ? 1 : -1))
+          .map(({ assignment, isComplete }) => {
+          // Post Phase 5: all items are pipelines, determine multi-station by step count
           const wipDistribution = assignment.wipDistribution || [];
+          const isMultiStation = wipDistribution.length > 1;
+          const isSingleStation = wipDistribution.length === 1;
           const plannedQuantity = assignment.plannedQuantity || 0;
           const completedGood = assignment.completedGood || 0;
           const totalWip = wipDistribution.reduce((sum, w) => sum + w.goodAvailable, 0);
@@ -302,52 +329,81 @@ const LiveJobProgressComponent = ({ className }: LiveJobProgressProps) => {
             ? wipDistribution.findIndex((w) => !w.isTerminal && w.goodAvailable === maxWip)
             : -1;
 
+          // Check if this item is collapsed
+          const isCollapsed = collapsedItems.has(assignment.jobItem.id);
+
           return (
-            <div key={assignment.jobItem.id} className="space-y-3 border-t border-border pt-3 first:border-t-0 first:pt-0">
+            <div
+              key={assignment.jobItem.id}
+              className={`space-y-3 border-t border-border pt-3 first:border-t-0 first:pt-0 rounded-lg transition-all ${
+                isComplete ? "bg-emerald-500/5 border border-emerald-500/20 p-3 -mx-1" : ""
+              }`}
+            >
               {/* Assignment Header */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <div
                     className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                      isProductionLine
+                      isComplete
+                        ? "bg-emerald-500/30 border border-emerald-500/50"
+                        : isMultiStation
                         ? "bg-blue-500/20 border border-blue-500/30"
                         : "bg-emerald-500/20 border border-emerald-500/30"
                     }`}
                   >
-                    {isProductionLine ? (
+                    {isComplete ? (
+                      <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                    ) : isMultiStation ? (
                       <Factory className="h-4 w-4 text-blue-400" />
                     ) : (
                       <Zap className="h-4 w-4 text-emerald-400" />
                     )}
                   </div>
                   <div className="text-sm">
-                    {isProductionLine && assignment.jobItem.production_line?.name && (
-                      <span className="text-blue-400 font-medium">
-                        {assignment.jobItem.production_line.name}
-                      </span>
-                    )}
-                    {isSingleStation && assignment.jobItem.station?.name && (
-                      <span className="text-emerald-400 font-medium">
-                        {assignment.jobItem.station.name}
+                    <span className={isComplete ? "text-emerald-400 font-medium" : isMultiStation ? "text-blue-400 font-medium" : "text-emerald-400 font-medium"}>
+                      {assignment.jobItem.name || assignment.jobItem.pipeline_preset?.name || "מוצר"}
+                    </span>
+                    {isComplete && (
+                      <span className="mr-2 text-[10px] text-emerald-500 bg-emerald-500/20 px-1.5 py-0.5 rounded">
+                        הושלם
                       </span>
                     )}
                   </div>
                 </div>
-                <div className="text-left">
-                  <div className="text-lg font-bold font-mono text-emerald-400">
-                    {showPercentages ? `${completionPercent}%` : completedGood.toLocaleString()}
+                <div className="flex items-center gap-3">
+                  <div className="text-left">
+                    <div className={`text-lg font-bold font-mono ${isComplete ? "text-emerald-400" : "text-emerald-400"}`}>
+                      {showPercentages ? `${completionPercent}%` : completedGood.toLocaleString()}
+                    </div>
+                    <div className="text-[9px] text-muted-foreground">
+                      {showPercentages ? "הושלם" : `מתוך ${plannedQuantity.toLocaleString()}`}
+                    </div>
                   </div>
-                  <div className="text-[9px] text-muted-foreground">
-                    {showPercentages ? "הושלם" : `מתוך ${plannedQuantity.toLocaleString()}`}
-                  </div>
+                  {/* Collapse toggle for completed items */}
+                  {isComplete && (
+                    <button
+                      type="button"
+                      onClick={() => toggleCollapsed(assignment.jobItem.id)}
+                      className="p-1 rounded hover:bg-zinc-700/50 transition-colors"
+                      aria-label={isCollapsed ? "הרחב" : "צמצם"}
+                    >
+                      {isCollapsed ? (
+                        <ChevronDown className="h-4 w-4 text-zinc-400" />
+                      ) : (
+                        <ChevronUp className="h-4 w-4 text-zinc-400" />
+                      )}
+                    </button>
+                  )}
                 </div>
               </div>
 
-              {/* Single Station - Simple Progress Bar */}
-              {isSingleStation && (
+              {/* Single Station - Simple Progress Bar (hide when collapsed) */}
+              {isSingleStation && !isCollapsed && (
                 <div className="h-12 rounded-xl overflow-hidden bg-zinc-900 flex items-center">
                   <div
-                    className="h-full bg-emerald-500 flex items-center justify-center transition-all relative"
+                    className={`h-full flex items-center justify-center transition-all relative ${
+                      isComplete ? "bg-emerald-500" : "bg-emerald-500"
+                    }`}
                     style={{ width: `${completionPercent}%`, minWidth: completionPercent > 0 ? "60px" : "0" }}
                   >
                     {completionPercent > 0 && (
@@ -368,10 +424,10 @@ const LiveJobProgressComponent = ({ className }: LiveJobProgressProps) => {
                 </div>
               )}
 
-              {/* Production Line - Segmented Bar */}
-              {isProductionLine && wipDistribution.length > 0 && (
+              {/* Production Line / Pipeline - Segmented Bar (hide when collapsed) */}
+              {isMultiStation && wipDistribution.length > 0 && !isCollapsed && (
                 <div className="space-y-3">
-                  {/* Segmented Progress Bar - Show ALL stations */}
+                  {/* Segmented Progress Bar - Use flex-grow for proportional sizing */}
                   <div className="h-12 rounded-xl overflow-hidden bg-zinc-900 flex">
                     {wipDistribution.map((wip, idx) => {
                       const segmentStyle = getSegmentStyle(idx, wipDistribution.length, wip.isTerminal);
@@ -379,34 +435,29 @@ const LiveJobProgressComponent = ({ className }: LiveJobProgressProps) => {
                       const hasWip = wip.goodAvailable > 0;
                       const stagePercent = plannedQuantity > 0 ? (wip.goodAvailable / plannedQuantity) * 100 : 0;
 
-                      // Calculate width: stations with WIP get proportional width, empty ones get minimal
-                      const minWidth = hasWip ? Math.max(50, stagePercent * 3) : 40;
+                      // Skip segments with no WIP (don't show empty station slots in bar)
+                      if (!hasWip) return null;
 
                       return (
                         <div
-                          key={wip.jobItemStationId}
-                          className={`h-full flex items-center justify-center relative transition-all ${
-                            hasWip ? segmentStyle.bg : "bg-zinc-800"
-                          } ${isBottleneck ? "ring-2 ring-white/50 ring-inset" : ""}`}
+                          key={wip.jobItemStepId}
+                          className={`h-full flex items-center justify-center relative transition-all ${segmentStyle.bg} ${
+                            isBottleneck ? "ring-2 ring-white/50 ring-inset" : ""
+                          }`}
                           style={{
-                            width: hasWip ? `${stagePercent}%` : "auto",
-                            minWidth: `${minWidth}px`,
-                            flex: hasWip ? "none" : "0 0 auto",
+                            flex: `${wip.goodAvailable} 1 0%`,
+                            minWidth: "50px",
                           }}
                         >
                           <div className="flex flex-col items-center justify-center px-1">
-                            <span className={`text-[10px] font-medium truncate max-w-full drop-shadow-sm ${
-                              hasWip ? "text-white/90" : "text-zinc-500"
-                            }`}>
+                            <span className="text-[10px] font-medium truncate max-w-full drop-shadow-sm text-white/90">
                               {wip.stationName}
                             </span>
-                            {hasWip && (
-                              <span className="text-sm font-bold font-mono text-white drop-shadow-md">
-                                {showPercentages
-                                  ? `${Math.round(stagePercent)}%`
-                                  : wip.goodAvailable.toLocaleString()}
-                              </span>
-                            )}
+                            <span className="text-sm font-bold font-mono text-white drop-shadow-md">
+                              {showPercentages
+                                ? `${Math.round(stagePercent)}%`
+                                : wip.goodAvailable.toLocaleString()}
+                            </span>
                           </div>
                           {isBottleneck && (
                             <div className="absolute top-1 right-1 w-2 h-2 rounded-full bg-white animate-pulse" />
@@ -418,7 +469,7 @@ const LiveJobProgressComponent = ({ className }: LiveJobProgressProps) => {
                       );
                     })}
 
-                    {/* Remaining space */}
+                    {/* Remaining space - at the end, flex-1 makes it fill remaining width */}
                     {totalWip < plannedQuantity && (
                       <div className="h-full flex items-center justify-center flex-1" style={{ minWidth: "40px" }}>
                         <span className="text-[10px] text-zinc-600 font-mono">
@@ -439,7 +490,7 @@ const LiveJobProgressComponent = ({ className }: LiveJobProgressProps) => {
                         const hasActiveWorkers = activeWorkers.length > 0;
 
                         return (
-                          <div key={wip.jobItemStationId} className="flex items-center gap-2">
+                          <div key={wip.jobItemStepId} className="flex items-center gap-2">
                             {/* Station indicator with pulse */}
                             <div className="flex items-center gap-1.5">
                               <div className="relative w-3 h-3 flex items-center justify-center">
@@ -483,8 +534,8 @@ const LiveJobProgressComponent = ({ className }: LiveJobProgressProps) => {
                 </div>
               )}
 
-              {/* Single Station Legend */}
-              {isSingleStation && wipDistribution.length > 0 && (
+              {/* Single Station Legend (hide when collapsed) */}
+              {isSingleStation && wipDistribution.length > 0 && !isCollapsed && (
                 <div className="bg-zinc-900/50 rounded-lg p-3">
                   <div className="flex items-center gap-3">
                     {wipDistribution.map((wip) => {
@@ -492,7 +543,7 @@ const LiveJobProgressComponent = ({ className }: LiveJobProgressProps) => {
                       const hasActiveWorkers = activeWorkers.length > 0;
 
                       return (
-                        <div key={wip.jobItemStationId} className="flex items-center gap-2">
+                        <div key={wip.jobItemStepId} className="flex items-center gap-2">
                           <div className="relative w-3 h-3 flex items-center justify-center">
                             {wip.hasActiveSession && (
                               <span className="absolute w-3 h-3 rounded-full bg-emerald-500 animate-ping opacity-75" />

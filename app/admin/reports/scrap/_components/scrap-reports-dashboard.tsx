@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useState, useMemo, Suspense } from "react";
-import { Trash2, RefreshCw, CheckCircle2, AlertTriangle, Package } from "lucide-react";
+import { useCallback, useState, useMemo, Suspense, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
+import { Trash2, RefreshCw, CheckCircle2, AlertTriangle, Package, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   fetchScrapReportsAdminApi,
@@ -17,6 +18,8 @@ import { useViewToggle } from "@/lib/hooks/useViewToggle";
 import { flattenStationReports } from "@/lib/data/reports";
 
 const ScrapReportsDashboardInner = () => {
+  const searchParams = useSearchParams();
+  const sessionIdFilter = searchParams.get("sessionId");
   const [isUpdating, setIsUpdating] = useState(false);
   const [view, setView] = useViewToggle("station");
 
@@ -57,8 +60,29 @@ const ScrapReportsDashboardInner = () => {
     return flattenStationReports(allStations);
   }, [allStations]);
 
+  // Filter reports by sessionId if provided
+  const filteredReports = useMemo(() => {
+    if (!sessionIdFilter) return allReports;
+    return allReports.filter((r) => r.session_id === sessionIdFilter);
+  }, [allReports, sessionIdFilter]);
+
+  // Get highlighted report IDs for visual indication
+  const highlightedReportIds = useMemo(() => {
+    if (!sessionIdFilter) return new Set<string>();
+    return new Set(filteredReports.map((r) => r.id));
+  }, [sessionIdFilter, filteredReports]);
+
   const totalNew = allStations.reduce((sum, s) => sum + s.newCount, 0);
   const totalApproved = allStations.reduce((sum, s) => sum + s.approvedCount, 0);
+
+  // Clear session filter
+  const clearSessionFilter = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("sessionId");
+    window.history.replaceState({}, "", url.toString());
+    // Force re-render by using router would be cleaner but this works
+    window.location.href = url.toString();
+  };
 
   return (
     <div className="space-y-6 pb-mobile-nav">
@@ -141,6 +165,30 @@ const ScrapReportsDashboardInner = () => {
         </div>
       </div>
 
+      {/* Session filter banner */}
+      {sessionIdFilter && (
+        <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-lg bg-primary/10 border border-primary/20">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+            <span className="text-sm font-medium text-foreground">
+              מציג דיווחים מסשן ספציפי
+            </span>
+            <span className="text-xs text-muted-foreground">
+              ({filteredReports.length} דיווחים)
+            </span>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={clearSessionFilter}
+            className="h-7 px-2 text-xs gap-1"
+          >
+            <X className="h-3 w-3" />
+            הצג הכל
+          </Button>
+        </div>
+      )}
+
       {/* View Toggle */}
       <ViewToggle value={view} onChange={setView} />
 
@@ -166,26 +214,35 @@ const ScrapReportsDashboardInner = () => {
             נסה שנית
           </Button>
         </div>
-      ) : allReports.length === 0 ? (
+      ) : filteredReports.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
           <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/10 border border-emerald-500/20">
             <CheckCircle2 className="h-8 w-8 text-emerald-400" />
           </div>
           <div className="space-y-1">
-            <p className="text-lg font-medium text-foreground">אין דיווחי פסולים</p>
-            <p className="text-sm text-muted-foreground">לא נמצאו דיווחים על פסולים</p>
+            <p className="text-lg font-medium text-foreground">
+              {sessionIdFilter ? "אין דיווחי פסולים לסשן זה" : "אין דיווחי פסולים"}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {sessionIdFilter ? "לא נמצאו דיווחים לסשן המבוקש" : "לא נמצאו דיווחים על פסולים"}
+            </p>
           </div>
+          {sessionIdFilter && (
+            <Button variant="outline" onClick={clearSessionFilter} size="sm">
+              הצג את כל הדיווחים
+            </Button>
+          )}
         </div>
       ) : view === "feed" ? (
         <FeedView
-          reports={allReports}
+          reports={filteredReports}
           reportType="scrap"
           onApprove={handleApprove}
           isUpdating={isUpdating}
         />
       ) : (
         <PerStationView
-          reports={allReports}
+          reports={filteredReports}
           reportType="scrap"
           onApprove={handleApprove}
           isUpdating={isUpdating}

@@ -1,19 +1,19 @@
 import { NextResponse } from "next/server";
 import {
-  fetchAllProductionLines,
-  createProductionLine,
-} from "@/lib/data/production-lines";
+  fetchAllPipelinePresets,
+  createPipelinePreset,
+} from "@/lib/data/pipeline-presets";
 import {
   requireAdminPassword,
   createErrorResponse,
 } from "@/lib/auth/permissions";
 
 /**
- * GET /api/admin/production-lines
+ * GET /api/admin/pipeline-presets
  *
- * Returns all production lines with their stations.
+ * Returns all pipeline presets with their steps.
  * Query params:
- * - includeInactive: "true" to include inactive lines
+ * - includeInactive: "true" to include inactive presets
  */
 export async function GET(request: Request) {
   try {
@@ -26,21 +26,21 @@ export async function GET(request: Request) {
   const includeInactive = searchParams.get("includeInactive") === "true";
 
   try {
-    const lines = await fetchAllProductionLines({
+    const presets = await fetchAllPipelinePresets({
       includeInactive,
-      includeStations: true,
+      includeSteps: true,
     });
-    return NextResponse.json({ lines });
+    return NextResponse.json({ presets });
   } catch (error) {
-    return createErrorResponse(error, "PRODUCTION_LINES_FETCH_FAILED");
+    return createErrorResponse(error, "PIPELINE_PRESETS_FETCH_FAILED");
   }
 }
 
 /**
- * POST /api/admin/production-lines
+ * POST /api/admin/pipeline-presets
  *
- * Create a new production line.
- * Body: { name: string, code?: string, is_active?: boolean }
+ * Create a new pipeline preset.
+ * Body: { name: string, description?: string, is_active?: boolean, station_ids?: string[] }
  */
 export async function POST(request: Request) {
   try {
@@ -59,21 +59,14 @@ export async function POST(request: Request) {
   }
 
   try {
-    const line = await createProductionLine({
+    const preset = await createPipelinePreset({
       name: body.name.trim(),
-      code: body.code ?? null,
+      description: body.description ?? null,
       is_active: body.is_active ?? true,
+      station_ids: body.station_ids ?? [],
     });
-    return NextResponse.json({ line });
+    return NextResponse.json({ preset });
   } catch (error) {
-    if (error instanceof Error) {
-      if (error.message === "PRODUCTION_LINE_CODE_EXISTS") {
-        return NextResponse.json(
-          { error: "CODE_ALREADY_EXISTS" },
-          { status: 400 },
-        );
-      }
-    }
-    return createErrorResponse(error, "PRODUCTION_LINE_CREATE_FAILED");
+    return createErrorResponse(error, "PIPELINE_PRESET_CREATE_FAILED");
   }
 }

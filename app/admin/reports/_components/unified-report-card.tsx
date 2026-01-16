@@ -194,8 +194,9 @@ export const UnifiedReportCard = ({
   const simpleStatus = report.status as SimpleReportStatus;
   const isNew = simpleStatus === "new";
 
-  // Scrap count from session
-  const scrapCount = reportType === "scrap" ? report.session?.total_scrap ?? null : null;
+  // Scrap count - session totals now derived from status_events
+  // TODO: Query from status_events if needed for scrap reports
+  const scrapCount: number | null = null;
 
   // Handle malfunction status change
   const handleStatusChange = async (newStatus: MalfunctionReportStatus) => {

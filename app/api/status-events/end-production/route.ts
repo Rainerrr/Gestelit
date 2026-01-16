@@ -12,11 +12,12 @@ import {
  * and transitions to the next status.
  *
  * This calls the end_production_status_atomic RPC function which:
- * 1. Updates the current status_events row with quantities and ended_at
+ * 1. Updates the current status_events row with quantities, ended_at,
+ *    job_item_id, and job_item_step_id (records production context)
  * 2. Creates new status event for the next status
  * 3. Updates sessions.current_status_id
  * 4. Updates sessions.total_good/total_scrap
- * 5. Updates WIP balances via update_session_quantities_atomic_v2
+ * 5. Updates WIP balances via update_session_quantities_atomic_v3
  */
 
 type EndProductionPayload = {

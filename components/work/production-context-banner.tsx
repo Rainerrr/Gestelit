@@ -97,14 +97,8 @@ export function ProductionContextBanner({
       <div className="mt-3 space-y-3">
         {/* Job Item Name */}
         <div className="flex items-center gap-2 text-sm">
-          <span className="text-muted-foreground">פריט עבודה:</span>
+          <span className="text-muted-foreground">מוצר:</span>
           <span className="font-medium text-foreground">{activeJobItem.name}</span>
-          <Badge
-            variant="outline"
-            className="text-xs border-emerald-300 text-emerald-700 dark:border-emerald-700 dark:text-emerald-400"
-          >
-            {activeJobItem.kind === "line" ? "קו ייצור" : "תחנה בודדת"}
-          </Badge>
         </div>
 
         {/* Statistics Grid */}

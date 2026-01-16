@@ -12,33 +12,34 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2 } from "lucide-react";
-import type { ProductionLineWithStations } from "@/lib/types";
+import type { PipelinePresetWithSteps } from "@/lib/types";
 
-type ProductionLineFormDialogProps = {
+type PipelinePresetFormDialogProps = {
   mode: "create" | "edit";
-  line?: ProductionLineWithStations | null;
-  onSubmit: (payload: { name: string; code?: string | null; is_active?: boolean }) => Promise<void>;
+  preset?: PipelinePresetWithSteps | null;
+  onSubmit: (payload: { name: string; description?: string | null; is_active?: boolean }) => Promise<void>;
   trigger: ReactNode;
   loading?: boolean;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 };
 
-export const ProductionLineFormDialog = ({
+export const PipelinePresetFormDialog = ({
   mode,
-  line,
+  preset,
   onSubmit,
   trigger,
   loading = false,
   open,
   onOpenChange,
-}: ProductionLineFormDialogProps) => {
+}: PipelinePresetFormDialogProps) => {
   const [localOpen, setLocalOpen] = useState(false);
-  const [name, setName] = useState(line?.name ?? "");
-  const [code, setCode] = useState(line?.code ?? "");
-  const [isActive, setIsActive] = useState(line?.is_active ?? true);
+  const [name, setName] = useState(preset?.name ?? "");
+  const [description, setDescription] = useState(preset?.description ?? "");
+  const [isActive, setIsActive] = useState(preset?.is_active ?? true);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -52,17 +53,17 @@ export const ProductionLineFormDialog = ({
     (onOpenChange ?? setLocalOpen)(open);
   };
 
-  // Sync dialog fields when editing an existing line
+  // Sync dialog fields when editing an existing preset
   useEffect(() => {
-    if (!line || mode !== "edit") return;
-    setName(line.name);
-    setCode(line.code ?? "");
-    setIsActive(line.is_active);
-  }, [line, mode]);
+    if (!preset || mode !== "edit") return;
+    setName(preset.name);
+    setDescription(preset.description ?? "");
+    setIsActive(preset.is_active);
+  }, [preset, mode]);
 
   const handleSubmit = async () => {
     if (!name.trim()) {
-      setError("יש למלא שם קו ייצור.");
+      setError("יש למלא שם תבנית.");
       return;
     }
 
@@ -72,32 +73,28 @@ export const ProductionLineFormDialog = ({
     try {
       await onSubmit({
         name: name.trim(),
-        code: code.trim() || null,
+        description: description.trim() || null,
         is_active: isActive,
       });
 
-      setSuccessMessage("קו הייצור נשמר בהצלחה.");
+      setSuccessMessage("התבנית נשמרה בהצלחה.");
       setError(null);
 
       // Keep dialog open if controlled, otherwise close for create mode
       if (mode === "create" && !open) {
         setLocalOpen(false);
         setName("");
-        setCode("");
+        setDescription("");
         setIsActive(true);
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      if (errorMessage === "CODE_ALREADY_EXISTS") {
-        setError("קוד קו ייצור כבר קיים במערכת.");
-      } else {
-        setError(errorMessage || "שגיאה בשמירת קו הייצור");
-      }
+      setError(errorMessage || "שגיאה בשמירת התבנית");
       setSuccessMessage(null);
     }
   };
 
-  const dialogTitle = mode === "create" ? "הוספת קו ייצור" : "עריכת קו ייצור";
+  const dialogTitle = mode === "create" ? "הוספת תבנית צינור" : "עריכת תבנית צינור";
 
   return (
     <Dialog open={controlledOpen} onOpenChange={handleDialogOpenChange}>
@@ -124,42 +121,40 @@ export const ProductionLineFormDialog = ({
             </Alert>
           )}
 
-          {/* Line Name */}
+          {/* Preset Name */}
           <div className="space-y-1.5">
-            <Label htmlFor="line_name" className="text-foreground/80 text-sm">
-              שם קו ייצור
+            <Label htmlFor="preset_name" className="text-foreground/80 text-sm">
+              שם תבנית
             </Label>
             <Input
-              id="line_name"
-              aria-label="שם קו ייצור"
-              placeholder="לדוגמה: קו הדפסה ראשי"
+              id="preset_name"
+              aria-label="שם תבנית"
+              placeholder="לדוגמה: צינור הדפסה מלא"
               value={name}
               onChange={(event) => setName(event.target.value)}
               className="border-input bg-secondary text-foreground placeholder:text-muted-foreground"
             />
           </div>
 
-          {/* Line Code */}
+          {/* Preset Description */}
           <div className="space-y-1.5">
-            <Label htmlFor="line_code" className="text-foreground/80 text-sm">
-              קוד (אופציונלי)
+            <Label htmlFor="preset_description" className="text-foreground/80 text-sm">
+              תיאור (אופציונלי)
             </Label>
-            <Input
-              id="line_code"
-              aria-label="קוד קו ייצור"
-              placeholder="קוד ייחודי"
-              value={code}
-              onChange={(event) => setCode(event.target.value)}
-              className="border-input bg-secondary text-foreground placeholder:text-muted-foreground"
+            <Textarea
+              id="preset_description"
+              aria-label="תיאור תבנית"
+              placeholder="תיאור קצר של התבנית"
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              className="border-input bg-secondary text-foreground placeholder:text-muted-foreground resize-none"
+              rows={3}
             />
-            <p className="text-xs text-muted-foreground">
-              קוד ייחודי לזיהוי קו הייצור (אם לא מוזן, יישאר ריק)
-            </p>
           </div>
 
           {/* Active/Inactive Toggle */}
           <div className="space-y-1.5">
-            <Label className="text-foreground/80 text-sm">סטטוס קו ייצור</Label>
+            <Label className="text-foreground/80 text-sm">סטטוס תבנית</Label>
             <div className="flex rounded-lg border border-input bg-secondary/30 p-1">
               <button
                 type="button"

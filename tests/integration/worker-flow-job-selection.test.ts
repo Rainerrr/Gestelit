@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { createSession } from "@/lib/data/sessions";
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import { createSession, closeActiveSessionsForWorker } from "@/lib/data/sessions";
 import { bindJobItemToSession } from "@/lib/data/sessions";
 import { getAvailableJobsForStation, getJobItemsForStationAndJob } from "@/lib/data/job-items";
 import { TestFactory, TestCleanup, getTestSupabase } from "../helpers";
@@ -10,12 +10,12 @@ describe("Worker Flow - Job Selection", () => {
   let testStation: { id: string };
   let testJob: { id: string };
   let testJobItem: { id: string };
-  let testJobItemStation: { id: string };
+  let testJobItemStep: { id: string };
 
   // Track created resources for cleanup
   const createdSessionIds: string[] = [];
   const createdJobItemIds: string[] = [];
-  const createdJobItemStationIds: string[] = [];
+  const createdJobItemStepIds: string[] = [];
 
   beforeAll(async () => {
     const supabase = getTestSupabase();
@@ -25,13 +25,13 @@ describe("Worker Flow - Job Selection", () => {
     testStation = await TestFactory.createStation("job_select");
     testJob = await TestFactory.createJob("job_select");
 
-    // Create a job item (single station type)
+    // Create a job item (pipeline-based schema - no kind column)
+    // Post Phase 5: All job items are pipeline-based with a name column
     const { data: jobItem, error: jobItemError } = await supabase
       .from("job_items")
       .insert({
         job_id: testJob.id,
-        kind: "station",
-        station_id: testStation.id,
+        name: "Test Product",
         planned_quantity: 100,
         is_active: true,
       })
@@ -42,9 +42,9 @@ describe("Worker Flow - Job Selection", () => {
     testJobItem = jobItem;
     createdJobItemIds.push(jobItem.id);
 
-    // Create job_item_station entry
+    // Create job_item_steps entry (pipeline step)
     const { data: jis, error: jisError } = await supabase
-      .from("job_item_stations")
+      .from("job_item_steps")
       .insert({
         job_item_id: testJobItem.id,
         station_id: testStation.id,
@@ -54,14 +54,14 @@ describe("Worker Flow - Job Selection", () => {
       .select("*")
       .single();
 
-    if (jisError) throw new Error(`Failed to create job_item_station: ${jisError.message}`);
-    testJobItemStation = jis;
-    createdJobItemStationIds.push(jis.id);
+    if (jisError) throw new Error(`Failed to create job_item_step: ${jisError.message}`);
+    testJobItemStep = jis;
+    createdJobItemStepIds.push(jis.id);
 
     // Create WIP balance entry
     await supabase.from("wip_balances").insert({
       job_item_id: testJobItem.id,
-      job_item_station_id: testJobItemStation.id,
+      job_item_step_id: testJobItemStep.id,
       good_available: 0,
     });
 
@@ -72,6 +72,15 @@ describe("Worker Flow - Job Selection", () => {
     });
   });
 
+  // Close any active sessions before each test to avoid unique constraint violations
+  beforeEach(async () => {
+    if (testWorker?.id) {
+      const closedIds = await closeActiveSessionsForWorker(testWorker.id);
+      // Track closed sessions for cleanup
+      createdSessionIds.push(...closedIds);
+    }
+  });
+
   afterAll(async () => {
     const supabase = getTestSupabase();
 
@@ -79,8 +88,8 @@ describe("Worker Flow - Job Selection", () => {
     await TestCleanup.cleanupSessions(createdSessionIds);
 
     // Cleanup WIP balances
-    if (createdJobItemStationIds.length > 0) {
-      await supabase.from("wip_balances").delete().in("job_item_station_id", createdJobItemStationIds);
+    if (createdJobItemStepIds.length > 0) {
+      await supabase.from("wip_balances").delete().in("job_item_step_id", createdJobItemStepIds);
     }
 
     // Cleanup job_item_progress
@@ -88,9 +97,9 @@ describe("Worker Flow - Job Selection", () => {
       await supabase.from("job_item_progress").delete().in("job_item_id", createdJobItemIds);
     }
 
-    // Cleanup job_item_stations
-    if (createdJobItemStationIds.length > 0) {
-      await supabase.from("job_item_stations").delete().in("id", createdJobItemStationIds);
+    // Cleanup job_item_steps
+    if (createdJobItemStepIds.length > 0) {
+      await supabase.from("job_item_steps").delete().in("id", createdJobItemStepIds);
     }
 
     // Cleanup job_items
@@ -118,7 +127,7 @@ describe("Worker Flow - Job Selection", () => {
     expect(session.station_id).toBe(testStation.id);
     expect(session.job_id).toBeNull();
     expect(session.job_item_id).toBeNull();
-    expect(session.job_item_station_id).toBeNull();
+    expect(session.job_item_step_id).toBeNull();
     expect(session.status).toBe("active");
   });
 
@@ -144,7 +153,7 @@ describe("Worker Flow - Job Selection", () => {
 
     const foundItem = jobItems.find((ji) => ji.id === testJobItem.id);
     expect(foundItem).toBeDefined();
-    expect(foundItem?.jobItemStationId).toBe(testJobItemStation.id);
+    expect(foundItem?.jobItemStepId).toBe(testJobItemStep.id);
     expect(foundItem?.plannedQuantity).toBe(100);
   });
 
@@ -162,25 +171,25 @@ describe("Worker Flow - Job Selection", () => {
       session.id,
       testJob.id,
       testJobItem.id,
-      testJobItemStation.id,
+      testJobItemStep.id,
     );
 
     expect(updatedSession).toBeDefined();
     expect(updatedSession.job_id).toBe(testJob.id);
     expect(updatedSession.job_item_id).toBe(testJobItem.id);
-    expect(updatedSession.job_item_station_id).toBe(testJobItemStation.id);
+    expect(updatedSession.job_item_step_id).toBe(testJobItemStep.id);
 
     // Verify in database
     const supabase = getTestSupabase();
     const { data: dbSession } = await supabase
       .from("sessions")
-      .select("job_id, job_item_id, job_item_station_id")
+      .select("job_id, job_item_id, job_item_step_id")
       .eq("id", session.id)
       .single();
 
     expect(dbSession?.job_id).toBe(testJob.id);
     expect(dbSession?.job_item_id).toBe(testJobItem.id);
-    expect(dbSession?.job_item_station_id).toBe(testJobItemStation.id);
+    expect(dbSession?.job_item_step_id).toBe(testJobItemStep.id);
   });
 
   it("should not return jobs without job items for the station", async () => {

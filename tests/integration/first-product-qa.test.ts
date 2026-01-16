@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import {
   checkFirstProductQAApproval,
   createFirstProductQARequest,
@@ -42,13 +42,12 @@ describe("First Product QA Gate", () => {
     if (qaStationError) throw new Error(`Failed to create QA station: ${qaStationError.message}`);
     testStationWithQA = qaStation;
 
-    // Create a job item for the QA station
+    // Create a job item for the QA station (pipeline-based schema)
     const { data: jobItem, error: jobItemError } = await supabase
       .from("job_items")
       .insert({
         job_id: testJob.id,
-        kind: "station",
-        station_id: testStationWithQA.id,
+        name: "Test QA Product",
         planned_quantity: 100,
         is_active: true,
       })
@@ -58,6 +57,52 @@ describe("First Product QA Gate", () => {
     if (jobItemError) throw new Error(`Failed to create job item: ${jobItemError.message}`);
     testJobItem = jobItem;
     createdJobItemIds.push(jobItem.id);
+
+    // Create job_item_steps entry for the QA station
+    const { error: jisError } = await supabase
+      .from("job_item_steps")
+      .insert({
+        job_item_id: testJobItem.id,
+        station_id: testStationWithQA.id,
+        position: 1,
+        is_terminal: true,
+      });
+
+    if (jisError) throw new Error(`Failed to create job_item_step: ${jisError.message}`);
+
+    // Create WIP balance
+    const { data: jis } = await supabase
+      .from("job_item_steps")
+      .select("id")
+      .eq("job_item_id", testJobItem.id)
+      .single();
+
+    if (jis) {
+      await supabase.from("wip_balances").insert({
+        job_item_id: testJobItem.id,
+        job_item_step_id: jis.id,
+        good_available: 0,
+      });
+    }
+
+    // Create job_item_progress
+    await supabase.from("job_item_progress").insert({
+      job_item_id: testJobItem.id,
+      completed_good: 0,
+    });
+  });
+
+  // Clean up reports between tests to ensure isolation
+  beforeEach(async () => {
+    const supabase = getTestSupabase();
+    // Delete any existing QA reports for our test job item to ensure test isolation
+    if (testJobItem?.id) {
+      await supabase
+        .from("reports")
+        .delete()
+        .eq("job_item_id", testJobItem.id)
+        .eq("is_first_product_qa", true);
+    }
   });
 
   afterAll(async () => {
@@ -95,15 +140,15 @@ describe("First Product QA Gate", () => {
 
     expect(status).toBeDefined();
     expect(status.approved).toBe(false);
-    expect(status.pendingReport).toBeUndefined();
-    expect(status.approvedReport).toBeUndefined();
+    expect(status.pendingReport).toBeFalsy();
+    expect(status.approvedReport).toBeFalsy();
   });
 
   it("should create first product QA request", async () => {
     const report = await createFirstProductQARequest({
       jobItemId: testJobItem.id,
       stationId: testStationWithQA.id,
-      reportedByWorkerId: testWorker.id,
+      workerId: testWorker.id,
       description: "Test QA request for first product",
     });
 
@@ -123,7 +168,7 @@ describe("First Product QA Gate", () => {
     const report = await createFirstProductQARequest({
       jobItemId: testJobItem.id,
       stationId: testStationWithQA.id,
-      reportedByWorkerId: testWorker.id,
+      workerId: testWorker.id,
       description: "Pending QA request",
     });
     createdReportIds.push(report.id);
@@ -143,7 +188,7 @@ describe("First Product QA Gate", () => {
     const report = await createFirstProductQARequest({
       jobItemId: testJobItem.id,
       stationId: testStationWithQA.id,
-      reportedByWorkerId: testWorker.id,
+      workerId: testWorker.id,
       description: "QA request to approve",
     });
     createdReportIds.push(report.id);
@@ -166,33 +211,45 @@ describe("First Product QA Gate", () => {
     expect(status.approved).toBe(true);
     expect(status.approvedReport).toBeDefined();
     expect(status.approvedReport?.id).toBe(report.id);
-    expect(status.pendingReport).toBeUndefined();
+    expect(status.pendingReport).toBeFalsy();
   });
 
   it("should allow multiple QA requests for different job items", async () => {
     const supabase = getTestSupabase();
 
-    // Create another job item
-    const { data: jobItem2 } = await supabase
+    // Create another job item (pipeline-based schema)
+    const { data: jobItem2, error: jobItem2Error } = await supabase
       .from("job_items")
       .insert({
         job_id: testJob.id,
-        kind: "station",
-        station_id: testStationWithQA.id,
+        name: "Test QA Product 2",
         planned_quantity: 50,
         is_active: true,
       })
       .select("*")
       .single();
 
+    if (jobItem2Error) throw new Error(`Failed to create second job item: ${jobItem2Error.message}`);
     if (!jobItem2) throw new Error("Failed to create second job item");
     createdJobItemIds.push(jobItem2.id);
+
+    // Create job_item_steps entry for the second job item
+    const { error: jis2Error } = await supabase
+      .from("job_item_steps")
+      .insert({
+        job_item_id: jobItem2.id,
+        station_id: testStationWithQA.id,
+        position: 1,
+        is_terminal: true,
+      });
+
+    if (jis2Error) throw new Error(`Failed to create job_item_step for job item 2: ${jis2Error.message}`);
 
     // Create QA requests for both job items
     const report1 = await createFirstProductQARequest({
       jobItemId: testJobItem.id,
       stationId: testStationWithQA.id,
-      reportedByWorkerId: testWorker.id,
+      workerId: testWorker.id,
       description: "QA for job item 1",
     });
     createdReportIds.push(report1.id);
@@ -200,7 +257,7 @@ describe("First Product QA Gate", () => {
     const report2 = await createFirstProductQARequest({
       jobItemId: jobItem2.id,
       stationId: testStationWithQA.id,
-      reportedByWorkerId: testWorker.id,
+      workerId: testWorker.id,
       description: "QA for job item 2",
     });
     createdReportIds.push(report2.id);
