@@ -21,8 +21,19 @@ import { getWorkerCode } from "./auth-helpers";
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
-    throw new Error(payload.error ?? "REQUEST_FAILED");
+    // Include message in error for better debugging
+    const errorCode = payload.error ?? "REQUEST_FAILED";
+    const errorMessage = payload.message ? `${errorCode}: ${payload.message}` : errorCode;
+    throw new Error(errorMessage);
   }
+
+  // Check content type to avoid parsing HTML as JSON
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("application/json")) {
+    console.error("[api] Unexpected content type:", contentType);
+    throw new Error("UNEXPECTED_CONTENT_TYPE");
+  }
+
   return response.json();
 }
 

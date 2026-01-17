@@ -237,6 +237,17 @@ function WorkPageContent() {
   const [isPendingJobSwitch, setIsPendingJobSwitch] = useState(false);
   // Track the job item being switched FROM (to exclude from selection list)
   const [excludeJobItemId, setExcludeJobItemId] = useState<string | null>(null);
+  // Track pending report info when leaving production to a status that requires a report
+  const [pendingReportAfterQuantity, setPendingReportAfterQuantity] = useState<{
+    statusId: string;
+    reportType: "malfunction" | "general";
+  } | null>(null);
+  // Track when a report is required for an ALREADY-CREATED status event
+  // This prevents creating duplicate status events when submitting the report
+  const [pendingReportForCurrentStatus, setPendingReportForCurrentStatus] = useState<{
+    statusEventId: string;
+    reportType: "malfunction" | "general";
+  } | null>(null);
 
   // First Product QA dialog state
   const [isQADialogOpen, setQADialogOpen] = useState(false);
@@ -249,11 +260,14 @@ function WorkPageContent() {
   // Job completion dialog state
   const [isCompletionDialogOpen, setCompletionDialogOpen] = useState(false);
   const [completedJobItemName, setCompletedJobItemName] = useState("");
+  const [completedJobItemId, setCompletedJobItemId] = useState<string | null>(null);
   const [availableJobItemsForCompletion, setAvailableJobItemsForCompletion] = useState<AvailableJobItemForCompletion[]>([]);
   const [isCompletionLoading, setCompletionLoading] = useState(false);
   const [isCompletionSubmitting, setCompletionSubmitting] = useState(false);
   // Store the exit status ID when job item is completed
   const [completionExitStatusId, setCompletionExitStatusId] = useState<string | null>(null);
+  // Track if completion dialog should open after report dialog is submitted
+  const [pendingCompletionAfterReport, setPendingCompletionAfterReport] = useState(false);
 
   // Scrap reports state
   const [scrapReports, setScrapReports] = useState<SessionScrapReport[]>([]);
@@ -464,22 +478,76 @@ function WorkPageContent() {
     console.log("[work] Edit scrap report:", report.id);
   };
 
-  // Handle "Switch Job" action - requires quantity reporting before switching
+  // Handle "Switch Job" action - behavior depends on current status
   const handleSwitchJob = () => {
-    // When switching jobs while in production, we need to:
-    // 1. Report quantities for current production period
-    // 2. Then open job selection dialog
-    if (activeJobItem && currentStatusEventId) {
-      // Store the job item ID to exclude from selection list
-      setExcludeJobItemId(activeJobItem.id);
-      // Need to report quantities first
-      setPendingExitStatusId(currentStatus ?? null); // Stay in production after reporting
-      setIsPendingJobSwitch(true);
-      setQuantityReportDialogOpen(true);
+    if (isInProduction) {
+      // In production: need to report quantities first, then switch job immediately
+      if (activeJobItem && currentStatusEventId) {
+        // Store the job item ID to exclude from selection list
+        setExcludeJobItemId(activeJobItem.id);
+        // Need to report quantities first
+        setPendingExitStatusId(currentStatus ?? null); // Stay in production after reporting
+        setIsPendingJobSwitch(true);
+        setQuantityReportDialogOpen(true);
+      } else {
+        // No active job item or no status event ID - just open job selection
+        setPendingProductionStatusId(currentStatus ?? null);
+        setJobSelectionDialogOpen(true);
+      }
     } else {
-      // No active job item or no status event ID - just open job selection
-      setPendingProductionStatusId(currentStatus ?? null);
+      // Not in production (stoppage/setup): deferred job selection
+      // Just open job selection - binding happens when entering production
+      setExcludeJobItemId(activeJobItem?.id ?? null);
       setJobSelectionDialogOpen(true);
+    }
+  };
+
+  // Handle immediate job binding (for non-production status)
+  const handleImmediateJobBinding = async (result: JobSelectionResult) => {
+    if (!sessionId) return;
+
+    setIsJobSelectionSubmitting(true);
+    setStatusError(null);
+
+    try {
+      // Immediately bind the new job item to the session
+      await bindJobItemToSessionApi(
+        sessionId,
+        result.job.id,
+        result.jobItem.id,
+        result.jobItem.jobItemStepId,
+      );
+
+      // Update context with new active job item
+      setActiveJobItem({
+        id: result.jobItem.id,
+        jobId: result.job.id,
+        name: result.jobItem.name,
+        plannedQuantity: result.jobItem.plannedQuantity,
+        completedGood: result.jobItem.completedGood,
+        jobItemStepId: result.jobItem.jobItemStepId,
+      });
+
+      // Update job context
+      setJob({
+        id: result.job.id,
+        job_number: result.job.jobNumber,
+        customer_name: result.job.clientName,
+        description: result.job.description,
+        created_at: new Date().toISOString(),
+      });
+
+      // Reset session totals for the new job item
+      updateTotals({ good: 0, scrap: 0 });
+
+      // Close dialog
+      setJobSelectionDialogOpen(false);
+      setExcludeJobItemId(null);
+    } catch (error) {
+      console.error("[work] Failed to bind job item:", error);
+      setStatusError("שגיאה בקישור עבודה לתפק\"ע");
+    } finally {
+      setIsJobSelectionSubmitting(false);
     }
   };
 
@@ -516,6 +584,12 @@ function WorkPageContent() {
     if (isLeavingProduction) {
       setPendingExitStatusId(statusId);
       setIsPendingJobSwitch(false);
+      // If target status requires a report, store it to show after quantity dialog
+      if (reportType === "malfunction" || reportType === "general") {
+        setPendingReportAfterQuantity({ statusId, reportType });
+      } else {
+        setPendingReportAfterQuantity(null);
+      }
       setQuantityReportDialogOpen(true);
       return;
     }
@@ -707,6 +781,9 @@ function WorkPageContent() {
     setIsQuantityReportSubmitting(true);
     setStatusError(null);
 
+    // Store production event ID before the API call (scrap was produced during this event)
+    const productionStatusEventId = currentStatusEventId;
+
     try {
       // Call the atomic API to end production and transition to next status
       const response = await endProductionStatusApi({
@@ -718,6 +795,7 @@ function WorkPageContent() {
       });
 
       // Create scrap report if scrap was reported with note
+      // Link to the PRODUCTION status event (where scrap was produced)
       if (result.additionalScrap > 0 && result.scrapNote && station) {
         try {
           await createReportApi({
@@ -727,6 +805,7 @@ function WorkPageContent() {
             workerId: worker?.id,
             description: result.scrapNote,
             image: result.scrapImage ?? undefined,
+            statusEventId: productionStatusEventId,
           });
         } catch (reportError) {
           // Log but don't fail the whole operation
@@ -740,6 +819,15 @@ function WorkPageContent() {
         scrap: totals.scrap + result.additionalScrap,
       });
 
+      // Update activeJobItem.completedGood to keep in sync with DB
+      // The progress panel uses completedGood directly (not adding sessionTotals)
+      if (activeJobItem) {
+        setActiveJobItem({
+          ...activeJobItem,
+          completedGood: (activeJobItem.completedGood ?? 0) + result.additionalGood,
+        });
+      }
+
       // Update current status
       setCurrentStatus(pendingExitStatusId);
 
@@ -751,25 +839,22 @@ function WorkPageContent() {
       // Close quantity report dialog
       setQuantityReportDialogOpen(false);
 
-      // If job item is completed (shouldCloseJobItem), show completion dialog
-      if (result.shouldCloseJobItem && station) {
-        setCompletedJobItemName(activeJobItem?.name ?? "");
-        setCompletionExitStatusId(pendingExitStatusId);
-        setPendingExitStatusId(null);
-        setIsPendingJobSwitch(false);
-
-        // Clear active job item - it's completed
-        setActiveJobItem(null);
-
-        // Fetch available job items at this station
+      // Helper to open completion dialog and fetch available jobs
+      // Takes excludeJobItemId as param since setState is async
+      const openCompletionDialog = async (excludeJobItemId: string | null) => {
+        if (!station) return;
         setCompletionLoading(true);
         setCompletionDialogOpen(true);
 
         try {
           const items = await fetchJobItemsAtStationApi(station.id);
-          // Filter out completed items and convert to completion format
+          // Filter out completed items AND the just-completed job item
+          // (in case DB hasn't updated yet or item is at 100%)
           const available: AvailableJobItemForCompletion[] = items
-            .filter((item) => item.completedGood < item.plannedQuantity)
+            .filter((item) =>
+              item.completedGood < item.plannedQuantity &&
+              item.id !== excludeJobItemId
+            )
             .map((item) => ({
               id: item.id,
               jobId: item.jobId,
@@ -787,6 +872,51 @@ function WorkPageContent() {
         } finally {
           setCompletionLoading(false);
         }
+      };
+
+      // If job item is completed (shouldCloseJobItem), handle completion flow
+      if (result.shouldCloseJobItem && station) {
+        // Store completed job item info BEFORE clearing
+        const jobItemIdToExclude = activeJobItem?.id ?? null;
+        setCompletedJobItemName(activeJobItem?.name ?? "");
+        setCompletedJobItemId(jobItemIdToExclude);
+        setCompletionExitStatusId(pendingExitStatusId);
+        setPendingExitStatusId(null);
+        setIsPendingJobSwitch(false);
+
+        // Clear active job item - it's completed
+        setActiveJobItem(null);
+
+        // Check if target status requires a report BEFORE opening completion dialog
+        if (pendingReportAfterQuantity && response.newStatusEvent?.id) {
+          const { reportType } = pendingReportAfterQuantity;
+          setPendingReportAfterQuantity(null);
+
+          // Store the new status event ID - report will be linked to this event
+          setPendingReportForCurrentStatus({
+            statusEventId: response.newStatusEvent.id,
+            reportType,
+          });
+
+          // Mark that completion dialog should open after report is submitted
+          setPendingCompletionAfterReport(true);
+
+          // Open report dialog first
+          if (reportType === "malfunction") {
+            setFaultDialogOpen(true);
+          } else if (reportType === "general") {
+            if (generalReportReasons.length === 0) {
+              fetchReportReasonsApi().then((reasons) => {
+                setGeneralReportReasons(reasons);
+              }).catch(console.error);
+            }
+            setGeneralReportDialogOpen(true);
+          }
+          return;
+        }
+
+        // No pending report - open completion dialog directly
+        await openCompletionDialog(jobItemIdToExclude);
         return;
       }
 
@@ -801,6 +931,34 @@ function WorkPageContent() {
         // Open job selection for the production status we were in
         setPendingProductionStatusId(currentStatus ?? null);
         setJobSelectionDialogOpen(true);
+        setPendingReportAfterQuantity(null);
+        return;
+      }
+
+      // If target status requires a report, open the appropriate dialog now
+      // Use pendingReportForCurrentStatus (NOT pendingStatusId) to avoid creating duplicate status events
+      if (pendingReportAfterQuantity && response.newStatusEvent?.id) {
+        const { reportType } = pendingReportAfterQuantity;
+        setPendingReportAfterQuantity(null);
+
+        // Store the new status event ID - report will be linked to this event
+        // DON'T set pendingStatusId - we're already in this status
+        setPendingReportForCurrentStatus({
+          statusEventId: response.newStatusEvent.id,
+          reportType,
+        });
+
+        if (reportType === "malfunction") {
+          setFaultDialogOpen(true);
+        } else if (reportType === "general") {
+          // Fetch report reasons if not already loaded
+          if (generalReportReasons.length === 0) {
+            fetchReportReasonsApi().then((reasons) => {
+              setGeneralReportReasons(reasons);
+            }).catch(console.error);
+          }
+          setGeneralReportDialogOpen(true);
+        }
       }
     } catch (error) {
       console.error("[work] Failed to submit quantity report:", error);
@@ -820,6 +978,7 @@ function WorkPageContent() {
     setQuantityReportDialogOpen(false);
     setPendingExitStatusId(null);
     setIsPendingJobSwitch(false);
+    setPendingReportAfterQuantity(null);
   };
 
   // Handler for job completion dialog
@@ -879,25 +1038,19 @@ function WorkPageContent() {
         // 5. Reset session totals for new job item
         updateTotals({ good: 0, scrap: 0 });
       } else {
-        // User chose stoppage - find protected stoppage status
-        const stoppageStatus = statuses.find(
-          (s) => s.machine_state === "stoppage" && s.is_protected
-        );
-        if (stoppageStatus) {
-          const statusEvent = await startStatusEventApi({
-            sessionId,
-            statusDefinitionId: stoppageStatus.id,
-          });
-          setCurrentStatus(stoppageStatus.id);
-          if (statusEvent?.id) {
-            setCurrentStatusEventId(statusEvent.id);
-          }
-        }
+        // User chose stoppage - they're already in a stoppage status
+        // (created by endProductionStatusApi when they exited production)
+        // Just close the dialog without creating another status event
+        // This prevents creating duplicate/orphan status events
+
+        // Note: completionExitStatusId contains the status they transitioned to
+        // when leaving production. We don't need to do anything else here.
       }
 
-      // Close completion dialog
+      // Close completion dialog and clean up state
       setCompletionDialogOpen(false);
       setCompletionExitStatusId(null);
+      setCompletedJobItemId(null);
     } catch (error) {
       console.error("[work] Failed to complete job transition:", error);
       setStatusError("שגיאה במעבר לעבודה הבאה");
@@ -1011,7 +1164,52 @@ function WorkPageContent() {
     setGeneralReportError(null);
     setIsGeneralReportSubmitting(true);
     try {
-      if (pendingGeneralStatusId) {
+      if (pendingReportForCurrentStatus?.reportType === "general") {
+        // Report for already-created status event (after quantity submission)
+        // Just link the report to the existing status event - no new status change
+        await createReportApi({
+          type: "general",
+          sessionId,
+          stationId: station.id,
+          reportReasonId: generalReportReason,
+          description: generalReportNote,
+          image: generalReportImage,
+          workerId: worker?.id,
+          statusEventId: pendingReportForCurrentStatus.statusEventId,
+        });
+        setPendingReportForCurrentStatus(null);
+
+        // If completion dialog should open after report, fetch and show it
+        if (pendingCompletionAfterReport) {
+          setPendingCompletionAfterReport(false);
+          setCompletionLoading(true);
+          setCompletionDialogOpen(true);
+          try {
+            const items = await fetchJobItemsAtStationApi(station.id);
+            const available: AvailableJobItemForCompletion[] = items
+              .filter((item) =>
+                item.completedGood < item.plannedQuantity &&
+                item.id !== completedJobItemId
+              )
+              .map((item) => ({
+                id: item.id,
+                jobId: item.jobId,
+                jobNumber: item.jobNumber,
+                customerName: item.customerName,
+                name: item.name,
+                plannedQuantity: item.plannedQuantity,
+                completedGood: item.completedGood,
+                jobItemStepId: item.jobItemStepId,
+              }));
+            setAvailableJobItemsForCompletion(available);
+          } catch (err) {
+            console.error("[work] Failed to fetch available job items:", err);
+            setAvailableJobItemsForCompletion([]);
+          } finally {
+            setCompletionLoading(false);
+          }
+        }
+      } else if (pendingGeneralStatusId) {
         // Use atomic endpoint - status change + report in one transaction
         // If report fails, status change is rolled back
         await createStatusEventWithReportApi({
@@ -1226,6 +1424,10 @@ function WorkPageContent() {
       </section>
 
       <Dialog open={isFaultDialogOpen} onOpenChange={(open) => {
+        // Don't allow closing if report is required for current status (after quantity submission)
+        if (!open && pendingReportForCurrentStatus?.reportType === "malfunction") {
+          return; // Block close
+        }
         setFaultDialogOpen(open);
         if (!open) setPendingStatusId(null);
       }}>
@@ -1309,17 +1511,20 @@ function WorkPageContent() {
                 {faultError}
               </p>
             ) : null}
-            <Button
-              type="button"
-              variant="ghost"
-              className="border-input text-foreground/80 hover:bg-accent hover:text-foreground"
-              onClick={() => {
-                setFaultDialogOpen(false);
-                setPendingStatusId(null);
-              }}
-            >
-              {t("common.cancel")}
-            </Button>
+            {/* Hide cancel button when report is required for current status */}
+            {!pendingReportForCurrentStatus && (
+              <Button
+                type="button"
+                variant="ghost"
+                className="border-input text-foreground/80 hover:bg-accent hover:text-foreground"
+                onClick={() => {
+                  setFaultDialogOpen(false);
+                  setPendingStatusId(null);
+                }}
+              >
+                {t("common.cancel")}
+              </Button>
+            )}
             <Button
               type="button"
               className="bg-primary font-medium text-primary-foreground hover:bg-primary/90"
@@ -1329,7 +1534,52 @@ function WorkPageContent() {
                 setFaultError(null);
                 setIsFaultSubmitting(true);
                 try {
-                  if (pendingStatusId) {
+                  if (pendingReportForCurrentStatus?.reportType === "malfunction") {
+                    // Report for already-created status event (after quantity submission)
+                    // Just link the report to the existing status event - no new status change
+                    await createReportApi({
+                      type: "malfunction",
+                      stationId: station.id,
+                      stationReasonId: faultReason,
+                      description: faultNote,
+                      image: faultImage,
+                      workerId: worker?.id,
+                      sessionId: sessionId,
+                      statusEventId: pendingReportForCurrentStatus.statusEventId,
+                    });
+                    setPendingReportForCurrentStatus(null);
+
+                    // If completion dialog should open after report, fetch and show it
+                    if (pendingCompletionAfterReport) {
+                      setPendingCompletionAfterReport(false);
+                      setCompletionLoading(true);
+                      setCompletionDialogOpen(true);
+                      try {
+                        const items = await fetchJobItemsAtStationApi(station.id);
+                        const available: AvailableJobItemForCompletion[] = items
+                          .filter((item) =>
+                            item.completedGood < item.plannedQuantity &&
+                            item.id !== completedJobItemId
+                          )
+                          .map((item) => ({
+                            id: item.id,
+                            jobId: item.jobId,
+                            jobNumber: item.jobNumber,
+                            customerName: item.customerName,
+                            name: item.name,
+                            plannedQuantity: item.plannedQuantity,
+                            completedGood: item.completedGood,
+                            jobItemStepId: item.jobItemStepId,
+                          }));
+                        setAvailableJobItemsForCompletion(available);
+                      } catch (err) {
+                        console.error("[work] Failed to fetch available job items:", err);
+                        setAvailableJobItemsForCompletion([]);
+                      } finally {
+                        setCompletionLoading(false);
+                      }
+                    }
+                  } else if (pendingStatusId) {
                     // Use atomic endpoint - status change + report in one transaction
                     // If report fails, status change is rolled back
                     await createStatusEventWithReportApi({
@@ -1380,6 +1630,10 @@ function WorkPageContent() {
       </Dialog>
 
       <Dialog open={isGeneralReportDialogOpen} onOpenChange={(open) => {
+        // Don't allow closing if report is required for current status (after quantity submission)
+        if (!open && pendingReportForCurrentStatus?.reportType === "general") {
+          return; // Block close
+        }
         setGeneralReportDialogOpen(open);
         if (!open) setPendingGeneralStatusId(null);
       }}>
@@ -1463,17 +1717,20 @@ function WorkPageContent() {
                 {generalReportError}
               </p>
             ) : null}
-            <Button
-              type="button"
-              variant="ghost"
-              className="border-input text-foreground/80 hover:bg-accent hover:text-foreground"
-              onClick={() => {
-                setGeneralReportDialogOpen(false);
-                setPendingGeneralStatusId(null);
-              }}
-            >
-              {t("common.cancel")}
-            </Button>
+            {/* Hide cancel button when report is required for current status */}
+            {!pendingReportForCurrentStatus && (
+              <Button
+                type="button"
+                variant="ghost"
+                className="border-input text-foreground/80 hover:bg-accent hover:text-foreground"
+                onClick={() => {
+                  setGeneralReportDialogOpen(false);
+                  setPendingGeneralStatusId(null);
+                }}
+              >
+                {t("common.cancel")}
+              </Button>
+            )}
             <Button
               type="button"
               className="bg-primary font-medium text-primary-foreground hover:bg-primary/90"
@@ -1529,19 +1786,35 @@ function WorkPageContent() {
         stationId={station.id}
         stationName={station.name}
         stationCode={station.code}
-        onSelectJobItem={handleJobSelectionComplete}
+        onSelectJobItem={
+          // Use different handler based on context:
+          // - If entering production (pendingProductionStatusId set) or job switch, use production handler
+          // - If in non-production and just switching jobs, use immediate binding handler
+          pendingProductionStatusId || isPendingJobSwitch
+            ? handleJobSelectionComplete
+            : handleImmediateJobBinding
+        }
         isSubmitting={isJobSelectionSubmitting}
         required={isForceJobSelection}
-        title={isPendingJobSwitch ? "החלף עבודה" : "בחר עבודה לייצור"}
+        title={
+          isPendingJobSwitch
+            ? "החלף עבודה"
+            : !isInProduction && !pendingProductionStatusId
+              ? "בחר עבודה"
+              : "בחר עבודה לייצור"
+        }
         excludeJobItemId={excludeJobItemId ?? undefined}
       />
 
       {/* Quantity Report Dialog - shown when leaving production */}
+      {/* totalCompletedBefore: activeJobItem.completedGood includes this session's contributions
+          (updated locally after each report), so subtract totals.good to get the value
+          BEFORE this session started reporting */}
       <QuantityReportDialog
         open={isQuantityReportDialogOpen}
         sessionTotals={totals}
         plannedQuantity={activeJobItem?.plannedQuantity}
-        totalCompletedBefore={activeJobItem?.completedGood ?? 0}
+        totalCompletedBefore={Math.max(0, (activeJobItem?.completedGood ?? 0) - totals.good)}
         onSubmit={handleQuantityReportSubmit}
         onCancel={handleQuantityReportCancel}
         isSubmitting={isQuantityReportSubmitting}

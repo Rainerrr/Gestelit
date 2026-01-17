@@ -16,8 +16,7 @@ import {
  *    job_item_id, and job_item_step_id (records production context)
  * 2. Creates new status event for the next status
  * 3. Updates sessions.current_status_id
- * 4. Updates sessions.total_good/total_scrap
- * 5. Updates WIP balances via update_session_quantities_atomic_v3
+ * 4. Updates WIP balances via update_session_quantities_atomic_v4
  */
 
 type EndProductionPayload = {
@@ -93,8 +92,39 @@ export async function POST(request: Request) {
           { status: 400 }
         );
       }
+      // Handle WIP update errors from update_session_quantities_atomic_v4
+      if (error.message.includes("WIP_UPDATE_FAILED: JOB_ITEM_STEP_NOT_FOUND")) {
+        return NextResponse.json(
+          {
+            error: "JOB_ITEM_STEP_NOT_FOUND",
+            message: "Job item step not found for this session. The job item pipeline may have been modified."
+          },
+          { status: 400 }
+        );
+      }
+      if (error.message.includes("WIP_UPDATE_FAILED: WIP_BALANCE_NOT_FOUND")) {
+        return NextResponse.json(
+          {
+            error: "WIP_BALANCE_NOT_FOUND",
+            message: "WIP balance record not found. The job item may need to be reinitialized."
+          },
+          { status: 400 }
+        );
+      }
+      if (error.message.includes("WIP_UPDATE_FAILED")) {
+        // Generic WIP error
+        const errorCode = error.message.match(/WIP_UPDATE_FAILED:\s*(\w+)/)?.[1] || "UNKNOWN";
+        return NextResponse.json(
+          {
+            error: "WIP_UPDATE_FAILED",
+            message: `Failed to update WIP balances: ${errorCode}`
+          },
+          { status: 400 }
+        );
+      }
 
-      throw error;
+      // Wrap Supabase error in a proper Error to preserve the message
+      throw new Error(error.message || "Database error");
     }
 
     return NextResponse.json({
