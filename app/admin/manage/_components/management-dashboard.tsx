@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { CheckCircle2, Users, Cpu, Briefcase, Wrench, Workflow } from "lucide-react";
+import { CheckCircle2, Users, Cpu, Wrench, Workflow } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,10 +24,6 @@ import {
   removeWorkerStationAdminApi,
   updateStationAdminApi,
   updateWorkerAdminApi,
-  fetchJobsAdminApi,
-  createJobAdminApi,
-  updateJobAdminApi,
-  deleteJobAdminApi,
   fetchPipelinePresetsAdminApi,
   createPipelinePresetAdminApi,
   updatePipelinePresetAdminApi,
@@ -36,22 +32,19 @@ import {
   updatePipelinePresetStepsAdminApi,
   fetchAvailableStationsForPresetAdminApi,
 } from "@/lib/api/admin-management";
-import type { Job, Station, Worker, PipelinePresetWithSteps } from "@/lib/types";
+import type { Station, Worker, PipelinePresetWithSteps } from "@/lib/types";
 import type { StationWithStats, WorkerWithStats } from "@/lib/data/admin-management";
-import type { JobWithStats } from "@/lib/data/jobs";
 import { WorkersManagement } from "./workers-management";
 import { StationsManagement } from "./stations-management";
-import { JobsManagement } from "./jobs-management";
 import { DepartmentManager } from "./department-manager";
 import { StationTypeManager } from "./station-type-manager";
 import { GlobalStatusesManagement } from "./global-statuses-management";
 import { PipelinePresetsManagement } from "./pipeline-presets-management";
-import { PipelinePresetStepsDialog } from "./pipeline-preset-steps-dialog";
+import { PipelinePresetEditDialog } from "./pipeline-preset-edit-dialog";
 import { AdminLayout } from "../../_components/admin-layout";
 import { AdminPageHeader, MobileBottomBar } from "../../_components/admin-page-header";
 
-type ActiveTab = "workers" | "stations" | "jobs" | "presets";
-type JobStatusFilter = "all" | "active" | "completed";
+type ActiveTab = "workers" | "stations" | "presets";
 
 const errorCopy: Record<string, string> = {
   WORKER_CODE_EXISTS: "קוד עובד כבר קיים.",
@@ -62,12 +55,6 @@ const errorCopy: Record<string, string> = {
   ASSIGNMENT_NOT_FOUND: "ההרשאה לא נמצאה.",
   ASSIGNMENT_DELETE_FAILED: "מחיקת ההרשאה נכשלה.",
   STATION_DELETE_FAILED: "לא ניתן למחוק תחנה כרגע.",
-  JOB_NUMBER_EXISTS: "מספר עבודה כבר קיים במערכת.",
-  JOB_HAS_ACTIVE_SESSIONS: "לא ניתן למחוק עבודה עם סשן פעיל.",
-  JOB_NOT_FOUND: "עבודה לא נמצאה.",
-  JOB_CREATE_FAILED: "יצירת עבודה נכשלה.",
-  JOB_UPDATE_FAILED: "עדכון עבודה נכשל.",
-  JOB_DELETE_FAILED: "מחיקת עבודה נכשלה.",
   CODE_ALREADY_EXISTS: "קוד קו ייצור כבר קיים במערכת.",
   HAS_ACTIVE_JOBS: "לא ניתן למחוק קו ייצור עם עבודות פעילות.",
   PRODUCTION_LINE_NOT_FOUND: "קו ייצור לא נמצא.",
@@ -77,9 +64,9 @@ const errorCopy: Record<string, string> = {
   STATION_ALREADY_IN_LINE: "אחת או יותר מהתחנות כבר משויכת לקו אחר.",
   PRESET_IN_USE: "לא ניתן למחוק תבנית שבשימוש בעבודות פעילות.",
   PRESET_NOT_FOUND: "תבנית לא נמצאה.",
-  PIPELINE_PRESET_CREATE_FAILED: "יצירת תבנית צינור נכשלה.",
-  PIPELINE_PRESET_UPDATE_FAILED: "עדכון תבנית צינור נכשל.",
-  PIPELINE_PRESET_DELETE_FAILED: "מחיקת תבנית צינור נכשלה.",
+  PIPELINE_PRESET_CREATE_FAILED: "יצירת תבנית תהליך נכשלה.",
+  PIPELINE_PRESET_UPDATE_FAILED: "עדכון תבנית תהליך נכשל.",
+  PIPELINE_PRESET_DELETE_FAILED: "מחיקת תבנית תהליך נכשלה.",
   DUPLICATE_STATION: "לא ניתן להוסיף את אותה תחנה פעמיים.",
 };
 
@@ -93,15 +80,19 @@ export const ManagementDashboard = () => {
   const [search, setSearch] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState<string | null>(null);
   const [stationTypeFilter, setStationTypeFilter] = useState<string | null>(null);
+  const [stationFilterForPresets, setStationFilterForPresets] = useState<string | null>(null);
+  const [availableStationsForFilter, setAvailableStationsForFilter] = useState<Station[]>([]);
   const [startsWith, setStartsWith] = useState<string | null>(null);
   const [isLoadingWorkers, setIsLoadingWorkers] = useState<boolean>(true);
   const [isLoadingStations, setIsLoadingStations] = useState<boolean>(true);
-  const [jobs, setJobs] = useState<JobWithStats[]>([]);
-  const [isLoadingJobs, setIsLoadingJobs] = useState<boolean>(true);
-  const [jobStatusFilter, setJobStatusFilter] = useState<JobStatusFilter>("all");
   const [pipelinePresets, setPipelinePresets] = useState<PipelinePresetWithSteps[]>([]);
   const [isLoadingPresets, setIsLoadingPresets] = useState<boolean>(true);
-  const [editingPresetSteps, setEditingPresetSteps] = useState<PipelinePresetWithSteps | null>(null);
+
+  // Unified dialog state
+  const [presetDialogOpen, setPresetDialogOpen] = useState(false);
+  const [presetDialogMode, setPresetDialogMode] = useState<"create" | "edit">("create");
+  const [editingPreset, setEditingPreset] = useState<PipelinePresetWithSteps | null>(null);
+
   const [bannerError, setBannerError] = useState<string | null>(null);
   const [bannerSuccess, setBannerSuccess] = useState<string | null>(null);
 
@@ -169,27 +160,11 @@ export const ManagementDashboard = () => {
     }
   }, [friendlyError, search, stationTypeFilter, startsWith]);
 
-  const loadJobs = useCallback(async () => {
-    setIsLoadingJobs(true);
-    setBannerError(null);
-    try {
-      const { jobs: data } = await fetchJobsAdminApi({
-        search: search.trim() || undefined,
-        status: jobStatusFilter,
-      });
-      setJobs(data);
-    } catch (error) {
-      friendlyError(error);
-    } finally {
-      setIsLoadingJobs(false);
-    }
-  }, [friendlyError, search, jobStatusFilter]);
-
   const loadPipelinePresets = useCallback(async () => {
     setIsLoadingPresets(true);
     setBannerError(null);
     try {
-      const { presets } = await fetchPipelinePresetsAdminApi({ includeInactive: true });
+      const { presets } = await fetchPipelinePresetsAdminApi();
       setPipelinePresets(presets);
     } catch (error) {
       friendlyError(error);
@@ -197,6 +172,16 @@ export const ManagementDashboard = () => {
       setIsLoadingPresets(false);
     }
   }, [friendlyError]);
+
+  // Load stations for filter when on presets tab
+  const loadStationsForFilter = useCallback(async () => {
+    try {
+      const { stations } = await fetchAvailableStationsForPresetAdminApi();
+      setAvailableStationsForFilter(stations);
+    } catch {
+      // Silently fail - filter will just not be available
+    }
+  }, []);
 
   // Initial load - runs ONCE when hasAccess becomes true
   // Loads departments, station types, and stations (needed for worker permissions)
@@ -220,17 +205,25 @@ export const ManagementDashboard = () => {
     void loadStations();
   }, [hasAccess, activeTab, loadStations]);
 
-  // Load jobs when on jobs tab (handles filter changes)
-  useEffect(() => {
-    if (hasAccess !== true || activeTab !== "jobs") return;
-    void loadJobs();
-  }, [hasAccess, activeTab, loadJobs]);
-
-  // Load pipeline presets when on presets tab
+  // Load pipeline presets and filter stations when on presets tab
   useEffect(() => {
     if (hasAccess !== true || activeTab !== "presets") return;
     void loadPipelinePresets();
-  }, [hasAccess, activeTab, loadPipelinePresets]);
+    void loadStationsForFilter();
+  }, [hasAccess, activeTab, loadPipelinePresets, loadStationsForFilter]);
+
+  // Filter presets by station and search
+  const filteredPresets = useMemo(() => {
+    let result = pipelinePresets;
+    if (stationFilterForPresets) {
+      result = result.filter((p) => p.steps.some((s) => s.station_id === stationFilterForPresets));
+    }
+    if (search.trim()) {
+      const searchLower = search.toLowerCase();
+      result = result.filter((p) => p.name.toLowerCase().includes(searchLower));
+    }
+    return result;
+  }, [pipelinePresets, stationFilterForPresets, search]);
 
   const handleAddWorker = async (payload: Partial<Worker>) => {
     setBannerError(null);
@@ -238,7 +231,6 @@ export const ManagementDashboard = () => {
       await createWorkerAdminApi({
         worker_code: payload.worker_code ?? "",
         full_name: payload.full_name ?? "",
-        language: payload.language ?? "auto",
         role: payload.role ?? "worker",
         department: payload.department ?? null,
         is_active: payload.is_active ?? true,
@@ -255,7 +247,6 @@ export const ManagementDashboard = () => {
       await updateWorkerAdminApi(id, {
         worker_code: payload.worker_code,
         full_name: payload.full_name,
-        language: payload.language,
         role: payload.role,
         department: payload.department ?? null,
         is_active: payload.is_active,
@@ -395,61 +386,43 @@ export const ManagementDashboard = () => {
     }
   };
 
-  const handleAddJob = async (payload: Partial<Job>) => {
-    setBannerError(null);
-    try {
-      await createJobAdminApi({
-        job_number: payload.job_number ?? "",
-        customer_name: payload.customer_name ?? null,
-        description: payload.description ?? null,
-      });
-      await loadJobs();
-    } catch (error) {
-      friendlyError(error);
-    }
-  };
-
-  const handleUpdateJob = async (id: string, payload: Partial<Job>) => {
-    setBannerError(null);
-    try {
-      await updateJobAdminApi(id, {
-        customer_name: payload.customer_name,
-        description: payload.description,
-      });
-    } catch (error) {
-      friendlyError(error);
-    }
-  };
-
-  const handleDeleteJob = async (id: string) => {
-    setBannerError(null);
-    setBannerSuccess(null);
-    try {
-      await deleteJobAdminApi(id);
-      setBannerSuccess("העבודה נמחקה בהצלחה.");
-      await loadJobs();
-      setTimeout(() => setBannerSuccess(null), 5000);
-    } catch (error) {
-      friendlyError(error);
-    }
-  };
-
   // Pipeline Presets Handlers
-  const handleAddPipelinePreset = async (payload: { name: string; description?: string | null; is_active?: boolean }) => {
-    setBannerError(null);
-    try {
-      await createPipelinePresetAdminApi(payload);
-      await loadPipelinePresets();
-    } catch (error) {
-      friendlyError(error);
-      throw error;
-    }
+  const handleOpenAddPresetDialog = () => {
+    setEditingPreset(null);
+    setPresetDialogMode("create");
+    setPresetDialogOpen(true);
   };
 
-  const handleUpdatePipelinePreset = async (id: string, payload: { name?: string; description?: string | null; is_active?: boolean }) => {
+  const handleOpenEditPresetDialog = (preset: PipelinePresetWithSteps) => {
+    setEditingPreset(preset);
+    setPresetDialogMode("edit");
+    setPresetDialogOpen(true);
+  };
+
+  const handleSavePreset = async (payload: {
+    name: string;
+    stationIds: string[];
+    firstProductApprovalFlags: Record<string, boolean>;
+  }) => {
     setBannerError(null);
     try {
-      await updatePipelinePresetAdminApi(id, payload);
+      if (presetDialogMode === "create") {
+        // Create new preset with steps and QA flags
+        await createPipelinePresetAdminApi({
+          name: payload.name,
+          station_ids: payload.stationIds,
+          first_product_approval_flags: payload.firstProductApprovalFlags,
+        });
+      } else if (editingPreset) {
+        // Update existing preset name and steps with QA flags
+        await updatePipelinePresetAdminApi(editingPreset.id, { name: payload.name });
+        await updatePipelinePresetStepsAdminApi(
+          editingPreset.id,
+          payload.stationIds,
+          payload.firstProductApprovalFlags,
+        );
+      }
+      await loadPipelinePresets();
     } catch (error) {
       friendlyError(error);
       throw error;
@@ -464,24 +437,6 @@ export const ManagementDashboard = () => {
       setBannerSuccess("התבנית נמחקה בהצלחה.");
       await loadPipelinePresets();
       setTimeout(() => setBannerSuccess(null), 5000);
-    } catch (error) {
-      friendlyError(error);
-      throw error;
-    }
-  };
-
-  const handleEditPresetSteps = (presetId: string) => {
-    const preset = pipelinePresets.find((p) => p.id === presetId);
-    if (preset) {
-      setEditingPresetSteps(preset);
-    }
-  };
-
-  const handleSavePresetSteps = async (presetId: string, stationIds: string[]) => {
-    setBannerError(null);
-    try {
-      await updatePipelinePresetStepsAdminApi(presetId, stationIds);
-      await loadPipelinePresets();
     } catch (error) {
       friendlyError(error);
       throw error;
@@ -523,8 +478,7 @@ export const ManagementDashboard = () => {
     options: [
       { id: "workers", label: "עובדים", icon: Users },
       { id: "stations", label: "תחנות", icon: Cpu },
-      { id: "jobs", label: "עבודות", icon: Briefcase },
-      { id: "presets", label: "תבניות צינור", icon: Workflow },
+      { id: "presets", label: "תבניות תהליך", icon: Workflow },
     ],
     activeId: activeTab,
     onChange: (id: string) => setActiveTab(id as ActiveTab),
@@ -553,7 +507,7 @@ export const ManagementDashboard = () => {
                   ? "חיפוש עובד לפי שם או קוד"
                   : activeTab === "stations"
                     ? "חיפוש תחנה לפי שם או קוד"
-                    : "חיפוש עבודה לפי מספר או לקוח"
+                    : "חיפוש תבנית לפי שם"
               }
               value={search}
               onChange={(event) => setSearch(event.target.value)}
@@ -601,33 +555,36 @@ export const ManagementDashboard = () => {
                   ))}
                 </>
               ) : (
+                /* Presets tab - station filter badges */
                 <>
                   <Badge
-                    variant={jobStatusFilter === "all" ? "default" : "outline"}
-                    className={`cursor-pointer transition-colors py-1.5 px-3 min-h-[36px] flex items-center ${jobStatusFilter === "all" ? "bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20" : "border-input text-muted-foreground hover:bg-accent hover:text-foreground/80"}`}
-                    onClick={() => setJobStatusFilter("all")}
+                    variant={stationFilterForPresets === null ? "default" : "outline"}
+                    className={`cursor-pointer transition-colors py-1.5 px-3 min-h-[36px] flex items-center ${stationFilterForPresets === null ? "bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20" : "border-input text-muted-foreground hover:bg-accent hover:text-foreground/80"}`}
+                    onClick={() => setStationFilterForPresets(null)}
                   >
-                    כל העבודות
+                    כל התחנות
                   </Badge>
-                  <Badge
-                    variant={jobStatusFilter === "active" ? "default" : "outline"}
-                    className={`cursor-pointer transition-colors py-1.5 px-3 min-h-[36px] flex items-center ${jobStatusFilter === "active" ? "bg-blue-500/10 border border-blue-500/20 text-blue-400 hover:bg-blue-500/20" : "border-input text-muted-foreground hover:bg-accent hover:text-foreground/80"}`}
-                    onClick={() => setJobStatusFilter("active")}
-                  >
-                    בתהליך
-                  </Badge>
-                  <Badge
-                    variant={jobStatusFilter === "completed" ? "default" : "outline"}
-                    className={`cursor-pointer transition-colors py-1.5 px-3 min-h-[36px] flex items-center ${jobStatusFilter === "completed" ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20" : "border-input text-muted-foreground hover:bg-accent hover:text-foreground/80"}`}
-                    onClick={() => setJobStatusFilter("completed")}
-                  >
-                    הושלמו
-                  </Badge>
+                  {availableStationsForFilter.slice(0, 8).map((station) => (
+                    <Badge
+                      key={station.id}
+                      variant={stationFilterForPresets === station.id ? "default" : "outline"}
+                      className={`cursor-pointer transition-colors py-1.5 px-3 min-h-[36px] flex items-center ${stationFilterForPresets === station.id ? "bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20" : "border-input text-muted-foreground hover:bg-accent hover:text-foreground/80"}`}
+                      onClick={() => setStationFilterForPresets(station.id)}
+                    >
+                      {station.name}
+                    </Badge>
+                  ))}
+                  {availableStationsForFilter.length > 8 && (
+                    <Badge variant="outline" className="border-input text-muted-foreground py-1.5 px-3 min-h-[36px] flex items-center">
+                      +{availableStationsForFilter.length - 8}
+                    </Badge>
+                  )}
                 </>
               )}
             </div>
           </div>
-          {activeTab !== "jobs" && (
+          {/* Hebrew letter filter - hidden for presets tab */}
+          {activeTab !== "presets" && (
             <div className="hidden sm:flex flex-wrap gap-1">
               <Button
                 size="sm"
@@ -651,7 +608,7 @@ export const ManagementDashboard = () => {
                 >
                   {letter}
                 </Button>
-              ))}
+                ))}
             </div>
           )}
         </div>
@@ -721,36 +678,28 @@ export const ManagementDashboard = () => {
             <Separator />
             <GlobalStatusesManagement />
           </>
-        ) : activeTab === "jobs" ? (
-          <JobsManagement
-            jobs={jobs}
-            isLoading={isLoadingJobs}
-            onAdd={handleAddJob}
-            onEdit={handleUpdateJob}
-            onDelete={handleDeleteJob}
-            onRefresh={loadJobs}
-          />
         ) : (
           <>
             <PipelinePresetsManagement
-              presets={pipelinePresets}
+              presets={filteredPresets}
               isLoading={isLoadingPresets}
-              onAdd={handleAddPipelinePreset}
-              onEdit={handleUpdatePipelinePreset}
+              onEdit={handleOpenEditPresetDialog}
               onDelete={handleDeletePipelinePreset}
-              onEditSteps={handleEditPresetSteps}
               onCheckInUse={handleCheckPresetInUse}
-              onRefresh={loadPipelinePresets}
+              onAdd={handleOpenAddPresetDialog}
             />
-            <PipelinePresetStepsDialog
-              preset={editingPresetSteps}
-              open={editingPresetSteps !== null}
+            <PipelinePresetEditDialog
+              mode={presetDialogMode}
+              preset={editingPreset}
+              open={presetDialogOpen}
               onOpenChange={(open) => {
+                setPresetDialogOpen(open);
                 if (!open) {
-                  setEditingPresetSteps(null);
+                  setEditingPreset(null);
                 }
               }}
-              onSave={handleSavePresetSteps}
+              onSave={handleSavePreset}
+              onDelete={handleDeletePipelinePreset}
               onFetchAvailableStations={handleFetchAvailableStationsForPreset}
             />
           </>

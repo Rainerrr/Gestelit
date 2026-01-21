@@ -13,11 +13,9 @@ import {
   Zap,
   User,
 } from "lucide-react";
-import { fetchJobProgressAdminApi } from "@/lib/api/admin-management";
+import { useRealtimeJobProgress } from "@/lib/hooks/useRealtimeJobProgress";
 import { useAdminActiveJobsSummary } from "@/contexts/AdminSessionsContext";
 import type { LiveJobProgress as LiveJobProgressData, WipStationData, LiveJobItemAssignment } from "@/lib/types";
-
-const POLL_INTERVAL_MS = 3000;
 
 // Gradient colors based on position (red -> orange -> yellow -> lime -> green)
 const getSegmentStyle = (idx: number, total: number, isTerminal: boolean) => {
@@ -47,11 +45,12 @@ type EnrichedJobProgress = LiveJobProgressData & {
 };
 
 const LiveJobProgressComponent = ({ className }: LiveJobProgressProps) => {
-  const [jobs, setJobs] = useState<LiveJobProgressData[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [showPercentages, setShowPercentages] = useState(false);
   const [collapsedItems, setCollapsedItems] = useState<Set<string>>(new Set());
+
+  // Use SSE-based real-time job progress
+  const { jobs, isLoading } = useRealtimeJobProgress();
 
   // Get real-time active session data from context
   const activeJobsSummary = useAdminActiveJobsSummary();
@@ -68,24 +67,6 @@ const LiveJobProgressComponent = ({ className }: LiveJobProgressProps) => {
       return next;
     });
   }, []);
-
-  // Fetch job progress data with polling
-  const fetchData = useCallback(async () => {
-    try {
-      const response = await fetchJobProgressAdminApi();
-      setJobs(response.jobs);
-      setIsLoading(false);
-    } catch (error) {
-      console.error("[live-job-progress] Failed to fetch job progress", error);
-      setIsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void fetchData();
-    const interval = setInterval(fetchData, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
-  }, [fetchData]);
 
   // Merge live session data with fetched job progress
   const mergedJobs = useMemo(() => {
@@ -215,14 +196,14 @@ const LiveJobProgressComponent = ({ className }: LiveJobProgressProps) => {
 
         <div className="flex items-center gap-3">
           {/* Segmented Toggle Buttons */}
-          <div className="flex items-center rounded-lg bg-zinc-800/80 p-0.5">
+          <div className="flex items-center rounded-lg bg-muted p-0.5">
             <button
               type="button"
               onClick={() => setShowPercentages(false)}
               className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
                 !showPercentages
-                  ? "bg-zinc-600 text-white shadow-sm"
-                  : "text-zinc-400 hover:text-zinc-300"
+                  ? "bg-accent text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
               יחידות
@@ -232,8 +213,8 @@ const LiveJobProgressComponent = ({ className }: LiveJobProgressProps) => {
               onClick={() => setShowPercentages(true)}
               className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
                 showPercentages
-                  ? "bg-zinc-600 text-white shadow-sm"
-                  : "text-zinc-400 hover:text-zinc-300"
+                  ? "bg-accent text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
               אחוזים
@@ -241,20 +222,20 @@ const LiveJobProgressComponent = ({ className }: LiveJobProgressProps) => {
           </div>
 
           {/* Pagination Controls */}
-          <div className="flex items-center rounded-lg bg-zinc-800/80 p-0.5">
+          <div className="flex items-center rounded-lg bg-muted p-0.5">
             <button
               type="button"
               onClick={handlePrevious}
               disabled={currentIndex === 0}
               className={`p-1.5 rounded-md transition-all ${
                 currentIndex === 0
-                  ? "text-zinc-600 cursor-not-allowed"
-                  : "text-zinc-400 hover:text-white hover:bg-zinc-600"
+                  ? "text-muted-foreground/50 cursor-not-allowed"
+                  : "text-muted-foreground hover:text-foreground hover:bg-accent"
               }`}
             >
               <ChevronRight className="h-4 w-4" />
             </button>
-            <span className="px-2 text-xs font-mono text-zinc-400 min-w-[40px] text-center">
+            <span className="px-2 text-xs font-mono text-muted-foreground min-w-[40px] text-center">
               {currentIndex + 1} / {totalJobs}
             </span>
             <button
@@ -263,8 +244,8 @@ const LiveJobProgressComponent = ({ className }: LiveJobProgressProps) => {
               disabled={currentIndex === totalJobs - 1}
               className={`p-1.5 rounded-md transition-all ${
                 currentIndex === totalJobs - 1
-                  ? "text-zinc-600 cursor-not-allowed"
-                  : "text-zinc-400 hover:text-white hover:bg-zinc-600"
+                  ? "text-muted-foreground/50 cursor-not-allowed"
+                  : "text-muted-foreground hover:text-foreground hover:bg-accent"
               }`}
             >
               <ChevronLeft className="h-4 w-4" />
@@ -384,13 +365,13 @@ const LiveJobProgressComponent = ({ className }: LiveJobProgressProps) => {
                     <button
                       type="button"
                       onClick={() => toggleCollapsed(assignment.jobItem.id)}
-                      className="p-1 rounded hover:bg-zinc-700/50 transition-colors"
+                      className="p-1 rounded hover:bg-accent transition-colors"
                       aria-label={isCollapsed ? "הרחב" : "צמצם"}
                     >
                       {isCollapsed ? (
-                        <ChevronDown className="h-4 w-4 text-zinc-400" />
+                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
                       ) : (
-                        <ChevronUp className="h-4 w-4 text-zinc-400" />
+                        <ChevronUp className="h-4 w-4 text-muted-foreground" />
                       )}
                     </button>
                   )}
@@ -399,7 +380,7 @@ const LiveJobProgressComponent = ({ className }: LiveJobProgressProps) => {
 
               {/* Single Station - Simple Progress Bar (hide when collapsed) */}
               {isSingleStation && !isCollapsed && (
-                <div className="h-12 rounded-xl overflow-hidden bg-zinc-900 flex items-center">
+                <div className="h-12 rounded-xl overflow-hidden bg-muted/50 flex items-center">
                   <div
                     className={`h-full flex items-center justify-center transition-all relative ${
                       isComplete ? "bg-emerald-500" : "bg-emerald-500"
@@ -414,7 +395,7 @@ const LiveJobProgressComponent = ({ className }: LiveJobProgressProps) => {
                   </div>
                   {completionPercent < 100 && (
                     <div className="flex-1 h-full flex items-center justify-center">
-                      <span className="text-[10px] text-zinc-600 font-mono">
+                      <span className="text-[10px] text-muted-foreground font-mono">
                         {showPercentages
                           ? `${100 - completionPercent}% נותרו`
                           : `${(plannedQuantity - completedGood).toLocaleString()} נותרו`}
@@ -428,7 +409,7 @@ const LiveJobProgressComponent = ({ className }: LiveJobProgressProps) => {
               {isMultiStation && wipDistribution.length > 0 && !isCollapsed && (
                 <div className="space-y-3">
                   {/* Segmented Progress Bar - Use flex-grow for proportional sizing */}
-                  <div className="h-12 rounded-xl overflow-hidden bg-zinc-900 flex">
+                  <div className="h-12 rounded-xl overflow-hidden bg-muted/50 flex">
                     {wipDistribution.map((wip, idx) => {
                       const segmentStyle = getSegmentStyle(idx, wipDistribution.length, wip.isTerminal);
                       const isBottleneck = idx === bottleneckIdx && maxWip > 0;
@@ -472,7 +453,7 @@ const LiveJobProgressComponent = ({ className }: LiveJobProgressProps) => {
                     {/* Remaining space - at the end, flex-1 makes it fill remaining width */}
                     {totalWip < plannedQuantity && (
                       <div className="h-full flex items-center justify-center flex-1" style={{ minWidth: "40px" }}>
-                        <span className="text-[10px] text-zinc-600 font-mono">
+                        <span className="text-[10px] text-muted-foreground font-mono">
                           {showPercentages
                             ? `${Math.round(((plannedQuantity - totalWip) / plannedQuantity) * 100)}% נותרו`
                             : `${(plannedQuantity - totalWip).toLocaleString()} נותרו`}
@@ -482,7 +463,7 @@ const LiveJobProgressComponent = ({ className }: LiveJobProgressProps) => {
                   </div>
 
                   {/* Station Legend - More prominent with worker names */}
-                  <div className="bg-zinc-900/50 rounded-lg p-3">
+                  <div className="bg-muted/50 rounded-lg p-3">
                     <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
                       {wipDistribution.map((wip, idx) => {
                         const segmentStyle = getSegmentStyle(idx, wipDistribution.length, wip.isTerminal);
@@ -506,7 +487,7 @@ const LiveJobProgressComponent = ({ className }: LiveJobProgressProps) => {
                                 />
                               </div>
                               <span className={`text-xs font-medium ${
-                                wip.hasActiveSession ? "text-zinc-200" : "text-zinc-500"
+                                wip.hasActiveSession ? "text-foreground" : "text-muted-foreground"
                               }`}>
                                 {wip.stationName}
                               </span>
@@ -514,7 +495,7 @@ const LiveJobProgressComponent = ({ className }: LiveJobProgressProps) => {
 
                             {/* Worker names for active stations */}
                             {hasActiveWorkers && (
-                              <div className="flex items-center gap-1 bg-zinc-800 rounded px-1.5 py-0.5">
+                              <div className="flex items-center gap-1 bg-accent rounded px-1.5 py-0.5">
                                 <User className="w-3 h-3 text-emerald-400" />
                                 <span className="text-[10px] text-emerald-300 font-medium">
                                   {activeWorkers.join(", ")}
@@ -524,7 +505,7 @@ const LiveJobProgressComponent = ({ className }: LiveJobProgressProps) => {
 
                             {/* Arrow separator */}
                             {idx < wipDistribution.length - 1 && (
-                              <ChevronLeft className="h-3 w-3 text-zinc-700 mx-0.5" />
+                              <ChevronLeft className="h-3 w-3 text-muted-foreground/50 mx-0.5" />
                             )}
                           </div>
                         );
@@ -536,7 +517,7 @@ const LiveJobProgressComponent = ({ className }: LiveJobProgressProps) => {
 
               {/* Single Station Legend (hide when collapsed) */}
               {isSingleStation && wipDistribution.length > 0 && !isCollapsed && (
-                <div className="bg-zinc-900/50 rounded-lg p-3">
+                <div className="bg-muted/50 rounded-lg p-3">
                   <div className="flex items-center gap-3">
                     {wipDistribution.map((wip) => {
                       const activeWorkers = (wip as WipStationData & { activeWorkers?: string[] }).activeWorkers ?? [];
@@ -551,13 +532,13 @@ const LiveJobProgressComponent = ({ className }: LiveJobProgressProps) => {
                             <span className="relative w-2.5 h-2.5 rounded-full bg-emerald-500" />
                           </div>
                           <span className={`text-xs font-medium ${
-                            wip.hasActiveSession ? "text-zinc-200" : "text-zinc-500"
+                            wip.hasActiveSession ? "text-foreground" : "text-muted-foreground"
                           }`}>
                             {wip.stationName}
                           </span>
 
                           {hasActiveWorkers && (
-                            <div className="flex items-center gap-1 bg-zinc-800 rounded px-1.5 py-0.5">
+                            <div className="flex items-center gap-1 bg-accent rounded px-1.5 py-0.5">
                               <User className="w-3 h-3 text-emerald-400" />
                               <span className="text-[10px] text-emerald-300 font-medium">
                                 {activeWorkers.join(", ")}

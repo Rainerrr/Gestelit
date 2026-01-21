@@ -15,7 +15,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  Check,
   CheckCircle2,
+  ChevronDown,
+  ClipboardCheck,
   Package,
   Plus,
   Trash2,
@@ -34,7 +37,9 @@ import {
   fetchPipelinePresetsAdminApi,
   fetchStationsAdminApi,
   updateJobItemAdminApi,
+  updateJobItemStepAdminApi,
 } from "@/lib/api/admin-management";
+import { cn } from "@/lib/utils";
 import {
   PipelineFlowEditor,
   type PipelineStation,
@@ -66,10 +71,15 @@ export const JobItemsDialog = ({
   const [pipelineStations, setPipelineStations] = useState<PipelineStation[]>([]);
   const [selectedPresetId, setSelectedPresetId] = useState("");
   const [selectedStationId, setSelectedStationId] = useState("");
+  const [firstProductFlags, setFirstProductFlags] = useState<Record<string, boolean>>({});
 
   // Edit quantity state
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editQuantity, setEditQuantity] = useState<string>("");
+
+  // Expanded item state (to show pipeline steps)
+  const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
+  const [updatingStepId, setUpdatingStepId] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     if (!job) return;
@@ -80,7 +90,7 @@ export const JobItemsDialog = ({
     try {
       const [itemsRes, presetsRes, stationsRes] = await Promise.all([
         fetchJobItemsAdminApi(job.id, { includeProgress: true, includeStations: true }),
-        fetchPipelinePresetsAdminApi({ includeInactive: false }),
+        fetchPipelinePresetsAdminApi(),
         fetchStationsAdminApi(),
       ]);
 
@@ -116,6 +126,16 @@ export const JobItemsDialog = ({
       .filter((item) => item.station);
 
     setPipelineStations(loadedStations);
+
+    // Load first product approval flags from preset
+    const flags: Record<string, boolean> = {};
+    for (const step of preset.steps) {
+      if (step.requires_first_product_approval) {
+        flags[step.station_id] = true;
+      }
+    }
+    setFirstProductFlags(flags);
+
     // Auto-fill name from preset if empty
     if (!newProductName.trim()) {
       setNewProductName(preset.name);
@@ -129,7 +149,7 @@ export const JobItemsDialog = ({
     if (!station) return;
 
     if (pipelineStations.some((ps) => ps.id === station.id)) {
-      setError("התחנה כבר קיימת בצינור");
+      setError("התחנה כבר קיימת בתהליך");
       return;
     }
 
@@ -145,6 +165,13 @@ export const JobItemsDialog = ({
     setSelectedStationId("");
     setError(null);
   }, [selectedStationId, stations, pipelineStations]);
+
+  const handleToggleFirstProductApproval = useCallback((stationId: string) => {
+    setFirstProductFlags((prev) => ({
+      ...prev,
+      [stationId]: !prev[stationId],
+    }));
+  }, []);
 
   const handleAddItem = async () => {
     if (!job) return;
@@ -173,6 +200,7 @@ export const JobItemsDialog = ({
         name: newProductName.trim(),
         station_ids: pipelineStations.map((ps) => ps.id),
         planned_quantity: parseInt(newProductQuantity),
+        first_product_approval_flags: firstProductFlags,
       });
 
       setSuccessMessage("המוצר נוסף בהצלחה");
@@ -182,6 +210,7 @@ export const JobItemsDialog = ({
       setPipelineStations([]);
       setSelectedPresetId("");
       setSelectedStationId("");
+      setFirstProductFlags({});
       await loadData();
 
       setTimeout(() => setSuccessMessage(null), 3000);
@@ -248,6 +277,40 @@ export const JobItemsDialog = ({
     }
   };
 
+  const handleToggleStepQA = async (
+    itemId: string,
+    stepId: string,
+    newValue: boolean,
+  ) => {
+    setUpdatingStepId(stepId);
+    setError(null);
+
+    try {
+      await updateJobItemStepAdminApi(itemId, stepId, {
+        requires_first_product_approval: newValue,
+      });
+
+      // Update local state immediately for responsiveness
+      setItems((prev) =>
+        prev.map((item) => {
+          if (item.id !== itemId) return item;
+          return {
+            ...item,
+            job_item_stations: item.job_item_stations?.map((step) => {
+              if (step.id !== stepId) return step;
+              return { ...step, requires_first_product_approval: newValue };
+            }),
+          };
+        }),
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "שגיאה בעדכון";
+      setError(message);
+    } finally {
+      setUpdatingStepId(null);
+    }
+  };
+
   const handleClose = () => {
     setError(null);
     setSuccessMessage(null);
@@ -258,6 +321,7 @@ export const JobItemsDialog = ({
     setPipelineStations([]);
     setSelectedPresetId("");
     setSelectedStationId("");
+    setFirstProductFlags({});
     onOpenChange(false);
   };
 
@@ -282,7 +346,7 @@ export const JobItemsDialog = ({
             מוצרים - {job.job_number}
           </DialogTitle>
           <DialogDescription className="text-muted-foreground">
-            הגדרת מוצרים וצינורות הייצור שלהם. עובדים יוכלו לעבוד רק בתחנות שהוגדרו כאן.
+            הגדרת מוצרים ותהליכי הייצור שלהם. עובדים יוכלו לעבוד רק בתחנות שהוגדרו כאן.
           </DialogDescription>
         </DialogHeader>
 
@@ -345,119 +409,222 @@ export const JobItemsDialog = ({
                   <div className="space-y-2">
                     {items.map((item) => {
                       const isEditing = editingItemId === item.id;
+                      const isExpanded = expandedItemId === item.id;
                       const progressPercent = getProgressPercent(item);
+                      const hasQASteps = item.job_item_stations?.some(
+                        (s) => s.requires_first_product_approval,
+                      );
 
                       return (
                         <div
                           key={item.id}
-                          className="flex items-start gap-3 rounded-md border border-input bg-card p-3"
+                          className="rounded-md border border-input bg-card p-3"
                         >
-                          <div className="flex-shrink-0 mt-1">
-                            <Workflow className="h-4 w-4 text-purple-400" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <p className="text-sm font-medium text-foreground">
+                          {/* Header row: name, locked badge, expand toggle, delete */}
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                              <Workflow className="h-4 w-4 text-purple-400 flex-shrink-0" />
+                              <span className="font-medium text-foreground truncate">
                                 {getItemDisplayName(item)}
-                              </p>
+                              </span>
                               {item.is_pipeline_locked && (
                                 <Badge
                                   variant="secondary"
-                                  className="text-[10px] bg-amber-500/10 text-amber-400 border-amber-500/30"
+                                  className="text-[10px] bg-amber-500/10 text-amber-400 border-amber-500/30 flex-shrink-0"
                                 >
                                   נעול
                                 </Badge>
                               )}
-                            </div>
-                            {item.job_item_stations && item.job_item_stations.length > 0 && (
-                              <p className="text-xs text-muted-foreground mt-1">
-                                {item.job_item_stations.length} שלבים:{" "}
-                                {item.job_item_stations
-                                  .slice(0, 3)
-                                  .map((s) => s.station?.name ?? "—")
-                                  .join(" → ")}
-                                {item.job_item_stations.length > 3 && " ..."}
-                              </p>
-                            )}
-                            <div className="flex items-center gap-3 mt-2">
-                              {isEditing ? (
-                                <div className="flex items-center gap-2">
-                                  <Input
-                                    type="number"
-                                    min="1"
-                                    value={editQuantity}
-                                    onChange={(e) => setEditQuantity(e.target.value)}
-                                    className="w-24 h-7 text-xs border-input bg-secondary"
-                                  />
-                                  <Button
-                                    size="sm"
-                                    className="h-7 text-xs"
-                                    onClick={() => void handleUpdateQuantity(item.id)}
-                                    disabled={isSaving}
-                                  >
-                                    שמור
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="h-7 text-xs"
-                                    onClick={() => {
-                                      setEditingItemId(null);
-                                      setEditQuantity("");
-                                    }}
-                                  >
-                                    ביטול
-                                  </Button>
-                                </div>
-                              ) : (
-                                <>
-                                  <button
-                                    className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                                    onClick={() => {
-                                      setEditingItemId(item.id);
-                                      setEditQuantity(item.planned_quantity.toString());
-                                    }}
-                                  >
-                                    מתוכנן:{" "}
-                                    <span className="font-medium text-foreground">
-                                      {item.planned_quantity.toLocaleString()}
-                                    </span>
-                                  </button>
-                                  <span className="text-xs text-muted-foreground">|</span>
-                                  <span className="text-xs text-muted-foreground">
-                                    הושלמו:{" "}
-                                    <span className="font-medium text-emerald-400">
-                                      {(item.progress?.completed_good ?? 0).toLocaleString()}
-                                    </span>
-                                  </span>
-                                </>
+                              {hasQASteps && (
+                                <Badge
+                                  variant="secondary"
+                                  className="text-[10px] bg-amber-500/10 text-amber-400 border-amber-500/30 flex-shrink-0 gap-0.5"
+                                >
+                                  <ClipboardCheck className="h-2.5 w-2.5" />
+                                  QA
+                                </Badge>
                               )}
                             </div>
-                            {!isEditing && (
-                              <div className="flex items-center gap-2 mt-2">
-                                <div className="w-full h-1.5 bg-secondary rounded-full overflow-hidden">
-                                  <div
-                                    className={`h-full transition-all ${
-                                      progressPercent >= 100 ? "bg-emerald-500" : "bg-primary"
-                                    }`}
-                                    style={{ width: `${progressPercent}%` }}
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              {/* Expand toggle */}
+                              {item.job_item_stations && item.job_item_stations.length > 0 && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 px-2 text-muted-foreground hover:text-foreground"
+                                  onClick={() =>
+                                    setExpandedItemId(isExpanded ? null : item.id)
+                                  }
+                                >
+                                  <span className="text-xs mr-1">
+                                    {item.job_item_stations.length} שלבים
+                                  </span>
+                                  <ChevronDown
+                                    className={cn(
+                                      "h-3.5 w-3.5 transition-transform",
+                                      isExpanded && "rotate-180",
+                                    )}
                                   />
-                                </div>
-                                <span className="text-xs text-muted-foreground whitespace-nowrap">
-                                  {progressPercent}%
-                                </span>
+                                </Button>
+                              )}
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-muted-foreground hover:text-red-400 hover:bg-red-500/10"
+                                onClick={() => void handleDeleteItem(item.id)}
+                                disabled={isSaving}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </div>
+
+                          {/* Expanded pipeline steps */}
+                          {isExpanded && item.job_item_stations && item.job_item_stations.length > 0 && (
+                            <div className="mt-3 space-y-1.5 border-t border-input/50 pt-3">
+                              <p className="text-xs text-muted-foreground mb-2">
+                                לחצו על הסמל כדי לדרוש אישור מוצר ראשון בכל שלב:
+                              </p>
+                              {item.job_item_stations
+                                .sort((a, b) => a.position - b.position)
+                                .map((step, idx) => {
+                                  const isFirst = idx === 0;
+                                  const isLast = idx === item.job_item_stations!.length - 1;
+                                  const isUpdating = updatingStepId === step.id;
+
+                                  return (
+                                    <div
+                                      key={step.id}
+                                      className={cn(
+                                        "flex items-center gap-2 p-2 rounded transition-colors",
+                                        isFirst
+                                          ? "bg-emerald-500/5 border border-emerald-500/20"
+                                          : isLast
+                                            ? "bg-blue-500/5 border border-blue-500/20"
+                                            : "bg-secondary/50 border border-input/50",
+                                      )}
+                                    >
+                                      {/* Position badge */}
+                                      <Badge
+                                        variant="outline"
+                                        className={cn(
+                                          "h-5 w-5 p-0 flex items-center justify-center text-[10px] font-mono flex-shrink-0",
+                                          isFirst
+                                            ? "border-emerald-500/50 text-emerald-400 bg-emerald-500/10"
+                                            : isLast
+                                              ? "border-blue-500/50 text-blue-400 bg-blue-500/10"
+                                              : "border-input text-muted-foreground",
+                                        )}
+                                      >
+                                        {step.position}
+                                      </Badge>
+
+                                      {/* Station name */}
+                                      <span className="flex-1 text-sm text-foreground/90 truncate">
+                                        {step.station?.name ?? "—"}
+                                      </span>
+
+                                      {/* QA Toggle button */}
+                                      <button
+                                        onClick={() =>
+                                          void handleToggleStepQA(
+                                            item.id,
+                                            step.id,
+                                            !step.requires_first_product_approval,
+                                          )
+                                        }
+                                        disabled={isUpdating}
+                                        className={cn(
+                                          "h-7 w-7 rounded border flex items-center justify-center transition-colors flex-shrink-0",
+                                          step.requires_first_product_approval
+                                            ? "border-amber-500 bg-amber-500/20 text-amber-400"
+                                            : "border-border bg-muted/50 text-muted-foreground hover:border-amber-400/50 hover:bg-amber-500/10",
+                                          isUpdating && "opacity-50",
+                                        )}
+                                        title="דרוש אישור מוצר ראשון"
+                                      >
+                                        {isUpdating ? (
+                                          <div className="h-3 w-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                        ) : step.requires_first_product_approval ? (
+                                          <Check className="h-3.5 w-3.5" />
+                                        ) : (
+                                          <ClipboardCheck className="h-3.5 w-3.5 opacity-50" />
+                                        )}
+                                      </button>
+                                    </div>
+                                  );
+                                })}
+                            </div>
+                          )}
+
+                          {/* Quantity/progress row */}
+                          <div className="flex items-center gap-3 mt-3 pt-2 border-t border-input/50">
+                            {isEditing ? (
+                              <div className="flex items-center gap-2 flex-1">
+                                <Input
+                                  type="number"
+                                  min="1"
+                                  value={editQuantity}
+                                  onChange={(e) => setEditQuantity(e.target.value)}
+                                  className="w-24 h-7 text-xs border-input bg-secondary"
+                                />
+                                <Button
+                                  size="sm"
+                                  className="h-7 text-xs"
+                                  onClick={() => void handleUpdateQuantity(item.id)}
+                                  disabled={isSaving}
+                                >
+                                  שמור
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 text-xs"
+                                  onClick={() => {
+                                    setEditingItemId(null);
+                                    setEditQuantity("");
+                                  }}
+                                >
+                                  ביטול
+                                </Button>
                               </div>
+                            ) : (
+                              <>
+                                <button
+                                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                                  onClick={() => {
+                                    setEditingItemId(item.id);
+                                    setEditQuantity(item.planned_quantity.toString());
+                                  }}
+                                >
+                                  מתוכנן:{" "}
+                                  <span className="font-medium text-foreground">
+                                    {item.planned_quantity.toLocaleString()}
+                                  </span>
+                                </button>
+                                <span className="text-xs text-muted-foreground">|</span>
+                                <span className="text-xs text-muted-foreground">
+                                  הושלמו:{" "}
+                                  <span className="font-medium text-emerald-400">
+                                    {(item.progress?.completed_good ?? 0).toLocaleString()}
+                                  </span>
+                                </span>
+                                <div className="flex-1 flex items-center gap-2">
+                                  <div className="w-full h-1.5 bg-secondary rounded-full overflow-hidden">
+                                    <div
+                                      className={`h-full transition-all ${
+                                        progressPercent >= 100 ? "bg-emerald-500" : "bg-primary"
+                                      }`}
+                                      style={{ width: `${progressPercent}%` }}
+                                    />
+                                  </div>
+                                  <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                    {progressPercent}%
+                                  </span>
+                                </div>
+                              </>
                             )}
                           </div>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-muted-foreground hover:text-red-400 hover:bg-red-500/10 flex-shrink-0"
-                            onClick={() => void handleDeleteItem(item.id)}
-                            disabled={isSaving}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
                         </div>
                       );
                     })}
@@ -483,7 +650,7 @@ export const JobItemsDialog = ({
 
                   {/* Pipeline Flow Editor */}
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-foreground/80">צינור הייצור *</Label>
+                    <Label className="text-xs text-foreground/80">תהליך הייצור *</Label>
                     <PipelineFlowEditor
                       stations={pipelineStations}
                       onStationsChange={setPipelineStations}
@@ -497,6 +664,8 @@ export const JobItemsDialog = ({
                       onAddStation={handleAddStationToPipeline}
                       disabled={isSaving}
                       variant="default"
+                      firstProductFlags={firstProductFlags}
+                      onToggleFirstProductQA={handleToggleFirstProductApproval}
                     />
                   </div>
 
@@ -538,6 +707,7 @@ export const JobItemsDialog = ({
                         setPipelineStations([]);
                         setSelectedPresetId("");
                         setSelectedStationId("");
+                        setFirstProductFlags({});
                         setError(null);
                       }}
                       disabled={isSaving}

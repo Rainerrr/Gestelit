@@ -46,7 +46,7 @@ export async function GET(request: Request, context: RouteContext) {
  * PUT /api/admin/pipeline-presets/[id]
  *
  * Update a pipeline preset's metadata.
- * Body: { name?: string, description?: string, is_active?: boolean }
+ * Body: { name?: string }
  */
 export async function PUT(request: Request, context: RouteContext) {
   try {
@@ -68,8 +68,6 @@ export async function PUT(request: Request, context: RouteContext) {
   try {
     const preset = await updatePipelinePreset(id, {
       name: body.name,
-      description: body.description,
-      is_active: body.is_active,
     });
     return NextResponse.json({ preset });
   } catch (error) {

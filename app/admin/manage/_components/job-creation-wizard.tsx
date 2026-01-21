@@ -19,13 +19,18 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Factory,
   Package,
   Plus,
   Trash2,
   Briefcase,
   AlertTriangle,
   Workflow,
+  Calendar,
 } from "lucide-react";
+import { format } from "date-fns";
+import { he } from "date-fns/locale";
+import { DatePicker } from "@/components/ui/date-picker";
 import type {
   Job,
   PipelinePresetWithSteps,
@@ -55,6 +60,8 @@ type PendingProduct = {
   name: string;
   stations: PipelineStation[];
   planned_quantity: number;
+  /** Map of station_id -> requires_first_product_approval */
+  firstProductApprovalFlags: Record<string, boolean>;
 };
 
 export const JobCreationWizard = ({
@@ -69,7 +76,7 @@ export const JobCreationWizard = ({
   const [jobNumber, setJobNumber] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [description, setDescription] = useState("");
-  const [plannedQuantity, setPlannedQuantity] = useState("");
+  const [dueDate, setDueDate] = useState<Date | undefined>(undefined);
 
   // Step 2: Products
   const [pipelinePresets, setPipelinePresets] = useState<PipelinePresetWithSteps[]>([]);
@@ -83,13 +90,14 @@ export const JobCreationWizard = ({
   const [pipelineStations, setPipelineStations] = useState<PipelineStation[]>([]);
   const [selectedPresetId, setSelectedPresetId] = useState("");
   const [selectedStationId, setSelectedStationId] = useState("");
+  const [firstProductFlags, setFirstProductFlags] = useState<Record<string, boolean>>({});
 
   // Load pipeline presets and stations
   const loadData = useCallback(async () => {
     setIsLoadingData(true);
     try {
       const [presetsRes, stationsRes] = await Promise.all([
-        fetchPipelinePresetsAdminApi({ includeInactive: false }),
+        fetchPipelinePresetsAdminApi(),
         fetchStationsAdminApi(),
       ]);
       setPipelinePresets(presetsRes.presets);
@@ -114,13 +122,14 @@ export const JobCreationWizard = ({
       setJobNumber("");
       setCustomerName("");
       setDescription("");
-      setPlannedQuantity("");
+      setDueDate(undefined);
       setPendingProducts([]);
       setNewProductName("");
       setNewProductQuantity("");
       setPipelineStations([]);
       setSelectedPresetId("");
       setSelectedStationId("");
+      setFirstProductFlags({});
       setError(null);
     }
   }, [open]);
@@ -141,6 +150,16 @@ export const JobCreationWizard = ({
       .filter((item) => item.station);
 
     setPipelineStations(loadedStations);
+
+    // Load first product approval flags from preset
+    const flags: Record<string, boolean> = {};
+    for (const step of preset.steps) {
+      if (step.requires_first_product_approval) {
+        flags[step.station_id] = true;
+      }
+    }
+    setFirstProductFlags(flags);
+
     // Auto-fill name from preset if empty
     if (!newProductName.trim()) {
       setNewProductName(preset.name);
@@ -154,7 +173,7 @@ export const JobCreationWizard = ({
     if (!station) return;
 
     if (pipelineStations.some((ps) => ps.id === station.id)) {
-      setError("התחנה כבר קיימת בצינור");
+      setError("התחנה כבר קיימת בתהליך");
       return;
     }
 
@@ -170,6 +189,13 @@ export const JobCreationWizard = ({
     setSelectedStationId("");
     setError(null);
   }, [selectedStationId, stations, pipelineStations]);
+
+  const handleToggleFirstProductApproval = useCallback((stationId: string) => {
+    setFirstProductFlags((prev) => ({
+      ...prev,
+      [stationId]: !prev[stationId],
+    }));
+  }, []);
 
   const handleAddProduct = () => {
     setError(null);
@@ -189,11 +215,20 @@ export const JobCreationWizard = ({
       return;
     }
 
+    // Filter flags to only include stations in the pipeline
+    const relevantFlags: Record<string, boolean> = {};
+    for (const station of pipelineStations) {
+      if (firstProductFlags[station.id]) {
+        relevantFlags[station.id] = true;
+      }
+    }
+
     const newProduct: PendingProduct = {
       id: `pending-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
       name: newProductName.trim(),
       stations: [...pipelineStations],
       planned_quantity: parseInt(newProductQuantity),
+      firstProductApprovalFlags: relevantFlags,
     };
 
     setPendingProducts((prev) => [...prev, newProduct]);
@@ -202,6 +237,7 @@ export const JobCreationWizard = ({
     setPipelineStations([]);
     setSelectedPresetId("");
     setSelectedStationId("");
+    setFirstProductFlags({});
   };
 
   const handleRemoveProduct = (id: string) => {
@@ -245,6 +281,7 @@ export const JobCreationWizard = ({
         job_number: jobNumber.trim(),
         customer_name: customerName.trim() || null,
         description: description.trim() || null,
+        due_date: dueDate ? format(dueDate, "yyyy-MM-dd") : null,
       });
 
       // Create all job items (products) - Post Phase 5: pipeline-only model
@@ -253,6 +290,7 @@ export const JobCreationWizard = ({
           name: product.name,
           station_ids: product.stations.map((s) => s.id),
           planned_quantity: product.planned_quantity,
+          first_product_approval_flags: product.firstProductApprovalFlags,
         });
       }
 
@@ -285,7 +323,7 @@ export const JobCreationWizard = ({
           </DialogTitle>
           <DialogDescription className="text-muted-foreground">
             {step === "details" && "שלב 1: פרטי העבודה הבסיסיים"}
-            {step === "products" && "שלב 2: הגדרת מוצרים וצינורות הייצור שלהם"}
+            {step === "products" && "שלב 2: הגדרת מוצרים ותהליכי הייצור שלהם"}
             {step === "review" && "שלב 3: סקירה ואישור"}
           </DialogDescription>
         </DialogHeader>
@@ -376,20 +414,18 @@ export const JobCreationWizard = ({
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="wizard_planned" className="text-foreground/80">
-                  כמות מתוכננת כוללת
+                <Label htmlFor="wizard_due_date" className="text-foreground/80 flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                  תאריך יעד
                 </Label>
-                <Input
-                  id="wizard_planned"
-                  type="number"
-                  min="0"
-                  placeholder="כמות יחידות מתוכננת (אופציונלי)"
-                  value={plannedQuantity}
-                  onChange={(e) => setPlannedQuantity(e.target.value)}
-                  className="border-input bg-secondary text-foreground placeholder:text-muted-foreground"
+                <DatePicker
+                  value={dueDate}
+                  onChange={setDueDate}
+                  placeholder="בחר תאריך יעד (אופציונלי)"
+                  className="w-full"
                 />
                 <p className="text-xs text-muted-foreground">
-                  כאשר סה&quot;כ הטובים יגיע לכמות המתוכננת, העבודה תסומן כהושלמה
+                  תאריך היעד לסיום העבודה. ישמש למיון ומעקב בלוח הניהול.
                 </p>
               </div>
             </div>
@@ -406,7 +442,7 @@ export const JobCreationWizard = ({
                     <strong>חובה להוסיף לפחות מוצר אחד.</strong>
                     <br />
                     <span className="text-blue-400/80">
-                      כל מוצר מגדיר צינור ייצור - רצף תחנות שהעובדים יעברו בהן.
+                      כל מוצר מגדיר תהליך ייצור - רצף תחנות שהעובדים יעברו בהן.
                     </span>
                   </p>
                 </div>
@@ -468,21 +504,27 @@ export const JobCreationWizard = ({
                     <div className="animate-spin rounded-full h-5 w-5 border-2 border-transparent border-t-primary" />
                   </div>
                 ) : (
-                  <>
-                    {/* Product Name */}
-                    <div className="space-y-1.5">
-                      <Label className="text-xs text-foreground/80">שם המוצר *</Label>
+                  <div className="space-y-4">
+                    {/* Section 1: Product Name - Most Prominent */}
+                    <div className="p-4 rounded-xl border-2 border-primary/20 bg-primary/5">
+                      <Label className="text-sm font-semibold flex items-center gap-2 text-foreground">
+                        <Package className="h-4 w-4 text-primary" />
+                        שם המוצר *
+                      </Label>
                       <Input
                         placeholder="הזן שם מוצר"
                         value={newProductName}
                         onChange={(e) => setNewProductName(e.target.value)}
-                        className="border-input bg-secondary text-foreground placeholder:text-muted-foreground"
+                        className="mt-2 text-lg font-medium border-input bg-secondary text-foreground placeholder:text-muted-foreground"
                       />
                     </div>
 
-                    {/* Pipeline Flow Editor */}
-                    <div className="space-y-1.5">
-                      <Label className="text-xs text-foreground/80">צינור הייצור *</Label>
+                    {/* Section 2: Pipeline - Secondary */}
+                    <div className="p-4 rounded-xl border border-input bg-secondary/20">
+                      <Label className="text-sm font-semibold flex items-center gap-2 text-foreground mb-3">
+                        <Factory className="h-4 w-4 text-blue-400" />
+                        תהליך הייצור *
+                      </Label>
                       <PipelineFlowEditor
                         stations={pipelineStations}
                         onStationsChange={setPipelineStations}
@@ -494,34 +536,41 @@ export const JobCreationWizard = ({
                         selectedStationId={selectedStationId}
                         onStationSelect={setSelectedStationId}
                         onAddStation={handleAddStationToPipeline}
-                        variant="compact"
+                        variant="default"
+                        firstProductFlags={firstProductFlags}
+                        onToggleFirstProductQA={handleToggleFirstProductApproval}
                       />
                     </div>
 
-                    {/* Quantity and Add Button */}
-                    <div className="flex gap-2">
-                      <Input
-                        type="number"
-                        min="1"
-                        placeholder="כמות מתוכננת"
-                        value={newProductQuantity}
-                        onChange={(e) => setNewProductQuantity(e.target.value)}
-                        className="flex-1 border-input bg-secondary text-foreground placeholder:text-muted-foreground"
-                      />
-                      <Button
-                        onClick={handleAddProduct}
-                        disabled={
-                          !newProductName.trim() ||
-                          pipelineStations.length === 0 ||
-                          !newProductQuantity
-                        }
-                        className="bg-primary text-primary-foreground hover:bg-primary/90"
-                      >
-                        <Plus className="h-4 w-4 ml-1" />
-                        הוסף מוצר
-                      </Button>
+                    {/* Section 3: Quantity and Add Button - Tertiary */}
+                    <div className="p-4 rounded-xl border border-input bg-secondary/20">
+                      <Label className="text-sm font-semibold text-foreground mb-2 block">
+                        כמות מתוכננת *
+                      </Label>
+                      <div className="flex gap-2">
+                        <Input
+                          type="number"
+                          min="1"
+                          placeholder="הזן כמות"
+                          value={newProductQuantity}
+                          onChange={(e) => setNewProductQuantity(e.target.value)}
+                          className="flex-1 border-input bg-secondary text-foreground placeholder:text-muted-foreground"
+                        />
+                        <Button
+                          onClick={handleAddProduct}
+                          disabled={
+                            !newProductName.trim() ||
+                            pipelineStations.length === 0 ||
+                            !newProductQuantity
+                          }
+                          className="bg-primary text-primary-foreground hover:bg-primary/90"
+                        >
+                          <Plus className="h-4 w-4 ml-1" />
+                          הוסף מוצר
+                        </Button>
+                      </div>
                     </div>
-                  </>
+                  </div>
                 )}
               </div>
             </div>
@@ -549,11 +598,11 @@ export const JobCreationWizard = ({
                       <span className="mr-2 text-foreground">{customerName}</span>
                     </div>
                   )}
-                  {plannedQuantity && (
+                  {dueDate && (
                     <div>
-                      <span className="text-muted-foreground">כמות מתוכננת:</span>
+                      <span className="text-muted-foreground">תאריך יעד:</span>
                       <span className="mr-2 text-foreground">
-                        {parseInt(plannedQuantity).toLocaleString()}
+                        {format(dueDate, "dd/MM/yyyy", { locale: he })}
                       </span>
                     </div>
                   )}

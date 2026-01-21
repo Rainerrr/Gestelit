@@ -9,6 +9,10 @@ export type JobWithStats = {
   isCompleted: boolean;
   /** Derived from SUM(job_items.planned_quantity) */
   plannedQuantity: number | null;
+  /** Number of job items for this job */
+  jobItemCount: number;
+  /** Number of completed job items (progress >= 100%) */
+  completedItemCount: number;
 };
 
 export async function findJobByNumber(
@@ -69,6 +73,9 @@ export async function getOrCreateJob(
 export async function fetchAllJobsWithStats(options?: {
   search?: string;
   status?: "active" | "completed" | "all";
+  archived?: boolean;
+  sortBy?: "due_date" | "created_at" | "progress";
+  sortDirection?: "asc" | "desc";
 }): Promise<JobWithStats[]> {
   const supabase = createServiceSupabase();
 
@@ -86,18 +93,22 @@ export async function fetchAllJobsWithStats(options?: {
     job_number: string;
     customer_name: string | null;
     description: string | null;
+    due_date: string | null;
     planned_quantity: number | null; // Now derived from job_items
     created_at: string;
     updated_at: string;
     total_good: number; // Now derived from status_events
     total_scrap: number; // Now derived from status_events
     session_count: number;
+    job_item_count: number;
+    completed_item_count: number;
   }) => ({
     job: {
       id: row.id,
       job_number: row.job_number,
       customer_name: row.customer_name,
       description: row.description,
+      due_date: row.due_date,
       created_at: row.created_at,
       updated_at: row.updated_at,
     },
@@ -109,6 +120,8 @@ export async function fetchAllJobsWithStats(options?: {
       row.planned_quantity > 0 &&
       (row.total_good ?? 0) >= row.planned_quantity,
     plannedQuantity: row.planned_quantity,
+    jobItemCount: row.job_item_count ?? 0,
+    completedItemCount: row.completed_item_count ?? 0,
   }));
 
   // Apply search filter
@@ -128,6 +141,40 @@ export async function fetchAllJobsWithStats(options?: {
     jobs = jobs.filter((j) => !j.isCompleted);
   }
 
+  // Apply archive filter (completed jobs go to archive)
+  if (options?.archived === true) {
+    jobs = jobs.filter((j) => j.isCompleted);
+  } else if (options?.archived === false) {
+    jobs = jobs.filter((j) => !j.isCompleted);
+  }
+
+  // Apply sorting
+  const sortBy = options?.sortBy ?? "created_at";
+  const sortDir = options?.sortDirection ?? "desc";
+
+  jobs.sort((a, b) => {
+    let comparison = 0;
+    switch (sortBy) {
+      case "due_date":
+        // Null dates go to the end
+        if (!a.job.due_date && !b.job.due_date) comparison = 0;
+        else if (!a.job.due_date) comparison = 1;
+        else if (!b.job.due_date) comparison = -1;
+        else comparison = new Date(a.job.due_date).getTime() - new Date(b.job.due_date).getTime();
+        break;
+      case "progress":
+        const progressA = a.plannedQuantity ? (a.totalGood / a.plannedQuantity) : 0;
+        const progressB = b.plannedQuantity ? (b.totalGood / b.plannedQuantity) : 0;
+        comparison = progressA - progressB;
+        break;
+      case "created_at":
+      default:
+        comparison = new Date(a.job.created_at ?? 0).getTime() - new Date(b.job.created_at ?? 0).getTime();
+        break;
+    }
+    return sortDir === "asc" ? comparison : -comparison;
+  });
+
   return jobs;
 }
 
@@ -135,6 +182,7 @@ export async function createJobAdmin(payload: {
   job_number: string;
   customer_name?: string | null;
   description?: string | null;
+  due_date?: string | null;
   // planned_quantity removed - now set per job_item
 }): Promise<Job> {
   const supabase = createServiceSupabase();
@@ -151,6 +199,7 @@ export async function createJobAdmin(payload: {
       job_number: payload.job_number.trim(),
       customer_name: payload.customer_name ?? null,
       description: payload.description ?? null,
+      due_date: payload.due_date ?? null,
     })
     .select("*")
     .single();
@@ -167,6 +216,7 @@ export async function updateJob(
   payload: Partial<{
     customer_name: string | null;
     description: string | null;
+    due_date: string | null;
     // planned_quantity removed - now set per job_item
   }>,
 ): Promise<Job> {
@@ -192,17 +242,78 @@ export async function updateJob(
 export async function deleteJob(id: string): Promise<void> {
   const supabase = createServiceSupabase();
 
-  // Check for active sessions first
+  // Safety check: prevent deletion of jobs with active work
   const hasActive = await hasActiveSessionsForJob(id);
   if (hasActive) {
     throw new Error("JOB_HAS_ACTIVE_SESSIONS");
   }
 
+  // Database handles all cascades:
+  // - job_items → CASCADE (deleted)
+  // - job_item_steps → CASCADE (deleted)
+  // - wip_balances → CASCADE (deleted)
+  // - wip_consumptions → CASCADE (deleted)
+  // - job_item_progress → CASCADE (deleted)
+  // - sessions.job_id → SET NULL (preserved with total_good/total_scrap)
+  // - sessions.job_item_id/job_item_step_id → SET NULL (preserved)
+  // - status_events.job_item_id/job_item_step_id → SET NULL (preserved)
+  // - reports.job_item_id → SET NULL (preserved)
   const { error } = await supabase.from("jobs").delete().eq("id", id);
 
   if (error) {
     throw new Error(`JOB_DELETE_FAILED: ${error.message}`);
   }
+}
+
+export type JobDeletionInfo = {
+  sessionCount: number;
+  jobItemCount: number;
+  hasActiveSessions: boolean;
+};
+
+/**
+ * Get information about what will be affected by deleting a job.
+ * Used to show confirmation dialog with counts before deletion.
+ */
+export async function getJobDeletionInfo(jobId: string): Promise<JobDeletionInfo> {
+  const supabase = createServiceSupabase();
+
+  // Count all sessions for this job
+  const { count: sessionCount, error: sessionError } = await supabase
+    .from("sessions")
+    .select("*", { count: "exact", head: true })
+    .eq("job_id", jobId);
+
+  if (sessionError) {
+    throw new Error(`Failed to count sessions: ${sessionError.message}`);
+  }
+
+  // Count job items
+  const { count: jobItemCount, error: itemError } = await supabase
+    .from("job_items")
+    .select("*", { count: "exact", head: true })
+    .eq("job_id", jobId);
+
+  if (itemError) {
+    throw new Error(`Failed to count job items: ${itemError.message}`);
+  }
+
+  // Check for active sessions
+  const { count: activeCount, error: activeError } = await supabase
+    .from("sessions")
+    .select("*", { count: "exact", head: true })
+    .eq("job_id", jobId)
+    .eq("status", "active");
+
+  if (activeError) {
+    throw new Error(`Failed to check active sessions: ${activeError.message}`);
+  }
+
+  return {
+    sessionCount: sessionCount ?? 0,
+    jobItemCount: jobItemCount ?? 0,
+    hasActiveSessions: (activeCount ?? 0) > 0,
+  };
 }
 
 export async function hasActiveSessionsForJob(jobId: string): Promise<boolean> {

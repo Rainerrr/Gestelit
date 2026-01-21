@@ -15,6 +15,7 @@ import type {
   PipelineNeighborStation,
 } from "@/lib/api/client";
 import { fetchSessionPipelineContextApi } from "@/lib/api/client";
+import { getWorkerCode } from "@/lib/api/auth-helpers";
 
 // ============================================
 // TYPES
@@ -303,8 +304,8 @@ export function PipelineProvider({ sessionId, children }: PipelineProviderProps)
 
       store.setConnectionState("connecting");
 
-      // Build URL with worker code from localStorage
-      const workerCode = window.localStorage.getItem("workerCode") ?? "";
+      // Build URL with worker code (prefers sessionStorage over localStorage)
+      const workerCode = getWorkerCode() ?? "";
       const url = new URL(
         `/api/sessions/pipeline/stream?sessionId=${encodeURIComponent(sessionId)}`,
         window.location.origin,

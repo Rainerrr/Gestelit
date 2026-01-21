@@ -57,7 +57,7 @@ Phase 2 implements the admin UI for managing Pipeline Presets and integrates the
 
 | File | Changes |
 |------|---------|
-| `app/admin/manage/_components/management-dashboard.tsx` | Added "תבניות צינור" (Pipeline Presets) tab with full CRUD integration |
+| `app/admin/manage/_components/management-dashboard.tsx` | Added "תבניות תהליך" (Pipeline Presets) tab with full CRUD integration |
 | `app/admin/manage/_components/job-items-dialog.tsx` | Added pipeline preset selector for creating pipeline-kind job items |
 
 ## New API Endpoints
@@ -123,7 +123,7 @@ Extended to handle three kinds:
 
 ## Admin UI Features
 
-### Pipeline Presets Tab ("תבניות צינור")
+### Pipeline Presets Tab ("תבניות תהליך")
 
 - **List View**: Shows all presets with name, step count, step preview, and status
 - **Create**: Dialog to add name, description, and active status

@@ -67,13 +67,13 @@ export function PipelinePositionIndicator({
   return (
     <div
       className={cn(
-        "rounded-lg border border-slate-700/50 bg-slate-800/30 p-3",
+        "rounded-lg border border-border/50 bg-muted/30 p-3",
         compact && "p-2",
         className
       )}
     >
       {/* Header */}
-      <div className="mb-2 text-xs font-medium text-slate-500 text-right">
+      <div className="mb-2 text-xs font-medium text-muted-foreground text-right">
         מיקום בקו הייצור
       </div>
 
@@ -93,13 +93,13 @@ export function PipelinePositionIndicator({
             compact={compact}
           />
         ) : (
-          <div className="flex h-12 w-12 items-center justify-center rounded-lg border-2 border-dashed border-slate-700/30 text-xs text-slate-600">
+          <div className="flex h-12 w-12 items-center justify-center rounded-lg border-2 border-dashed border-border/30 text-xs text-muted-foreground">
             התחלה
           </div>
         )}
 
         {/* Arrow: Previous → Current */}
-        <ChevronLeft className="h-4 w-4 flex-shrink-0 text-slate-600" />
+        <ChevronLeft className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
 
         {/* Current Station - Simplified */}
         <div
@@ -133,7 +133,7 @@ export function PipelinePositionIndicator({
         </div>
 
         {/* Arrow: Current → Next */}
-        <ChevronLeft className="h-4 w-4 flex-shrink-0 text-slate-600" />
+        <ChevronLeft className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
 
         {/* Next Station (RTL: on the left) */}
         {nextStation ? (
@@ -213,7 +213,7 @@ function StationNode({
           ? "border-amber-500/40 bg-amber-500/5"
           : isPrevious
             ? "border-emerald-500/30 bg-emerald-500/5"
-            : "border-slate-600/30 bg-slate-800/30",
+            : "border-border/30 bg-muted/30",
         compact ? "min-w-14" : "min-w-16"
       )}
     >
@@ -225,14 +225,14 @@ function StationNode({
             ? "text-amber-400"
             : isPrevious
               ? "text-emerald-400"
-              : "text-slate-400"
+              : "text-muted-foreground"
         )}
       >
         {code}
       </span>
 
       {/* Position Number */}
-      <span className="text-sm font-semibold tabular-nums text-slate-300">
+      <span className="text-sm font-semibold tabular-nums text-foreground">
         #{position}
       </span>
 
@@ -251,7 +251,7 @@ function StationNode({
           {wipCount} {wipLabel}
         </span>
       ) : (
-        <span className="text-[10px] text-slate-500">פנוי</span>
+        <span className="text-[10px] text-muted-foreground">פנוי</span>
       )}
     </div>
   );

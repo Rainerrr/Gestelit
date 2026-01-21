@@ -23,6 +23,7 @@ Integration tests use Vitest and run against the live Supabase database. Tests a
 - `malfunctions.test.ts` - State machine transitions (open/known/solved)
 - `quantity-reporting.test.ts` - WIP updates and quantity tracking
 - `worker-flow-job-selection.test.ts` - Job item binding and pipeline flow
+- `first-product-qa.test.ts` - First product QA gate workflow
 
 Run a single test file:
 ```bash
@@ -40,7 +41,7 @@ npx supabase db push                         # Apply migrations to remote
 
 Migrations are in `supabase/migrations/` with timestamp prefixes (YYYYMMDDHHMMSS).
 
-> **DB Branch Restriction:** During development, all database work MUST be executed only on Supabase branch project `yzpwxlgvfkkidjsphfzv`. Never apply migrations to main until verified.
+> **Production Database:** Main project is `nuhbytocovtywdrgwgzk`. Use branches for experimental changes.
 
 ## Architecture
 
@@ -61,8 +62,9 @@ Migrations are in `supabase/migrations/` with timestamp prefixes (YYYYMMDDHHMMSS
 - `contexts/` - React contexts (`WorkerSessionContext`, `LanguageContext`, `PipelineContext`, `JobProgressContext`)
 - `components/work/` - Worker session UI components (progress panel, dialogs, pipeline display)
 - `components/worker/` - Worker flow components (job cards, station selection)
+- `components/dialogs/` - Shared dialog components used across worker/admin
 - `supabase/migrations/` - Database migrations (run via Supabase CLI)
-- `docs/job-system-overhaul/` - Pipeline system implementation documentation
+- `docs/` - Comprehensive documentation (see `docs/README.md` for index)
 
 ### Authentication Pattern
 - **Workers**: `X-Worker-Code` header validated server-side via `lib/auth/permissions.ts`
@@ -105,6 +107,11 @@ Migrations are in `supabase/migrations/` with timestamp prefixes (YYYYMMDDHHMMSS
 - `lib/data/pipeline-presets.ts` - Pipeline preset CRUD, step management
 - `lib/data/reports.ts` - Unified report system (malfunction/general/scrap), station grouping, view transformations
 - `lib/data/status-definitions.ts` - Status configuration (global/station scoped)
+- `lib/data/first-product-qa.ts` - First product QA gate operations
+- `lib/data/admin-dashboard.ts` - Dashboard queries, session aggregations
+- `lib/data/workers.ts` - Worker CRUD operations
+- `lib/data/stations.ts` - Station configuration and queries
+- `lib/data/checklists.ts` - Start/end checklist management
 
 ## Cursor Rules (Important Conventions)
 
@@ -298,36 +305,28 @@ Migration `20251215112227_enable_rls_policies.sql` enables Row Level Security on
 - Shows downstream WIP (products at next station)
 - Highlights current station position
 
-## Security Considerations
+## Security Notes
 
-### HTTPS Requirement
-All production deployments MUST use HTTPS. Authentication headers (`X-Worker-Code`, `X-Admin-Password`) are transmitted in plaintext and would be exposed over HTTP.
+- **HTTPS Required**: Authentication headers (`X-Worker-Code`, `X-Admin-Password`) transmitted in plaintext
+- **Workers**: Identified by worker code (not secret), assumes trusted internal network
+- **Admin**: Password-based with session cookies (15-min TTL)
+- **Service Role**: API routes use service role key to bypass RLS - never expose to clients
+- **Session heartbeat**: 15s intervals, 5-minute grace period for recovery
 
-### Rate Limiting Strategy
-Currently, no rate limiting is implemented at the application layer. For production hardening, consider:
+## Visual Development & Testing
 
-1. **Vercel Edge Middleware** (recommended for Next.js):
-   ```typescript
-   // middleware.ts
-   import { Ratelimit } from "@upstash/ratelimit";
-   import { Redis } from "@upstash/redis";
-   ```
+### Playwright MCP Integration (Optional)
 
-2. **Supabase Edge Functions** with built-in rate limiting
+When Playwright MCP is available, use for visual testing:
 
-3. **API Gateway** (Cloudflare, AWS API Gateway) in front of the application
+```javascript
+mcp__playwright__browser_navigate(url);      // Navigate to page
+mcp__playwright__browser_take_screenshot();  // Capture visual evidence
+mcp__playwright__browser_resize(w, h);       // Test responsiveness
+mcp__playwright__browser_console_messages(); // Check for errors
+```
 
-**Priority endpoints for rate limiting:**
-- `POST /api/sessions` - Session creation (prevent abuse)
-- `POST /api/admin/login` - Admin authentication (prevent brute force)
-- `POST /api/reports` - Report submissions (prevent spam)
-
-### Authentication Model
-- **Workers**: Identified by worker code (not secret). Assumes trusted internal network or VPN.
-- **Admin**: Password-based with session cookies (15-min TTL). Consider adding 2FA for production.
-- **Service Role**: All API routes bypass RLS using service role key. Ensure this key is never exposed to clients.
-
-### Session Security
-- Worker sessions use heartbeat mechanism (15s intervals)
-- Grace period of 5 minutes allows session recovery after disconnect
-- All timestamp comparisons use UTC to prevent timezone-based exploits
+For significant UI changes, the `/design-review` agent can test:
+- Responsiveness (mobile 375px, tablet 768px, desktop 1440px)
+- Accessibility (WCAG 2.1 AA compliance)
+- Interactive states and user flows

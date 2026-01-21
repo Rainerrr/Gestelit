@@ -15,14 +15,6 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useWorkerSession } from "@/contexts/WorkerSessionContext";
 import {
@@ -38,18 +30,10 @@ import { BackButton } from "@/components/navigation/back-button";
 import { StationTypeGroup } from "@/components/worker/station-selection/station-type-group";
 import type { StationTileData } from "@/components/worker/station-selection/station-tile";
 import { cn } from "@/lib/utils";
-
-// ============================================
-// HELPERS
-// ============================================
-
-const formatDuration = (totalSeconds: number) => {
-  const safeSeconds = Math.max(0, Math.floor(totalSeconds));
-  const hours = Math.floor(safeSeconds / 3600).toString().padStart(2, "0");
-  const minutes = Math.floor((safeSeconds % 3600) / 60).toString().padStart(2, "0");
-  const seconds = Math.floor(safeSeconds % 60).toString().padStart(2, "0");
-  return `${hours}:${minutes}:${seconds}`;
-};
+import {
+  SessionRecoveryDialog,
+  type SessionRecoveryInfo,
+} from "@/components/dialogs/session-recovery-dialog";
 
 /**
  * Group stations by station_type for department display.
@@ -98,7 +82,11 @@ export default function StationPage() {
   const { t } = useTranslation();
   const {
     worker,
+    station,
     job,
+    sessionId,
+    sessionStartedAt,
+    hasActiveSession,
     setStation,
     setSessionId,
     setSessionStartedAt,
@@ -106,6 +94,8 @@ export default function StationPage() {
     pendingRecovery,
     setPendingRecovery,
     hydrateFromSnapshot,
+    reset,
+    setWorker,
   } = useWorkerSession();
 
   // ===== State =====
@@ -129,8 +119,44 @@ export default function StationPage() {
   const [resumeActionLoading, setResumeActionLoading] = useState(false);
   const [resumeError, setResumeError] = useState<string | null>(null);
 
-  const isRecoveryBlocking = Boolean(pendingRecovery);
+  // Detect back-navigation: user has sessionId in context but navigated to station page
+  // This happens when user presses browser back button or uses UI back from /work
+  const isBackNavigationRecovery = hasActiveSession && !pendingRecovery;
+  const isRecoveryBlocking = Boolean(pendingRecovery) || isBackNavigationRecovery;
   const instanceId = useMemo(() => getOrCreateInstanceId(), []);
+
+  // Compute grace expiry for back-navigation scenario (5 minutes from now as default)
+  const backNavGraceExpiresAt = useMemo(() => {
+    if (!isBackNavigationRecovery) return null;
+    // Use 5 minutes from now as the grace period
+    return new Date(Date.now() + 5 * 60 * 1000).toISOString();
+  }, [isBackNavigationRecovery]);
+
+  // Create synthetic recovery info for back-navigation scenario
+  const backNavRecoveryInfo: SessionRecoveryInfo | null = useMemo(() => {
+    if (!isBackNavigationRecovery || !sessionId) return null;
+    return {
+      sessionId,
+      sessionStartedAt: sessionStartedAt ?? new Date().toISOString(),
+      stationName: station?.name ?? null,
+      jobNumber: job?.job_number ?? null,
+    };
+  }, [isBackNavigationRecovery, sessionId, sessionStartedAt, station?.name, job?.job_number]);
+
+  // Create recovery info for login-flow recovery (from pendingRecovery)
+  const loginFlowRecoveryInfo: SessionRecoveryInfo | null = useMemo(() => {
+    if (!pendingRecovery) return null;
+    return {
+      sessionId: pendingRecovery.session.id,
+      sessionStartedAt: pendingRecovery.session.started_at,
+      stationName: pendingRecovery.station?.name ?? null,
+      jobNumber: pendingRecovery.job?.job_number ?? null,
+    };
+  }, [pendingRecovery]);
+
+  // Use the appropriate recovery info
+  const activeRecoveryInfo = pendingRecovery ? loginFlowRecoveryInfo : backNavRecoveryInfo;
+  const activeGraceExpiresAt = pendingRecovery?.graceExpiresAt ?? backNavGraceExpiresAt;
 
   // ===== Computed =====
   // Filter stations by search query
@@ -207,48 +233,73 @@ export default function StationPage() {
     };
   }, [worker, router]);
 
-  // ===== Recovery Countdown =====
-  useEffect(() => {
-    if (!pendingRecovery?.graceExpiresAt) {
-      setResumeCountdownMs(0);
-      return;
-    }
-
-    const updateCountdown = () => {
-      const nextDiff = new Date(pendingRecovery.graceExpiresAt).getTime() - Date.now();
-      setResumeCountdownMs(Math.max(0, nextDiff));
-
-      // Auto-discard when expired
-      if (nextDiff <= 0) {
-        void handleDiscardSession("expired");
-      }
-    };
-
-    updateCountdown();
-    const intervalId = window.setInterval(updateCountdown, 1_000);
-    return () => window.clearInterval(intervalId);
-  }, [pendingRecovery?.graceExpiresAt]);
-
-  // ===== Handlers =====
+  // ===== Recovery Handlers =====
+  // Define handlers before the countdown effect that uses them
   const handleDiscardSession = useCallback(
     async (reason: SessionAbandonReason = "worker_choice") => {
-      if (!pendingRecovery) return;
+      // Handle both login-flow recovery (pendingRecovery) and back-navigation recovery (context sessionId)
+      const targetSessionId = pendingRecovery?.session.id ?? sessionId;
+      if (!targetSessionId) return;
 
       setResumeActionLoading(true);
       setResumeError(null);
 
       try {
-        await abandonSessionApi(pendingRecovery.session.id, reason);
+        await abandonSessionApi(targetSessionId, reason);
         clearPersistedSessionState();
-        setPendingRecovery(null);
+
+        if (pendingRecovery) {
+          // Login-flow recovery: just clear pendingRecovery
+          setPendingRecovery(null);
+        } else {
+          // Back-navigation recovery: reset session state but keep worker
+          const currentWorker = worker;
+          reset();
+          if (currentWorker) {
+            setWorker(currentWorker);
+          }
+        }
       } catch {
         setResumeError(t("station.resume.error"));
       } finally {
         setResumeActionLoading(false);
       }
     },
-    [pendingRecovery, setPendingRecovery, t]
+    [pendingRecovery, sessionId, worker, setPendingRecovery, reset, setWorker, t]
   );
+
+  // ===== Recovery Countdown =====
+  // Track if countdown has expired to trigger discard outside the interval callback
+  const [countdownExpired, setCountdownExpired] = useState(false);
+
+  useEffect(() => {
+    if (!activeGraceExpiresAt) {
+      setResumeCountdownMs(0);
+      setCountdownExpired(false);
+      return;
+    }
+
+    const updateCountdown = () => {
+      const nextDiff = new Date(activeGraceExpiresAt).getTime() - Date.now();
+      setResumeCountdownMs(Math.max(0, nextDiff));
+
+      // Mark as expired when timer reaches zero
+      if (nextDiff <= 0) {
+        setCountdownExpired(true);
+      }
+    };
+
+    updateCountdown();
+    const intervalId = window.setInterval(updateCountdown, 1_000);
+    return () => window.clearInterval(intervalId);
+  }, [activeGraceExpiresAt]);
+
+  // Auto-discard when countdown expires
+  useEffect(() => {
+    if (countdownExpired) {
+      void handleDiscardSession("expired");
+    }
+  }, [countdownExpired, handleDiscardSession]);
 
   const handleStationSelect = useCallback(
     async (stationId: string) => {
@@ -315,6 +366,14 @@ export default function StationPage() {
   );
 
   const handleResumeSession = useCallback(() => {
+    // For back-navigation, just go back to /work - context already has session data
+    if (isBackNavigationRecovery && sessionId) {
+      setResumeError(null);
+      router.push("/work");
+      return;
+    }
+
+    // For login-flow recovery, hydrate from snapshot
     if (!pendingRecovery?.station) {
       setResumeError(t("station.resume.missing"));
       return;
@@ -340,29 +399,20 @@ export default function StationPage() {
     }
 
     router.push("/work");
-  }, [pendingRecovery, worker, hydrateFromSnapshot, router, t]);
+  }, [isBackNavigationRecovery, sessionId, pendingRecovery, worker, hydrateFromSnapshot, router, t]);
 
-  const handleDialogClose = (open: boolean) => {
-    if (!open && pendingRecovery) {
+  const handleDialogClose = () => {
+    // For login-flow recovery, closing dialog should go back to login
+    if (pendingRecovery) {
       setPendingRecovery(null);
       router.push("/login");
     }
+    // For back-navigation, closing should navigate back to /work (user must make a choice)
+    else if (isBackNavigationRecovery) {
+      router.push("/work");
+    }
   };
 
-  // ===== Computed Labels =====
-  const countdownLabel = useMemo(
-    () => formatDuration(Math.ceil(Math.max(resumeCountdownMs, 0) / 1000)),
-    [resumeCountdownMs]
-  );
-
-  const elapsedLabel = useMemo(() => {
-    if (!pendingRecovery) return "00:00:00";
-    const expiryTimestamp = new Date(pendingRecovery.graceExpiresAt).getTime();
-    const currentTimestamp = expiryTimestamp - resumeCountdownMs;
-    const elapsedSeconds =
-      (currentTimestamp - new Date(pendingRecovery.session.started_at).getTime()) / 1000;
-    return formatDuration(Math.max(0, Math.floor(elapsedSeconds)));
-  }, [pendingRecovery, resumeCountdownMs]);
 
   // ===== Guard =====
   if (!worker) {
@@ -407,7 +457,7 @@ export default function StationPage() {
             {[1, 2].map((i) => (
               <div
                 key={i}
-                className="h-48 rounded-2xl border border-dashed border-slate-700/50 bg-slate-800/30 animate-pulse"
+                className="h-48 rounded-2xl border border-dashed border-border bg-muted/30 animate-pulse"
               />
             ))}
           </div>
@@ -420,7 +470,7 @@ export default function StationPage() {
               className="mt-4"
               onClick={() => window.location.reload()}
             >
-              נסה שוב
+              {t("station.tryAgain")}
             </Button>
           </div>
         ) : !hasAnyStations ? (
@@ -430,17 +480,17 @@ export default function StationPage() {
               {t("station.noAssignedStations")}
             </p>
             <p className="mt-2 text-sm text-amber-400/70">
-              פנה למנהל כדי לקבל הרשאות לעמדות
+              {t("station.contactAdmin")}
             </p>
           </div>
         ) : !hasAnyJobItems ? (
           // No job items available
-          <div className="rounded-2xl border-2 border-slate-600/30 bg-slate-800/30 p-8 text-center">
-            <p className="text-lg font-semibold text-slate-400">
-              אין עבודות זמינות
+          <div className="rounded-2xl border-2 border-border bg-muted/30 p-8 text-center">
+            <p className="text-lg font-semibold text-muted-foreground">
+              {t("station.noJobsAvailable")}
             </p>
-            <p className="mt-2 text-sm text-slate-500">
-              כל העמדות שלך פנויות אך אין עבודות פעילות
+            <p className="mt-2 text-sm text-muted-foreground/70">
+              {t("station.allStationsEmpty")}
             </p>
           </div>
         ) : (
@@ -448,16 +498,16 @@ export default function StationPage() {
           <div className="space-y-4">
             {/* Search Bar */}
             <div className="relative max-w-md">
-              <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-500 pointer-events-none" />
+              <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground pointer-events-none" />
               <Input
                 type="text"
-                placeholder="חיפוש עמדה..."
+                placeholder={t("station.searchPlaceholder")}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className={cn(
                   "pr-11 h-12 text-base",
-                  "bg-slate-800/50 border-slate-700",
-                  "placeholder:text-slate-500",
+                  "bg-card/50 border-input",
+                  "placeholder:text-muted-foreground",
                   "focus:border-cyan-500 focus:ring-cyan-500/20"
                 )}
               />
@@ -466,7 +516,7 @@ export default function StationPage() {
                   variant="ghost"
                   size="icon"
                   onClick={() => setSearchQuery("")}
-                  className="absolute left-2 top-1/2 -translate-y-1/2 h-8 w-8 text-slate-400 hover:text-slate-200"
+                  className="absolute left-2 top-1/2 -translate-y-1/2 h-8 w-8 text-muted-foreground hover:text-foreground"
                 >
                   <X className="h-4 w-4" />
                 </Button>
@@ -475,12 +525,12 @@ export default function StationPage() {
 
             {/* No search results */}
             {!hasSearchResults && searchQuery && (
-              <div className="rounded-2xl border-2 border-slate-600/30 bg-slate-800/30 p-8 text-center">
-                <p className="text-lg font-semibold text-slate-400">
-                  לא נמצאו עמדות
+              <div className="rounded-2xl border-2 border-border bg-muted/30 p-8 text-center">
+                <p className="text-lg font-semibold text-muted-foreground">
+                  {t("station.noStationsFound")}
                 </p>
-                <p className="mt-2 text-sm text-slate-500">
-                  נסה לחפש עם מילות מפתח אחרות
+                <p className="mt-2 text-sm text-muted-foreground/70">
+                  {t("station.tryDifferentSearch")}
                 </p>
               </div>
             )}
@@ -510,68 +560,16 @@ export default function StationPage() {
 
 
       {/* Recovery Dialog */}
-      <Dialog open={isRecoveryBlocking} onOpenChange={handleDialogClose}>
-        <DialogContent dir="rtl" className="border-border bg-card">
-          <DialogHeader>
-            <DialogTitle className="text-foreground">{t("station.resume.title")}</DialogTitle>
-            <DialogDescription className="text-muted-foreground">
-              {t("station.resume.subtitle")}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 text-right">
-            <Badge
-              variant="secondary"
-              className="w-full justify-center border-primary/30 bg-primary/10 py-2 text-primary"
-            >
-              {t("station.resume.countdown", { time: countdownLabel })}
-            </Badge>
-
-            <div className="grid gap-3 rounded-xl border border-border/60 bg-muted/30 p-4">
-              <div>
-                <p className="text-xs text-muted-foreground">{t("station.resume.station")}</p>
-                <p className="text-base font-semibold text-foreground">
-                  {pendingRecovery?.station?.name ?? t("station.resume.stationFallback")}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">{t("station.resume.job")}</p>
-                <p className="text-base font-semibold text-foreground">
-                  {pendingRecovery?.job?.job_number ?? t("station.resume.jobFallback")}
-                </p>
-              </div>
-              <div className="flex items-center justify-between rounded-xl border border-input bg-secondary px-4 py-3 text-sm text-muted-foreground">
-                <span>{t("station.resume.elapsed")}</span>
-                <span className="font-semibold text-foreground">{elapsedLabel}</span>
-              </div>
-            </div>
-          </div>
-
-          {resumeError && (
-            <p className="text-right text-sm text-rose-600 dark:text-rose-400">{resumeError}</p>
-          )}
-
-          <DialogFooter className="flex flex-col gap-2 sm:flex-row sm:justify-start">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => handleDiscardSession()}
-              disabled={resumeActionLoading}
-              className="w-full justify-center border-input bg-secondary text-foreground/80 hover:bg-accent hover:text-foreground sm:w-auto"
-            >
-              {resumeActionLoading ? t("station.resume.discarding") : t("station.resume.discard")}
-            </Button>
-            <Button
-              type="button"
-              onClick={handleResumeSession}
-              className="w-full justify-center bg-primary font-medium text-primary-foreground hover:bg-primary/90 sm:w-auto"
-              disabled={resumeActionLoading}
-            >
-              {t("station.resume.resume")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <SessionRecoveryDialog
+        open={isRecoveryBlocking}
+        session={activeRecoveryInfo}
+        countdownMs={resumeCountdownMs}
+        isLoading={resumeActionLoading}
+        error={resumeError}
+        onResume={handleResumeSession}
+        onDiscard={() => handleDiscardSession()}
+        onClose={handleDialogClose}
+      />
     </>
   );
 }

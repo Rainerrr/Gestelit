@@ -674,52 +674,46 @@ export async function endProductionStatusApi(options: {
 }
 
 // ============================================
-// FIRST PRODUCT QA API
+// FIRST PRODUCT APPROVAL API (Per-step, per-session)
 // ============================================
 
-export type FirstProductQAStatus = {
-  approved: boolean;
+export type FirstProductApprovalStatus = {
+  /** Whether approval is required for this session's job item step */
+  required: boolean;
+  /** Current status of the approval */
+  status: "not_required" | "needs_submission" | "pending" | "approved";
+  /** If there's a pending (not yet approved) report */
   pendingReport: Report | null;
+  /** If approved, the approved report */
   approvedReport: Report | null;
 };
 
 /**
- * Check if first product QA has been approved for a job item at a station.
+ * Check first product approval status for a session.
+ * Returns whether approval is required and current status.
  */
-export async function checkFirstProductQAApi(
-  jobItemId: string,
-  stationId: string,
-): Promise<FirstProductQAStatus> {
+export async function checkFirstProductApprovalApi(
+  sessionId: string,
+): Promise<FirstProductApprovalStatus> {
   const response = await fetch(
-    `/api/first-product-qa/check?jobItemId=${encodeURIComponent(jobItemId)}&stationId=${encodeURIComponent(stationId)}`,
+    `/api/sessions/${encodeURIComponent(sessionId)}/first-product-approval`,
     {
       headers: createWorkerHeaders(),
     },
   );
-  return handleResponse<FirstProductQAStatus>(response);
+  return handleResponse<FirstProductApprovalStatus>(response);
 }
 
 /**
- * Submit a first product QA request.
+ * Submit a first product approval request for a session.
  */
-export async function submitFirstProductQARequestApi(input: {
-  jobItemId: string;
-  stationId: string;
-  sessionId?: string;
-  workerId?: string;
+export async function submitFirstProductApprovalApi(input: {
+  sessionId: string;
   description?: string;
   image?: File | null;
-}): Promise<Report> {
+}): Promise<{ success: boolean; report: Report; status: "pending" }> {
   const formData = new FormData();
-  formData.append("jobItemId", input.jobItemId);
-  formData.append("stationId", input.stationId);
 
-  if (input.sessionId) {
-    formData.append("sessionId", input.sessionId);
-  }
-  if (input.workerId) {
-    formData.append("workerId", input.workerId);
-  }
   if (input.description) {
     formData.append("description", input.description);
   }
@@ -727,14 +721,44 @@ export async function submitFirstProductQARequestApi(input: {
     formData.append("image", input.image);
   }
 
-  const response = await fetch("/api/first-product-qa/request", {
-    method: "POST",
-    headers: {
-      "X-Worker-Code": getWorkerCode() ?? "",
+  const response = await fetch(
+    `/api/sessions/${encodeURIComponent(input.sessionId)}/first-product-approval`,
+    {
+      method: "POST",
+      headers: {
+        "X-Worker-Code": getWorkerCode() ?? "",
+      },
+      body: formData,
     },
-    body: formData,
-  });
-  const data = await handleResponse<{ report: Report }>(response);
-  return data.report;
+  );
+  return handleResponse<{ success: boolean; report: Report; status: "pending" }>(response);
+}
+
+// ============================================
+// SESSION TOTALS API
+// ============================================
+
+export type SessionTotals = {
+  good: number;
+  scrap: number;
+  jobItemId: string | null;
+};
+
+/**
+ * Fetch current job item totals for a session.
+ * Totals are derived from status_events (single source of truth).
+ *
+ * Used to sync work page context with database state on resume.
+ */
+export async function fetchSessionTotalsApi(
+  sessionId: string,
+): Promise<SessionTotals> {
+  const response = await fetch(
+    `/api/sessions/${encodeURIComponent(sessionId)}/totals`,
+    {
+      headers: createWorkerHeaders(),
+    },
+  );
+  return handleResponse<SessionTotals>(response);
 }
 

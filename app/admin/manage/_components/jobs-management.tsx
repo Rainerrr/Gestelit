@@ -34,7 +34,6 @@ import { JobCreationWizard } from "./job-creation-wizard";
 import { JobFormDialog } from "./job-form-dialog";
 import { JobItemsDialog } from "./job-items-dialog";
 import { JobFilters, type JobFiltersState } from "./job-filters";
-import { ArchivedJobsSection } from "./archived-jobs-section";
 import {
   getJobDeletionInfoAdminApi,
   fetchJobItemsAdminApi,
@@ -50,6 +49,8 @@ type JobsManagementProps = {
   onEdit: (id: string, job: Partial<Job>) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onRefresh?: () => Promise<void>;
+  /** Read-only mode for archive view - hides edit/delete buttons and add functionality */
+  readOnly?: boolean;
 };
 
 const SortIcon = ({ active, direction }: { active: boolean; direction?: "asc" | "desc" }) => {
@@ -83,6 +84,7 @@ export const JobsManagement = ({
   onEdit,
   onDelete,
   onRefresh,
+  readOnly = false,
 }: JobsManagementProps) => {
   const [editingJob, setEditingJob] = useState<Job | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -104,6 +106,11 @@ export const JobsManagement = ({
 
   // Track which jobs have been fetched to avoid duplicate requests
   const fetchedJobsRef = useRef<Set<string>>(new Set());
+
+  // Clear the ref on mount to ensure fresh data when component remounts
+  useEffect(() => {
+    fetchedJobsRef.current = new Set();
+  }, []);
 
   // Load job items for a single job (used when expanding)
   const loadJobItems = useCallback(async (jobId: string, force = false) => {
@@ -169,10 +176,12 @@ export const JobsManagement = ({
     return !items || items.length === 0;
   }, [jobItems]);
 
-  // Filter and sort jobs (excluding completed/archived jobs)
+  // Filter and sort jobs
   const filteredJobs = useMemo(() => {
-    // First, exclude completed jobs (they go to archive)
-    let filtered = jobs.filter((j) => !j.isCompleted);
+    // In readOnly mode (archive), show only completed jobs. Otherwise show only active jobs.
+    let filtered = readOnly
+      ? jobs.filter((j) => j.isCompleted)
+      : jobs.filter((j) => !j.isCompleted);
 
     // Apply search filter
     if (filters.search) {
@@ -242,7 +251,7 @@ export const JobsManagement = ({
     });
 
     return filtered;
-  }, [jobs, jobItems, filters]);
+  }, [jobs, jobItems, filters, readOnly]);
 
   const handleExpand = useCallback((jobId: string) => {
     if (expandedJobId === jobId) {
@@ -319,7 +328,7 @@ export const JobsManagement = ({
       <div key={jobWithStats.job.id} className="group">
         {/* Collapsed Row - Desktop Only */}
         <div
-          className={`hidden md:grid md:grid-cols-[40px_minmax(160px,1fr)_minmax(200px,2fr)_100px_80px] gap-3 px-5 py-3 transition-all cursor-pointer ${
+          className={`hidden md:grid md:grid-cols-[40px_120px_90px_1fr_90px_70px] gap-3 px-5 py-3 transition-all cursor-pointer ${
             isExpanded
               ? "bg-secondary/40"
               : "hover:bg-secondary/20"
@@ -337,7 +346,7 @@ export const JobsManagement = ({
             </div>
           </div>
 
-          {/* Job Number, Customer & Due Date */}
+          {/* Job Number & Customer */}
           <div className="flex items-center gap-3 min-w-0">
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
@@ -346,15 +355,6 @@ export const JobsManagement = ({
                 </span>
                 {blocked && !isLoadingJobItems && (
                   <div className="flex-shrink-0 w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                )}
-                {/* Due Date Badge - inline with job number */}
-                {jobWithStats.job.due_date && (
-                  <span
-                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium ${dueDateStyle.bg} ${dueDateStyle.text}`}
-                  >
-                    <Calendar className="h-2.5 w-2.5" />
-                    {format(new Date(jobWithStats.job.due_date), "d/M", { locale: he })}
-                  </span>
                 )}
               </div>
               {jobWithStats.job.customer_name && (
@@ -365,33 +365,36 @@ export const JobsManagement = ({
             </div>
           </div>
 
-          {/* Progress Bar - Now wider and in the middle */}
+          {/* Due Date Column */}
+          <div className="hidden md:flex items-center justify-center">
+            {jobWithStats.job.due_date ? (
+              <span
+                className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium ${dueDateStyle.bg} ${dueDateStyle.text}`}
+              >
+                <Calendar className="h-3 w-3" />
+                {format(new Date(jobWithStats.job.due_date), "d/M", { locale: he })}
+              </span>
+            ) : (
+              <span className="text-xs text-muted-foreground/50">—</span>
+            )}
+          </div>
+
+          {/* Progress Bar */}
           <div className="hidden md:flex items-center gap-2 w-full">
             {progressPercent !== null ? (
-              <div className="h-7 rounded-lg overflow-hidden bg-muted/50 flex flex-1">
-                <div
-                  className="h-full bg-emerald-500 flex items-center justify-center transition-all min-w-0"
-                  style={{ width: `${progressPercent}%`, minWidth: progressPercent > 0 ? "50px" : "0" }}
-                >
-                  {progressPercent > 0 && (
-                    <span className="text-xs font-bold font-mono tabular-nums text-white drop-shadow-sm px-1 truncate">
-                      {showPercentages
-                        ? `${progressPercent}%`
-                        : `${jobWithStats.totalGood.toLocaleString()}`
-                      }
-                    </span>
-                  )}
+              <div className="flex-1 flex items-center gap-2">
+                <div className="h-7 rounded-lg overflow-hidden bg-muted/50 flex flex-1 min-w-0">
+                  <div
+                    className="h-full bg-emerald-500 transition-all"
+                    style={{ width: `${progressPercent}%` }}
+                  />
                 </div>
-                {progressPercent < 100 && (
-                  <div className="flex-1 flex items-center justify-center min-w-0">
-                    <span className="text-[10px] text-muted-foreground/60 font-mono tabular-nums truncate px-1">
-                      {showPercentages
-                        ? `${((jobWithStats.plannedQuantity || 0) - jobWithStats.totalGood).toLocaleString()} נותרו`
-                        : `/${(jobWithStats.plannedQuantity || 0).toLocaleString()}`
-                      }
-                    </span>
-                  </div>
-                )}
+                <span className="text-xs font-bold font-mono tabular-nums text-foreground/80 whitespace-nowrap">
+                  {showPercentages
+                    ? `${progressPercent}%`
+                    : `${jobWithStats.totalGood.toLocaleString()}/${(jobWithStats.plannedQuantity || 0).toLocaleString()}`
+                  }
+                </span>
               </div>
             ) : (
               <span className="text-muted-foreground/60 text-xs">ללא יעד</span>
@@ -409,115 +412,117 @@ export const JobsManagement = ({
             </span>
           </div>
 
-          {/* Actions */}
-          <div
-            className="hidden md:flex items-center justify-end gap-1"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <JobFormDialog
-              mode="edit"
-              job={jobWithStats.job}
-              onSubmit={handleEdit}
-              trigger={
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setEditingJob(jobWithStats.job)}
-                  aria-label="עריכת עבודה"
-                  className="h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                </Button>
-              }
-              open={editingJob?.id === jobWithStats.job.id}
-              onOpenChange={async (open) => {
-                setEditingJob(open ? jobWithStats.job : null);
-                if (!open && onRefresh) await onRefresh();
-              }}
-              loading={isSubmitting}
-            />
-            <Dialog
-              open={deleteJobId === jobWithStats.job.id}
-              onOpenChange={(open) =>
-                handleDeleteDialogOpenChange(open, jobWithStats.job.id)
-              }
+          {/* Actions - hidden in readOnly mode */}
+          {!readOnly && (
+            <div
+              className="hidden md:flex items-center justify-end gap-1"
+              onClick={(e) => e.stopPropagation()}
             >
-              <DialogTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  disabled={isSubmitting}
-                  aria-label="מחיקת עבודה"
-                  className="h-7 w-7 text-muted-foreground hover:text-red-400 hover:bg-red-500/10"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              </DialogTrigger>
-              <DialogContent dir="rtl" className="border-border bg-card">
-                <DialogHeader>
-                  <DialogTitle className="text-foreground">
-                    האם למחוק את העבודה?
-                  </DialogTitle>
-                  <DialogDescription className="text-muted-foreground">
-                    {isCheckingDeleteInfo ? (
-                      "טוען פרטי מחיקה..."
-                    ) : deletionInfo ? (
-                      <>
-                        פעולה זו תמחק{" "}
-                        <span className="font-semibold text-foreground">
-                          {deletionInfo.jobItemCount} מוצרים
-                        </span>
-                        {deletionInfo.sessionCount > 0 && (
-                          <>
-                            {" "}ותנתק{" "}
-                            <span className="font-semibold text-foreground">
-                              {deletionInfo.sessionCount} סשנים
-                            </span>{" "}
-                            מהעבודה
-                          </>
-                        )}
-                        . סשנים ישמרו עם נתוני הייצור שלהם. לא ניתן לבטל.
-                      </>
-                    ) : (
-                      "הפעולה תמחק את העבודה לחלוטין. לא ניתן לבטל."
-                    )}
-                  </DialogDescription>
-                </DialogHeader>
-                {deletionInfo?.hasActiveSessions && (
-                  <Alert
-                    variant="destructive"
-                    className="border-red-500/30 bg-red-500/10 text-right text-sm text-red-400"
-                  >
-                    <AlertDescription>
-                      לא ניתן למחוק עבודה עם סשן פעיל. יש לסיים את
-                      הסשן הפעיל לפני מחיקה.
-                    </AlertDescription>
-                  </Alert>
-                )}
-                <DialogFooter className="justify-start">
+              <JobFormDialog
+                mode="edit"
+                job={jobWithStats.job}
+                onSubmit={handleEdit}
+                trigger={
                   <Button
-                    onClick={() => void handleDelete(jobWithStats.job.id)}
-                    disabled={
-                      isSubmitting ||
-                      deletionInfo?.hasActiveSessions ||
-                      isCheckingDeleteInfo
-                    }
-                    className="bg-red-600 text-white hover:bg-red-500"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setEditingJob(jobWithStats.job)}
+                    aria-label="עריכת עבודה"
+                    className="h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-muted/50"
                   >
-                    מחיקה סופית
+                    <Pencil className="h-3.5 w-3.5" />
                   </Button>
+                }
+                open={editingJob?.id === jobWithStats.job.id}
+                onOpenChange={async (open) => {
+                  setEditingJob(open ? jobWithStats.job : null);
+                  if (!open && onRefresh) await onRefresh();
+                }}
+                loading={isSubmitting}
+              />
+              <Dialog
+                open={deleteJobId === jobWithStats.job.id}
+                onOpenChange={(open) =>
+                  handleDeleteDialogOpenChange(open, jobWithStats.job.id)
+                }
+              >
+                <DialogTrigger asChild>
                   <Button
-                    variant="outline"
-                    onClick={() => setDeleteJobId(null)}
+                    variant="ghost"
+                    size="icon"
                     disabled={isSubmitting}
-                    className="border-input bg-secondary text-foreground/80 hover:bg-muted"
+                    aria-label="מחיקת עבודה"
+                    className="h-7 w-7 text-muted-foreground hover:text-red-400 hover:bg-red-500/10"
                   >
-                    ביטול
+                    <Trash2 className="h-3.5 w-3.5" />
                   </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </div>
+                </DialogTrigger>
+                <DialogContent dir="rtl" className="border-border bg-card">
+                  <DialogHeader>
+                    <DialogTitle className="text-foreground">
+                      האם למחוק את העבודה?
+                    </DialogTitle>
+                    <DialogDescription className="text-muted-foreground">
+                      {isCheckingDeleteInfo ? (
+                        "טוען פרטי מחיקה..."
+                      ) : deletionInfo ? (
+                        <>
+                          פעולה זו תמחק{" "}
+                          <span className="font-semibold text-foreground">
+                            {deletionInfo.jobItemCount} מוצרים
+                          </span>
+                          {deletionInfo.sessionCount > 0 && (
+                            <>
+                              {" "}ותנתק{" "}
+                              <span className="font-semibold text-foreground">
+                                {deletionInfo.sessionCount} סשנים
+                              </span>{" "}
+                              מהעבודה
+                            </>
+                          )}
+                          . סשנים ישמרו עם נתוני הייצור שלהם. לא ניתן לבטל.
+                        </>
+                      ) : (
+                        "הפעולה תמחק את העבודה לחלוטין. לא ניתן לבטל."
+                      )}
+                    </DialogDescription>
+                  </DialogHeader>
+                  {deletionInfo?.hasActiveSessions && (
+                    <Alert
+                      variant="destructive"
+                      className="border-red-500/30 bg-red-500/10 text-right text-sm text-red-400"
+                    >
+                      <AlertDescription>
+                        לא ניתן למחוק עבודה עם סשן פעיל. יש לסיים את
+                        הסשן הפעיל לפני מחיקה.
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                  <DialogFooter className="justify-start">
+                    <Button
+                      onClick={() => void handleDelete(jobWithStats.job.id)}
+                      disabled={
+                        isSubmitting ||
+                        deletionInfo?.hasActiveSessions ||
+                        isCheckingDeleteInfo
+                      }
+                      className="bg-red-600 text-white hover:bg-red-500"
+                    >
+                      מחיקה סופית
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => setDeleteJobId(null)}
+                      disabled={isSubmitting}
+                      className="border-input bg-secondary text-foreground/80 hover:bg-muted"
+                    >
+                      ביטול
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
+          )}
 
         </div>
 
@@ -892,112 +897,114 @@ export const JobsManagement = ({
               </div>
             ) : null}
 
-            {/* Mobile Actions */}
-            <div className="md:hidden flex items-center gap-2 mt-4 pt-4 border-t border-border/50">
-              <JobFormDialog
-                mode="edit"
-                job={jobWithStats.job}
-                onSubmit={handleEdit}
-                trigger={
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setEditingJob(jobWithStats.job)}
-                    className="flex-1 border-input bg-secondary/50 text-foreground/80 hover:bg-muted"
-                  >
-                    <Pencil className="h-4 w-4 ml-2" />
-                    עריכה
-                  </Button>
-                }
-                open={editingJob?.id === jobWithStats.job.id}
-                onOpenChange={async (open) => {
-                  setEditingJob(open ? jobWithStats.job : null);
-                  if (!open && onRefresh) await onRefresh();
-                }}
-                loading={isSubmitting}
-              />
-              <Dialog
-                open={deleteJobId === jobWithStats.job.id}
-                onOpenChange={(open) =>
-                  handleDeleteDialogOpenChange(open, jobWithStats.job.id)
-                }
-              >
-                <DialogTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={isSubmitting}
-                    className="border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:text-red-300"
-                  >
-                    <Trash2 className="h-4 w-4 ml-2" />
-                    מחיקה
-                  </Button>
-                </DialogTrigger>
-                <DialogContent dir="rtl" className="border-border bg-card">
-                  <DialogHeader>
-                    <DialogTitle className="text-foreground">
-                      האם למחוק את העבודה?
-                    </DialogTitle>
-                    <DialogDescription className="text-muted-foreground">
-                      {isCheckingDeleteInfo ? (
-                        "טוען פרטי מחיקה..."
-                      ) : deletionInfo ? (
-                        <>
-                          פעולה זו תמחק{" "}
-                          <span className="font-semibold text-foreground">
-                            {deletionInfo.jobItemCount} מוצרים
-                          </span>
-                          {deletionInfo.sessionCount > 0 && (
-                            <>
-                              {" "}ותנתק{" "}
-                              <span className="font-semibold text-foreground">
-                                {deletionInfo.sessionCount} סשנים
-                              </span>{" "}
-                              מהעבודה
-                            </>
-                          )}
-                          . סשנים ישמרו עם נתוני הייצור שלהם. לא ניתן לבטל.
-                        </>
-                      ) : (
-                        "הפעולה תמחק את העבודה לחלוטין. לא ניתן לבטל."
-                      )}
-                    </DialogDescription>
-                  </DialogHeader>
-                  {deletionInfo?.hasActiveSessions && (
-                    <Alert
-                      variant="destructive"
-                      className="border-red-500/30 bg-red-500/10 text-right text-sm text-red-400"
-                    >
-                      <AlertDescription>
-                        לא ניתן למחוק עבודה עם סשן פעיל. יש לסיים את
-                        הסשן הפעיל לפני מחיקה.
-                      </AlertDescription>
-                    </Alert>
-                  )}
-                  <DialogFooter className="justify-start">
-                    <Button
-                      onClick={() => void handleDelete(jobWithStats.job.id)}
-                      disabled={
-                        isSubmitting ||
-                        deletionInfo?.hasActiveSessions ||
-                        isCheckingDeleteInfo
-                      }
-                      className="bg-red-600 text-white hover:bg-red-500"
-                    >
-                      מחיקה סופית
-                    </Button>
+            {/* Mobile Actions - hidden in readOnly mode */}
+            {!readOnly && (
+              <div className="md:hidden flex items-center gap-2 mt-4 pt-4 border-t border-border/50">
+                <JobFormDialog
+                  mode="edit"
+                  job={jobWithStats.job}
+                  onSubmit={handleEdit}
+                  trigger={
                     <Button
                       variant="outline"
-                      onClick={() => setDeleteJobId(null)}
-                      disabled={isSubmitting}
-                      className="border-input bg-secondary text-foreground/80 hover:bg-muted"
+                      size="sm"
+                      onClick={() => setEditingJob(jobWithStats.job)}
+                      className="flex-1 border-input bg-secondary/50 text-foreground/80 hover:bg-muted"
                     >
-                      ביטול
+                      <Pencil className="h-4 w-4 ml-2" />
+                      עריכה
                     </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            </div>
+                  }
+                  open={editingJob?.id === jobWithStats.job.id}
+                  onOpenChange={async (open) => {
+                    setEditingJob(open ? jobWithStats.job : null);
+                    if (!open && onRefresh) await onRefresh();
+                  }}
+                  loading={isSubmitting}
+                />
+                <Dialog
+                  open={deleteJobId === jobWithStats.job.id}
+                  onOpenChange={(open) =>
+                    handleDeleteDialogOpenChange(open, jobWithStats.job.id)
+                  }
+                >
+                  <DialogTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={isSubmitting}
+                      className="border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:text-red-300"
+                    >
+                      <Trash2 className="h-4 w-4 ml-2" />
+                      מחיקה
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent dir="rtl" className="border-border bg-card">
+                    <DialogHeader>
+                      <DialogTitle className="text-foreground">
+                        האם למחוק את העבודה?
+                      </DialogTitle>
+                      <DialogDescription className="text-muted-foreground">
+                        {isCheckingDeleteInfo ? (
+                          "טוען פרטי מחיקה..."
+                        ) : deletionInfo ? (
+                          <>
+                            פעולה זו תמחק{" "}
+                            <span className="font-semibold text-foreground">
+                              {deletionInfo.jobItemCount} מוצרים
+                            </span>
+                            {deletionInfo.sessionCount > 0 && (
+                              <>
+                                {" "}ותנתק{" "}
+                                <span className="font-semibold text-foreground">
+                                  {deletionInfo.sessionCount} סשנים
+                                </span>{" "}
+                                מהעבודה
+                              </>
+                            )}
+                            . סשנים ישמרו עם נתוני הייצור שלהם. לא ניתן לבטל.
+                          </>
+                        ) : (
+                          "הפעולה תמחק את העבודה לחלוטין. לא ניתן לבטל."
+                        )}
+                      </DialogDescription>
+                    </DialogHeader>
+                    {deletionInfo?.hasActiveSessions && (
+                      <Alert
+                        variant="destructive"
+                        className="border-red-500/30 bg-red-500/10 text-right text-sm text-red-400"
+                      >
+                        <AlertDescription>
+                          לא ניתן למחוק עבודה עם סשן פעיל. יש לסיים את
+                          הסשן הפעיל לפני מחיקה.
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                    <DialogFooter className="justify-start">
+                      <Button
+                        onClick={() => void handleDelete(jobWithStats.job.id)}
+                        disabled={
+                          isSubmitting ||
+                          deletionInfo?.hasActiveSessions ||
+                          isCheckingDeleteInfo
+                        }
+                        className="bg-red-600 text-white hover:bg-red-500"
+                      >
+                        מחיקה סופית
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => setDeleteJobId(null)}
+                        disabled={isSubmitting}
+                        className="border-input bg-secondary text-foreground/80 hover:bg-muted"
+                      >
+                        ביטול
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1020,6 +1027,7 @@ export const JobsManagement = ({
     handleDelete,
     handleDeleteDialogOpenChange,
     onRefresh,
+    readOnly,
   ]);
 
   return (
@@ -1036,7 +1044,7 @@ export const JobsManagement = ({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h3 className="text-lg font-semibold text-foreground">
-            עבודות פעילות ({filteredJobs.length})
+            {readOnly ? `עבודות שהושלמו (${filteredJobs.length})` : `עבודות פעילות (${filteredJobs.length})`}
           </h3>
           {onRefresh && (
             <Button
@@ -1056,13 +1064,15 @@ export const JobsManagement = ({
             </Button>
           )}
         </div>
-        <Button
-          onClick={() => setShowWizard(true)}
-          className="bg-primary text-primary-foreground hover:bg-primary/90 font-medium shadow-lg shadow-primary/20"
-        >
-          <Plus className="h-4 w-4 ml-2" />
-          עבודה חדשה
-        </Button>
+        {!readOnly && (
+          <Button
+            onClick={() => setShowWizard(true)}
+            className="bg-primary text-primary-foreground hover:bg-primary/90 font-medium shadow-lg shadow-primary/20"
+          >
+            <Plus className="h-4 w-4 ml-2" />
+            עבודה חדשה
+          </Button>
+        )}
       </div>
 
       {/* Jobs Table */}
@@ -1081,21 +1091,29 @@ export const JobsManagement = ({
               <Package className="h-8 w-8 text-muted-foreground/60" />
             </div>
             <div className="text-center">
-              <p className="text-base font-medium text-foreground/80">אין עבודות להצגה</p>
-              <p className="text-sm mt-1">התחל ביצירת עבודה חדשה</p>
+              <p className="text-base font-medium text-foreground/80">
+                {readOnly ? "אין עבודות שהושלמו" : "אין עבודות להצגה"}
+              </p>
+              <p className="text-sm mt-1">
+                {readOnly ? "עבודות שיושלמו יופיעו כאן" : "התחל ביצירת עבודה חדשה"}
+              </p>
             </div>
           </div>
         ) : (
           <div className="divide-y divide-border/60">
             {/* Table Header */}
-            <div className="hidden md:grid grid-cols-[40px_minmax(160px,1fr)_minmax(200px,2fr)_100px_80px] gap-3 px-5 py-3 bg-card/50 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+            <div className="hidden md:grid grid-cols-[40px_120px_90px_1fr_90px_70px] gap-3 px-5 py-3 bg-card/50 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
               <div></div>
+              <div className="flex items-center gap-1 text-right justify-start">
+                פק&quot;ע / לקוח
+              </div>
               <button
                 type="button"
                 onClick={() => handleSort("due_date")}
-                className="flex items-center gap-1 hover:text-foreground transition-colors text-right justify-start"
+                className="flex items-center gap-1 hover:text-foreground transition-colors justify-center"
               >
-                פק&quot;ע / לקוח
+                <Calendar className="h-3 w-3" />
+                יעד
                 <SortIcon active={filters.sortBy === "due_date"} direction={filters.sortDirection} />
               </button>
               <div className="flex items-center justify-center gap-2">
@@ -1142,11 +1160,6 @@ export const JobsManagement = ({
           </div>
         )}
       </div>
-
-      {/* Archived Jobs Section */}
-      <ArchivedJobsSection
-        renderJobRow={(job) => renderJobRow(job, true)}
-      />
 
       {/* Job Items Dialog */}
       <JobItemsDialog

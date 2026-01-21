@@ -11,6 +11,16 @@ import type {
   WipStationData,
 } from "@/lib/types";
 
+export type CurrentJobItemInfo = {
+  jobItemId: string;
+  jobItemName: string;
+  plannedQuantity: number;
+  /** Total completed across all sessions (from job_item_progress) */
+  totalCompletedGood: number;
+  /** Quantity reported in this session only */
+  sessionGood: number;
+};
+
 export type ActiveSession = {
   id: string;
   jobId: string;
@@ -32,6 +42,8 @@ export type ActiveSession = {
   malfunctionCount: number;
   stoppageTimeSeconds: number;
   setupTimeSeconds: number;
+  /** Current job item being worked on (from latest status event) */
+  currentJobItem: CurrentJobItemInfo | null;
 };
 
 export type CompletedSession = ActiveSession & {
@@ -116,6 +128,7 @@ const mapActiveSession = (
   stoppageTimeSeconds: number = 0,
   setupTimeSeconds: number = 0,
   derivedTotals?: { totalGood: number; totalScrap: number },
+  currentJobItem?: CurrentJobItemInfo | null,
 ): ActiveSession => ({
   id: row.id,
   jobId: row.job_id,
@@ -140,6 +153,7 @@ const mapActiveSession = (
   malfunctionCount,
   stoppageTimeSeconds,
   setupTimeSeconds,
+  currentJobItem: currentJobItem ?? null,
 });
 
 /**
@@ -176,7 +190,11 @@ export const fetchMalfunctionCountsBySessionIds = async (
 
 /**
  * Fetch derived totals (totalGood, totalScrap) for multiple sessions
- * Uses v_session_derived_totals view which sums from status_events
+ * Uses v_session_current_job_item_totals view which sums from status_events
+ * ONLY for the session's current job_item_id.
+ *
+ * This ensures scrap counts shown in admin dashboard are relevant to
+ * the job item the worker is currently working on, not historical totals.
  */
 const fetchDerivedTotalsBySessionIds = async (
   sessionIds: string[],
@@ -187,7 +205,7 @@ const fetchDerivedTotalsBySessionIds = async (
 
   const supabase = createServiceSupabase();
   const { data, error } = await supabase
-    .from("v_session_derived_totals")
+    .from("v_session_current_job_item_totals")
     .select("session_id, total_good, total_scrap")
     .in("session_id", sessionIds);
 
@@ -206,6 +224,125 @@ const fetchDerivedTotalsBySessionIds = async (
     }
   }
   return totalsMap;
+};
+
+/**
+ * Fetch current job item info for multiple sessions.
+ * Gets the job item from the latest status event with a job_item_id,
+ * along with the job item's planned quantity, total progress, and session contribution.
+ *
+ * Note: totalCompletedGood is calculated from SUM of all status_events.quantity_good
+ * for the job item, not from job_item_progress (which only tracks terminal output).
+ */
+const fetchCurrentJobItemBySessionIds = async (
+  sessionIds: string[],
+): Promise<Map<string, CurrentJobItemInfo>> => {
+  if (sessionIds.length === 0) {
+    return new Map();
+  }
+
+  const supabase = createServiceSupabase();
+
+  // Get the latest status event with a job_item_id for each session
+  // We use a subquery approach: for each session, find the most recent status_event with job_item_id
+  const { data: latestEvents, error: eventsError } = await supabase
+    .from("status_events")
+    .select(`
+      session_id,
+      job_item_id,
+      job_items:job_item_id(
+        id,
+        name,
+        planned_quantity
+      )
+    `)
+    .in("session_id", sessionIds)
+    .not("job_item_id", "is", null)
+    .order("started_at", { ascending: false });
+
+  if (eventsError) {
+    console.error("[admin-dashboard] Failed to fetch current job items", eventsError);
+    return new Map();
+  }
+
+  // Collect unique job item IDs to fetch their true totals
+  const jobItemIds = new Set<string>();
+  for (const event of latestEvents ?? []) {
+    if (event.job_item_id) {
+      jobItemIds.add(event.job_item_id);
+    }
+  }
+
+  // Fetch ALL quantities for these job items to get accurate totals
+  const { data: allJobItemTotals, error: allTotalsError } = await supabase
+    .from("status_events")
+    .select("job_item_id, session_id, quantity_good")
+    .in("job_item_id", Array.from(jobItemIds))
+    .gt("quantity_good", 0);
+
+  if (allTotalsError) {
+    console.error("[admin-dashboard] Failed to fetch all job item totals", allTotalsError);
+  }
+
+  // Build maps for:
+  // 1. job_item_id -> total quantity across ALL sessions
+  // 2. session_id -> job_item_id -> quantity for THIS session
+  const jobItemTotals = new Map<string, number>();
+  const sessionJobItemTotals = new Map<string, Map<string, number>>();
+
+  for (const row of allJobItemTotals ?? []) {
+    if (row.job_item_id && row.quantity_good) {
+      // Total for job item (across all sessions)
+      const currentTotal = jobItemTotals.get(row.job_item_id) ?? 0;
+      jobItemTotals.set(row.job_item_id, currentTotal + row.quantity_good);
+
+      // Per-session totals
+      if (row.session_id) {
+        let jobMap = sessionJobItemTotals.get(row.session_id);
+        if (!jobMap) {
+          jobMap = new Map();
+          sessionJobItemTotals.set(row.session_id, jobMap);
+        }
+        const current = jobMap.get(row.job_item_id) ?? 0;
+        jobMap.set(row.job_item_id, current + row.quantity_good);
+      }
+    }
+  }
+
+  // For each session, find the first (most recent) event with a job_item_id
+  const result = new Map<string, CurrentJobItemInfo>();
+  const seenSessions = new Set<string>();
+
+  type RawJobItemEvent = {
+    session_id: string;
+    job_item_id: string;
+    job_items: {
+      id: string;
+      name: string;
+      planned_quantity: number;
+    } | null;
+  };
+
+  for (const event of (latestEvents as unknown as RawJobItemEvent[]) ?? []) {
+    if (!event.session_id || !event.job_item_id || !event.job_items) continue;
+    if (seenSessions.has(event.session_id)) continue; // Already found the most recent for this session
+
+    seenSessions.add(event.session_id);
+
+    const sessionGood = sessionJobItemTotals.get(event.session_id)?.get(event.job_item_id) ?? 0;
+    // Use the accurate total from status_events, not job_item_progress
+    const totalCompletedGood = jobItemTotals.get(event.job_item_id) ?? 0;
+
+    result.set(event.session_id, {
+      jobItemId: event.job_item_id,
+      jobItemName: event.job_items.name,
+      plannedQuantity: event.job_items.planned_quantity,
+      totalCompletedGood,
+      sessionGood,
+    });
+  }
+
+  return result;
 };
 
 export const fetchActiveSessions = async (): Promise<ActiveSession[]> => {
@@ -246,13 +383,14 @@ export const fetchActiveSessions = async (): Promise<ActiveSession[]> => {
     rows.map((r) => ({ id: r.id, status: r.status, ended_at: r.ended_at })),
   );
 
-  // Fetch malfunction counts, stoppage times, setup times, and derived totals for all sessions (in parallel)
+  // Fetch malfunction counts, stoppage times, setup times, derived totals, and current job items (in parallel)
   const sessionIds = rows.map((row) => row.id);
-  const [malfunctionCounts, stoppageTimes, setupTimes, derivedTotals] = await Promise.all([
+  const [malfunctionCounts, stoppageTimes, setupTimes, derivedTotals, currentJobItems] = await Promise.all([
     fetchMalfunctionCountsBySessionIds(sessionIds),
     fetchStoppageTimeBySessionIds(sessionIds),
     fetchSetupTimeBySessionIds(sessionIds),
     fetchDerivedTotalsBySessionIds(sessionIds),
+    fetchCurrentJobItemBySessionIds(sessionIds),
   ]);
 
   return rows.map((row) =>
@@ -263,6 +401,7 @@ export const fetchActiveSessions = async (): Promise<ActiveSession[]> => {
       stoppageTimes.get(row.id) ?? 0,
       setupTimes.get(row.id) ?? 0,
       derivedTotals.get(row.id),
+      currentJobItems.get(row.id),
     ),
   );
 };
@@ -309,12 +448,13 @@ export const fetchActiveSessionById = async (
     return null;
   }
 
-  // Fetch malfunction count, stoppage time, setup time, and derived totals for this session (in parallel)
-  const [malfunctionCounts, stoppageTimes, setupTimes, derivedTotals] = await Promise.all([
+  // Fetch malfunction count, stoppage time, setup time, derived totals, and current job item (in parallel)
+  const [malfunctionCounts, stoppageTimes, setupTimes, derivedTotals, currentJobItems] = await Promise.all([
     fetchMalfunctionCountsBySessionIds([row.id]),
     fetchStoppageTimeBySessionIds([row.id]),
     fetchSetupTimeBySessionIds([row.id]),
     fetchDerivedTotalsBySessionIds([row.id]),
+    fetchCurrentJobItemBySessionIds([row.id]),
   ]);
 
   return mapActiveSession(
@@ -324,6 +464,7 @@ export const fetchActiveSessionById = async (
     stoppageTimes.get(row.id) ?? 0,
     setupTimes.get(row.id) ?? 0,
     derivedTotals.get(row.id),
+    currentJobItems.get(row.id),
   );
 };
 
@@ -547,6 +688,10 @@ type StatusEventRow = {
   ended_at: string | null;
   sessions?: { station_id: string | null } | null;
   status_definitions?: { report_type: string | null } | null;
+  // Production data
+  job_item_id?: string | null;
+  quantity_good?: number | null;
+  job_items?: { name: string; jobs: { job_number: string } | null } | null;
 };
 
 type ReportForStatusEvent = {
@@ -566,6 +711,11 @@ export type SessionStatusEvent = {
   endedAt: string | null;
   reportType: string | null;
   reportReasonLabel: string | null;
+  // Production data (populated for production status events)
+  jobItemId: string | null;
+  jobItemName: string | null;
+  jobNumber: string | null;
+  quantityGood: number;
 };
 
 export const fetchStatusEventsBySessionIds = async (
@@ -584,7 +734,7 @@ export const fetchStatusEventsBySessionIds = async (
       .order("started_at", { ascending: true });
 
   const { data, error } = await runQuery(
-    "id, session_id, status_definition_id, started_at, ended_at, sessions!inner(station_id), status_definitions(report_type)",
+    "id, session_id, status_definition_id, started_at, ended_at, job_item_id, quantity_good, sessions!inner(station_id), status_definitions(report_type), job_items:job_item_id(name, jobs(job_number))",
   );
 
   let rows = (data as unknown as StatusEventRow[]) ?? null;
@@ -655,6 +805,11 @@ export const fetchStatusEventsBySessionIds = async (
     endedAt: row.ended_at,
     reportType: row.status_definitions?.report_type ?? null,
     reportReasonLabel: reportMap.get(row.id) ?? null,
+    // Production data
+    jobItemId: row.job_item_id ?? null,
+    jobItemName: row.job_items?.name ?? null,
+    jobNumber: row.job_items?.jobs?.job_number ?? null,
+    quantityGood: row.quantity_good ?? 0,
   }));
 };
 
@@ -911,8 +1066,7 @@ export async function fetchActiveJobsWithProgress(): Promise<LiveJobProgress[]> 
       *,
       pipeline_presets:pipeline_preset_id(id, name),
       job_item_steps(id, job_item_id, station_id, position, is_terminal, stations(id, name, code)),
-      wip_balances(*),
-      job_item_progress(*)
+      wip_balances(*)
     `)
     .in("job_id", jobIds)
     .eq("is_active", true)
@@ -924,6 +1078,30 @@ export async function fetchActiveJobsWithProgress(): Promise<LiveJobProgress[]> 
   }
 
   const jobItems = (jobItemsData ?? []) as unknown as JobItemRow[];
+
+  // Fetch accurate totals from status_events for all job items
+  // This gives us the TRUE total reported across ALL stations, not just terminal
+  const jobItemIds = jobItems.map((item) => item.id);
+  const completedTotalsMap = new Map<string, number>();
+
+  if (jobItemIds.length > 0) {
+    const { data: totalsData, error: totalsError } = await supabase
+      .from("status_events")
+      .select("job_item_id, quantity_good")
+      .in("job_item_id", jobItemIds)
+      .gt("quantity_good", 0);
+
+    if (totalsError) {
+      console.error("[admin-dashboard] Failed to fetch quantity totals", totalsError);
+    } else {
+      for (const event of totalsData ?? []) {
+        if (event.job_item_id && event.quantity_good) {
+          const current = completedTotalsMap.get(event.job_item_id) ?? 0;
+          completedTotalsMap.set(event.job_item_id, current + event.quantity_good);
+        }
+      }
+    }
+  }
 
   // Group ALL job items by job_id (not just first)
   const jobItemsMap = new Map<string, JobItemRow[]>();
@@ -947,10 +1125,9 @@ export async function fetchActiveJobsWithProgress(): Promise<LiveJobProgress[]> 
     // Post Phase 5: All items are pipelines with job_item_steps
     const jobItemAssignments = jobItemsList.map((jobItem) => {
       const wipDistribution: WipStationData[] = [];
-      let completedGood = 0;
 
-      // Get progress (completed good from terminal station)
-      completedGood = jobItem.job_item_progress?.completed_good ?? 0;
+      // Get accurate progress from status_events totals, not job_item_progress
+      const completedGood = completedTotalsMap.get(jobItem.id) ?? 0;
 
       // All items now have job_item_steps (pipeline model)
       if (jobItem.job_item_steps && jobItem.job_item_steps.length > 0) {
@@ -1002,12 +1179,11 @@ export async function fetchActiveJobsWithProgress(): Promise<LiveJobProgress[]> 
           station: jis.stations as Station | undefined,
         })),
         wip_balances: jobItem.wip_balances,
-        progress: jobItem.job_item_progress
-          ? {
-              job_item_id: jobItem.id,
-              completed_good: jobItem.job_item_progress.completed_good,
-            }
-          : undefined,
+        // Use the accurate completed total from status_events
+        progress: {
+          job_item_id: jobItem.id,
+          completed_good: completedGood,
+        },
       };
 
       return {

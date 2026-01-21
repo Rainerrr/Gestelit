@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/hooks/useTranslation";
 import { DualProgressBar } from "./dual-progress-bar";
 import { ChevronLeft, User, Package, CheckCircle2 } from "lucide-react";
 import type { ActiveJobItemContext } from "@/contexts/WorkerSessionContext";
@@ -83,11 +84,13 @@ export function JobProgressPanel({
   pipelineContext,
   className,
 }: JobProgressPanelProps) {
+  const { t } = useTranslation();
   const [displayMode, setDisplayMode] = useState<"percentage" | "numbers">("percentage");
 
-  const totalCompleted = activeJobItem
-    ? (activeJobItem.completedGood ?? 0) + sessionTotals.good
-    : 0;
+  // Total completed is the authoritative value from the database (completedGood).
+  // DO NOT add sessionTotals.good - the DB value already includes this session's reports.
+  // sessionTotals is only used for the dual-color bar to show "this session's contribution".
+  const totalCompleted = activeJobItem?.completedGood ?? 0;
 
   const toggleDisplayMode = () => {
     setDisplayMode((prev) => (prev === "percentage" ? "numbers" : "percentage"));
@@ -103,15 +106,15 @@ export function JobProgressPanel({
     return (
       <div
         className={cn(
-          "rounded-xl border-2 border-dashed border-slate-600/50 bg-slate-800/30 p-6",
+          "rounded-xl border-2 border-dashed border-border bg-muted/30 p-6",
           "transition-all duration-300",
           className
         )}
       >
         <div className="flex flex-col items-center justify-center gap-3 py-4">
-          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-slate-700/50 border-2 border-slate-600/50">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted border-2 border-border">
             <svg
-              className="h-8 w-8 text-slate-500"
+              className="h-8 w-8 text-muted-foreground"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -126,9 +129,9 @@ export function JobProgressPanel({
           </div>
 
           <div className="text-center">
-            <h3 className="text-lg font-bold text-slate-400">לא נבחרה עבודה</h3>
-            <p className="mt-1 text-sm text-slate-500">
-              בחר עבודה להתחלת ייצור
+            <h3 className="text-lg font-bold text-muted-foreground">{t("jobProgress.noJobSelected")}</h3>
+            <p className="mt-1 text-sm text-muted-foreground/70">
+              {t("jobProgress.selectJobToStart")}
             </p>
           </div>
         </div>
@@ -142,8 +145,8 @@ export function JobProgressPanel({
       className={cn(
         "rounded-xl border-2 p-4 transition-all duration-300",
         isInProduction
-          ? "border-emerald-500/60 bg-gradient-to-br from-emerald-500/10 via-slate-800/50 to-slate-900/50 shadow-[0_0_20px_rgba(16,185,129,0.15)]"
-          : "border-slate-600/50 bg-slate-800/30",
+          ? "border-emerald-500/60 bg-gradient-to-br from-emerald-500/10 via-card/50 to-card/50 shadow-[0_0_20px_rgba(16,185,129,0.15)]"
+          : "border-border bg-muted/30",
         className
       )}
     >
@@ -152,19 +155,19 @@ export function JobProgressPanel({
         <div className="flex flex-col gap-1 text-right">
           <div className="flex flex-wrap items-center gap-2">
             {isInProduction ? (
-              <span className="inline-flex items-center gap-1.5 rounded-md bg-emerald-500/20 px-2 py-1 text-xs font-bold text-emerald-400 border border-emerald-500/30">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                ייצור פעיל
+              <span className="inline-flex items-center gap-1.5 rounded-md bg-emerald-500/20 px-2 py-1 text-xs font-bold text-emerald-700 dark:text-emerald-400 border border-emerald-500/30">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                {t("jobProgress.activeProduction")}
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1.5 rounded-md bg-slate-700/50 px-2 py-1 text-xs font-semibold text-slate-400 border border-slate-600/30">
-                <span className="h-1.5 w-1.5 rounded-full bg-slate-500" />
-                ממתין
+              <span className="inline-flex items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-xs font-semibold text-muted-foreground border border-border">
+                <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50" />
+                {t("jobProgress.waiting")}
               </span>
             )}
             {job ? (
               <span className="text-lg font-bold text-foreground">
-                עבודה {job.job_number}
+                {t("jobProgress.job", { number: job.job_number })}
               </span>
             ) : null}
           </div>
@@ -178,24 +181,25 @@ export function JobProgressPanel({
             variant="ghost"
             size="sm"
             onClick={toggleDisplayMode}
-            className="h-8 px-2 text-xs font-semibold text-slate-400 hover:text-slate-200 hover:bg-slate-700/50"
+            className="h-8 px-2 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-accent"
           >
             {displayMode === "percentage" ? "#" : "%"}
           </Button>
 
-          {onSwitchJob && isInProduction ? (
+          {/* Switch Job */}
+          {onSwitchJob ? (
             <Button
               variant="outline"
               size="sm"
               onClick={onSwitchJob}
               disabled={switchJobDisabled}
               className={cn(
-                "shrink-0 border-slate-600 bg-slate-800/50 text-slate-300",
-                "hover:bg-slate-700 hover:text-slate-100 hover:border-slate-500",
+                "shrink-0 border-border bg-card/50 text-foreground",
+                "hover:bg-accent hover:text-foreground hover:border-border",
                 "disabled:opacity-50"
               )}
             >
-              החלף עבודה
+              {t("jobProgress.switchJob")}
             </Button>
           ) : null}
         </div>
@@ -204,7 +208,7 @@ export function JobProgressPanel({
       {/* Job Item Info */}
       <div className="mt-4 space-y-4">
         <div className="flex items-baseline gap-2">
-          <span className="text-sm font-medium text-slate-400">מוצר:</span>
+          <span className="text-sm font-medium text-muted-foreground">{t("jobProgress.product")}</span>
           <span className="text-lg font-bold text-foreground">{activeJobItem.name}</span>
         </div>
 
@@ -217,20 +221,20 @@ export function JobProgressPanel({
 
         {/* Stats Grid - 2 tiles */}
         <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-lg bg-slate-900/50 border border-slate-700/50 px-4 py-3 text-center">
-            <div className="text-xs font-medium text-slate-500">סהכ דווח</div>
-            <div className="text-2xl font-bold tabular-nums text-emerald-400">
+          <div className="rounded-lg bg-card/80 border border-border px-4 py-3 text-center">
+            <div className="text-xs font-medium text-muted-foreground">{t("jobProgress.totalReported")}</div>
+            <div className="text-2xl font-bold tabular-nums text-emerald-700 dark:text-emerald-400">
               {totalCompleted.toLocaleString()}
             </div>
           </div>
 
-          <div className="rounded-lg bg-slate-900/50 border border-slate-700/50 px-4 py-3 text-center">
-            <div className="text-xs font-medium text-slate-500">נותר</div>
+          <div className="rounded-lg bg-card/80 border border-border px-4 py-3 text-center">
+            <div className="text-xs font-medium text-muted-foreground">{t("jobProgress.remaining")}</div>
             <div className={cn(
               "text-2xl font-bold tabular-nums",
               Math.max(0, activeJobItem.plannedQuantity - totalCompleted) === 0
-                ? "text-emerald-400"
-                : "text-slate-300"
+                ? "text-emerald-700 dark:text-emerald-400"
+                : "text-foreground"
             )}>
               {Math.max(0, activeJobItem.plannedQuantity - totalCompleted).toLocaleString()}
             </div>
@@ -261,14 +265,15 @@ export function JobProgressPanel({
 // ============================================
 
 // Color scheme matching the live dashboard job progress (red → orange → amber → lime → green → emerald)
+// Uses dark: prefix for light/dark mode contrast support
 const getPipelineStageStyle = (stageIndex: number, totalStages: number, isTerminal: boolean) => {
   // Terminal stage always emerald
   if (isTerminal) {
     return {
       border: "border-emerald-500/50",
       bg: "bg-emerald-500/10",
-      text: "text-emerald-400",
-      accent: "text-emerald-300",
+      text: "text-emerald-700 dark:text-emerald-400",
+      accent: "text-emerald-800 dark:text-emerald-300",
       glow: "shadow-[0_0_10px_rgba(16,185,129,0.15)]",
       wipBorder: "border-emerald-500/40",
       wipBg: "bg-emerald-500/15",
@@ -283,8 +288,8 @@ const getPipelineStageStyle = (stageIndex: number, totalStages: number, isTermin
     return {
       border: "border-red-500/50",
       bg: "bg-red-500/10",
-      text: "text-red-400",
-      accent: "text-red-300",
+      text: "text-red-700 dark:text-red-400",
+      accent: "text-red-800 dark:text-red-300",
       glow: "shadow-[0_0_10px_rgba(239,68,68,0.15)]",
       wipBorder: "border-red-500/40",
       wipBg: "bg-red-500/15",
@@ -294,8 +299,8 @@ const getPipelineStageStyle = (stageIndex: number, totalStages: number, isTermin
     return {
       border: "border-orange-500/50",
       bg: "bg-orange-500/10",
-      text: "text-orange-400",
-      accent: "text-orange-300",
+      text: "text-orange-700 dark:text-orange-400",
+      accent: "text-orange-800 dark:text-orange-300",
       glow: "shadow-[0_0_10px_rgba(249,115,22,0.15)]",
       wipBorder: "border-orange-500/40",
       wipBg: "bg-orange-500/15",
@@ -305,8 +310,8 @@ const getPipelineStageStyle = (stageIndex: number, totalStages: number, isTermin
     return {
       border: "border-amber-500/50",
       bg: "bg-amber-500/10",
-      text: "text-amber-400",
-      accent: "text-amber-300",
+      text: "text-amber-700 dark:text-amber-400",
+      accent: "text-amber-800 dark:text-amber-300",
       glow: "shadow-[0_0_10px_rgba(245,158,11,0.15)]",
       wipBorder: "border-amber-500/40",
       wipBg: "bg-amber-500/15",
@@ -316,8 +321,8 @@ const getPipelineStageStyle = (stageIndex: number, totalStages: number, isTermin
     return {
       border: "border-lime-500/50",
       bg: "bg-lime-500/10",
-      text: "text-lime-400",
-      accent: "text-lime-300",
+      text: "text-lime-700 dark:text-lime-400",
+      accent: "text-lime-800 dark:text-lime-300",
       glow: "shadow-[0_0_10px_rgba(132,204,22,0.15)]",
       wipBorder: "border-lime-500/40",
       wipBg: "bg-lime-500/15",
@@ -326,8 +331,8 @@ const getPipelineStageStyle = (stageIndex: number, totalStages: number, isTermin
   return {
     border: "border-green-500/50",
     bg: "bg-green-500/10",
-    text: "text-green-400",
-    accent: "text-green-300",
+    text: "text-green-700 dark:text-green-400",
+    accent: "text-green-800 dark:text-green-300",
     glow: "shadow-[0_0_10px_rgba(34,197,94,0.15)]",
     wipBorder: "border-green-500/40",
     wipBg: "bg-green-500/15",
@@ -364,6 +369,7 @@ function PipelineFlowDisplay({
   totalStages = 3,
   currentStageIndex = 1,
 }: PipelineFlowDisplayProps) {
+  const { t } = useTranslation();
   // Track previous values for animation triggers
   const [animatingUpstream, setAnimatingUpstream] = useState(false);
   const [animatingDownstream, setAnimatingDownstream] = useState(false);
@@ -392,10 +398,10 @@ function PipelineFlowDisplay({
   const isFirstStation = !prevStation;
 
   return (
-    <div className="mt-1 pt-4 border-t border-slate-700/50">
+    <div className="mt-1 pt-4 border-t border-border">
       {/* Section Label */}
-      <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-3 text-right">
-        זרימת קו ייצור
+      <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-3 text-right">
+        {t("pipeline.flowTitle")}
       </div>
 
       {/* Pipeline Flow - RTL direction */}
@@ -408,7 +414,7 @@ function PipelineFlowDisplay({
             name={prevStation.name}
             occupiedBy={prevStation.occupiedBy}
             wipCount={upstreamWip}
-            wipLabel="ממתינים לנו"
+            wipLabel={t("pipeline.waitingForUs")}
             isAnimating={animatingUpstream}
             stageIndex={currentStageIndex - 1}
             totalStages={totalStages}
@@ -438,7 +444,7 @@ function PipelineFlowDisplay({
             name={nextStation?.name ?? ""}
             occupiedBy={nextStation?.occupiedBy}
             wipCount={waitingOutput}
-            wipLabel="יוצאים הלאה"
+            wipLabel={t("pipeline.goingOut")}
             isAnimating={animatingDownstream}
             stageIndex={currentStageIndex + 1}
             totalStages={totalStages}
@@ -456,11 +462,12 @@ function PipelineFlowDisplay({
 
 /** Start of pipeline indicator */
 function StartStationTile() {
+  const { t } = useTranslation();
   return (
-    <div className="flex flex-col items-center justify-center flex-1 min-w-0 rounded-xl border-2 border-dashed border-slate-600/40 bg-slate-800/20 px-3 py-2">
-      <Package className="h-5 w-5 text-slate-500 mb-1" />
-      <span className="text-xs font-semibold text-slate-500">התחלת קו</span>
-      <span className="text-[10px] text-slate-600 mt-0.5">חומר גלם</span>
+    <div className="flex flex-col items-center justify-center flex-1 min-w-0 rounded-xl border-2 border-dashed border-border bg-muted/20 px-3 py-2">
+      <Package className="h-5 w-5 text-muted-foreground mb-1" />
+      <span className="text-xs font-semibold text-muted-foreground">{t("pipeline.startLine")}</span>
+      <span className="text-[10px] text-muted-foreground/70 mt-0.5">{t("pipeline.rawMaterial")}</span>
     </div>
   );
 }
@@ -472,10 +479,11 @@ type EndStationTileProps = {
 };
 
 function EndStationTile({ completedCount, isAnimating }: EndStationTileProps) {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-col items-center justify-center flex-1 min-w-0 rounded-xl border-2 border-emerald-500/40 bg-emerald-500/5 px-3 py-2">
-      <CheckCircle2 className="h-5 w-5 text-emerald-400 mb-1" />
-      <span className="text-xs font-semibold text-emerald-400">סיום קו</span>
+      <CheckCircle2 className="h-5 w-5 text-emerald-700 dark:text-emerald-400 mb-1" />
+      <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">{t("pipeline.endLine")}</span>
 
       {/* Completed count */}
       <div
@@ -485,13 +493,13 @@ function EndStationTile({ completedCount, isAnimating }: EndStationTileProps) {
         )}
       >
         <span className={cn(
-          "text-lg font-bold tabular-nums text-emerald-300 transition-all duration-300",
+          "text-lg font-bold tabular-nums text-emerald-800 dark:text-emerald-300 transition-all duration-300",
           isAnimating && "animate-pulse"
         )}>
           {completedCount.toLocaleString()}
         </span>
       </div>
-      <span className="text-[9px] text-emerald-400/70 mt-0.5">מוצרים מוכנים</span>
+      <span className="text-[9px] text-emerald-700/70 dark:text-emerald-400/70 mt-0.5">{t("pipeline.finishedProducts")}</span>
     </div>
   );
 }
@@ -521,6 +529,7 @@ function NeighborStationTile({
   totalStages,
   isTerminal = false,
 }: NeighborStationTileProps) {
+  const { t } = useTranslation();
   const hasWorker = !!occupiedBy;
   const style = getPipelineStageStyle(stageIndex, totalStages, isTerminal);
 
@@ -548,7 +557,7 @@ function NeighborStationTile({
             <span className="truncate max-w-12">{occupiedBy.split(" ")[0]}</span>
           </span>
         ) : (
-          <span className="text-[9px] text-slate-500 px-1.5 py-0.5">פנוי</span>
+          <span className="text-[9px] text-muted-foreground px-1.5 py-0.5">{t("pipeline.free")}</span>
         )}
       </div>
 
@@ -596,6 +605,7 @@ function CurrentStationTile({
   stageIndex,
   totalStages,
 }: CurrentStationTileProps) {
+  const { t } = useTranslation();
   const style = getPipelineStageStyle(stageIndex, totalStages, isTerminal);
 
   return (
@@ -619,7 +629,7 @@ function CurrentStationTile({
           style.wipBg, style.accent, style.wipBorder
         )}>
           <span className={cn("h-1.5 w-1.5 rounded-full animate-pulse", style.text.replace("text-", "bg-"))} />
-          אתה כאן
+          {t("pipeline.youAreHere")}
         </span>
       </div>
 
@@ -630,7 +640,7 @@ function CurrentStationTile({
         style.wipBorder
       )}>
         <span className={cn("text-[9px] font-medium opacity-70", style.text)}>
-          דווח במשמרת
+          {t("pipeline.reportedInShift")}
         </span>
         <span className={cn("text-lg font-bold tabular-nums", style.accent)}>
           {sessionCount.toLocaleString()}
@@ -639,8 +649,8 @@ function CurrentStationTile({
 
       {/* Terminal indicator */}
       {isTerminal && (
-        <span className="text-[8px] font-semibold text-emerald-400 text-center mt-1">
-          סיום קו
+        <span className="text-[8px] font-semibold text-emerald-700 dark:text-emerald-400 text-center mt-1">
+          {t("pipeline.endLine")}
         </span>
       )}
     </div>
@@ -657,13 +667,14 @@ type FlowArrowProps = {
 };
 
 // Get arrow color based on stage (simpler version of full style)
+// Uses dark: prefix for light/dark mode contrast support
 const getArrowColor = (stageIndex: number, totalStages: number) => {
   const ratio = totalStages <= 1 ? 1 : stageIndex / (totalStages - 1);
-  if (ratio <= 0.2) return { text: "text-red-400", ping: "bg-red-400/30", glow: "drop-shadow-[0_0_4px_rgba(239,68,68,0.6)]" };
-  if (ratio <= 0.4) return { text: "text-orange-400", ping: "bg-orange-400/30", glow: "drop-shadow-[0_0_4px_rgba(249,115,22,0.6)]" };
-  if (ratio <= 0.6) return { text: "text-amber-400", ping: "bg-amber-400/30", glow: "drop-shadow-[0_0_4px_rgba(245,158,11,0.6)]" };
-  if (ratio <= 0.8) return { text: "text-lime-400", ping: "bg-lime-400/30", glow: "drop-shadow-[0_0_4px_rgba(132,204,22,0.6)]" };
-  return { text: "text-green-400", ping: "bg-green-400/30", glow: "drop-shadow-[0_0_4px_rgba(34,197,94,0.6)]" };
+  if (ratio <= 0.2) return { text: "text-red-600 dark:text-red-400", ping: "bg-red-400/30", glow: "drop-shadow-[0_0_4px_rgba(239,68,68,0.6)]" };
+  if (ratio <= 0.4) return { text: "text-orange-600 dark:text-orange-400", ping: "bg-orange-400/30", glow: "drop-shadow-[0_0_4px_rgba(249,115,22,0.6)]" };
+  if (ratio <= 0.6) return { text: "text-amber-600 dark:text-amber-400", ping: "bg-amber-400/30", glow: "drop-shadow-[0_0_4px_rgba(245,158,11,0.6)]" };
+  if (ratio <= 0.8) return { text: "text-lime-600 dark:text-lime-400", ping: "bg-lime-400/30", glow: "drop-shadow-[0_0_4px_rgba(132,204,22,0.6)]" };
+  return { text: "text-green-600 dark:text-green-400", ping: "bg-green-400/30", glow: "drop-shadow-[0_0_4px_rgba(34,197,94,0.6)]" };
 };
 
 function FlowArrow({ hasFlow, stageIndex, totalStages }: FlowArrowProps) {
@@ -683,7 +694,7 @@ function FlowArrow({ hasFlow, stageIndex, totalStages }: FlowArrowProps) {
             "h-5 w-5 transition-all duration-300 relative z-10",
             hasFlow
               ? cn(arrowStyle.text, arrowStyle.glow)
-              : "text-slate-600/50"
+              : "text-muted-foreground/50"
           )}
         />
       </div>

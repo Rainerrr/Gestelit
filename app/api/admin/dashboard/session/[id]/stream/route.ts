@@ -72,6 +72,14 @@ export type SessionGeneralReport = {
   statusEventEndedAt: string | null;
   statusDefinitionLabelHe: string | null;
   statusDefinitionColorHex: string | null;
+  /** True for first product QA approval requests */
+  isFirstProductQa: boolean;
+  /** Job item ID for QA reports */
+  jobItemId: string | null;
+  /** Job item name for QA reports */
+  jobItemName: string | null;
+  /** Station name for display */
+  stationName: string | null;
 };
 
 export type SessionScrapReport = {
@@ -96,7 +104,7 @@ export type ProductionPeriod = {
   /** Quantity reported in THIS session */
   quantityGood: number;
   quantityScrap: number;
-  /** Total completed across ALL sessions (from job_item_progress - terminal only) */
+  /** Total completed across ALL sessions (from status_events) */
   totalCompletedGood: number;
   /** Step-level tracking for non-terminal stations */
   jobItemStepId: string | null;
@@ -112,9 +120,11 @@ export type SessionDetailStream = {
   jobNumber: string;
   stationId: string | null;
   stationName: string;
+  stationCode: string | null;
   stationType: StationType | null;
   workerId: string;
   workerName: string;
+  workerCode: string | null;
   status: SessionStatus;
   currentStatus: StatusEventState | null;
   lastStatusChangeAt: string;
@@ -153,8 +163,8 @@ type RawSession = {
   worker_full_name_snapshot: string | null;
   station_name_snapshot: string | null;
   jobs: { job_number: string | null; planned_quantity: number | null } | null;
-  stations: { name: string | null; station_type: StationType | null } | null;
-  workers: { full_name: string | null } | null;
+  stations: { name: string | null; code: string | null; station_type: StationType | null } | null;
+  workers: { full_name: string | null; worker_code: string | null } | null;
 };
 
 const SESSION_SELECT = `
@@ -171,8 +181,8 @@ const SESSION_SELECT = `
   worker_full_name_snapshot,
   station_name_snapshot,
   jobs:jobs(job_number, planned_quantity),
-  stations:stations(name, station_type),
-  workers:workers(full_name)
+  stations:stations(name, code, station_type),
+  workers:workers(full_name, worker_code)
 `;
 
 const encoder = new TextEncoder();
@@ -312,8 +322,13 @@ async function fetchSessionDetail(sessionId: string): Promise<SessionDetailStrea
     status: "new" | "approved";
     created_at: string;
     status_event_id: string | null;
+    is_first_product_qa: boolean | null;
+    job_item_id: string | null;
+    station_id: string | null;
     workers: { full_name: string | null; worker_code: string | null } | null;
     report_reasons: { label_he: string | null } | null;
+    job_items: { name: string } | null;
+    stations: { name: string } | null;
     status_events: {
       started_at: string;
       ended_at: string | null;
@@ -331,8 +346,13 @@ async function fetchSessionDetail(sessionId: string): Promise<SessionDetailStrea
       status,
       created_at,
       status_event_id,
+      is_first_product_qa,
+      job_item_id,
+      station_id,
       workers:reported_by_worker_id(full_name, worker_code),
       report_reasons:report_reason_id(label_he),
+      job_items:job_item_id(name),
+      stations:station_id(name),
       status_events:status_event_id(started_at, ended_at, status_definitions(label_he, color_hex))
     `)
     .eq("session_id", sessionId)
@@ -356,6 +376,10 @@ async function fetchSessionDetail(sessionId: string): Promise<SessionDetailStrea
     statusEventEndedAt: r.status_events?.ended_at ?? null,
     statusDefinitionLabelHe: r.status_events?.status_definitions?.label_he ?? null,
     statusDefinitionColorHex: r.status_events?.status_definitions?.color_hex ?? null,
+    isFirstProductQa: r.is_first_product_qa ?? false,
+    jobItemId: r.job_item_id,
+    jobItemName: r.job_items?.name ?? null,
+    stationName: r.stations?.name ?? null,
   }));
 
   // Fetch scrap reports linked to this session
@@ -449,11 +473,15 @@ async function fetchSessionDetail(sessionId: string): Promise<SessionDetailStrea
 
   const productionEvents = (productionEventsData as unknown as RawProductionEvent[]) ?? [];
 
-  // Collect unique step IDs for step-level totals calculation
+  // Collect unique step IDs and job item IDs for totals calculation
   const stepIds = new Set<string>();
+  const jobItemIds = new Set<string>();
   for (const event of productionEvents) {
     if (event.job_item_step_id) {
       stepIds.add(event.job_item_step_id);
+    }
+    if (event.job_item_id) {
+      jobItemIds.add(event.job_item_id);
     }
   }
 
@@ -470,6 +498,23 @@ async function fetchSessionDetail(sessionId: string): Promise<SessionDetailStrea
       if (row.job_item_step_id && row.quantity_good) {
         const current = stepTotalsMap.get(row.job_item_step_id) ?? 0;
         stepTotalsMap.set(row.job_item_step_id, current + row.quantity_good);
+      }
+    }
+  }
+
+  // Query job item totals across ALL sessions (fixes stale job_item_progress issue)
+  const jobItemTotalsMap = new Map<string, number>();
+  if (jobItemIds.size > 0) {
+    const { data: jobItemTotals } = await supabase
+      .from("status_events")
+      .select("job_item_id, quantity_good")
+      .in("job_item_id", Array.from(jobItemIds))
+      .gt("quantity_good", 0);
+
+    for (const row of jobItemTotals ?? []) {
+      if (row.job_item_id && row.quantity_good) {
+        const current = jobItemTotalsMap.get(row.job_item_id) ?? 0;
+        jobItemTotalsMap.set(row.job_item_id, current + row.quantity_good);
       }
     }
   }
@@ -517,7 +562,7 @@ async function fetchSessionDetail(sessionId: string): Promise<SessionDetailStrea
         endedAt: event.ended_at,
         quantityGood: event.quantity_good ?? 0,
         quantityScrap: event.quantity_scrap ?? 0,
-        totalCompletedGood: event.job_items.job_item_progress?.completed_good ?? 0,
+        totalCompletedGood: jobItemTotalsMap.get(event.job_item_id) ?? 0,
         jobItemStepId: event.job_item_step_id,
         stepPosition: event.job_item_steps?.position ?? null,
         isTerminal: event.job_item_steps?.is_terminal ?? true,
@@ -541,9 +586,11 @@ async function fetchSessionDetail(sessionId: string): Promise<SessionDetailStrea
     jobNumber: row.jobs?.job_number ?? "לא ידוע",
     stationId: row.station_id ?? null,
     stationName: row.stations?.name ?? row.station_name_snapshot ?? "לא משויך",
+    stationCode: row.stations?.code ?? null,
     stationType: row.stations?.station_type ?? null,
     workerId: row.worker_id ?? "",
     workerName: row.workers?.full_name ?? row.worker_full_name_snapshot ?? "לא משויך",
+    workerCode: row.workers?.worker_code ?? null,
     status: row.status,
     currentStatus: row.current_status_id ?? row.current_status_code ?? null,
     lastStatusChangeAt: row.last_status_change_at ?? row.started_at,

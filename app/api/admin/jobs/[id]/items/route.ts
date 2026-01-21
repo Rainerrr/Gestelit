@@ -75,6 +75,8 @@ type CreateJobItemPayload = {
   name: string;  // Required product name
   pipeline_preset_id?: string;
   station_ids?: string[];  // Custom station order for pipelines (alternative to preset)
+  /** Map of station_id -> requires_first_product_approval (optional) */
+  first_product_approval_flags?: Record<string, boolean>;
   planned_quantity: number;
   is_active?: boolean;
 };
@@ -167,6 +169,7 @@ export async function POST(request: Request, { params }: RouteParams) {
       name: body.name.trim(),
       pipeline_preset_id: body.pipeline_preset_id ?? null,
       station_ids: body.station_ids,
+      first_product_approval_flags: body.first_product_approval_flags,
       planned_quantity: body.planned_quantity,
       is_active: body.is_active ?? true,
     });

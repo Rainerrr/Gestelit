@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
-import { Menu, Settings, LayoutDashboard, History, Wrench, ChevronLeft, FileText } from "lucide-react";
+import { Menu, Settings, LayoutDashboard, History, Wrench, ChevronLeft, FileText, Briefcase } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,6 +28,7 @@ type AdminLayoutProps = {
 
 const navItems = [
   { label: "דשבורד", href: "/admin", disabled: false, icon: LayoutDashboard },
+  { label: "עבודות", href: "/admin/jobs", disabled: false, icon: Briefcase },
   { label: "היסטוריה ודוחות", href: "/admin/history", disabled: false, icon: History },
   { label: "דיווחים", href: "/admin/reports", disabled: false, icon: FileText },
   { label: "ניהול", href: "/admin/manage", disabled: false, icon: Wrench },

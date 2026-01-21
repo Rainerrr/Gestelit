@@ -451,6 +451,7 @@ type JobPayload = {
   job_number: string;
   customer_name?: string | null;
   description?: string | null;
+  due_date?: string | null;
   // planned_quantity removed - now set per job_item
 };
 
@@ -459,10 +460,16 @@ type JobUpdatePayload = Partial<Omit<JobPayload, "job_number">>;
 export async function fetchJobsAdminApi(params?: {
   search?: string;
   status?: "active" | "completed" | "all";
+  archived?: boolean;
+  sortBy?: "due_date" | "created_at" | "progress";
+  sortDirection?: "asc" | "desc";
 }): Promise<{ jobs: JobWithStats[] }> {
   const query = new URLSearchParams();
   if (params?.search) query.set("search", params.search);
   if (params?.status) query.set("status", params.status);
+  if (params?.archived !== undefined) query.set("archived", String(params.archived));
+  if (params?.sortBy) query.set("sortBy", params.sortBy);
+  if (params?.sortDirection) query.set("sortDirection", params.sortDirection);
 
   const queryString = query.toString();
   const response = await fetch(
@@ -512,6 +519,26 @@ export async function checkJobActiveSessionAdminApi(
 ): Promise<{ hasActiveSession: boolean }> {
   const response = await fetch(
     `/api/admin/jobs/${jobId}/active-session`,
+    createAdminRequestInit()
+  );
+  return handleResponse(response);
+}
+
+export type JobDeletionInfo = {
+  sessionCount: number;
+  jobItemCount: number;
+  hasActiveSessions: boolean;
+};
+
+/**
+ * Get information about what will be affected by deleting a job.
+ * Returns counts for sessions and job items, plus active session check.
+ */
+export async function getJobDeletionInfoAdminApi(
+  jobId: string,
+): Promise<JobDeletionInfo> {
+  const response = await fetch(
+    `/api/admin/jobs/${jobId}/deletion-info`,
     createAdminRequestInit()
   );
   return handleResponse(response);
@@ -688,6 +715,8 @@ type JobItemPayload = {
   name: string;  // Required product name
   pipeline_preset_id?: string | null;
   station_ids?: string[];  // Pipeline stations (required if no preset)
+  /** Map of station_id -> requires_first_product_approval (optional) */
+  first_product_approval_flags?: Record<string, boolean>;
   planned_quantity: number;
   is_active?: boolean;
 };
@@ -759,6 +788,31 @@ export async function deleteJobItemAdminApi(
 }
 
 // ============================================
+// JOB ITEM STEP UPDATE API FUNCTIONS
+// ============================================
+
+import type { JobItemStep } from "@/lib/types";
+
+type JobItemStepUpdatePayload = {
+  requires_first_product_approval?: boolean;
+};
+
+export async function updateJobItemStepAdminApi(
+  jobItemId: string,
+  stepId: string,
+  payload: JobItemStepUpdatePayload
+): Promise<JobItemStep> {
+  const response = await fetch(
+    `/api/admin/job-items/${jobItemId}/steps/${stepId}`,
+    createAdminRequestInit({
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    })
+  );
+  return handleResponse(response);
+}
+
+// ============================================
 // PIPELINE PRESETS MANAGEMENT API FUNCTIONS
 // ============================================
 
@@ -770,22 +824,15 @@ import type {
 
 type PipelinePresetPayload = {
   name: string;
-  description?: string | null;
-  is_active?: boolean;
   station_ids?: string[];
+  first_product_approval_flags?: Record<string, boolean>;
 };
 
 type PipelinePresetUpdatePayload = Partial<Omit<PipelinePresetPayload, "station_ids">>;
 
-export async function fetchPipelinePresetsAdminApi(params?: {
-  includeInactive?: boolean;
-}): Promise<{ presets: PipelinePresetWithSteps[] }> {
-  const query = new URLSearchParams();
-  if (params?.includeInactive) query.set("includeInactive", "true");
-
-  const queryString = query.toString();
+export async function fetchPipelinePresetsAdminApi(): Promise<{ presets: PipelinePresetWithSteps[] }> {
   const response = await fetch(
-    `/api/admin/pipeline-presets${queryString ? `?${queryString}` : ""}`,
+    `/api/admin/pipeline-presets`,
     createAdminRequestInit()
   );
   return handleResponse(response);
@@ -850,13 +897,17 @@ export async function checkPipelinePresetInUseAdminApi(
 
 export async function updatePipelinePresetStepsAdminApi(
   presetId: string,
-  stationIds: string[]
+  stationIds: string[],
+  firstProductApprovalFlags?: Record<string, boolean>
 ): Promise<{ steps: PipelinePresetStep[] }> {
   const response = await fetch(
     `/api/admin/pipeline-presets/${presetId}/steps`,
     createAdminRequestInit({
       method: "PUT",
-      body: JSON.stringify({ station_ids: stationIds }),
+      body: JSON.stringify({
+        station_ids: stationIds,
+        first_product_approval_flags: firstProductApprovalFlags ?? {},
+      }),
     })
   );
   return handleResponse(response);

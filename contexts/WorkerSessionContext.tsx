@@ -79,6 +79,8 @@ type WorkerSessionAction =
 
 const WorkerSessionContext = createContext<
   | (WorkerSessionState & {
+      /** True if there's an active session (sessionId is set) */
+      hasActiveSession: boolean;
       setWorker: (worker?: Worker) => void;
       setStation: (station?: Station) => void;
       setJob: (job?: Job) => void;
@@ -159,7 +161,7 @@ function reducer(
         pendingRecovery: action.payload ?? null,
       };
     case "hydrateFromSnapshot": {
-      const { session, station, job } = action.payload;
+      const { session, station, job, sessionTotals } = action.payload;
       return {
         ...state,
         station: station ?? state.station,
@@ -167,8 +169,11 @@ function reducer(
         sessionId: session.id,
         sessionStartedAt: session.started_at,
         currentStatus: session.current_status_id ?? state.currentStatus,
-        // totals now derived from status_events - start at 0, will be accumulated through status changes
-        totals: { good: 0, scrap: 0 },
+        // Use provided totals from DB if available, otherwise start at 0
+        // This fixes the quantity mismatch bug when resuming sessions
+        totals: sessionTotals
+          ? { good: sessionTotals.good, scrap: sessionTotals.scrap }
+          : { good: 0, scrap: 0 },
         checklist: {
           ...state.checklist,
           startCompleted: true,
@@ -279,9 +284,12 @@ export function WorkerSessionProvider({
     [],
   );
 
+  const hasActiveSession = Boolean(state.sessionId);
+
   const value = useMemo(
     () => ({
       ...state,
+      hasActiveSession,
       setWorker,
       setStation,
       setJob,
@@ -302,6 +310,7 @@ export function WorkerSessionProvider({
     }),
     [
       state,
+      hasActiveSession,
       completeChecklist,
       hydrateFromSnapshot,
       reset,

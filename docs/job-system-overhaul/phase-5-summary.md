@@ -121,7 +121,7 @@ job
 
 ## Breaking Changes
 
-1. **Production Lines tab removed** - Admins should use "תבניות צינור" (Pipeline Presets) instead
+1. **Production Lines tab removed** - Admins should use "תבניות תהליך" (Pipeline Presets) instead
 2. **Job creation requires product name** - Each product must have a name, not just a station/line reference
 3. **Legacy APIs removed** - `/api/admin/production-lines/*` endpoints no longer exist
 

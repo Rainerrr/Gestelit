@@ -1,27 +1,17 @@
 "use client";
 
-import { useEffect, useState, use } from "react";
+import { useEffect, useState, useCallback, useRef, use } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Clock, Package, AlertTriangle, Trash2, TrendingDown, Settings, Briefcase, RefreshCw } from "lucide-react";
+import { ArrowRight, Clock, Package, AlertTriangle, Trash2, TrendingDown, Settings, Building, User, Calendar, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-  ReferenceLine,
-} from "recharts";
 import { AdminLayout } from "../../_components/admin-layout";
 import { VisSessionTimeline } from "../../_components/vis-session-timeline";
 import { useSessionTimeline } from "@/hooks/useSessionTimeline";
 import {
-  getStatusBadgeFromDictionary,
+  getStatusColorFromDictionary,
   getStatusLabelFromDictionary,
   useStatusDictionary,
 } from "../../_components/status-dictionary";
@@ -29,6 +19,8 @@ import { useAdminGuard } from "@/hooks/useAdminGuard";
 import { useRealtimeSession, type ConnectionState } from "@/lib/hooks/useRealtimeSession";
 import { useLiveDuration } from "@/lib/hooks/useLiveDuration";
 import { SessionReportsWidget } from "./_components/session-reports-widget";
+import { ProductionOverviewTable } from "./_components/production-overview-table";
+import { SessionStatistics } from "./_components/session-statistics";
 import type { StatusEventState, StationReason } from "@/lib/types";
 import {
   calculateSessionFlags,
@@ -49,6 +41,19 @@ const formatDateTime = (dateStr: string) =>
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(dateStr));
+
+const formatDate = (dateStr: string) =>
+  new Intl.DateTimeFormat("he-IL", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(new Date(dateStr));
+
+const formatTime = (dateStr: string) =>
+  new Intl.DateTimeFormat("he-IL", {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(dateStr));
@@ -74,6 +79,14 @@ const formatProductionRate = (totalGood: number, activeTimeSeconds: number) => {
   const rate = totalGood / (activeTimeSeconds / 3600);
   return rate.toFixed(1);
 };
+
+// Helper to create dark-theme friendly status styles from hex color
+const getStatusStyle = (hex: string) => ({
+  bg: `rgba(${parseInt(hex.slice(1, 3), 16)}, ${parseInt(hex.slice(3, 5), 16)}, ${parseInt(hex.slice(5, 7), 16)}, 0.15)`,
+  border: `rgba(${parseInt(hex.slice(1, 3), 16)}, ${parseInt(hex.slice(3, 5), 16)}, ${parseInt(hex.slice(5, 7), 16)}, 0.4)`,
+  text: hex,
+  dot: hex,
+});
 
 // Connection indicator component
 const ConnectionIndicator = ({ state }: { state: ConnectionState }) => {
@@ -168,6 +181,30 @@ export default function SessionDetailPage({ params }: Props) {
     session?.endedAt ?? null
   );
 
+  // Combined refresh handler that reloads both session and timeline
+  const handleRefresh = useCallback(async () => {
+    await Promise.all([refresh(), timeline.reload()]);
+  }, [refresh, timeline]);
+
+  // Detect status changes from SSE and trigger timeline reload
+  const lastStatusChangeRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!session?.lastStatusChangeAt) return;
+
+    // Skip initial load
+    if (lastStatusChangeRef.current === null) {
+      lastStatusChangeRef.current = session.lastStatusChangeAt;
+      return;
+    }
+
+    // Detect change and reload timeline
+    if (lastStatusChangeRef.current !== session.lastStatusChangeAt) {
+      lastStatusChangeRef.current = session.lastStatusChangeAt;
+      void timeline.reload();
+    }
+  }, [session?.lastStatusChangeAt, timeline]);
+
   const renderStatusBadge = (status: StatusEventState | null | undefined) => {
     if (!status) {
       return (
@@ -176,20 +213,33 @@ export default function SessionDetailPage({ params }: Props) {
         </Badge>
       );
     }
+    const statusHex = getStatusColorFromDictionary(
+      status,
+      dictionary,
+      session?.stationId ?? undefined,
+    );
+    const statusStyle = getStatusStyle(statusHex);
+    const statusLabel = getStatusLabelFromDictionary(
+      status,
+      dictionary,
+      session?.stationId ?? undefined,
+    );
     return (
-      <Badge
-        className={getStatusBadgeFromDictionary(
-          status,
-          dictionary,
-          session?.stationId ?? undefined,
-        )}
+      <span
+        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold"
+        style={{
+          backgroundColor: statusStyle.bg,
+          borderWidth: '1px',
+          borderStyle: 'solid',
+          borderColor: statusStyle.border,
+        }}
       >
-        {getStatusLabelFromDictionary(
-          status,
-          dictionary,
-          session?.stationId ?? undefined,
-        )}
-      </Badge>
+        <span
+          className="w-1.5 h-1.5 rounded-full"
+          style={{ backgroundColor: statusStyle.dot }}
+        />
+        <span style={{ color: statusStyle.text }}>{statusLabel}</span>
+      </span>
     );
   };
 
@@ -204,8 +254,8 @@ export default function SessionDetailPage({ params }: Props) {
             </Button>
             <Separator orientation="vertical" className="h-5" />
             <div className="flex items-center gap-2">
-              <Briefcase className="h-5 w-5 text-primary" />
-              <h1 className="text-lg font-semibold text-foreground">פרטי עבודה</h1>
+              <Building className="h-5 w-5 text-primary" />
+              <h1 className="text-lg font-semibold text-foreground">פרטי משמרת</h1>
             </div>
           </div>
         }
@@ -213,7 +263,7 @@ export default function SessionDetailPage({ params }: Props) {
         <div className="flex min-h-[400px] items-center justify-center">
           <div className="text-center">
             <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-4 border-border border-t-primary" />
-            <p className="text-sm text-muted-foreground">טוען פרטי עבודה...</p>
+            <p className="text-sm text-muted-foreground">טוען פרטי משמרת...</p>
           </div>
         </div>
       </AdminLayout>
@@ -231,8 +281,8 @@ export default function SessionDetailPage({ params }: Props) {
             </Button>
             <Separator orientation="vertical" className="h-5" />
             <div className="flex items-center gap-2">
-              <Briefcase className="h-5 w-5 text-primary" />
-              <h1 className="text-lg font-semibold text-foreground">פרטי עבודה</h1>
+              <Building className="h-5 w-5 text-primary" />
+              <h1 className="text-lg font-semibold text-foreground">פרטי משמרת</h1>
             </div>
           </div>
         }
@@ -241,11 +291,11 @@ export default function SessionDetailPage({ params }: Props) {
           <Card className="w-full max-w-md border-border bg-card/50">
             <CardContent className="pt-6 text-center">
               <AlertTriangle className="mx-auto mb-4 h-12 w-12 text-primary" />
-              <h2 className="mb-2 text-lg font-semibold text-foreground">שגיאה בטעינת העבודה</h2>
+              <h2 className="mb-2 text-lg font-semibold text-foreground">שגיאה בטעינת המשמרת</h2>
               <p className="mb-4 text-sm text-muted-foreground">
                 {error === "SESSION_NOT_FOUND"
-                  ? "העבודה לא נמצאה במערכת"
-                  : "אירעה שגיאה בטעינת פרטי העבודה"}
+                  ? "המשמרת לא נמצאה במערכת"
+                  : "אירעה שגיאה בטעינת פרטי המשמרת"}
               </p>
               <Button onClick={() => router.back()} variant="outline" className="border-input bg-secondary text-foreground/80 hover:bg-accent hover:text-foreground">
                 <ArrowRight className="ml-2 h-4 w-4" />
@@ -261,16 +311,29 @@ export default function SessionDetailPage({ params }: Props) {
   return (
     <AdminLayout
       header={
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <Button onClick={() => router.back()} variant="ghost" size="sm" className="text-muted-foreground hover:bg-accent hover:text-foreground">
             <ArrowRight className="h-4 w-4" />
           </Button>
           <Separator orientation="vertical" className="h-5" />
-          <div className="flex items-center gap-2">
-            <Briefcase className="h-5 w-5 text-primary" />
-            <h1 className="text-lg font-semibold text-foreground">
-              עבודה #{session.jobNumber}
-            </h1>
+          {/* Station */}
+          <div className="flex items-center gap-1.5">
+            <Building className="h-4 w-4 text-blue-500" />
+            <span className="font-medium text-foreground">{session.stationName}</span>
+          </div>
+          <Separator orientation="vertical" className="h-4 hidden sm:block" />
+          {/* Worker */}
+          <div className="flex items-center gap-1.5 hidden sm:flex">
+            <User className="h-4 w-4 text-emerald-500" />
+            <span className="text-sm text-muted-foreground">{session.workerName}</span>
+          </div>
+          <Separator orientation="vertical" className="h-4 hidden md:block" />
+          {/* Start date and time */}
+          <div className="flex items-center gap-1.5 hidden md:flex">
+            <Calendar className="h-4 w-4 text-amber-500" />
+            <span className="text-sm text-muted-foreground">
+              {formatDate(session.startedAt)} · {formatTime(session.startedAt)}
+            </span>
           </div>
           <ConnectionIndicator state={connectionState} />
           <div className="flex-1" />
@@ -280,7 +343,7 @@ export default function SessionDetailPage({ params }: Props) {
             </Badge>
           )}
           <Button
-            onClick={() => void refresh()}
+            onClick={() => void handleRefresh()}
             variant="ghost"
             size="sm"
             disabled={isRefreshing}
@@ -361,60 +424,125 @@ export default function SessionDetailPage({ params }: Props) {
           );
         })()}
 
-        {/* Session Info Card */}
-        <Card className="border-border bg-card/50">
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-lg text-foreground">פרטי עבודה</CardTitle>
-              {isActive ? (
-                <Badge className="border-emerald-500/30 bg-emerald-500/10 text-emerald-400">
-                  פעילה
-                </Badge>
-              ) : (
-                <Badge variant="secondary" className="border-input bg-secondary text-foreground/80">הושלמה</Badge>
-              )}
+        {/* Session Details Card - Editorial Grid Design */}
+        <Card className="border-border bg-card/50 border-r-4 border-r-primary overflow-hidden relative">
+          {/* Active Indicator - Top Left */}
+          {isActive && (
+            <div className="absolute top-4 left-4 flex items-center gap-2 z-10">
+              <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">פעילה</span>
             </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-              <div>
-                <p className="text-xs text-muted-foreground">תחנה</p>
-                <p className="font-medium text-foreground">{session.stationName}</p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">עובד</p>
-                <p className="font-medium text-foreground">{session.workerName}</p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">סטטוס נוכחי</p>
-                <div className="mt-1">{renderStatusBadge(session.currentStatus)}</div>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">משך</p>
-                <p className="font-medium text-foreground">
-                  {formatDuration(isActive ? liveDurationSeconds : session.durationSeconds)}
-                </p>
+          )}
+          <CardContent className="p-0">
+            {/* Header */}
+            <div className="px-6 pt-5 pb-4">
+              <h2 className="text-sm font-medium text-muted-foreground tracking-wide">
+                פרטי משמרת
+              </h2>
+            </div>
+
+            {/* Main Info Grid - 3 columns */}
+            <div className="px-6 pb-5">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                {/* Station */}
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider">תחנה</p>
+                  <p className="text-lg font-semibold text-foreground truncate" title={session.stationName}>
+                    {session.stationName}
+                  </p>
+                  <p className="text-sm text-muted-foreground tabular-nums">
+                    {session.stationCode}
+                  </p>
+                </div>
+
+                {/* Worker */}
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider">עובד</p>
+                  <p className="text-lg font-semibold text-foreground truncate" title={session.workerName}>
+                    {session.workerName}
+                  </p>
+                  <p className="text-sm text-muted-foreground tabular-nums">
+                    {session.workerCode}
+                  </p>
+                </div>
+
+                {/* Duration */}
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider">משך זמן</p>
+                  <p className="text-3xl font-bold text-foreground tabular-nums">
+                    {formatDuration(isActive ? liveDurationSeconds : session.durationSeconds)}
+                  </p>
+                </div>
               </div>
             </div>
 
-            <Separator className="bg-border" />
+            {/* Divider */}
+            <div className="border-t border-border" />
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <p className="text-xs text-muted-foreground">התחלה</p>
-                <p className="font-medium text-foreground">
-                  {formatDateTime(session.startedAt)}
-                </p>
+            {/* Bottom Section - Times & Status */}
+            <div className="px-6 py-4">
+              {/* Times Row */}
+              <div className="flex flex-wrap items-center gap-x-8 gap-y-2 mb-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">התחלה</span>
+                  <span className="text-sm font-medium text-foreground tabular-nums">
+                    {formatTime(session.startedAt)}
+                  </span>
+                  <span className="text-xs text-muted-foreground">·</span>
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    {formatDate(session.startedAt)}
+                  </span>
+                </div>
+
+                <div className="hidden sm:block text-muted-foreground/30">│</div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">סיום</span>
+                  {session.endedAt ? (
+                    <>
+                      <span className="text-sm font-medium text-foreground tabular-nums">
+                        {formatTime(session.endedAt)}
+                      </span>
+                      <span className="text-xs text-muted-foreground">·</span>
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        {formatDate(session.endedAt)}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-sm font-medium text-emerald-500">פעילה</span>
+                  )}
+                </div>
               </div>
-              <div>
-                <p className="text-xs text-muted-foreground">סיום</p>
-                <p className="font-medium text-foreground">
-                  {session.endedAt ? formatDateTime(session.endedAt) : "עדיין פעילה"}
-                </p>
+
+              {/* Status Badges */}
+              <div className="flex flex-wrap items-center gap-2">
+                {session.status === "completed" && (
+                  <Badge variant="secondary" className="bg-muted text-muted-foreground dark:bg-muted/50">
+                    הושלמה
+                  </Badge>
+                )}
+                {session.status === "aborted" && (
+                  <Badge variant="destructive" className="bg-destructive/90 dark:bg-destructive/80">
+                    בוטלה
+                  </Badge>
+                )}
+                {renderStatusBadge(session.currentStatus)}
               </div>
             </div>
           </CardContent>
         </Card>
+
+        {/* Session Statistics */}
+        <SessionStatistics
+          totalGood={session.totalGood}
+          totalScrap={session.totalScrap}
+          durationSeconds={session.durationSeconds}
+          stoppageTimeSeconds={session.stoppageTimeSeconds}
+          setupTimeSeconds={session.setupTimeSeconds}
+          productionPeriods={session.productionPeriods ?? []}
+          isActive={isActive}
+          liveDurationSeconds={liveDurationSeconds}
+        />
 
         {/* Timeline Card */}
         <Card className="border-border bg-card/50">
@@ -451,132 +579,20 @@ export default function SessionDetailPage({ params }: Props) {
         <SessionReportsWidget
           malfunctions={session.malfunctions ?? []}
           generalReports={session.generalReports ?? []}
+          scrapReports={session.scrapReports ?? []}
           stationReasons={stationReasons}
         />
 
-        {/* Production Stats Card */}
+        {/* Production Overview Card */}
         <Card className="border-border bg-card/50">
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-lg text-foreground">
               <Package className="h-5 w-5 text-muted-foreground" />
-              תפוקה
+              סקירת ייצור
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {session.totalGood > 0 || session.totalScrap > 0 || (session.plannedQuantity != null && session.plannedQuantity > 0) ? (
-              <div className="space-y-4">
-                <div dir="ltr" className="w-full [direction:ltr]">
-                  <ResponsiveContainer width="100%" height={240}>
-                    <BarChart
-                      data={[
-                        {
-                          name: "תפוקה",
-                          good: session.totalGood,
-                          scrap: session.totalScrap,
-                        },
-                      ]}
-                      margin={{ top: 20, right: 20, bottom: 20, left: 20 }}
-                      barCategoryGap={40}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#3f3f46" />
-                      <XAxis
-                        dataKey="name"
-                        tick={{ fontSize: 11, fill: "#a1a1aa" }}
-                        axisLine={{ stroke: "#3f3f46" }}
-                        tickLine={false}
-                      />
-                      <YAxis
-                        type="number"
-                        tick={{ fontSize: 11, fill: "#a1a1aa" }}
-                        allowDecimals={false}
-                        axisLine={{ stroke: "#3f3f46" }}
-                        tickLine={false}
-                      />
-                      <Tooltip
-                        cursor={{ fill: "rgba(255, 255, 255, 0.05)" }}
-                        contentStyle={{
-                          backgroundColor: "#18181b",
-                          border: "1px solid #3f3f46",
-                          borderRadius: "0.5rem",
-                          padding: "0.5rem 0.75rem",
-                          textAlign: "right",
-                          direction: "rtl",
-                        }}
-                        labelStyle={{ color: "#a1a1aa" }}
-                        itemStyle={{ color: "#f4f4f5" }}
-                        formatter={(value: number, name: string) => {
-                          const label = name === "good" ? "טוב" : "פסול";
-                          return [value, label];
-                        }}
-                      />
-                      {session.plannedQuantity != null && session.plannedQuantity > 0 && (
-                        <ReferenceLine
-                          y={session.plannedQuantity}
-                          stroke="#f59e0b"
-                          strokeWidth={2}
-                          strokeDasharray="4 4"
-                          label={{
-                            value: `מתוכנן: ${session.plannedQuantity}`,
-                            position: "right",
-                            fill: "#f59e0b",
-                            fontSize: 11,
-                            fontWeight: 500,
-                          }}
-                        />
-                      )}
-                      <Bar
-                        dataKey="good"
-                        name="טוב"
-                        fill="#10b981"
-                        radius={[6, 6, 0, 0]}
-                        maxBarSize={80}
-                      />
-                      <Bar
-                        dataKey="scrap"
-                        name="פסול"
-                        fill="#ef4444"
-                        radius={[6, 6, 0, 0]}
-                        maxBarSize={80}
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-
-                {/* Legend */}
-                <div className="flex flex-wrap items-center justify-center gap-6 text-xs text-muted-foreground">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className="h-2.5 w-2.5 rounded-full shrink-0"
-                      style={{ backgroundColor: "#10b981" }}
-                    />
-                    <span>טוב</span>
-                    <span className="font-semibold text-foreground">{session.totalGood}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span
-                      className="h-2.5 w-2.5 rounded-full shrink-0"
-                      style={{ backgroundColor: "#ef4444" }}
-                    />
-                    <span>פסול</span>
-                    <span className="font-semibold text-foreground">{session.totalScrap}</span>
-                  </div>
-                  {session.plannedQuantity != null && session.plannedQuantity > 0 && (
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="h-0.5 w-4 rounded-sm shrink-0"
-                        style={{ backgroundColor: "#f59e0b" }}
-                      />
-                      <span>כמות מתוכננת</span>
-                      <span className="font-semibold text-foreground">{session.plannedQuantity}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <div className="rounded-lg border border-border bg-muted/30 px-4 py-6 text-center">
-                <p className="text-sm text-muted-foreground">אין נתוני תפוקה</p>
-              </div>
-            )}
+            <ProductionOverviewTable productionPeriods={session.productionPeriods ?? []} />
           </CardContent>
         </Card>
       </div>

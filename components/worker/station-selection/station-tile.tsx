@@ -2,6 +2,7 @@
 
 import { Briefcase } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/hooks/useTranslation";
 import type { Station, StationOccupancy } from "@/lib/types";
 
 // ============================================
@@ -44,6 +45,7 @@ export function StationTile({
   onClick,
   animationDelay = 0,
 }: StationTileProps) {
+  const { t } = useTranslation();
   const isOccupied = station.occupancy.isOccupied;
   const isGracePeriod = station.occupancy.isGracePeriod;
   const isDisabled = isOccupied;
@@ -71,7 +73,7 @@ export function StationTile({
         // State-specific styles
         tileState === "selected" && [
           "border-cyan-400 bg-gradient-to-b from-cyan-500/20 to-cyan-600/10",
-          "ring-2 ring-cyan-400/50 ring-offset-2 ring-offset-slate-900",
+          "ring-2 ring-cyan-400/50 ring-offset-2 ring-offset-background",
           "shadow-[0_0_30px_rgba(6,182,212,0.3)]",
         ],
         tileState === "available" && [
@@ -95,9 +97,9 @@ export function StationTile({
             "flex items-center gap-1.5 px-2 py-1 rounded-lg",
             "text-sm font-bold tabular-nums",
             "border shadow-sm",
-            tileState === "selected" && "bg-cyan-500/20 border-cyan-400/50 text-cyan-300",
-            tileState === "available" && "bg-emerald-500/20 border-emerald-400/50 text-emerald-300",
-            tileState === "occupied" && "bg-amber-500/20 border-amber-400/50 text-amber-300"
+            tileState === "selected" && "bg-cyan-500/20 border-cyan-500/50 text-cyan-800 dark:text-cyan-300",
+            tileState === "available" && "bg-emerald-500/20 border-emerald-500/50 text-emerald-800 dark:text-emerald-300",
+            tileState === "occupied" && "bg-amber-500/20 border-amber-500/50 text-amber-800 dark:text-amber-300"
           )}
         >
           <Briefcase className="h-3.5 w-3.5" />
@@ -110,15 +112,15 @@ export function StationTile({
             className={cn(
               "flex items-center gap-1.5 px-2 py-1 rounded-lg",
               "text-xs font-semibold",
-              "bg-amber-500/20 text-amber-300 border border-amber-500/30",
+              "bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/30",
               isGracePeriod && "animate-pulse"
             )}
           >
-            <span className="h-1.5 w-1.5 rounded-full bg-amber-400 flex-shrink-0" />
+            <span className="h-1.5 w-1.5 rounded-full bg-amber-500 flex-shrink-0" />
             <span className="truncate max-w-[60px]">
               {isGracePeriod
-                ? "מנותק"
-                : (station.occupancy.occupiedBy?.workerName ?? "תפוס")}
+                ? t("station.tile.disconnected")
+                : (station.occupancy.occupiedBy?.workerName ?? t("station.tile.occupied"))}
             </span>
           </span>
         )}
@@ -130,9 +132,9 @@ export function StationTile({
         <span
           className={cn(
             "text-base font-bold leading-tight line-clamp-2 break-words",
-            tileState === "selected" && "text-cyan-100",
-            tileState === "available" && "text-emerald-100",
-            tileState === "occupied" && "text-amber-100"
+            tileState === "selected" && "text-cyan-900 dark:text-cyan-100",
+            tileState === "available" && "text-emerald-900 dark:text-emerald-100",
+            tileState === "occupied" && "text-amber-900 dark:text-amber-100"
           )}
         >
           {station.name}
@@ -143,26 +145,26 @@ export function StationTile({
       <div className="mt-2 h-6 flex items-center justify-center">
         {/* Available - "פנוי" with pulsing dot */}
         {tileState === "available" && (
-          <span className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
-            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-            פנוי
+          <span className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+            {t("station.tile.free")}
           </span>
         )}
 
         {/* Selected - checkmark indicator */}
         {tileState === "selected" && (
-          <span className="flex items-center gap-1.5 text-xs font-semibold text-cyan-300">
+          <span className="flex items-center gap-1.5 text-xs font-semibold text-cyan-700 dark:text-cyan-300">
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
             </svg>
-            נבחר
+            {t("station.tile.selected")}
           </span>
         )}
 
         {/* Occupied - already shown in top row, just show status text */}
         {tileState === "occupied" && (
-          <span className="text-xs font-medium text-amber-400/70">
-            עמדה תפוסה
+          <span className="text-xs font-medium text-amber-700 dark:text-amber-400/70">
+            {t("station.tile.occupiedStation")}
           </span>
         )}
       </div>

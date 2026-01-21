@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/hooks/useTranslation";
 import { StationTile, type StationTileData } from "./station-tile";
 
 // ============================================
@@ -40,6 +41,7 @@ export function StationTypeGroup({
   baseAnimationDelay = 0,
   defaultExpanded = true,
 }: StationTypeGroupProps) {
+  const { t } = useTranslation();
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
   // Calculate group stats
@@ -52,8 +54,8 @@ export function StationTypeGroup({
   return (
     <div
       className={cn(
-        "rounded-2xl border border-slate-700/50",
-        "bg-gradient-to-b from-slate-800/50 to-slate-900/30",
+        "rounded-2xl border border-border/50",
+        "bg-gradient-to-b from-muted/50 to-card/30",
         "overflow-hidden",
         // Entrance animation
         "animate-in fade-in slide-in-from-bottom-4 duration-500"
@@ -66,9 +68,9 @@ export function StationTypeGroup({
         onClick={() => setIsExpanded(!isExpanded)}
         className={cn(
           "w-full flex items-center justify-between gap-4 p-4",
-          "bg-gradient-to-r from-slate-800 to-slate-800/50",
-          "border-b border-slate-700/50",
-          "hover:from-slate-700/80 hover:to-slate-800/80",
+          "bg-gradient-to-r from-muted to-muted/50",
+          "border-b border-border/50",
+          "hover:from-accent/80 hover:to-muted/80",
           "transition-colors duration-200",
           "cursor-pointer"
         )}
@@ -81,19 +83,19 @@ export function StationTypeGroup({
               "w-1.5 h-10 rounded-full",
               availableStations > 0
                 ? "bg-gradient-to-b from-emerald-400 to-emerald-600"
-                : "bg-gradient-to-b from-slate-500 to-slate-600"
+                : "bg-gradient-to-b from-muted-foreground/50 to-muted-foreground/60"
             )}
           />
 
           <div className="flex flex-col items-start">
             {/* Department name - uppercase industrial signage */}
-            <span className="text-lg font-black tracking-wide text-slate-100 uppercase">
-              {stationType || "ללא סוג"}
+            <span className="text-lg font-black tracking-wide text-foreground uppercase">
+              {stationType || t("station.noType")}
             </span>
 
             {/* Station count subtitle */}
-            <span className="text-xs font-medium text-slate-400">
-              {availableStations} / {totalStations} עמדות פנויות
+            <span className="text-xs font-medium text-muted-foreground">
+              {t("station.availableCount", { available: availableStations, total: totalStations })}
             </span>
           </div>
         </div>
@@ -106,18 +108,18 @@ export function StationTypeGroup({
               "flex items-center gap-1.5 px-3 py-1.5 rounded-lg",
               "border",
               totalJobItems > 0
-                ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
-                : "bg-slate-700/30 border-slate-600/30 text-slate-500"
+                ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-400"
+                : "bg-muted/30 border-border/30 text-muted-foreground"
             )}
           >
             <span className="text-sm font-bold tabular-nums">{totalJobItems}</span>
-            <span className="text-xs font-medium">עבודות</span>
+            <span className="text-xs font-medium">{t("station.jobsCount")}</span>
           </div>
 
           {/* Expand/collapse chevron */}
           <ChevronDown
             className={cn(
-              "h-5 w-5 text-slate-400 transition-transform duration-300",
+              "h-5 w-5 text-muted-foreground transition-transform duration-300",
               isExpanded && "rotate-180"
             )}
           />
@@ -155,8 +157,8 @@ export function StationTypeGroup({
 
           {/* Empty state */}
           {stations.length === 0 && (
-            <div className="p-8 text-center text-slate-500">
-              <span className="text-sm">אין עמדות בקטגוריה זו</span>
+            <div className="p-8 text-center text-muted-foreground">
+              <span className="text-sm">{t("station.noCategoryStations")}</span>
             </div>
           )}
         </div>

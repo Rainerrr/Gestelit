@@ -26,7 +26,7 @@ import { useRealtimeReports } from "@/lib/hooks/useRealtimeReports";
 import { useViewToggle } from "@/lib/hooks/useViewToggle";
 import { filterOngoingReports } from "@/lib/data/reports";
 
-type StatusFilter = "all" | "new" | "approved";
+type StatusFilter = "all" | "new" | "approved" | "first_product";
 
 const GeneralReportsDashboardInner = () => {
   const [reasons, setReasons] = useState<ReportReason[]>([]);
@@ -78,6 +78,11 @@ const GeneralReportsDashboardInner = () => {
     if (!reports) return [];
     return reports.filter((r) => {
       if (statusFilter === "all") return true;
+      // First product tab: only show unapproved (new) QA reports
+      if (statusFilter === "first_product") {
+        return r.is_first_product_qa === true && r.status === "new";
+      }
+      // Approved tab: includes all approved reports (regular + first product QA)
       return r.status === statusFilter;
     });
   }, [reports, statusFilter]);
@@ -86,6 +91,10 @@ const GeneralReportsDashboardInner = () => {
   const newCount = allReports.filter((r) => r.status === "new").length;
   const approvedCount = allReports.filter((r) => r.status === "approved").length;
   const ongoingCount = filterOngoingReports(allReports).length;
+  // Only count unapproved (new) first product QA reports for the badge
+  const firstProductCount = allReports.filter(
+    (r) => r.is_first_product_qa === true && r.status === "new"
+  ).length;
 
   return (
     <div className="space-y-6 pb-mobile-nav">
@@ -239,6 +248,19 @@ const GeneralReportsDashboardInner = () => {
           >
             אושרו
           </Button>
+          <Button
+            variant={statusFilter === "first_product" ? "secondary" : "ghost"}
+            size="sm"
+            onClick={() => setStatusFilter("first_product")}
+            className="h-8 gap-2"
+          >
+            מוצר ראשון
+            {firstProductCount > 0 && (
+              <Badge className="h-5 px-1.5 bg-amber-500/20 text-amber-500 border-0 font-mono text-xs">
+                {firstProductCount}
+              </Badge>
+            )}
+          </Button>
         </div>
       </div>
 
@@ -277,10 +299,16 @@ const GeneralReportsDashboardInner = () => {
                 ? "אין דיווחים"
                 : statusFilter === "new"
                   ? "אין דיווחים חדשים"
-                  : "אין דיווחים שאושרו"}
+                  : statusFilter === "first_product"
+                    ? "אין דיווחי מוצר ראשון ממתינים לאישור"
+                    : "אין דיווחים שאושרו"}
             </p>
             <p className="text-sm text-muted-foreground">
-              {statusFilter === "new" ? "כל הדיווחים טופלו" : ""}
+              {statusFilter === "new"
+                ? "כל הדיווחים טופלו"
+                : statusFilter === "first_product"
+                  ? "דיווחים שאושרו נמצאים בלשונית 'אושרו'"
+                  : ""}
             </p>
           </div>
         </div>

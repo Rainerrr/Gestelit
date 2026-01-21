@@ -14,14 +14,15 @@ import {
   AlertTriangle,
   TrendingDown,
   Settings,
+  User,
 } from "lucide-react";
 import type { StatusDictionary } from "@/lib/status";
+import type { CurrentJobItemInfo } from "@/lib/data/admin-dashboard";
 import {
   useAdminSession,
   useAdminSessionIds,
   useAdminSessionsLoading,
 } from "@/contexts/AdminSessionsContext";
-import { useStationProgress } from "@/contexts/JobProgressContext";
 import {
   getStatusColorFromDictionary,
   getStatusLabelFromDictionary,
@@ -34,6 +35,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 
 type ActiveSessionsTableProps = {
   dictionary: StatusDictionary;
@@ -127,16 +129,139 @@ const getStatusStyle = (hex: string) => {
   };
 };
 
+/**
+ * Dual-color progress bar matching the work page style.
+ * Shows prior sessions (emerald) + this session (cyan).
+ */
+function DualProgressBar({
+  totalCompleted,
+  sessionContribution,
+  plannedQuantity,
+}: {
+  totalCompleted: number;
+  sessionContribution: number;
+  plannedQuantity: number;
+}) {
+  const safePlanned = Math.max(1, plannedQuantity);
+  const safeTotal = Math.min(totalCompleted, safePlanned);
+  const safeSession = Math.min(sessionContribution, safeTotal);
+
+  const prior = Math.max(0, safeTotal - safeSession);
+  const priorPercent = (prior / safePlanned) * 100;
+  const sessionPercent = (safeSession / safePlanned) * 100;
+
+  const isComplete = totalCompleted >= plannedQuantity;
+
+  return (
+    <div
+      className={cn(
+        "relative w-full h-3 overflow-hidden rounded-full",
+        "border border-border bg-muted/50"
+      )}
+    >
+      {/* Prior Sessions Segment - emerald - RTL: anchored to right */}
+      {priorPercent > 0 && (
+        <div
+          className="absolute inset-y-0 right-0 bg-gradient-to-l from-emerald-400 to-emerald-600 transition-all duration-500"
+          style={{ width: `${priorPercent}%` }}
+        />
+      )}
+
+      {/* This Session Segment - cyan with glow - RTL: positioned after prior from right */}
+      {sessionPercent > 0 && (
+        <div
+          className={cn(
+            "absolute inset-y-0 bg-gradient-to-l from-cyan-400 to-cyan-600",
+            "shadow-[0_0_8px_rgba(6,182,212,0.5)] transition-all duration-500"
+          )}
+          style={{
+            right: `${priorPercent}%`,
+            width: `${sessionPercent}%`,
+          }}
+        />
+      )}
+
+      {/* Completion shimmer */}
+      {isComplete && (
+        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer" />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Progress cell component for displaying job item progress with dual bar
+ */
+function ProgressCell({ jobItem, totalGood, jobNumber }: { jobItem: CurrentJobItemInfo | null; totalGood: number; jobNumber: string }) {
+  if (!jobItem) {
+    // No job selected - simplified display
+    return (
+      <div className="flex items-center justify-center min-w-[280px]">
+        <span className="text-xs text-muted-foreground/50">לא נבחרה עבודה</span>
+      </div>
+    );
+  }
+
+  const isComplete = jobItem.totalCompletedGood >= jobItem.plannedQuantity;
+
+  return (
+    <div className="flex items-center gap-3 min-w-[280px]">
+      {/* Job number + Job item name stacked */}
+      <div className="flex flex-col items-start gap-0.5 shrink-0 min-w-[80px]">
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] text-muted-foreground">פק״ע:</span>
+          <span className="font-mono text-xs text-primary">{jobNumber}</span>
+        </div>
+        <span
+          className="text-xs text-muted-foreground truncate max-w-[80px]"
+          title={jobItem.jobItemName}
+        >
+          {jobItem.jobItemName}
+        </span>
+      </div>
+
+      {/* Divider */}
+      <div className="w-px h-8 bg-border shrink-0" />
+
+      {/* Progress section */}
+      <div className="flex flex-col gap-1 flex-1 min-w-[130px]">
+        {/* Text: total / planned with (+session) */}
+        <div className="flex items-center gap-1 justify-center">
+          <Package className="h-3.5 w-3.5 text-emerald-500" />
+          <span
+            className={cn(
+              "text-sm font-bold tabular-nums",
+              isComplete ? "text-emerald-400" : "text-foreground"
+            )}
+          >
+            {jobItem.totalCompletedGood}
+          </span>
+          <span className="text-muted-foreground text-xs">/</span>
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {jobItem.plannedQuantity}
+          </span>
+          {jobItem.sessionGood > 0 && (
+            <span className="text-xs font-semibold text-cyan-400 tabular-nums">
+              (+{jobItem.sessionGood})
+            </span>
+          )}
+        </div>
+
+        {/* Dual progress bar */}
+        <DualProgressBar
+          totalCompleted={jobItem.totalCompletedGood}
+          sessionContribution={jobItem.sessionGood}
+          plannedQuantity={jobItem.plannedQuantity}
+        />
+      </div>
+    </div>
+  );
+}
+
 const SessionRow = memo(
   ({ sessionId, dictionary, onNavigate }: RowProps) => {
     const session = useAdminSession(sessionId);
     const now = useNow();
-
-    // Get station progress from job progress context
-    const { progress: stationProgress } = useStationProgress(
-      session?.jobId ?? "",
-      session?.stationId ?? null
-    );
 
     const duration = useMemo(
       () => (session ? getDurationLabel(session.startedAt, now) : "-"),
@@ -199,7 +324,7 @@ const SessionRow = memo(
       >
         {/* Station + Status */}
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
+          <div className="mb-1">
             <span className="text-sm font-bold text-foreground">{session.stationName}</span>
           </div>
           <div
@@ -218,12 +343,15 @@ const SessionRow = memo(
           </div>
         </div>
 
-        {/* Worker + Job */}
-        <div className="flex flex-col items-end gap-0.5 min-w-[120px]">
-          <span className="text-sm text-foreground/80">{session.workerName}</span>
+        {/* Worker + Duration */}
+        <div className="flex flex-col items-end gap-0.5 min-w-[100px]">
           <div className="flex items-center gap-1.5">
-            <span className="text-[10px] text-muted-foreground">פק״ע:</span>
-            <span className="font-mono text-xs text-primary">{session.jobNumber}</span>
+            <User className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="text-sm text-foreground/80">{session.workerName}</span>
+          </div>
+          <div className="flex items-center gap-1.5 text-muted-foreground">
+            <Clock className="h-3.5 w-3.5" />
+            <span className="font-mono text-sm tabular-nums">{duration}</span>
           </div>
         </div>
 
@@ -297,22 +425,6 @@ const SessionRow = memo(
                 </TooltipContent>
               </Tooltip>
             )}
-            {flags?.highScrap && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span
-                    className="cursor-default shrink-0"
-                    onClick={(e) => e.stopPropagation()}
-                    onKeyDown={(e) => e.stopPropagation()}
-                  >
-                    <Trash2 className="h-3.5 w-3.5 text-red-500" />
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">
-                  {SESSION_FLAG_LABELS.high_scrap}
-                </TooltipContent>
-              </Tooltip>
-            )}
             {flags?.lowProduction && (
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -336,47 +448,8 @@ const SessionRow = memo(
         {/* Divider after flags */}
         <div className="w-px h-8 bg-border" />
 
-        {/* Time */}
-        <div className="flex items-center gap-1.5 text-muted-foreground shrink-0">
-          <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="font-mono text-sm tabular-nums">{duration}</span>
-        </div>
-
-        {/* Progress bar: integrated text overlay design */}
-        {stationProgress ? (
-          <div className="flex flex-col items-center min-w-[160px] w-[180px]">
-            {/* Job item name - centered above progress bar */}
-            <span className="text-xs text-muted-foreground truncate w-full text-center leading-tight mb-0.5" title={stationProgress.jobItemName}>
-              {stationProgress.jobItemName}
-            </span>
-            <div className="relative w-full">
-              {/* Progress bar background */}
-              <div className="h-5 bg-zinc-800/80 rounded overflow-hidden">
-                <div
-                  className="h-full bg-emerald-500/30 transition-all duration-300"
-                  style={{
-                    width: `${Math.min(100, stationProgress.plannedQuantity > 0
-                      ? (stationProgress.totalCompleted / stationProgress.plannedQuantity) * 100
-                      : 0)}%`,
-                  }}
-                />
-              </div>
-              {/* Text overlay */}
-              <div className="absolute inset-0 flex items-center justify-center">
-                <span className="font-mono text-xs tabular-nums text-foreground/90 font-medium">
-                  {stationProgress.totalCompleted.toLocaleString()}
-                  <span className="text-muted-foreground mx-0.5">/</span>
-                  {stationProgress.plannedQuantity.toLocaleString()}
-                </span>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="flex items-center gap-1.5 min-w-[80px]">
-            <Package className="h-3.5 w-3.5 text-emerald-500" />
-            <span className="font-mono text-sm tabular-nums text-emerald-400">{session.totalGood.toLocaleString()}</span>
-          </div>
-        )}
+        {/* Progress: job number | job item name | progress bar with dual colors */}
+        <ProgressCell jobItem={session.currentJobItem} totalGood={session.totalGood} jobNumber={session.jobNumber} />
 
         {/* Scrap - only show if there's scrap, with link to reports */}
         {session.totalScrap > 0 && (
@@ -405,12 +478,6 @@ const MobileSessionCard = memo(
   ({ sessionId, dictionary, onNavigate }: RowProps) => {
     const session = useAdminSession(sessionId);
     const now = useNow();
-
-    // Get station progress from job progress context
-    const { progress: stationProgress } = useStationProgress(
-      session?.jobId ?? "",
-      session?.stationId ?? null
-    );
 
     const duration = useMemo(
       () => (session ? getDurationLabel(session.startedAt, now) : "-"),
@@ -467,22 +534,26 @@ const MobileSessionCard = memo(
           }
         }}
       >
-        {/* Top row: Station name */}
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-base font-bold text-foreground">{session.stationName}</span>
-          <ChevronLeft className="h-4 w-4 text-muted-foreground" />
-        </div>
-
-        {/* Second row: Worker name + Job number */}
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-sm text-foreground/80">{session.workerName}</span>
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs text-muted-foreground">פק״ע:</span>
-            <span className="font-mono text-sm text-primary font-medium">{session.jobNumber}</span>
+        {/* Top row: Station name + Worker section */}
+        <div className="flex items-start justify-between mb-2">
+          {/* Station */}
+          <div className="flex flex-col gap-1">
+            <span className="text-base font-bold text-foreground">{session.stationName}</span>
+          </div>
+          {/* Worker + Duration */}
+          <div className="flex flex-col items-end gap-0.5">
+            <div className="flex items-center gap-1.5">
+              <User className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-sm text-foreground/80">{session.workerName}</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-muted-foreground">
+              <Clock className="h-3.5 w-3.5" />
+              <span className="font-mono text-sm tabular-nums">{duration}</span>
+            </div>
           </div>
         </div>
 
-        {/* Third row: Status badge + Flags */}
+        {/* Second row: Status badge + Flags */}
         <div className="flex items-center justify-between mb-3">
           <div
             className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold"
@@ -566,22 +637,6 @@ const MobileSessionCard = memo(
                   </TooltipContent>
                 </Tooltip>
               )}
-              {flags?.highScrap && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span
-                      className="cursor-default"
-                      onClick={(e) => e.stopPropagation()}
-                      onKeyDown={(e) => e.stopPropagation()}
-                    >
-                      <Trash2 className="h-4 w-4 text-red-500" />
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="text-xs">
-                    {SESSION_FLAG_LABELS.high_scrap}
-                  </TooltipContent>
-                </Tooltip>
-              )}
               {flags?.lowProduction && (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -602,60 +657,75 @@ const MobileSessionCard = memo(
           </TooltipProvider>
         </div>
 
-        {/* Bottom row: Time + Progress in a stats bar */}
+        {/* Bottom row: Job info + Progress */}
         <div className="flex flex-col gap-2 pt-2 border-t border-border/50">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5 text-muted-foreground">
-              <Clock className="h-4 w-4" />
-              <span className="font-mono text-sm tabular-nums">{duration}</span>
-            </div>
-
-            {/* Scrap - only show if there's scrap, with link to reports */}
-            {session.totalScrap > 0 && (
-              <Link
-                href={`/admin/reports/scrap?sessionId=${session.id}`}
-                onClick={(e) => e.stopPropagation()}
-                className="flex items-center gap-1.5 hover:bg-red-500/10 px-2 py-1 rounded transition-colors"
-              >
-                <Trash2 className="h-4 w-4 text-red-500" />
-                <span className="font-mono text-sm tabular-nums text-red-400 font-medium">{session.totalScrap.toLocaleString()}</span>
-              </Link>
-            )}
-          </div>
-
-          {/* Progress bar: integrated text overlay design for mobile */}
-          {stationProgress ? (
-            <div className="flex flex-col gap-1 w-full">
-              {/* Job item name */}
-              <span className="text-xs text-muted-foreground truncate" title={stationProgress.jobItemName}>
-                {stationProgress.jobItemName}
-              </span>
-              <div className="relative w-full">
-                {/* Progress bar background */}
-                <div className="h-7 bg-zinc-800/80 rounded overflow-hidden">
-                  <div
-                    className="h-full bg-emerald-500/30 transition-all duration-300"
-                    style={{
-                      width: `${Math.min(100, stationProgress.plannedQuantity > 0
-                        ? (stationProgress.totalCompleted / stationProgress.plannedQuantity) * 100
-                        : 0)}%`,
-                    }}
-                  />
-                </div>
-                {/* Text overlay */}
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="font-mono text-sm tabular-nums text-foreground/90 font-medium">
-                    {stationProgress.totalCompleted.toLocaleString()}
-                    <span className="text-muted-foreground mx-1">/</span>
-                    {stationProgress.plannedQuantity.toLocaleString()}
-                  </span>
-                </div>
+          {/* Job number + Scrap - only show when job is selected */}
+          {session.currentJobItem && (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] text-muted-foreground">פק״ע:</span>
+                <span className="font-mono text-xs text-primary font-medium">{session.jobNumber}</span>
               </div>
+
+              {/* Scrap - only show if there's scrap, with link to reports */}
+              {session.totalScrap > 0 && (
+                <Link
+                  href={`/admin/reports/scrap?sessionId=${session.id}`}
+                  onClick={(e) => e.stopPropagation()}
+                  className="flex items-center gap-1.5 hover:bg-red-500/10 px-2 py-1 rounded transition-colors"
+                >
+                  <Trash2 className="h-4 w-4 text-red-500" />
+                  <span className="font-mono text-sm tabular-nums text-red-400 font-medium">{session.totalScrap.toLocaleString()}</span>
+                </Link>
+              )}
+            </div>
+          )}
+
+          {/* Progress bar: dual color design matching desktop */}
+          {session.currentJobItem ? (
+            <div className="flex flex-col gap-1.5 w-full">
+              {/* Job item name */}
+              <span
+                className="text-xs text-muted-foreground truncate"
+                title={session.currentJobItem.jobItemName}
+              >
+                {session.currentJobItem.jobItemName}
+              </span>
+
+              {/* Text: total / planned with (+session) */}
+              <div className="flex items-center gap-1 justify-center">
+                <Package className="h-4 w-4 text-emerald-500" />
+                <span
+                  className={cn(
+                    "text-base font-bold tabular-nums",
+                    session.currentJobItem.totalCompletedGood >= session.currentJobItem.plannedQuantity
+                      ? "text-emerald-400"
+                      : "text-foreground"
+                  )}
+                >
+                  {session.currentJobItem.totalCompletedGood}
+                </span>
+                <span className="text-muted-foreground text-sm">/</span>
+                <span className="text-sm text-muted-foreground tabular-nums">
+                  {session.currentJobItem.plannedQuantity}
+                </span>
+                {session.currentJobItem.sessionGood > 0 && (
+                  <span className="text-sm font-semibold text-cyan-400 tabular-nums">
+                    (+{session.currentJobItem.sessionGood})
+                  </span>
+                )}
+              </div>
+
+              {/* Dual progress bar */}
+              <DualProgressBar
+                totalCompleted={session.currentJobItem.totalCompletedGood}
+                sessionContribution={session.currentJobItem.sessionGood}
+                plannedQuantity={session.currentJobItem.plannedQuantity}
+              />
             </div>
           ) : (
-            <div className="flex items-center gap-1.5">
-              <Package className="h-4 w-4 text-emerald-500" />
-              <span className="font-mono text-sm tabular-nums text-emerald-400 font-medium">{session.totalGood.toLocaleString()}</span>
+            <div className="flex items-center justify-center py-2">
+              <span className="text-xs text-muted-foreground/50">לא נבחרה עבודה</span>
             </div>
           )}
         </div>

@@ -13,6 +13,7 @@ type JobPayload = {
   job_number?: string;
   customer_name?: string | null;
   description?: string | null;
+  due_date?: string | null;
   // planned_quantity removed - now set per job_item
 };
 
@@ -49,11 +50,18 @@ export async function GET(request: Request) {
     | "completed"
     | "all"
     | null;
+  const archivedParam = searchParams.get("archived");
+  const archived = archivedParam === "true" ? true : archivedParam === "false" ? false : undefined;
+  const sortBy = searchParams.get("sortBy") as "due_date" | "created_at" | "progress" | null;
+  const sortDirection = searchParams.get("sortDirection") as "asc" | "desc" | null;
 
   try {
     const jobs = await fetchAllJobsWithStats({
       search: search ?? undefined,
       status: status ?? "all",
+      archived,
+      sortBy: sortBy ?? undefined,
+      sortDirection: sortDirection ?? undefined,
     });
     return NextResponse.json<{ jobs: JobWithStats[] }>({ jobs });
   } catch (error) {
@@ -79,6 +87,7 @@ export async function POST(request: Request) {
       job_number: body.job_number.trim(),
       customer_name: body.customer_name ?? null,
       description: body.description ?? null,
+      due_date: body.due_date ?? null,
     });
 
     return NextResponse.json({ job });

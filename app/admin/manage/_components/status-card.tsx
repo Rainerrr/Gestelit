@@ -119,7 +119,7 @@ const REPORT_TYPE_OPTIONS: {
     label: "ללא דיווח",
     shortLabel: "ללא",
     icon: FileX,
-    activeClass: "bg-slate-600 text-white border-slate-500",
+    activeClass: "bg-accent text-foreground border-border",
   },
   {
     value: "malfunction",

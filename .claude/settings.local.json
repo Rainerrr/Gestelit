@@ -23,7 +23,28 @@
       "Bash(done)",
       "Bash(npm run test:run:*)",
       "Bash(node diagnose-wip.js:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(grep:*)",
+      "mcp__plugin_supabase_supabase__get_project",
+      "mcp__playwright__browser_click",
+      "mcp__playwright__browser_type",
+      "mcp__playwright__browser_resize",
+      "mcp__playwright__browser_take_screenshot",
+      "mcp__playwright__browser_evaluate",
+      "mcp__playwright__browser_snapshot",
+      "mcp__playwright__browser_wait_for",
+      "mcp__playwright__browser_navigate",
+      "mcp__playwright__browser_console_messages",
+      "Bash(curl:*)",
+      "Bash(npx eslint:*)",
+      "Bash(ls:*)",
+      "Bash(tasklist /FI \"IMAGENAME eq chrome.exe\")",
+      "Bash(cmd /c \"tasklist /FI \"\"IMAGENAME eq chrome.exe\"\"\")",
+      "Bash(powershell -Command \"Get-Process chrome -ErrorAction SilentlyContinue | Select-Object Id, ProcessName\")",
+      "Bash(powershell -Command \"Get-Process chrome -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep -Seconds 2; echo ''Chrome processes killed''\")",
+      "mcp__playwright__browser_tabs",
+      "mcp__playwright__browser_press_key",
+      "Bash(dir:*)"
     ]
   }
 }

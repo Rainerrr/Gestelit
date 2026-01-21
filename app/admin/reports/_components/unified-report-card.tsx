@@ -16,6 +16,7 @@ import {
   FileText,
   Package,
   Trash2,
+  ClipboardCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -198,6 +199,9 @@ export const UnifiedReportCard = ({
   // TODO: Query from status_events if needed for scrap reports
   const scrapCount: number | null = null;
 
+  // Check if this is a first product approval report
+  const isFirstProductApproval = report.is_first_product_qa === true;
+
   // Handle malfunction status change
   const handleStatusChange = async (newStatus: MalfunctionReportStatus) => {
     if (onStatusChange) {
@@ -277,6 +281,14 @@ export const UnifiedReportCard = ({
               <Package className="h-3.5 w-3.5 text-red-400" />
               <span className="font-bold text-red-400">{scrapCount}</span>
               <span className="text-muted-foreground">פסולים</span>
+            </div>
+          )}
+
+          {/* First product approval indicator */}
+          {isFirstProductApproval && (
+            <div className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 bg-amber-500/10 border border-amber-500/30">
+              <ClipboardCheck className="h-3.5 w-3.5 text-amber-500" />
+              <span className="text-xs font-medium text-amber-500">אישור מוצר ראשון</span>
             </div>
           )}
 

@@ -29,7 +29,7 @@ export type AvailableJobItemForCompletion = {
 
 export type JobCompletionResult =
   | { action: "select"; jobItem: AvailableJobItemForCompletion }
-  | { action: "stoppage" };
+  | { action: "setup" };
 
 export type JobCompletionDialogProps = {
   /** Whether the dialog is open */
@@ -85,13 +85,13 @@ export function JobCompletionDialog({
     }
   }, [selectedJobItemId, availableJobItems, onComplete]);
 
-  const handleStoppage = useCallback(() => {
-    onComplete({ action: "stoppage" });
+  const handleSetup = useCallback(() => {
+    onComplete({ action: "setup" });
   }, [onComplete]);
 
   return (
     <Dialog open={open} onOpenChange={() => {}}>
-      <DialogContent className="max-w-lg border-2 border-emerald-600/50 bg-slate-900">
+      <DialogContent className="max-w-lg border-2 border-emerald-600/50 bg-card">
         <DialogHeader className="text-center">
           {/* Success Icon */}
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/20 border-2 border-emerald-500/50">
@@ -113,7 +113,7 @@ export function JobCompletionDialog({
           <DialogTitle className="text-2xl font-bold text-emerald-400">
             פריט עבודה הושלם!
           </DialogTitle>
-          <DialogDescription className="text-slate-300">
+          <DialogDescription className="text-muted-foreground">
             <span className="font-semibold">{completedJobItemName}</span> הושלם בהצלחה.
             <br />
             מה תרצה לעשות עכשיו?
@@ -124,14 +124,14 @@ export function JobCompletionDialog({
           {/* Loading State */}
           {isLoading && (
             <div className="flex items-center justify-center py-8">
-              <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-600 border-t-emerald-400" />
+              <div className="h-8 w-8 animate-spin rounded-full border-4 border-border border-t-emerald-400" />
             </div>
           )}
 
           {/* Available Job Items */}
           {!isLoading && availableJobItems.length > 0 && (
             <div className="space-y-2">
-              <h4 className="text-sm font-semibold text-slate-400 text-right">
+              <h4 className="text-sm font-semibold text-muted-foreground text-right">
                 עבודות זמינות בעמדה:
               </h4>
               <div className="max-h-[280px] space-y-2 overflow-y-auto pe-1">
@@ -151,7 +151,7 @@ export function JobCompletionDialog({
                         "w-full rounded-lg border-2 p-3 text-right transition-all",
                         isSelected
                           ? "border-cyan-500/50 bg-cyan-500/10"
-                          : "border-slate-700 bg-slate-800/50 hover:border-slate-600 hover:bg-slate-800"
+                          : "border-border bg-card/50 hover:border-border/80 hover:bg-accent"
                       )}
                     >
                       {/* Job Header */}
@@ -163,7 +163,7 @@ export function JobCompletionDialog({
                               "h-5 w-5 rounded-full border-2 flex items-center justify-center transition-colors",
                               isSelected
                                 ? "border-cyan-400 bg-cyan-400"
-                                : "border-slate-600"
+                                : "border-border"
                             )}
                           >
                             {isSelected && (
@@ -176,18 +176,18 @@ export function JobCompletionDialog({
                           <span className={cn(
                             "text-xs font-bold tabular-nums px-2 py-0.5 rounded",
                             progress === 0
-                              ? "bg-slate-700 text-slate-400"
+                              ? "bg-muted text-muted-foreground"
                               : "bg-emerald-500/20 text-emerald-400"
                           )}>
                             {progress}%
                           </span>
                         </div>
                         <div className="flex-1 text-right">
-                          <div className="font-semibold text-slate-200">
+                          <div className="font-semibold text-foreground">
                             עבודה {item.jobNumber}
                           </div>
                           {item.customerName && (
-                            <div className="text-xs text-slate-500">
+                            <div className="text-xs text-muted-foreground">
                               {item.customerName}
                             </div>
                           )}
@@ -195,22 +195,22 @@ export function JobCompletionDialog({
                       </div>
 
                       {/* Product Name */}
-                      <div className="mt-2 text-sm text-slate-300">
+                      <div className="mt-2 text-sm text-foreground">
                         {item.name}
                       </div>
 
                       {/* Stats */}
                       <div className="mt-2 flex items-center justify-between text-xs">
-                        <span className="text-slate-500">
+                        <span className="text-muted-foreground">
                           {item.completedGood.toLocaleString()} / {item.plannedQuantity.toLocaleString()}
                         </span>
-                        <span className="text-slate-400">
+                        <span className="text-muted-foreground">
                           נותר: {remaining.toLocaleString()}
                         </span>
                       </div>
 
                       {/* Mini progress bar */}
-                      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-700">
+                      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
                         <div
                           className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all"
                           style={{ width: `${progress}%` }}
@@ -225,8 +225,8 @@ export function JobCompletionDialog({
 
           {/* No Available Jobs */}
           {!isLoading && availableJobItems.length === 0 && (
-            <div className="rounded-lg border-2 border-dashed border-slate-700 bg-slate-800/30 p-6 text-center">
-              <div className="text-slate-500">
+            <div className="rounded-lg border-2 border-dashed border-border bg-muted/30 p-6 text-center">
+              <div className="text-muted-foreground">
                 אין עבודות נוספות זמינות בעמדה זו
               </div>
             </div>
@@ -234,14 +234,14 @@ export function JobCompletionDialog({
         </div>
 
         <DialogFooter className="flex gap-2 sm:justify-between">
-          {/* Stoppage Button */}
+          {/* Setup Button */}
           <Button
             variant="outline"
-            onClick={handleStoppage}
+            onClick={handleSetup}
             disabled={isSubmitting}
-            className="border-amber-500/50 text-amber-400 hover:bg-amber-500/10 hover:text-amber-300"
+            className="border-blue-500/50 text-blue-400 hover:bg-blue-500/10 hover:text-blue-300"
           >
-            הפסקה
+            הכנה
           </Button>
 
           {/* Select Job Button */}
@@ -252,7 +252,7 @@ export function JobCompletionDialog({
               "min-w-32 font-bold",
               selectedJobItemId
                 ? "bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400"
-                : "bg-slate-700"
+                : "bg-muted"
             )}
           >
             {isSubmitting ? "מעביר..." : "בחר עבודה"}

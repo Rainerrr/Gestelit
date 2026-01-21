@@ -71,7 +71,7 @@ export function ScrapSection({
   return (
     <div
       className={cn(
-        "rounded-xl border-2 border-rose-500/40 bg-gradient-to-b from-rose-500/5 to-slate-900/50 overflow-hidden",
+        "rounded-xl border-2 border-rose-500/40 bg-gradient-to-b from-rose-500/5 to-card/50 overflow-hidden",
         className
       )}
     >
@@ -87,16 +87,16 @@ export function ScrapSection({
         <div className="flex items-center gap-3">
           <ChevronDown
             className={cn(
-              "h-5 w-5 text-rose-400 transition-transform duration-300",
+              "h-5 w-5 text-rose-600 dark:text-rose-400 transition-transform duration-300",
               isExpanded && "rotate-180"
             )}
           />
-          <span className="text-sm font-bold text-rose-400">פסול במשמרת זו</span>
+          <span className="text-sm font-bold text-rose-700 dark:text-rose-400">פסול במשמרת זו</span>
         </div>
 
         {/* Scrap Count Badge - always visible in header */}
         <div className="flex items-center gap-2">
-          <span className="rounded-lg bg-rose-500/20 px-3 py-1.5 text-xl font-bold tabular-nums text-rose-400 border border-rose-500/40">
+          <span className="rounded-lg bg-rose-500/20 px-3 py-1.5 text-xl font-bold tabular-nums text-rose-700 dark:text-rose-400 border border-rose-500/40">
             {sessionScrapCount.toLocaleString()}
           </span>
         </div>
@@ -114,10 +114,10 @@ export function ScrapSection({
             {/* Large Scrap Count Display */}
             <div className="flex items-center justify-between rounded-lg bg-rose-500/10 border border-rose-500/30 p-4">
               <div className="text-center flex-1">
-                <div className="text-5xl font-bold tabular-nums text-rose-400">
+                <div className="text-5xl font-bold tabular-nums text-rose-700 dark:text-rose-400">
                   {sessionScrapCount.toLocaleString()}
                 </div>
-                <div className="text-sm font-medium text-rose-400/70 mt-1">
+                <div className="text-sm font-medium text-rose-600/70 dark:text-rose-400/70 mt-1">
                   יחידות פסול
                 </div>
               </div>
@@ -130,7 +130,7 @@ export function ScrapSection({
                   e.stopPropagation();
                   onAddScrap();
                 }}
-                className="shrink-0 h-10 px-4 border-rose-500/40 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 hover:border-rose-500/60"
+                className="shrink-0 h-10 px-4 border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-400 hover:bg-rose-500/20 hover:border-rose-500/60"
               >
                 <Plus className="h-4 w-4 ml-1" />
                 דווח פסול
@@ -140,7 +140,7 @@ export function ScrapSection({
             {/* Reports List */}
             {scrapReports.length > 0 && (
               <div className="space-y-2">
-                <div className="text-xs font-medium text-slate-500">
+                <div className="text-xs font-medium text-muted-foreground">
                   דיווחים ({scrapReports.length}):
                 </div>
 
@@ -192,27 +192,27 @@ function ScrapReportCard({ report, onEdit, formatTime }: ScrapReportCardProps) {
               className={cn(
                 "text-xs font-bold px-2 py-0.5 rounded",
                 isApproved
-                  ? "bg-emerald-500/20 text-emerald-400"
-                  : "bg-rose-500/20 text-rose-400"
+                  ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-400"
+                  : "bg-rose-500/20 text-rose-700 dark:text-rose-400"
               )}
             >
               {isApproved ? "✓ אושר" : "● חדש"}
             </span>
 
             {/* Time */}
-            <span className="text-xs text-slate-500 tabular-nums">
+            <span className="text-xs text-muted-foreground tabular-nums">
               {formatTime(report.created_at)}
             </span>
           </div>
 
           {/* Description */}
-          <p className="text-sm text-slate-300 line-clamp-2">
+          <p className="text-sm text-foreground/80 line-clamp-2">
             {report.description || "(ללא תיאור)"}
           </p>
 
           {/* Image indicator */}
           {report.image_url && (
-            <span className="text-xs text-slate-500 mt-1 inline-block">
+            <span className="text-xs text-muted-foreground mt-1 inline-block">
               📷 תמונה מצורפת
             </span>
           )}
@@ -226,8 +226,8 @@ function ScrapReportCard({ report, onEdit, formatTime }: ScrapReportCardProps) {
           className={cn(
             "h-8 w-8 p-0 shrink-0",
             isApproved
-              ? "text-emerald-400 hover:bg-emerald-500/20"
-              : "text-rose-400 hover:bg-rose-500/20"
+              ? "text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/20"
+              : "text-rose-700 dark:text-rose-400 hover:bg-rose-500/20"
           )}
         >
           <Pencil className="h-4 w-4" />

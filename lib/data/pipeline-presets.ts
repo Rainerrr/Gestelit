@@ -18,7 +18,6 @@ type PipelinePresetStepRow = PipelinePresetStep & {
  * Fetch all pipeline presets with optional filters.
  */
 export async function fetchAllPipelinePresets(options?: {
-  includeInactive?: boolean;
   includeSteps?: boolean;
 }): Promise<PipelinePresetWithSteps[]> {
   const supabase = createServiceSupabase();
@@ -27,14 +26,10 @@ export async function fetchAllPipelinePresets(options?: {
     ? `*, pipeline_preset_steps(*, stations(*))`
     : "*";
 
-  let query = supabase
+  const query = supabase
     .from("pipeline_presets")
     .select(selectQuery)
     .order("name", { ascending: true });
-
-  if (!options?.includeInactive) {
-    query = query.eq("is_active", true);
-  }
 
   const { data, error } = await query;
 
@@ -54,6 +49,7 @@ export async function fetchAllPipelinePresets(options?: {
         pipeline_preset_id: pps.pipeline_preset_id,
         station_id: pps.station_id,
         position: pps.position,
+        requires_first_product_approval: pps.requires_first_product_approval ?? false,
         created_at: pps.created_at,
         station: pps.stations ?? undefined,
       }));
@@ -61,8 +57,6 @@ export async function fetchAllPipelinePresets(options?: {
     return {
       id: preset.id,
       name: preset.name,
-      description: preset.description,
-      is_active: preset.is_active,
       created_at: preset.created_at,
       updated_at: preset.updated_at,
       steps,
@@ -103,6 +97,7 @@ export async function getPipelinePresetById(
       pipeline_preset_id: pps.pipeline_preset_id,
       station_id: pps.station_id,
       position: pps.position,
+      requires_first_product_approval: pps.requires_first_product_approval ?? false,
       created_at: pps.created_at,
       station: pps.stations ?? undefined,
     }));
@@ -110,8 +105,6 @@ export async function getPipelinePresetById(
   return {
     id: preset.id,
     name: preset.name,
-    description: preset.description,
-    is_active: preset.is_active,
     created_at: preset.created_at,
     updated_at: preset.updated_at,
     steps,
@@ -124,9 +117,9 @@ export async function getPipelinePresetById(
 
 export type CreatePipelinePresetPayload = {
   name: string;
-  description?: string | null;
-  is_active?: boolean;
   station_ids?: string[];
+  /** Map of station_id -> requires_first_product_approval */
+  first_product_approval_flags?: Record<string, boolean>;
 };
 
 /**
@@ -142,8 +135,6 @@ export async function createPipelinePreset(
     .from("pipeline_presets")
     .insert({
       name: payload.name.trim(),
-      description: payload.description?.trim() || null,
-      is_active: payload.is_active ?? true,
     })
     .select("*")
     .single();
@@ -159,6 +150,7 @@ export async function createPipelinePreset(
       pipeline_preset_id: preset.id,
       station_id: stationId,
       position: index + 1,
+      requires_first_product_approval: payload.first_product_approval_flags?.[stationId] ?? false,
     }));
 
     const { data: createdSteps, error: stepsError } = await supabase
@@ -178,6 +170,7 @@ export async function createPipelinePreset(
       pipeline_preset_id: pps.pipeline_preset_id,
       station_id: pps.station_id,
       position: pps.position,
+      requires_first_product_approval: pps.requires_first_product_approval ?? false,
       created_at: pps.created_at,
       station: (pps as PipelinePresetStepRow).stations ?? undefined,
     }));
@@ -186,8 +179,6 @@ export async function createPipelinePreset(
   return {
     id: preset.id,
     name: preset.name,
-    description: preset.description,
-    is_active: preset.is_active,
     created_at: preset.created_at,
     updated_at: preset.updated_at,
     steps,
@@ -196,8 +187,6 @@ export async function createPipelinePreset(
 
 export type UpdatePipelinePresetPayload = Partial<{
   name: string;
-  description: string | null;
-  is_active: boolean;
 }>;
 
 /**
@@ -215,12 +204,6 @@ export async function updatePipelinePreset(
 
   if (payload.name !== undefined) {
     updateData.name = payload.name.trim();
-  }
-  if (payload.description !== undefined) {
-    updateData.description = payload.description?.trim() || null;
-  }
-  if (payload.is_active !== undefined) {
-    updateData.is_active = payload.is_active;
   }
 
   const { data, error } = await supabase
@@ -290,10 +273,12 @@ export async function deletePipelinePreset(id: string): Promise<void> {
  *
  * @param presetId - The pipeline preset ID
  * @param stationIds - Ordered array of station IDs (position = index + 1)
+ * @param firstProductApprovalFlags - Optional map of station_id -> requires_first_product_approval
  */
 export async function updatePipelinePresetSteps(
   presetId: string,
   stationIds: string[],
+  firstProductApprovalFlags?: Record<string, boolean>,
 ): Promise<PipelinePresetStep[]> {
   const supabase = createServiceSupabase();
 
@@ -316,6 +301,7 @@ export async function updatePipelinePresetSteps(
     pipeline_preset_id: presetId,
     station_id: stationId,
     position: index + 1,
+    requires_first_product_approval: firstProductApprovalFlags?.[stationId] ?? false,
   }));
 
   const { data, error } = await supabase
@@ -336,6 +322,7 @@ export async function updatePipelinePresetSteps(
     pipeline_preset_id: pps.pipeline_preset_id,
     station_id: pps.station_id,
     position: pps.position,
+    requires_first_product_approval: pps.requires_first_product_approval ?? false,
     created_at: pps.created_at,
     station: (pps as PipelinePresetStepRow).stations ?? undefined,
   }));

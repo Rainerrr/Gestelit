@@ -41,7 +41,11 @@ export async function PUT(request: Request, context: RouteContext) {
   }
 
   try {
-    const steps = await updatePipelinePresetSteps(id, body.station_ids);
+    const steps = await updatePipelinePresetSteps(
+      id,
+      body.station_ids,
+      body.first_product_approval_flags ?? {},
+    );
     return NextResponse.json({ steps });
   } catch (error) {
     if (error instanceof Error && error.message === "DUPLICATE_STATION_IN_PRESET") {

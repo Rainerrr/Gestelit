@@ -1,5 +1,3 @@
-import type { SupportedLanguage } from "@/lib/i18n/translations";
-
 export type WorkerRole = "worker" | "admin";
 export type StationType = string;
 export type SessionStatus = "active" | "completed" | "aborted";
@@ -14,7 +12,6 @@ export interface Worker {
   id: string;
   worker_code: string;
   full_name: string;
-  language?: SupportedLanguage | "auto" | null;
   role: WorkerRole;
   department?: string | null;
   is_active: boolean;
@@ -32,8 +29,6 @@ export interface Station {
   end_checklist?: StationChecklistItem[] | null;
   station_reasons?: StationReason[] | null;
   station_statuses?: StatusDefinition[] | null;
-  /** If true, first product QA approval required before production */
-  requires_first_product_qa?: boolean;
   created_at?: string;
   updated_at?: string;
 }
@@ -49,6 +44,8 @@ export interface Job {
   job_number: string;
   customer_name?: string | null;
   description?: string | null;
+  /** Target completion date for the job (YYYY-MM-DD format) */
+  due_date?: string | null;
   // planned_quantity removed - use SUM(job_items.planned_quantity) instead
   created_at?: string;
   updated_at?: string;
@@ -82,6 +79,12 @@ export interface WorkerResumeSession {
   station: Station | null;
   job: Job | null;
   graceExpiresAt: string;
+  /** Session totals derived from status_events for the current job item */
+  sessionTotals?: {
+    good: number;
+    scrap: number;
+    jobItemId: string | null;
+  };
 }
 
 export interface StatusEvent {
@@ -167,6 +170,8 @@ export interface ReportWithDetails extends Report {
   reporter?: Pick<Worker, "id" | "full_name" | "worker_code"> | null;
   report_reason?: ReportReason | null;
   status_event?: StatusEventForReport | null;
+  /** Job item details for QA reports */
+  job_item?: Pick<JobItem, "id" | "name"> | null;
 }
 
 export interface StationChecklistItem {
@@ -203,8 +208,6 @@ export interface StatusDefinition {
 export interface PipelinePreset {
   id: string;
   name: string;
-  description?: string | null;
-  is_active: boolean;
   created_at?: string;
   updated_at?: string;
 }
@@ -214,6 +217,8 @@ export interface PipelinePresetStep {
   pipeline_preset_id: string;
   station_id: string;
   position: number;
+  /** Default value for requires_first_product_approval when creating job items from this preset */
+  requires_first_product_approval?: boolean;
   created_at?: string;
   station?: Station;
 }
@@ -254,6 +259,8 @@ export interface JobItemStep {
   station_id: string;
   position: number;
   is_terminal: boolean;
+  /** When true, workers must submit and get approval for first product report before entering production status */
+  requires_first_product_approval?: boolean;
   created_at?: string;
   station?: Station;
 }

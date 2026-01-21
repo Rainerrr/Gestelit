@@ -6,6 +6,7 @@ import {
   closestCenter,
   KeyboardSensor,
   PointerSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   DragEndEvent,
@@ -29,8 +30,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Check,
   ChevronLeft,
   ChevronDown,
+  ClipboardCheck,
   Cpu,
   Download,
   Flag,
@@ -57,6 +60,8 @@ type SortableStationCardProps = {
   disabled: boolean;
   variant: "compact" | "default" | "large";
   isHorizontal: boolean;
+  requiresFirstProductQA?: boolean;
+  onToggleFirstProductQA?: () => void;
 };
 
 const SortableStationCard = ({
@@ -67,6 +72,8 @@ const SortableStationCard = ({
   disabled,
   variant,
   isHorizontal,
+  requiresFirstProductQA,
+  onToggleFirstProductQA,
 }: SortableStationCardProps) => {
   const {
     attributes,
@@ -79,7 +86,9 @@ const SortableStationCard = ({
 
   const style = {
     transform: CSS.Transform.toString(transform),
-    transition,
+    transition: transition ?? 'transform 150ms cubic-bezier(0.25, 1, 0.5, 1)',
+    transformOrigin: 'center center',
+    willChange: isDragging ? 'transform' : 'auto',
   };
 
   const isFirst = index === 0;
@@ -138,7 +147,7 @@ const SortableStationCard = ({
             "relative flex flex-col items-center border-2 transition-all",
             sizes.card,
             isDragging
-              ? "border-primary bg-primary/10 shadow-lg scale-105 z-50"
+              ? "border-primary bg-primary/10 shadow-lg scale-[1.02] z-50"
               : isFirst
                 ? "border-emerald-500/50 bg-emerald-500/5"
                 : isLast
@@ -207,6 +216,36 @@ const SortableStationCard = ({
             {item.station.name}
           </p>
 
+          {/* First Product QA Checkbox */}
+          {onToggleFirstProductQA && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleFirstProductQA();
+              }}
+              className={cn(
+                "absolute rounded border flex items-center justify-center transition-colors",
+                variant === "compact"
+                  ? "top-0.5 left-0.5 h-3.5 w-3.5"
+                  : "top-1 left-1 h-5 w-5",
+                requiresFirstProductQA
+                  ? "border-amber-500 bg-amber-500/20 text-amber-400"
+                  : "border-border bg-muted/50 text-muted-foreground hover:border-amber-400/50 hover:bg-amber-500/10"
+              )}
+              title="דרוש אישור מוצר ראשון"
+            >
+              {requiresFirstProductQA ? (
+                <Check className={variant === "compact" ? "h-2 w-2" : "h-3 w-3"} />
+              ) : (
+                <ClipboardCheck className={cn(
+                  variant === "compact" ? "h-2 w-2" : "h-3 w-3",
+                  "opacity-50"
+                )} />
+              )}
+            </button>
+          )}
+
           {/* Remove button */}
           {!disabled && (
             <Button
@@ -236,36 +275,36 @@ const SortableStationCard = ({
 
   // Vertical list card (mobile style)
   return (
-    <div className="flex items-center gap-2 w-full">
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        "relative flex items-center border rounded-xl p-3 gap-3 transition-all",
+        isDragging
+          ? "border-primary bg-primary/10 shadow-lg scale-[1.02] z-50"
+          : isFirst
+            ? "border-emerald-500/50 bg-emerald-500/5"
+            : isLast
+              ? "border-blue-500/50 bg-blue-500/5"
+              : "border-border bg-card/80 hover:border-border/80",
+        "group"
+      )}
+    >
+      {/* Drag handle */}
       <div
-        ref={setNodeRef}
-        style={style}
-        className={cn(
-          "relative flex items-center flex-1 border rounded-lg p-2 transition-all",
-          isDragging
-            ? "border-primary bg-primary/10 shadow-lg scale-[1.02] z-50"
-            : isFirst
-              ? "border-emerald-500/50 bg-emerald-500/5"
-              : isLast
-                ? "border-blue-500/50 bg-blue-500/5"
-                : "border-border bg-card/80 hover:border-border/80",
-          "group"
-        )}
+        {...attributes}
+        {...listeners}
+        className="flex items-center justify-center w-8 h-8 cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground rounded-lg bg-muted/50 border border-border flex-shrink-0"
       >
-        {/* Drag handle */}
-        <div
-          {...attributes}
-          {...listeners}
-          className="flex items-center justify-center w-6 h-6 mr-2 cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground"
-        >
-          <GripVertical className="h-4 w-4" />
-        </div>
+        <GripVertical className="h-4 w-4" />
+      </div>
 
-        {/* Position badge */}
+      {/* Position badge + Station icon combined */}
+      <div className="flex items-center gap-2 flex-shrink-0">
         <Badge
           variant="outline"
           className={cn(
-            "h-6 w-6 p-0 flex items-center justify-center text-xs font-mono mr-3",
+            "h-7 w-7 p-0 flex items-center justify-center text-xs font-mono",
             isFirst
               ? "border-emerald-500/50 text-emerald-400 bg-emerald-500/10"
               : isLast
@@ -276,10 +315,9 @@ const SortableStationCard = ({
           {index + 1}
         </Badge>
 
-        {/* Station icon */}
         <div
           className={cn(
-            "flex h-8 w-8 items-center justify-center rounded-lg mr-3",
+            "flex h-9 w-9 items-center justify-center rounded-lg",
             isFirst
               ? "bg-emerald-500/20 border border-emerald-500/30"
               : isLast
@@ -295,34 +333,56 @@ const SortableStationCard = ({
             <Cpu className="h-4 w-4 text-muted-foreground" />
           )}
         </div>
+      </div>
 
-        {/* Station name */}
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-foreground truncate">
-            {item.station.name}
-          </p>
-          <p className="text-[10px] text-muted-foreground">
-            {item.station.code}
-          </p>
-        </div>
+      {/* Station name */}
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-foreground truncate">
+          {item.station.name}
+        </p>
+        <p className="text-[10px] text-muted-foreground uppercase tracking-wide">
+          {item.station.code}
+        </p>
+      </div>
+
+      {/* Action buttons - grouped with separator */}
+      <div className="flex items-center gap-2 flex-shrink-0">
+        {/* First Product QA Checkbox (mobile) */}
+        {onToggleFirstProductQA && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleFirstProductQA();
+            }}
+            className={cn(
+              "h-9 w-9 rounded-lg border flex items-center justify-center transition-colors",
+              requiresFirstProductQA
+                ? "border-amber-500 bg-amber-500/20 text-amber-400"
+                : "border-border bg-muted/50 text-muted-foreground hover:border-amber-400/50 hover:bg-amber-500/10"
+            )}
+            title="דרוש אישור מוצר ראשון"
+          >
+            {requiresFirstProductQA ? (
+              <Check className="h-4 w-4" />
+            ) : (
+              <ClipboardCheck className="h-4 w-4 opacity-50" />
+            )}
+          </button>
+        )}
 
         {/* Remove button */}
         {!disabled && (
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7 text-muted-foreground hover:text-red-400 hover:bg-red-500/10 flex-shrink-0"
+            className="h-9 w-9 text-muted-foreground hover:text-red-400 hover:bg-red-500/10"
             onClick={onRemove}
           >
-            <Trash2 className="h-3.5 w-3.5" />
+            <Trash2 className="h-4 w-4" />
           </Button>
         )}
       </div>
-
-      {/* Arrow below (except last) */}
-      {!isLast && (
-        <ChevronDown className="h-4 w-4 text-muted-foreground/50 absolute -bottom-3 left-1/2 -translate-x-1/2 hidden" />
-      )}
     </div>
   );
 };
@@ -344,6 +404,8 @@ export type PipelineFlowEditorProps = {
   showPresetLoader?: boolean;
   showStationAdder?: boolean;
   className?: string;
+  firstProductFlags?: Record<string, boolean>;
+  onToggleFirstProductQA?: (stationId: string) => void;
 };
 
 export const PipelineFlowEditor = ({
@@ -363,12 +425,20 @@ export const PipelineFlowEditor = ({
   showPresetLoader = true,
   showStationAdder = true,
   className,
+  firstProductFlags = {},
+  onToggleFirstProductQA,
 }: PipelineFlowEditorProps) => {
-  // DnD sensors
+  // DnD sensors - reduced distance for more responsive feel
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 8,
+        distance: 4,
+      },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 150,
+        tolerance: 5,
       },
     }),
     useSensor(KeyboardSensor, {
@@ -500,7 +570,7 @@ export const PipelineFlowEditor = ({
             <Badge variant="outline" className="border-amber-500/30 bg-amber-500/10 text-amber-400">
               נעול
             </Badge>
-            <span>הצינור נעול לעריכה (הייצור התחיל)</span>
+            <span>התהליך נעול לעריכה (הייצור התחיל)</span>
           </div>
         )}
 
@@ -509,7 +579,7 @@ export const PipelineFlowEditor = ({
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted/50 border border-border mb-2">
               <Workflow className="h-6 w-6 opacity-50" />
             </div>
-            <p className="text-xs">בנו צינור מאפס או טענו תבנית</p>
+            <p className="text-xs">בנו תהליך מאפס או טענו תבנית</p>
           </div>
         ) : (
           <>
@@ -536,6 +606,12 @@ export const PipelineFlowEditor = ({
                         disabled={isDisabled}
                         variant={variant}
                         isHorizontal={true}
+                        requiresFirstProductQA={firstProductFlags[item.id]}
+                        onToggleFirstProductQA={
+                          onToggleFirstProductQA
+                            ? () => onToggleFirstProductQA(item.id)
+                            : undefined
+                        }
                       />
                     ))}
                   </div>
@@ -544,7 +620,7 @@ export const PipelineFlowEditor = ({
             </div>
 
             {/* Mobile: Vertical list */}
-            <div className="md:hidden space-y-2">
+            <div className="md:hidden space-y-3">
               <DndContext
                 sensors={sensors}
                 collisionDetection={closestCenter}
@@ -565,6 +641,12 @@ export const PipelineFlowEditor = ({
                       disabled={isDisabled}
                       variant={variant}
                       isHorizontal={false}
+                      requiresFirstProductQA={firstProductFlags[item.id]}
+                      onToggleFirstProductQA={
+                        onToggleFirstProductQA
+                          ? () => onToggleFirstProductQA(item.id)
+                          : undefined
+                      }
                     />
                   ))}
                 </SortableContext>

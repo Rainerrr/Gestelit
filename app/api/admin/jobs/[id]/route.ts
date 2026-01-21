@@ -8,6 +8,7 @@ import {
 type JobPayload = {
   customer_name?: string | null;
   description?: string | null;
+  due_date?: string | null;
   // planned_quantity removed - now set per job_item
 };
 
@@ -76,6 +77,7 @@ export async function PUT(
     const job = await updateJob(id, {
       customer_name: body.customer_name,
       description: body.description,
+      due_date: body.due_date,
     });
 
     return NextResponse.json({ job });

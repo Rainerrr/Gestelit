@@ -18,6 +18,7 @@ import type {
 
 type JobItemStationRow = JobItemStation & {
   stations: Station | null;
+  requires_first_product_approval?: boolean;
 };
 
 type PipelinePresetPartial = {
@@ -90,6 +91,7 @@ export async function fetchJobItemsForJob(
         station_id: jis.station_id,
         position: jis.position,
         is_terminal: jis.is_terminal,
+        requires_first_product_approval: jis.requires_first_product_approval ?? false,
         created_at: jis.created_at,
         station: jis.stations ?? undefined,
       }));
@@ -151,6 +153,7 @@ export async function getJobItemById(
       station_id: jis.station_id,
       position: jis.position,
       is_terminal: jis.is_terminal,
+      requires_first_product_approval: jis.requires_first_product_approval ?? false,
       created_at: jis.created_at,
       station: jis.stations ?? undefined,
     }));
@@ -198,6 +201,7 @@ export async function getJobItemStations(
       station_id: jis.station_id,
       position: jis.position,
       is_terminal: jis.is_terminal,
+      requires_first_product_approval: jis.requires_first_product_approval ?? false,
       created_at: jis.created_at,
       station: jis.stations ?? undefined,
     };
@@ -262,6 +266,8 @@ export type CreateJobItemPayload = {
   name: string;  // Required product name
   pipeline_preset_id?: string | null;
   station_ids?: string[];  // Pipeline stations (required if no preset)
+  /** Map of station_id -> requires_first_product_approval (optional) */
+  first_product_approval_flags?: Record<string, boolean>;
   planned_quantity: number;
   is_active?: boolean;
 };
@@ -335,6 +341,7 @@ export async function createJobItem(
     try {
       const stationIds = payload.station_ids;
       const totalStations = stationIds.length;
+      const approvalFlags = payload.first_product_approval_flags ?? {};
 
       // Insert job_item_steps
       const jobItemSteps = stationIds.map((stationId, index) => ({
@@ -342,6 +349,7 @@ export async function createJobItem(
         station_id: stationId,
         position: index + 1,
         is_terminal: index === totalStations - 1,
+        requires_first_product_approval: approvalFlags[stationId] ?? false,
       }));
 
       const { data: insertedSteps, error: stepsError } = await supabase
@@ -493,6 +501,79 @@ export async function deleteJobItem(id: string): Promise<void> {
   if (error) {
     throw new Error(`Failed to delete job item: ${error.message}`);
   }
+}
+
+// ============================================
+// JOB ITEM STEP MUTATIONS
+// ============================================
+
+export type UpdateJobItemStepPayload = {
+  requires_first_product_approval?: boolean;
+};
+
+/**
+ * Update a job item step.
+ * Allows toggling first product approval requirement.
+ */
+export async function updateJobItemStep(
+  stepId: string,
+  payload: UpdateJobItemStepPayload,
+): Promise<JobItemStation> {
+  const supabase = createServiceSupabase();
+
+  const updateData: Record<string, unknown> = {};
+
+  if (payload.requires_first_product_approval !== undefined) {
+    updateData.requires_first_product_approval = payload.requires_first_product_approval;
+  }
+
+  if (Object.keys(updateData).length === 0) {
+    // No changes - just fetch and return current state
+    const { data, error } = await supabase
+      .from("job_item_steps")
+      .select("*, stations(*)")
+      .eq("id", stepId)
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to fetch job item step: ${error.message}`);
+    }
+
+    const row = data as JobItemStationRow;
+    return {
+      id: row.id,
+      job_item_id: row.job_item_id,
+      station_id: row.station_id,
+      position: row.position,
+      is_terminal: row.is_terminal,
+      requires_first_product_approval: row.requires_first_product_approval ?? false,
+      created_at: row.created_at,
+      station: row.stations ?? undefined,
+    };
+  }
+
+  const { data, error } = await supabase
+    .from("job_item_steps")
+    .update(updateData)
+    .eq("id", stepId)
+    .select("*, stations(*)")
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to update job item step: ${error.message}`);
+  }
+
+  const row = data as JobItemStationRow;
+  return {
+    id: row.id,
+    job_item_id: row.job_item_id,
+    station_id: row.station_id,
+    position: row.position,
+    is_terminal: row.is_terminal,
+    requires_first_product_approval: row.requires_first_product_approval ?? false,
+    created_at: row.created_at,
+    station: row.stations ?? undefined,
+  };
 }
 
 // ============================================
@@ -737,6 +818,10 @@ export type AvailableJobItem = {
 /**
  * Get job items for a specific job that include a specific station.
  * Used when worker selects a job and needs to choose a job item.
+ *
+ * Note: completedGood is calculated from SUM of status_events.quantity_good
+ * to accurately reflect total quantities reported across ALL stations,
+ * not just terminal stations (which job_item_progress tracks).
  */
 export async function getJobItemsForStationAndJob(
   stationId: string,
@@ -756,8 +841,7 @@ export async function getJobItemsForStationAndJob(
         name,
         planned_quantity,
         is_active,
-        pipeline_presets:pipeline_preset_id(name),
-        job_item_progress(completed_good)
+        pipeline_presets:pipeline_preset_id(name)
       )
     `)
     .eq("station_id", stationId)
@@ -768,7 +852,36 @@ export async function getJobItemsForStationAndJob(
     throw new Error(`Failed to fetch job items: ${error.message}`);
   }
 
-  return (data ?? []).map((row) => {
+  if (!data || data.length === 0) {
+    return [];
+  }
+
+  // Get unique job item IDs
+  const jobItemIds = [...new Set(data.map((row) => {
+    const typedRow = row as unknown as { job_item_id: string };
+    return typedRow.job_item_id;
+  }))];
+
+  // Fetch actual completed quantities from status_events
+  // This gives us the TRUE total reported across ALL stations, not just terminal
+  const { data: totalsData, error: totalsError } = await supabase
+    .from("status_events")
+    .select("job_item_id, quantity_good")
+    .in("job_item_id", jobItemIds)
+    .gt("quantity_good", 0);
+
+  if (totalsError) {
+    throw new Error(`Failed to fetch quantity totals: ${totalsError.message}`);
+  }
+
+  // Sum quantities per job item
+  const completedTotals = new Map<string, number>();
+  for (const event of totalsData ?? []) {
+    const current = completedTotals.get(event.job_item_id) ?? 0;
+    completedTotals.set(event.job_item_id, current + (event.quantity_good ?? 0));
+  }
+
+  return data.map((row) => {
     const typedRow = row as unknown as {
       id: string;
       job_item_id: string;
@@ -778,12 +891,12 @@ export async function getJobItemsForStationAndJob(
         name: string;
         planned_quantity: number;
         pipeline_presets: { name: string } | null;
-        job_item_progress: { completed_good: number } | null;
       };
     };
 
     const item = typedRow.job_items;
-    const completedGood = item.job_item_progress?.completed_good ?? 0;
+    // Use actual total from status_events, not job_item_progress
+    const completedGood = completedTotals.get(item.id) ?? 0;
     // Use explicit name, fallback to preset name if somehow name is missing
     const name = item.name || item.pipeline_presets?.name || "מוצר";
 
@@ -807,6 +920,9 @@ export async function getJobItemsForStationAndJob(
 /**
  * Get count of uncompleted job items for each station assigned to a worker.
  * Used for station-first selection flow to show job availability per station.
+ *
+ * Note: Uses SUM of status_events.quantity_good to accurately determine
+ * which job items are truly uncompleted (not just terminal progress).
  */
 export async function getJobItemCountsByStation(
   workerId: string,
@@ -828,8 +944,7 @@ export async function getJobItemCountsByStation(
     return new Map();
   }
 
-  // 2. For each station, count active job items that aren't completed
-  // A job item is "uncompleted" if: is_active AND (completed_good < planned_quantity OR no progress record)
+  // 2. Get all active job items at these stations
   const { data, error } = await supabase
     .from("job_item_steps")
     .select(`
@@ -837,8 +952,7 @@ export async function getJobItemCountsByStation(
       job_items!inner(
         id,
         is_active,
-        planned_quantity,
-        job_item_progress(completed_good)
+        planned_quantity
       )
     `)
     .in("station_id", stationIds)
@@ -848,7 +962,39 @@ export async function getJobItemCountsByStation(
     throw new Error(`Failed to fetch job item counts: ${error.message}`);
   }
 
-  // 3. Count uncompleted items per station
+  if (!data || data.length === 0) {
+    // Initialize all stations with 0
+    const countMap = new Map<string, number>();
+    for (const stationId of stationIds) {
+      countMap.set(stationId, 0);
+    }
+    return countMap;
+  }
+
+  // 3. Get all unique job item IDs and fetch their actual totals from status_events
+  const jobItemIds = [...new Set(data.map((row) => {
+    const typedRow = row as unknown as { job_items: { id: string } };
+    return typedRow.job_items.id;
+  }))];
+
+  const { data: totalsData, error: totalsError } = await supabase
+    .from("status_events")
+    .select("job_item_id, quantity_good")
+    .in("job_item_id", jobItemIds)
+    .gt("quantity_good", 0);
+
+  if (totalsError) {
+    throw new Error(`Failed to fetch quantity totals: ${totalsError.message}`);
+  }
+
+  // Sum quantities per job item
+  const completedTotals = new Map<string, number>();
+  for (const event of totalsData ?? []) {
+    const current = completedTotals.get(event.job_item_id) ?? 0;
+    completedTotals.set(event.job_item_id, current + (event.quantity_good ?? 0));
+  }
+
+  // 4. Count uncompleted items per station
   const countMap = new Map<string, number>();
 
   // Initialize all stations with 0
@@ -857,17 +1003,16 @@ export async function getJobItemCountsByStation(
   }
 
   // Count items where completed < planned
-  for (const row of data ?? []) {
+  for (const row of data) {
     const typedRow = row as unknown as {
       station_id: string;
       job_items: {
         id: string;
         planned_quantity: number;
-        job_item_progress: { completed_good: number } | null;
       };
     };
 
-    const completedGood = typedRow.job_items.job_item_progress?.completed_good ?? 0;
+    const completedGood = completedTotals.get(typedRow.job_items.id) ?? 0;
     const plannedQuantity = typedRow.job_items.planned_quantity;
 
     // Only count if not completed
@@ -883,6 +1028,9 @@ export async function getJobItemCountsByStation(
 /**
  * Get all job items available at a specific station (for station-first flow sheet).
  * Returns job items with progress info, grouped by job.
+ *
+ * Note: completedGood is calculated from SUM of status_events.quantity_good
+ * to accurately reflect total quantities reported across ALL stations.
  */
 export async function getJobItemsAtStation(
   stationId: string,
@@ -908,7 +1056,6 @@ export async function getJobItemsAtStation(
         name,
         planned_quantity,
         is_active,
-        job_item_progress(completed_good),
         jobs:job_id(id, job_number, customer_name)
       )
     `)
@@ -919,7 +1066,34 @@ export async function getJobItemsAtStation(
     throw new Error(`Failed to fetch job items at station: ${error.message}`);
   }
 
-  return (data ?? []).map((row) => {
+  if (!data || data.length === 0) {
+    return [];
+  }
+
+  // Get unique job item IDs and fetch actual totals from status_events
+  const jobItemIds = [...new Set(data.map((row) => {
+    const typedRow = row as unknown as { job_items: { id: string } };
+    return typedRow.job_items.id;
+  }))];
+
+  const { data: totalsData, error: totalsError } = await supabase
+    .from("status_events")
+    .select("job_item_id, quantity_good")
+    .in("job_item_id", jobItemIds)
+    .gt("quantity_good", 0);
+
+  if (totalsError) {
+    throw new Error(`Failed to fetch quantity totals: ${totalsError.message}`);
+  }
+
+  // Sum quantities per job item
+  const completedTotals = new Map<string, number>();
+  for (const event of totalsData ?? []) {
+    const current = completedTotals.get(event.job_item_id) ?? 0;
+    completedTotals.set(event.job_item_id, current + (event.quantity_good ?? 0));
+  }
+
+  return data.map((row) => {
     const typedRow = row as unknown as {
       id: string;
       job_items: {
@@ -927,7 +1101,6 @@ export async function getJobItemsAtStation(
         job_id: string;
         name: string;
         planned_quantity: number;
-        job_item_progress: { completed_good: number } | null;
         jobs: { id: string; job_number: string; customer_name: string | null } | null;
       };
     };
@@ -940,7 +1113,7 @@ export async function getJobItemsAtStation(
       customerName: item.jobs?.customer_name ?? null,
       name: item.name,
       plannedQuantity: item.planned_quantity,
-      completedGood: item.job_item_progress?.completed_good ?? 0,
+      completedGood: completedTotals.get(item.id) ?? 0,
       jobItemStepId: typedRow.id,
     };
   });

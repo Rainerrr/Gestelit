@@ -38,17 +38,18 @@ import {
 } from "@/contexts/PipelineContext";
 import {
   bindJobItemToSessionApi,
-  checkFirstProductQAApi,
+  checkFirstProductApprovalApi,
   createReportApi,
   createStatusEventWithReportApi,
   endProductionStatusApi,
   fetchJobItemsAtStationApi,
   fetchReportReasonsApi,
   fetchSessionScrapReportsApi,
+  fetchSessionTotalsApi,
   startStatusEventApi,
-  submitFirstProductQARequestApi,
+  submitFirstProductApprovalApi,
   takeoverSessionApi,
-  type FirstProductQAStatus,
+  type FirstProductApprovalStatus,
 } from "@/lib/api/client";
 import {
   JobSelectionSheet,
@@ -61,9 +62,10 @@ import {
   type QuantityReportResult,
 } from "@/components/work/quantity-report-dialog";
 import {
-  FirstProductQADialog,
-  type FirstProductQADialogMode,
-} from "@/components/work/first-product-qa-dialog";
+  FirstProductApprovalBanner,
+  type FirstProductApprovalBannerStatus,
+  type FirstProductApprovalSubmitData,
+} from "@/components/work/first-product-approval-banner";
 import {
   JobCompletionDialog,
   type AvailableJobItemForCompletion,
@@ -248,14 +250,25 @@ function WorkPageContent() {
     statusEventId: string;
     reportType: "malfunction" | "general";
   } | null>(null);
+  // Track pending production exit data when leaving to report-requiring status
+  // This defers the API call until the report is actually submitted
+  const [pendingProductionExit, setPendingProductionExit] = useState<{
+    productionStatusEventId: string;
+    targetStatusId: string;
+    reportType: "malfunction" | "general";
+    quantities: {
+      good: number;
+      scrap: number;
+      scrapNote?: string;
+      scrapImage?: File | null;
+    };
+    shouldCloseJobItem: boolean;
+  } | null>(null);
 
-  // First Product QA dialog state
-  const [isQADialogOpen, setQADialogOpen] = useState(false);
-  const [qaDialogMode, setQADialogMode] = useState<FirstProductQADialogMode>("request");
-  const [qaStatus, setQAStatus] = useState<FirstProductQAStatus | null>(null);
-  const [isQASubmitting, setIsQASubmitting] = useState(false);
-  // Pending job selection result - stored while waiting for QA approval
-  const [pendingQAJobSelection, setPendingQAJobSelection] = useState<JobSelectionResult | null>(null);
+  // First Product Approval state (per-step, per-session)
+  const [approvalStatus, setApprovalStatus] = useState<FirstProductApprovalStatus | null>(null);
+  const [isApprovalSubmitting, setIsApprovalSubmitting] = useState(false);
+  const [isApprovalPolling, setIsApprovalPolling] = useState(false);
 
   // Job completion dialog state
   const [isCompletionDialogOpen, setCompletionDialogOpen] = useState(false);
@@ -307,6 +320,87 @@ function WorkPageContent() {
         setScrapReports([]);
       });
   }, [sessionId, totals.scrap]);
+
+  // Check first product approval status when session or job item changes
+  useEffect(() => {
+    if (!sessionId) {
+      setApprovalStatus(null);
+      return;
+    }
+
+    const checkApproval = async () => {
+      try {
+        const status = await checkFirstProductApprovalApi(sessionId);
+        setApprovalStatus(status);
+      } catch (err) {
+        console.error("[work] Failed to check first product approval:", err);
+        setApprovalStatus(null);
+      }
+    };
+
+    void checkApproval();
+  }, [sessionId, activeJobItem?.id]); // Re-check when job item changes
+
+  // Poll for approval when status is pending
+  useEffect(() => {
+    if (!sessionId || approvalStatus?.status !== "pending") {
+      setIsApprovalPolling(false);
+      return;
+    }
+
+    setIsApprovalPolling(true);
+    const intervalId = setInterval(async () => {
+      try {
+        const status = await checkFirstProductApprovalApi(sessionId);
+        setApprovalStatus(status);
+        if (status.status === "approved") {
+          setIsApprovalPolling(false);
+        }
+      } catch (err) {
+        console.error("[work] Approval poll error:", err);
+      }
+    }, 5000); // Poll every 5 seconds
+
+    return () => {
+      clearInterval(intervalId);
+      setIsApprovalPolling(false);
+    };
+  }, [sessionId, approvalStatus?.status]);
+
+  // Track if we've already synced totals for this session to avoid redundant API calls
+  const hasSyncedTotalsRef = useRef<string | null>(null);
+
+  // Sync session totals from database when work page loads
+  // This is a critical fix for the quantity mismatch bug:
+  // - When a session is resumed, the context might have totals = {good: 0, scrap: 0}
+  // - This effect fetches the actual totals from the database (single source of truth)
+  // - We only sync once per session to avoid overwriting user's in-progress work
+  useEffect(() => {
+    // Skip if no session or if we've already synced for this session
+    if (!sessionId || hasSyncedTotalsRef.current === sessionId) {
+      return;
+    }
+
+    // Mark as synced immediately to prevent duplicate calls
+    hasSyncedTotalsRef.current = sessionId;
+
+    // Fetch totals from database
+    fetchSessionTotalsApi(sessionId)
+      .then((dbTotals) => {
+        // Only update if we have actual data
+        if (dbTotals) {
+          console.log("[work] Syncing totals from DB:", dbTotals);
+          updateTotals({
+            good: dbTotals.good,
+            scrap: dbTotals.scrap,
+          });
+        }
+      })
+      .catch((err) => {
+        // Log but don't fail - user can still work, totals will accumulate from 0
+        console.warn("[work] Failed to sync session totals:", err);
+      });
+  }, [sessionId, updateTotals]);
 
   // Force job selection when in production without an active job item
   // This can happen if:
@@ -537,6 +631,10 @@ function WorkPageContent() {
         created_at: new Date().toISOString(),
       });
 
+      // Check if first product approval is required for the new job item's step
+      const newApprovalStatus = await checkFirstProductApprovalApi(sessionId);
+      setApprovalStatus(newApprovalStatus);
+
       // Reset session totals for the new job item
       updateTotals({ good: 0, scrap: 0 });
 
@@ -641,44 +739,14 @@ function WorkPageContent() {
     setStatusError(null);
 
     try {
-      // Check if station requires first product QA
-      if (station.requires_first_product_qa) {
-        // Check QA approval status
-        const qaCheckResult = await checkFirstProductQAApi(
-          result.jobItem.id,
-          station.id,
-        );
-        setQAStatus(qaCheckResult);
-
-        if (!qaCheckResult.approved) {
-          // QA not approved - show QA dialog
-          setPendingQAJobSelection(result);
-          setJobSelectionDialogOpen(false);
-
-          if (qaCheckResult.pendingReport) {
-            // There's already a pending QA request - show waiting mode
-            setQADialogMode("waiting");
-          } else {
-            // No pending request - show request mode
-            setQADialogMode("request");
-          }
-          setQADialogOpen(true);
-          setIsJobSelectionSubmitting(false);
-          return;
-        }
-        // QA is approved - continue with production
-      }
-
-      // Proceed with starting production (QA approved or not required)
+      // Proceed with starting production
       await proceedWithProduction(result);
     } catch (error) {
       console.error("[work] Failed to complete job selection:", error);
       const message = error instanceof Error ? error.message : String(error);
 
       // Provide specific error messages based on error type
-      if (message.includes("QA") || message.includes("qa")) {
-        setStatusError("שגיאה בבדיקת אישור QA. נסה שנית.");
-      } else if (message.includes("bind") || message.includes("session")) {
+      if (message.includes("bind") || message.includes("session")) {
         setStatusError("שגיאה בקישור עבודה לתפק\"ע. נסה שנית.");
       } else if (message.includes("network") || message.includes("fetch")) {
         setStatusError("שגיאת רשת. בדוק את החיבור ונסה שנית.");
@@ -721,27 +789,51 @@ function WorkPageContent() {
         created_at: new Date().toISOString(),
       });
 
-      // 4. Now switch to production status and capture the event ID
-      setCurrentStatus(pendingProductionStatusId);
-      const statusEvent = await startStatusEventApi({
-        sessionId,
-        statusDefinitionId: pendingProductionStatusId,
-      });
+      // 4. Check if first product approval is required for this step
+      // This must be checked AFTER binding the job item, as the API uses session's bound step
+      const newApprovalStatus = await checkFirstProductApprovalApi(sessionId);
+      setApprovalStatus(newApprovalStatus);
 
-      // 5. Store the status event ID for quantity reporting later
-      if (statusEvent?.id) {
-        setCurrentStatusEventId(statusEvent.id);
+      // 5. If first product approval is required and not yet approved, switch to setup status
+      // Don't switch to production - the worker must submit and get approval first
+      const isApprovalBlocking = newApprovalStatus.required && newApprovalStatus.status !== "approved";
+
+      if (isApprovalBlocking) {
+        // Find a setup status (כיוונים) to switch to instead of production
+        const setupStatus = orderedStatuses.find(s => s.machine_state === "setup");
+        if (setupStatus) {
+          setCurrentStatus(setupStatus.id);
+          const statusEvent = await startStatusEventApi({
+            sessionId,
+            statusDefinitionId: setupStatus.id,
+          });
+          if (statusEvent?.id) {
+            setCurrentStatusEventId(statusEvent.id);
+          }
+        }
+        // The banner will show prompting for first product approval
+      } else {
+        // 6. Switch to production status and capture the event ID
+        setCurrentStatus(pendingProductionStatusId);
+        const statusEvent = await startStatusEventApi({
+          sessionId,
+          statusDefinitionId: pendingProductionStatusId,
+        });
+
+        // 7. Store the status event ID for quantity reporting later
+        if (statusEvent?.id) {
+          setCurrentStatusEventId(statusEvent.id);
+        }
       }
 
-      // 6. Reset session totals for the new job item
+      // 8. Reset session totals for the new job item
       // This is critical - totals are per-job-item, not per-session
       updateTotals({ good: 0, scrap: 0 });
 
-      // 7. Close dialog and reset state
+      // 9. Close dialog and reset state
       setJobSelectionDialogOpen(false);
       setPendingProductionStatusId(null);
       setIsForceJobSelection(false);
-      setPendingQAJobSelection(null);
       setExcludeJobItemId(null);
     } catch (error) {
       console.error("[work] Failed to bind job and start production:", error);
@@ -776,6 +868,42 @@ function WorkPageContent() {
     if (!sessionId || !currentStatusEventId || !pendingExitStatusId) {
       console.error("[work] Missing required data for quantity report");
       return;
+    }
+
+    // Check if we're leaving production to a status that requires a report
+    // If so, DEFER the API call until the report is submitted
+    if (pendingReportAfterQuantity) {
+      const { statusId: targetStatusId, reportType } = pendingReportAfterQuantity;
+
+      // Store all data for deferred API call - DO NOT call API yet
+      setPendingProductionExit({
+        productionStatusEventId: currentStatusEventId,
+        targetStatusId,
+        reportType,
+        quantities: {
+          good: result.additionalGood,
+          scrap: result.additionalScrap,
+          scrapNote: result.scrapNote,
+          scrapImage: result.scrapImage,
+        },
+        shouldCloseJobItem: result.shouldCloseJobItem ?? false,
+      });
+
+      // Close quantity dialog
+      setQuantityReportDialogOpen(false);
+      setPendingReportAfterQuantity(null);
+      setPendingExitStatusId(null);
+
+      // Open appropriate report dialog
+      if (reportType === "malfunction") {
+        setFaultDialogOpen(true);
+      } else if (reportType === "general") {
+        if (generalReportReasons.length === 0) {
+          fetchReportReasonsApi().then(setGeneralReportReasons).catch(console.error);
+        }
+        setGeneralReportDialogOpen(true);
+      }
+      return; // Exit early - don't call API
     }
 
     setIsQuantityReportSubmitting(true);
@@ -1037,14 +1165,23 @@ function WorkPageContent() {
 
         // 5. Reset session totals for new job item
         updateTotals({ good: 0, scrap: 0 });
-      } else {
-        // User chose stoppage - they're already in a stoppage status
-        // (created by endProductionStatusApi when they exited production)
-        // Just close the dialog without creating another status event
-        // This prevents creating duplicate/orphan status events
+      } else if (result.action === "setup") {
+        // User chose setup - transition to the designated setup status
+        const SETUP_STATUS_ID = "aba59ce0-d35a-4a2a-a95f-5e0339f4942e";
 
-        // Note: completionExitStatusId contains the status they transitioned to
-        // when leaving production. We don't need to do anything else here.
+        const statusEvent = await startStatusEventApi({
+          sessionId,
+          statusDefinitionId: SETUP_STATUS_ID,
+        });
+        setCurrentStatus(SETUP_STATUS_ID);
+        if (statusEvent?.id) {
+          setCurrentStatusEventId(statusEvent.id);
+        }
+
+        // Clear active job item and job since we're in setup
+        setActiveJobItem(null);
+        setJob(undefined);
+        updateTotals({ good: 0, scrap: 0 });
       }
 
       // Close completion dialog and clean up state
@@ -1059,81 +1196,32 @@ function WorkPageContent() {
     }
   };
 
-  // Handler for QA dialog submission
-  const handleQADialogSubmit = async (data: { description?: string; image?: File | null }) => {
-    if (!station || !pendingQAJobSelection) return;
+  // Handler for step-level first product approval submission
+  const handleApprovalSubmit = async (data: FirstProductApprovalSubmitData) => {
+    if (!sessionId) return;
 
-    setIsQASubmitting(true);
-    setStatusError(null);
-
+    setIsApprovalSubmitting(true);
     try {
-      // Submit the QA request
-      await submitFirstProductQARequestApi({
-        jobItemId: pendingQAJobSelection.jobItem.id,
-        stationId: station.id,
+      const result = await submitFirstProductApprovalApi({
         sessionId,
-        workerId: worker?.id,
         description: data.description,
         image: data.image,
       });
-
-      // Switch to waiting mode
-      setQADialogMode("waiting");
-
-      // Re-check QA status to get the pending report
-      const newStatus = await checkFirstProductQAApi(
-        pendingQAJobSelection.jobItem.id,
-        station.id,
-      );
-      setQAStatus(newStatus);
-    } catch (error) {
-      console.error("[work] Failed to submit QA request:", error);
-      setStatusError("שגיאה בשליחת בקשת QA");
-    } finally {
-      setIsQASubmitting(false);
-    }
-  };
-
-  // Handler for QA dialog cancel
-  const handleQADialogCancel = () => {
-    // If in waiting mode or request mode, allow closing (but don't proceed to production)
-    setQADialogOpen(false);
-    setPendingQAJobSelection(null);
-    setPendingProductionStatusId(null);
-    setIsForceJobSelection(false);
-  };
-
-  // Periodic check for QA approval (when in waiting mode)
-  useEffect(() => {
-    if (!isQADialogOpen || qaDialogMode !== "waiting" || !pendingQAJobSelection || !station) {
-      return;
-    }
-
-    // Poll every 5 seconds for approval
-    const interval = setInterval(async () => {
-      try {
-        const newStatus = await checkFirstProductQAApi(
-          pendingQAJobSelection.jobItem.id,
-          station.id,
-        );
-        setQAStatus(newStatus);
-
-        if (newStatus.approved) {
-          // QA approved! Show approved mode briefly, then proceed
-          setQADialogMode("approved");
-          // After brief delay, proceed to production
-          setTimeout(() => {
-            setQADialogOpen(false);
-            void proceedWithProduction(pendingQAJobSelection);
-          }, 1500);
-        }
-      } catch (error) {
-        console.error("[work] Failed to check QA status:", error);
+      if (result.success) {
+        // Update status to pending
+        setApprovalStatus({
+          required: true,
+          status: "pending",
+          pendingReport: result.report,
+          approvedReport: null,
+        });
       }
-    }, 5000);
-
-    return () => clearInterval(interval);
-  }, [isQADialogOpen, qaDialogMode, pendingQAJobSelection, station]);
+    } catch (error) {
+      console.error("[work] Failed to submit first product approval:", error);
+    } finally {
+      setIsApprovalSubmitting(false);
+    }
+  };
 
   const handleFaultImageChange = (file: File | null) => {
     setFaultImage(file);
@@ -1164,7 +1252,111 @@ function WorkPageContent() {
     setGeneralReportError(null);
     setIsGeneralReportSubmitting(true);
     try {
-      if (pendingReportForCurrentStatus?.reportType === "general") {
+      // NEW: Handle deferred production exit (report enforcement)
+      if (pendingProductionExit?.reportType === "general") {
+        const { productionStatusEventId, targetStatusId, quantities, shouldCloseJobItem } = pendingProductionExit;
+
+        // 1. Call endProductionStatusApi with stored quantities
+        const response = await endProductionStatusApi({
+          sessionId,
+          statusEventId: productionStatusEventId,
+          quantityGood: quantities.good,
+          quantityScrap: quantities.scrap,
+          nextStatusId: targetStatusId,
+        });
+
+        // 2. Create scrap report if needed (linked to PRODUCTION event)
+        if (quantities.scrap > 0 && quantities.scrapNote) {
+          try {
+            await createReportApi({
+              type: "scrap",
+              sessionId,
+              stationId: station.id,
+              workerId: worker?.id,
+              description: quantities.scrapNote,
+              image: quantities.scrapImage ?? undefined,
+              statusEventId: productionStatusEventId,
+            });
+          } catch (err) {
+            console.error("[work] Failed to create scrap report:", err);
+          }
+        }
+
+        // 3. Create general report linked to NEW status event
+        if (response.newStatusEvent?.id) {
+          await createReportApi({
+            type: "general",
+            sessionId,
+            stationId: station.id,
+            reportReasonId: generalReportReason,
+            description: generalReportNote,
+            image: generalReportImage,
+            workerId: worker?.id,
+            statusEventId: response.newStatusEvent.id,
+          });
+        }
+
+        // 4. Update UI state
+        updateTotals({
+          good: totals.good + quantities.good,
+          scrap: totals.scrap + quantities.scrap,
+        });
+        setCurrentStatus(targetStatusId);
+        if (response.newStatusEvent?.id) {
+          setCurrentStatusEventId(response.newStatusEvent.id);
+        }
+
+        // Update activeJobItem.completedGood to keep in sync
+        if (activeJobItem) {
+          setActiveJobItem({
+            ...activeJobItem,
+            completedGood: (activeJobItem.completedGood ?? 0) + quantities.good,
+          });
+        }
+
+        // 5. Handle job completion if needed
+        if (shouldCloseJobItem) {
+          // Store completed job item info
+          const jobItemIdToExclude = activeJobItem?.id ?? null;
+          setCompletedJobItemName(activeJobItem?.name ?? "");
+          setCompletedJobItemId(jobItemIdToExclude);
+
+          // Clear active job item - it's completed
+          setActiveJobItem(null);
+
+          // Open completion dialog
+          setCompletionLoading(true);
+          setCompletionDialogOpen(true);
+          try {
+            const items = await fetchJobItemsAtStationApi(station.id);
+            const available: AvailableJobItemForCompletion[] = items
+              .filter((item) =>
+                item.completedGood < item.plannedQuantity &&
+                item.id !== jobItemIdToExclude
+              )
+              .map((item) => ({
+                id: item.id,
+                jobId: item.jobId,
+                jobNumber: item.jobNumber,
+                customerName: item.customerName,
+                name: item.name,
+                plannedQuantity: item.plannedQuantity,
+                completedGood: item.completedGood,
+                jobItemStepId: item.jobItemStepId,
+              }));
+            setAvailableJobItemsForCompletion(available);
+          } catch (err) {
+            console.error("[work] Failed to fetch available job items:", err);
+            setAvailableJobItemsForCompletion([]);
+          } finally {
+            setCompletionLoading(false);
+          }
+        }
+
+        // 6. Clean up
+        setPendingProductionExit(null);
+
+      } else if (pendingReportForCurrentStatus?.reportType === "general") {
         // Report for already-created status event (after quantity submission)
         // Just link the report to the existing status event - no new status change
         await createReportApi({
@@ -1303,6 +1495,17 @@ function WorkPageContent() {
             } : undefined}
           />
 
+          {/* First Product Approval Banner - shows when step requires approval */}
+          {activeJobItem && approvalStatus?.required && (
+            <FirstProductApprovalBanner
+              status={approvalStatus.status as FirstProductApprovalBannerStatus}
+              onSubmit={handleApprovalSubmit}
+              jobItemName={activeJobItem.name}
+              stationName={station.name}
+              isSubmitting={isApprovalSubmitting}
+            />
+          )}
+
           {/* Scrap Section - only when scrap > 0 */}
           <ScrapSection
             sessionScrapCount={totals.scrap}
@@ -1326,16 +1529,22 @@ function WorkPageContent() {
                   const isActive = currentStatus === status.id;
                   const colorHex = getStatusHex(status.id, dictionary, station.id);
                   const visual = buildStatusVisual(colorHex);
+                  // Check if this is a production status and approval is pending
+                  const isProductionStatusButton = status.machine_state === "production";
+                  const isApprovalPending = approvalStatus?.required && approvalStatus?.status !== "approved";
+                  const isProductionBlocked = isProductionStatusButton && isApprovalPending && !isActive;
                   return (
                     <Button
                       key={status.id}
                       type="button"
                       variant="outline"
+                      disabled={isProductionBlocked}
                       className={cn(
                         "h-auto w-full justify-between rounded-xl border p-4 text-base font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
                         isActive
                           ? "shadow"
                           : "border-border bg-white text-foreground hover:border-primary/40 hover:bg-primary/5 dark:bg-secondary dark:text-foreground/80 dark:hover:bg-accent",
+                        isProductionBlocked && "opacity-50 cursor-not-allowed",
                       )}
                       aria-pressed={isActive}
                       style={
@@ -1424,6 +1633,10 @@ function WorkPageContent() {
       </section>
 
       <Dialog open={isFaultDialogOpen} onOpenChange={(open) => {
+        // Block close if report required for deferred production exit
+        if (!open && pendingProductionExit?.reportType === "malfunction") {
+          return; // Block close
+        }
         // Don't allow closing if report is required for current status (after quantity submission)
         if (!open && pendingReportForCurrentStatus?.reportType === "malfunction") {
           return; // Block close
@@ -1511,8 +1724,8 @@ function WorkPageContent() {
                 {faultError}
               </p>
             ) : null}
-            {/* Hide cancel button when report is required for current status */}
-            {!pendingReportForCurrentStatus && (
+            {/* Hide cancel button when report is required */}
+            {!pendingReportForCurrentStatus && !pendingProductionExit && (
               <Button
                 type="button"
                 variant="ghost"
@@ -1534,7 +1747,111 @@ function WorkPageContent() {
                 setFaultError(null);
                 setIsFaultSubmitting(true);
                 try {
-                  if (pendingReportForCurrentStatus?.reportType === "malfunction") {
+                  // NEW: Handle deferred production exit (report enforcement)
+                  if (pendingProductionExit?.reportType === "malfunction") {
+                    const { productionStatusEventId, targetStatusId, quantities, shouldCloseJobItem } = pendingProductionExit;
+
+                    // 1. Call endProductionStatusApi with stored quantities
+                    const response = await endProductionStatusApi({
+                      sessionId,
+                      statusEventId: productionStatusEventId,
+                      quantityGood: quantities.good,
+                      quantityScrap: quantities.scrap,
+                      nextStatusId: targetStatusId,
+                    });
+
+                    // 2. Create scrap report if needed (linked to PRODUCTION event)
+                    if (quantities.scrap > 0 && quantities.scrapNote) {
+                      try {
+                        await createReportApi({
+                          type: "scrap",
+                          sessionId,
+                          stationId: station.id,
+                          workerId: worker?.id,
+                          description: quantities.scrapNote,
+                          image: quantities.scrapImage ?? undefined,
+                          statusEventId: productionStatusEventId,
+                        });
+                      } catch (err) {
+                        console.error("[work] Failed to create scrap report:", err);
+                      }
+                    }
+
+                    // 3. Create malfunction report linked to NEW status event
+                    if (response.newStatusEvent?.id) {
+                      await createReportApi({
+                        type: "malfunction",
+                        stationId: station.id,
+                        stationReasonId: faultReason,
+                        description: faultNote,
+                        image: faultImage,
+                        workerId: worker?.id,
+                        sessionId,
+                        statusEventId: response.newStatusEvent.id,
+                      });
+                    }
+
+                    // 4. Update UI state
+                    updateTotals({
+                      good: totals.good + quantities.good,
+                      scrap: totals.scrap + quantities.scrap,
+                    });
+                    setCurrentStatus(targetStatusId);
+                    if (response.newStatusEvent?.id) {
+                      setCurrentStatusEventId(response.newStatusEvent.id);
+                    }
+
+                    // Update activeJobItem.completedGood to keep in sync
+                    if (activeJobItem) {
+                      setActiveJobItem({
+                        ...activeJobItem,
+                        completedGood: (activeJobItem.completedGood ?? 0) + quantities.good,
+                      });
+                    }
+
+                    // 5. Handle job completion if needed
+                    if (shouldCloseJobItem) {
+                      // Store completed job item info
+                      const jobItemIdToExclude = activeJobItem?.id ?? null;
+                      setCompletedJobItemName(activeJobItem?.name ?? "");
+                      setCompletedJobItemId(jobItemIdToExclude);
+
+                      // Clear active job item - it's completed
+                      setActiveJobItem(null);
+
+                      // Open completion dialog
+                      setCompletionLoading(true);
+                      setCompletionDialogOpen(true);
+                      try {
+                        const items = await fetchJobItemsAtStationApi(station.id);
+                        const available: AvailableJobItemForCompletion[] = items
+                          .filter((item) =>
+                            item.completedGood < item.plannedQuantity &&
+                            item.id !== jobItemIdToExclude
+                          )
+                          .map((item) => ({
+                            id: item.id,
+                            jobId: item.jobId,
+                            jobNumber: item.jobNumber,
+                            customerName: item.customerName,
+                            name: item.name,
+                            plannedQuantity: item.plannedQuantity,
+                            completedGood: item.completedGood,
+                            jobItemStepId: item.jobItemStepId,
+                          }));
+                        setAvailableJobItemsForCompletion(available);
+                      } catch (err) {
+                        console.error("[work] Failed to fetch available job items:", err);
+                        setAvailableJobItemsForCompletion([]);
+                      } finally {
+                        setCompletionLoading(false);
+                      }
+                    }
+
+                    // 6. Clean up
+                    setPendingProductionExit(null);
+
+                  } else if (pendingReportForCurrentStatus?.reportType === "malfunction") {
                     // Report for already-created status event (after quantity submission)
                     // Just link the report to the existing status event - no new status change
                     await createReportApi({
@@ -1630,6 +1947,10 @@ function WorkPageContent() {
       </Dialog>
 
       <Dialog open={isGeneralReportDialogOpen} onOpenChange={(open) => {
+        // Block close if report required for deferred production exit
+        if (!open && pendingProductionExit?.reportType === "general") {
+          return; // Block close
+        }
         // Don't allow closing if report is required for current status (after quantity submission)
         if (!open && pendingReportForCurrentStatus?.reportType === "general") {
           return; // Block close
@@ -1717,8 +2038,8 @@ function WorkPageContent() {
                 {generalReportError}
               </p>
             ) : null}
-            {/* Hide cancel button when report is required for current status */}
-            {!pendingReportForCurrentStatus && (
+            {/* Hide cancel button when report is required */}
+            {!pendingReportForCurrentStatus && !pendingProductionExit && (
               <Button
                 type="button"
                 variant="ghost"
@@ -1820,19 +2141,6 @@ function WorkPageContent() {
         isSubmitting={isQuantityReportSubmitting}
         required={!isPendingJobSwitch}
         jobItemName={activeJobItem?.name}
-      />
-
-      {/* First Product QA Dialog - shown when station requires QA approval */}
-      <FirstProductQADialog
-        open={isQADialogOpen}
-        mode={qaDialogMode}
-        jobItemName={pendingQAJobSelection?.jobItem.name}
-        jobNumber={pendingQAJobSelection?.job.jobNumber}
-        pendingReport={qaStatus?.pendingReport}
-        onSubmit={handleQADialogSubmit}
-        onCancel={handleQADialogCancel}
-        isSubmitting={isQASubmitting}
-        required={false}
       />
 
       {/* Job Completion Dialog - shown when job item is completed */}

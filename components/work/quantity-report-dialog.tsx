@@ -350,15 +350,15 @@ export function QuantityReportDialog({
     <Dialog open={open} onOpenChange={handleDialogChange}>
       <DialogContent
         hideCloseButton={required}
-        className="max-w-lg border-2 border-slate-700 bg-slate-900 text-right"
+        className="max-w-lg border-2 border-border bg-card text-right"
       >
         <DialogHeader>
-          <DialogTitle className="text-xl font-bold text-slate-100">
+          <DialogTitle className="text-xl font-bold text-foreground">
             דיווח כמויות
           </DialogTitle>
           {jobItemName ? (
-            <DialogDescription className="text-slate-400">
-              מוצר: <span className="font-semibold text-slate-300">{jobItemName}</span>
+            <DialogDescription className="text-muted-foreground">
+              מוצר: <span className="font-semibold text-foreground">{jobItemName}</span>
             </DialogDescription>
           ) : null}
         </DialogHeader>
@@ -369,7 +369,7 @@ export function QuantityReportDialog({
           {/* RTL layout: first DOM element appears on RIGHT */}
           {/* Visual order (right to left): totalJob, total, additional */}
           {/* ============================================ */}
-          <div className="relative flex rounded-xl border-2 border-slate-600 bg-slate-800/50 p-1">
+          <div className="relative flex rounded-xl border-2 border-border bg-muted/50 p-1">
             {/* Sliding background indicator - positions for 3 tabs */}
             {/* In RTL flex: first item is at right-1, second at 33.333%, third at left-1 */}
             <div
@@ -392,7 +392,7 @@ export function QuantityReportDialog({
                 "relative flex-1 py-2.5 rounded-lg font-bold text-sm transition-colors z-10",
                 mode === "totalJob"
                   ? "text-cyan-300"
-                  : "text-slate-400 hover:text-slate-300"
+                  : "text-muted-foreground hover:text-foreground"
               )}
             >
               סה״כ לפק״ע
@@ -406,7 +406,7 @@ export function QuantityReportDialog({
                 "relative flex-1 py-2.5 rounded-lg font-bold text-sm transition-colors z-10",
                 mode === "total"
                   ? "text-cyan-300"
-                  : "text-slate-400 hover:text-slate-300"
+                  : "text-muted-foreground hover:text-foreground"
               )}
             >
               סה״כ למשמרת
@@ -420,7 +420,7 @@ export function QuantityReportDialog({
                 "relative flex-1 py-2.5 rounded-lg font-bold text-sm transition-colors z-10",
                 mode === "additional"
                   ? "text-cyan-300"
-                  : "text-slate-400 hover:text-slate-300"
+                  : "text-muted-foreground hover:text-foreground"
               )}
             >
               כמות נוספת
@@ -439,8 +439,8 @@ export function QuantityReportDialog({
                 {mode === "additional" && "כמות נוספת"}
               </Label>
               {plannedQuantity && (
-                <span className="text-sm text-slate-400">
-                  נדרש סהכ: <span className="font-bold text-emerald-300">{plannedQuantity.toLocaleString()}</span>
+                <span className="text-sm text-muted-foreground">
+                  נדרש סהכ: <span className="font-bold text-emerald-400">{plannedQuantity.toLocaleString()}</span>
                 </span>
               )}
             </div>
@@ -467,7 +467,7 @@ export function QuantityReportDialog({
               {mode === "additional" && (
                 <span className={cn(
                   "absolute left-4 top-1/2 -translate-y-1/2 text-[3rem] font-bold pointer-events-none leading-none transition-colors",
-                  goodInput ? "text-emerald-400/60" : "text-slate-500"
+                  goodInput ? "text-emerald-400/60" : "text-muted-foreground"
                 )}>
                   +
                 </span>
@@ -493,9 +493,9 @@ export function QuantityReportDialog({
                 style={{ fontSize: "3.5rem", lineHeight: "1" }}
                 className={cn(
                   "h-24 text-center font-bold tabular-nums",
-                  "border-2 bg-slate-800/50",
+                  "border-2 bg-card/50",
                   "[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
-                  "placeholder:text-slate-500 placeholder:opacity-100",
+                  "placeholder:text-muted-foreground placeholder:opacity-100",
                   isOverflow || isBelowMinGood
                     ? "border-red-500 text-red-400 focus-visible:ring-red-500/50"
                     : "border-emerald-500/50 text-emerald-400 focus-visible:ring-emerald-500/50"
@@ -566,7 +566,7 @@ export function QuantityReportDialog({
                     {mode === "additional" && (
                       <span className={cn(
                         "absolute left-4 top-1/2 -translate-y-1/2 text-[2rem] font-bold pointer-events-none leading-none transition-colors",
-                        scrapInput ? "text-rose-400/60" : "text-slate-500"
+                        scrapInput ? "text-rose-400/60" : "text-muted-foreground"
                       )}>
                         +
                       </span>
@@ -589,7 +589,7 @@ export function QuantityReportDialog({
                       style={{ fontSize: "2.5rem", lineHeight: "1" }}
                       className={cn(
                         "h-[4.5rem] text-center font-bold tabular-nums",
-                        "border-2 bg-slate-800/50",
+                        "border-2 bg-card/50",
                         "[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
                         "placeholder:text-rose-400/40 placeholder:opacity-100",
                         isBelowMinScrap
@@ -609,7 +609,7 @@ export function QuantityReportDialog({
                       onChange={(e) => setScrapNote(e.target.value)}
                       placeholder="תאר את סיבת הפסול..."
                       className={cn(
-                        "border-rose-500/30 bg-slate-800/50 text-rose-100",
+                        "border-rose-500/30 bg-card/50 text-rose-100",
                         "placeholder:text-rose-300/50 min-h-20",
                         "focus-visible:ring-rose-500/50"
                       )}
@@ -626,7 +626,7 @@ export function QuantityReportDialog({
                     <Input
                       type="file"
                       accept="image/*"
-                      className="border-rose-500/30 bg-slate-800/50 text-rose-100 file:bg-rose-500/20 file:text-rose-300 file:border-0"
+                      className="border-rose-500/30 bg-card/50 text-rose-100 file:bg-rose-500/20 file:text-rose-300 file:border-0"
                       onChange={(e) => handleScrapImageChange(e.target.files?.[0] ?? null)}
                     />
                     {scrapImagePreview && (
@@ -659,16 +659,16 @@ export function QuantityReportDialog({
           {/* PROGRESS BAR - RTL + SLOW PULSE */}
           {/* ============================================ */}
           {plannedQuantity && (
-            <div className="space-y-1.5 rounded-lg border border-slate-700 bg-slate-800/30 p-2">
+            <div className="space-y-1.5 rounded-lg border border-border bg-card/80 p-2">
               <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-400">מצב עבודה</span>
-                <span className="font-bold tabular-nums text-slate-300">
+                <span className="text-muted-foreground">מצב עבודה</span>
+                <span className="font-bold tabular-nums text-foreground">
                   {previewValues.totalCompletedAfter.toLocaleString()} / {plannedQuantity.toLocaleString()}
                 </span>
               </div>
 
               {/* Progress Bar - RTL: fills from RIGHT to LEFT */}
-              <div className="relative h-5 overflow-hidden rounded-md border border-slate-600 bg-slate-900/50">
+              <div className="relative h-5 overflow-hidden rounded-md border border-border bg-muted/50">
                 {/* Previous progress (before input) - anchored to right */}
                 <div
                   className="absolute inset-y-0 right-0 bg-gradient-to-l from-emerald-600 to-emerald-500 transition-all duration-300"
@@ -696,7 +696,7 @@ export function QuantityReportDialog({
               <div className="flex items-center justify-between text-[11px]">
                 <span className={cn(
                   "font-semibold",
-                  previewValues.isComplete ? "text-emerald-400" : "text-slate-400"
+                  previewValues.isComplete ? "text-emerald-400" : "text-muted-foreground"
                 )}>
                   נותר: {(previewValues.remaining ?? 0).toLocaleString()}
                 </span>
@@ -705,7 +705,7 @@ export function QuantityReportDialog({
                     +{previewValues.additionalGood.toLocaleString()}
                   </span>
                 )}
-                <span className="text-slate-500">
+                <span className="text-muted-foreground/70">
                   נוכחי: {(totalCompletedBefore + sessionTotals.good).toLocaleString()}
                 </span>
               </div>

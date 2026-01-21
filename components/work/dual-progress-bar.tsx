@@ -74,7 +74,7 @@ export function DualProgressBar({
       <div
         className={cn(
           "relative w-full overflow-hidden rounded-lg",
-          "border-2 border-slate-600 bg-slate-800/50",
+          "border-2 border-border bg-muted/50",
           compact ? "h-6" : "h-8"
         )}
       >
@@ -116,7 +116,7 @@ export function DualProgressBar({
             "font-bold tabular-nums tracking-tight",
             // Text shadow for readability
             "drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]",
-            totalPercent > 50 ? "text-white" : "text-slate-200"
+            totalPercent > 50 ? "text-white" : "text-foreground"
           )}
         >
           {displayMode === "percentage" ? (
@@ -140,7 +140,7 @@ export function DualProgressBar({
           {/* Prior Progress Legend */}
           <div className="flex items-center gap-1.5">
             <span className="h-3 w-3 rounded-sm bg-gradient-to-b from-emerald-400 to-emerald-600 border border-emerald-300" />
-            <span className="text-slate-400">
+            <span className="text-muted-foreground">
               {displayMode === "percentage"
                 ? `קודם: ${Math.round(priorPercent)}%`
                 : `קודם: ${Math.max(0, totalCompleted - sessionContribution).toLocaleString()}`}
@@ -150,7 +150,7 @@ export function DualProgressBar({
           {/* Session Contribution Legend */}
           <div className="flex items-center gap-1.5">
             <span className="h-3 w-3 rounded-sm bg-gradient-to-b from-cyan-400 to-cyan-600 border border-cyan-300 shadow-[0_0_6px_rgba(6,182,212,0.4)]" />
-            <span className="text-slate-300 font-medium">
+            <span className="text-foreground font-medium">
               {displayMode === "percentage"
                 ? `משמרת: +${Math.round(sessionPercent)}%`
                 : `משמרת: +${sessionContribution.toLocaleString()}`}
@@ -159,8 +159,8 @@ export function DualProgressBar({
 
           {/* Remaining Legend */}
           <div className="flex items-center gap-1.5">
-            <span className="h-3 w-3 rounded-sm bg-slate-700 border border-slate-600" />
-            <span className="text-slate-500">
+            <span className="h-3 w-3 rounded-sm bg-muted border border-border" />
+            <span className="text-muted-foreground/70">
               {displayMode === "percentage"
                 ? `נותר: ${Math.round(remainingPercent)}%`
                 : `נותר: ${remaining.toLocaleString()}`}

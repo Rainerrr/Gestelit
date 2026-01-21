@@ -106,7 +106,7 @@ SET name = COALESCE(
   (SELECT pl.name FROM production_lines pl WHERE pl.id = ji.production_line_id),
   (SELECT s.name FROM stations s WHERE s.id = ji.station_id),
   (SELECT pp.name FROM pipeline_presets pp WHERE pp.id = ji.pipeline_preset_id),
-  'פריט צינור'  -- Fallback
+  'פריט תהליך'  -- Fallback
 )
 WHERE ji.name IS NULL;
 

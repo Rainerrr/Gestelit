@@ -524,6 +524,12 @@ export type WorkerActiveSessionDetails = {
 
 export type WorkerGraceSessionDetails = WorkerActiveSessionDetails & {
   graceExpiresAt: string;
+  /** Session totals derived from status_events for the current job item */
+  sessionTotals?: {
+    good: number;
+    scrap: number;
+    jobItemId: string | null;
+  };
 };
 
 const workerSessionSelect = `
@@ -600,9 +606,33 @@ export async function getGracefulActiveSession(
   }
 
   const details = mapSessionRow(row);
+
+  // Fetch session totals from the view (derived from status_events)
+  // This is the single source of truth for totals during session resume
+  let sessionTotals: { good: number; scrap: number; jobItemId: string | null } | undefined;
+  try {
+    const { data: totalsData } = await supabase
+      .from("v_session_current_job_item_totals")
+      .select("job_item_id, total_good, total_scrap")
+      .eq("session_id", row.id)
+      .maybeSingle();
+
+    if (totalsData) {
+      sessionTotals = {
+        good: totalsData.total_good ?? 0,
+        scrap: totalsData.total_scrap ?? 0,
+        jobItemId: totalsData.job_item_id ?? null,
+      };
+    }
+  } catch (totalsError) {
+    // Log but don't fail - totals can be synced later via API
+    console.warn("[getGracefulActiveSession] Failed to fetch session totals:", totalsError);
+  }
+
   return {
     ...details,
     graceExpiresAt,
+    sessionTotals,
   };
 }
 
@@ -648,6 +678,52 @@ export async function abandonActiveSession(
   if (sessionError) {
     throw new Error(`Failed to abandon session: ${sessionError.message}`);
   }
+}
+
+// ============================================
+// SESSION TOTALS (FROM STATUS EVENTS)
+// ============================================
+
+/**
+ * Get the current job item totals for a session.
+ * Queries v_session_current_job_item_totals view which derives totals from
+ * status_events.quantity_good/quantity_scrap for the session's CURRENT job_item_id only.
+ *
+ * This is the single source of truth for session totals during work.
+ * Use this to sync work page context with database state on resume.
+ *
+ * @param sessionId - The session ID to get totals for
+ * @returns Totals (good, scrap) and current job_item_id, or null if session not found
+ */
+export async function getSessionCurrentJobItemTotals(
+  sessionId: string,
+): Promise<{
+  good: number;
+  scrap: number;
+  jobItemId: string | null;
+} | null> {
+  const supabase = createServiceSupabase();
+
+  const { data, error } = await supabase
+    .from("v_session_current_job_item_totals")
+    .select("session_id, job_item_id, total_good, total_scrap")
+    .eq("session_id", sessionId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[sessions] Failed to fetch session totals:", error);
+    throw new Error(`Failed to fetch session totals: ${error.message}`);
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  return {
+    good: data.total_good ?? 0,
+    scrap: data.total_scrap ?? 0,
+    jobItemId: data.job_item_id ?? null,
+  };
 }
 
 // ============================================
