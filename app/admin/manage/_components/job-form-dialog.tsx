@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import { format, parseISO } from "date-fns";
 import {
   Dialog,
   DialogContent,
@@ -14,7 +15,8 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2 } from "lucide-react";
+import { DatePicker } from "@/components/ui/date-picker";
+import { CheckCircle2, Calendar } from "lucide-react";
 import type { Job } from "@/lib/types";
 import { checkJobActiveSessionAdminApi } from "@/lib/api/admin-management";
 
@@ -43,9 +45,10 @@ export const JobFormDialog = ({
   const [jobNumber, setJobNumber] = useState(job?.job_number ?? "");
   const [customerName, setCustomerName] = useState(job?.customer_name ?? "");
   const [description, setDescription] = useState(job?.description ?? "");
-  const [plannedQuantity, setPlannedQuantity] = useState<string>(
-    job?.planned_quantity?.toString() ?? "",
+  const [dueDate, setDueDate] = useState<Date | undefined>(
+    job?.due_date ? parseISO(job.due_date) : undefined
   );
+  // planned_quantity removed from jobs - now tracked per job_item
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -58,7 +61,7 @@ export const JobFormDialog = ({
     setJobNumber(job?.job_number ?? "");
     setCustomerName(job?.customer_name ?? "");
     setDescription(job?.description ?? "");
-    setPlannedQuantity(job?.planned_quantity?.toString() ?? "");
+    setDueDate(job?.due_date ? parseISO(job.due_date) : undefined);
   }
 
   const handleSubmit = async () => {
@@ -85,16 +88,11 @@ export const JobFormDialog = ({
     }
 
     try {
-      const parsedQuantity = plannedQuantity.trim()
-        ? parseInt(plannedQuantity.trim(), 10)
-        : null;
-
       await onSubmit({
         job_number: jobNumber.trim(),
         customer_name: customerName.trim() || null,
         description: description.trim() || null,
-        planned_quantity:
-          parsedQuantity && !isNaN(parsedQuantity) ? parsedQuantity : null,
+        due_date: dueDate ? format(dueDate, "yyyy-MM-dd") : null,
       });
 
       setSuccessMessage("העבודה נשמרה בהצלחה.");
@@ -107,7 +105,7 @@ export const JobFormDialog = ({
         setJobNumber("");
         setCustomerName("");
         setDescription("");
-        setPlannedQuantity("");
+        setDueDate(undefined);
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
@@ -205,22 +203,18 @@ export const JobFormDialog = ({
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="planned_quantity" className="text-foreground/80">
-              כמות מתוכננת
+            <Label htmlFor="due_date" className="text-foreground/80 flex items-center gap-2">
+              <Calendar className="h-4 w-4 text-muted-foreground" />
+              תאריך יעד
             </Label>
-            <Input
-              id="planned_quantity"
-              aria-label="כמות מתוכננת"
-              type="number"
-              min="0"
-              placeholder="כמות יחידות מתוכננת (אופציונלי)"
-              value={plannedQuantity}
-              onChange={(event) => setPlannedQuantity(event.target.value)}
-              className="border-input bg-secondary text-foreground placeholder:text-muted-foreground"
+            <DatePicker
+              id="due_date"
+              value={dueDate}
+              onChange={setDueDate}
+              placeholder="בחר תאריך יעד (אופציונלי)"
+              className="w-full"
+              allowPast={false}
             />
-            <p className="text-xs text-muted-foreground">
-              כאשר מספר הטובים יגיע לכמות המתוכננת, העבודה תסומן כהושלמה
-            </p>
           </div>
         </div>
         <DialogFooter className="justify-start">

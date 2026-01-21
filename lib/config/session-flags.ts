@@ -23,9 +23,9 @@ export const SESSION_FLAG_THRESHOLDS = {
   /**
    * Maximum scrap items before flagging.
    * Sessions with totalScrap >= this value will be flagged.
-   * Default: 10 items
+   * Default: 1 item (flag immediately when any scrap is reported)
    */
-  maxScrap: 10,
+  maxScrap: 1,
 
   /**
    * Minimum good items per hour of active (production) work.
@@ -55,6 +55,6 @@ export type SessionFlags = {
 export const SESSION_FLAG_LABELS: Record<SessionFlagType, string> = {
   high_stoppage: "זמן השבתה גבוה",
   high_setup: "זמן הכנה ארוך",
-  high_scrap: "כמות פסולים גבוהה",
+  high_scrap: "פסולים",
   low_production: "תפוקה נמוכה",
 };

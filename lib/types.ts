@@ -1,5 +1,3 @@
-import type { SupportedLanguage } from "@/lib/i18n/translations";
-
 export type WorkerRole = "worker" | "admin";
 export type StationType = string;
 export type SessionStatus = "active" | "completed" | "aborted";
@@ -14,7 +12,6 @@ export interface Worker {
   id: string;
   worker_code: string;
   full_name: string;
-  language?: SupportedLanguage | "auto" | null;
   role: WorkerRole;
   department?: string | null;
   is_active: boolean;
@@ -47,7 +44,9 @@ export interface Job {
   job_number: string;
   customer_name?: string | null;
   description?: string | null;
-  planned_quantity?: number | null;
+  /** Target completion date for the job (YYYY-MM-DD format) */
+  due_date?: string | null;
+  // planned_quantity removed - use SUM(job_items.planned_quantity) instead
   created_at?: string;
   updated_at?: string;
 }
@@ -56,20 +55,21 @@ export interface Session {
   id: string;
   worker_id: string;
   station_id: string;
-  job_id: string;
+  job_id: string | null;
   status: SessionStatus;
   current_status_id?: StatusEventState | null;
   started_at: string;
   ended_at?: string | null;
-  total_good: number;
-  total_scrap: number;
+  // total_good/total_scrap removed - derive from SUM(status_events.quantity_*)
   last_seen_at?: string | null;
   forced_closed_at?: string | null;
   last_status_change_at?: string | null;
   scrap_report_submitted?: boolean;
-  // Job item tracking (for production line WIP)
+  // Job item tracking (for pipeline WIP)
   job_item_id?: string | null;
+  /** @deprecated Use job_item_step_id */
   job_item_station_id?: string | null;
+  job_item_step_id?: string | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -79,6 +79,12 @@ export interface WorkerResumeSession {
   station: Station | null;
   job: Job | null;
   graceExpiresAt: string;
+  /** Session totals derived from status_events for the current job item */
+  sessionTotals?: {
+    good: number;
+    scrap: number;
+    jobItemId: string | null;
+  };
 }
 
 export interface StatusEvent {
@@ -91,6 +97,14 @@ export interface StatusEvent {
   report_id?: string | null;
   started_at: string;
   ended_at?: string | null;
+  /** Good units produced during this status event period */
+  quantity_good?: number | null;
+  /** Scrap units during this status event period */
+  quantity_scrap?: number | null;
+  /** The job item being worked on during this status event */
+  job_item_id?: string | null;
+  /** The specific pipeline step being worked on */
+  job_item_step_id?: string | null;
 }
 
 export interface StationReason {
@@ -128,6 +142,10 @@ export interface Report {
   station_reason_id?: string | null;
   report_reason_id?: string | null;
   status_event_id?: string | null;
+  /** Links QA reports to specific job items */
+  job_item_id?: string | null;
+  /** True for first product QA approval requests */
+  is_first_product_qa?: boolean;
   status: ReportStatus;
   status_changed_at?: string | null;
   status_changed_by?: string | null;
@@ -152,6 +170,8 @@ export interface ReportWithDetails extends Report {
   reporter?: Pick<Worker, "id" | "full_name" | "worker_code"> | null;
   report_reason?: ReportReason | null;
   status_event?: StatusEventForReport | null;
+  /** Job item details for QA reports */
+  job_item?: Pick<JobItem, "id" | "name"> | null;
 }
 
 export interface StationChecklistItem {
@@ -182,56 +202,73 @@ export interface StatusDefinition {
 }
 
 // ============================================
-// PRODUCTION LINES + JOB ITEMS + WIP
+// PIPELINE PRESETS (NEW)
 // ============================================
 
-export type JobItemKind = "station" | "line";
-
-export interface ProductionLine {
+export interface PipelinePreset {
   id: string;
   name: string;
-  code?: string | null;
-  is_active: boolean;
   created_at?: string;
   updated_at?: string;
 }
 
-export interface ProductionLineStation {
+export interface PipelinePresetStep {
   id: string;
-  production_line_id: string;
+  pipeline_preset_id: string;
   station_id: string;
   position: number;
+  /** Default value for requires_first_product_approval when creating job items from this preset */
+  requires_first_product_approval?: boolean;
   created_at?: string;
   station?: Station;
 }
 
-export interface ProductionLineWithStations extends ProductionLine {
-  stations: ProductionLineStation[];
+export interface PipelinePresetWithSteps extends PipelinePreset {
+  steps: PipelinePresetStep[];
 }
 
+// ============================================
+// JOB ITEMS + WIP (Pipeline-Only Model)
+// ============================================
+
+/**
+ * Job item represents a product with a pipeline workflow.
+ * Post Phase 5: All items use the pipeline model with job_item_steps.
+ * The kind, station_id, and production_line_id columns have been removed.
+ */
 export interface JobItem {
   id: string;
   job_id: string;
-  kind: JobItemKind;
-  station_id?: string | null;
-  production_line_id?: string | null;
+  /** Required name for the job item/product */
+  name: string;
   planned_quantity: number;
   is_active: boolean;
+  /** Reference to the preset used to create this pipeline (provenance) */
+  pipeline_preset_id?: string | null;
+  /** True once production has started - prevents pipeline modification */
+  is_pipeline_locked?: boolean;
   created_at?: string;
   updated_at?: string;
-  station?: Station;
-  production_line?: Pick<ProductionLine, "id" | "name" | "code">;
+  pipeline_preset?: Pick<PipelinePreset, "id" | "name">;
 }
 
-export interface JobItemStation {
+/** Pipeline step for a job item (renamed from JobItemStation) */
+export interface JobItemStep {
   id: string;
   job_item_id: string;
   station_id: string;
   position: number;
   is_terminal: boolean;
+  /** When true, workers must submit and get approval for first product report before entering production status */
+  requires_first_product_approval?: boolean;
   created_at?: string;
   station?: Station;
 }
+
+/**
+ * @deprecated Use JobItemStep instead
+ */
+export type JobItemStation = JobItemStep;
 
 export interface JobItemProgress {
   job_item_id: string;
@@ -240,7 +277,9 @@ export interface JobItemProgress {
 }
 
 export interface JobItemWithDetails extends JobItem {
-  job_item_stations?: JobItemStation[];
+  /** @deprecated Use job_item_steps */
+  job_item_stations?: JobItemStep[];
+  job_item_steps?: JobItemStep[];
   progress?: JobItemProgress;
   wip_balances?: WipBalance[];
 }
@@ -248,7 +287,9 @@ export interface JobItemWithDetails extends JobItem {
 export interface WipBalance {
   id: string;
   job_item_id: string;
-  job_item_station_id: string;
+  /** @deprecated Use job_item_step_id */
+  job_item_station_id?: string;
+  job_item_step_id: string;
   good_available: number;
   updated_at?: string;
 }
@@ -257,7 +298,9 @@ export interface WipConsumption {
   id: string;
   job_item_id: string;
   consuming_session_id: string;
-  from_job_item_station_id: string;
+  /** @deprecated Use from_job_item_step_id */
+  from_job_item_station_id?: string;
+  from_job_item_step_id: string;
   good_used: number;
   created_at?: string;
 }
@@ -265,7 +308,9 @@ export interface WipConsumption {
 export interface SessionWipAccounting {
   session_id: string;
   job_item_id: string;
-  job_item_station_id: string;
+  /** @deprecated Use job_item_step_id */
+  job_item_station_id?: string;
+  job_item_step_id: string;
   // Good accounting
   total_good: number;
   pulled_good: number;
@@ -289,7 +334,9 @@ export interface SessionUpdateResult {
 // ============================================
 
 export interface WipStationData {
-  jobItemStationId: string;
+  /** @deprecated Use jobItemStepId */
+  jobItemStationId?: string;
+  jobItemStepId: string;
   stationId: string;
   stationName: string;
   position: number;
@@ -336,12 +383,13 @@ export interface PipelineStationOption {
   isTerminal: boolean;
   isWorkerAssigned: boolean;
   occupancy: StationOccupancy;
-  jobItemStationId: string;
+  /** @deprecated Use jobItemStepId */
+  jobItemStationId?: string;
+  jobItemStepId: string;
 }
 
 export interface StationSelectionJobItem {
   id: string;
-  kind: JobItemKind;
   name: string;
   plannedQuantity: number;
   pipelineStations: PipelineStationOption[];

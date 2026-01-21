@@ -294,9 +294,10 @@ async function enrichReportsWithDetails(
   const sessionIds = [...new Set(reports.map((r) => r.session_id).filter(Boolean))] as string[];
   const reasonIds = [...new Set(reports.map((r) => r.report_reason_id).filter(Boolean))] as string[];
   const statusEventIds = [...new Set(reports.map((r) => r.status_event_id).filter(Boolean))] as string[];
+  const jobItemIds = [...new Set(reports.map((r) => r.job_item_id).filter(Boolean))] as string[];
 
   // Fetch related data in parallel
-  const [stationsResult, workersResult, sessionsResult, reasonsResult, statusEventsResult] = await Promise.all([
+  const [stationsResult, workersResult, sessionsResult, reasonsResult, statusEventsResult, jobItemsResult] = await Promise.all([
     stationIds.length > 0
       ? supabase.from("stations").select("id, name, code, station_type, is_active, station_reasons").in("id", stationIds)
       : { data: [], error: null },
@@ -326,6 +327,9 @@ async function enrichReportsWithDetails(
           `)
           .in("id", statusEventIds)
       : { data: [], error: null },
+    jobItemIds.length > 0
+      ? supabase.from("job_items").select("id, name").in("id", jobItemIds)
+      : { data: [], error: null },
   ]);
 
   const stationsMap = new Map((stationsResult.data || []).map((s) => [s.id, s]));
@@ -333,6 +337,7 @@ async function enrichReportsWithDetails(
   const sessionsMap = new Map((sessionsResult.data || []).map((s) => [s.id, s]));
   const reasonsMap = new Map((reasonsResult.data || []).map((r) => [r.id, r]));
   const statusEventsMap = new Map((statusEventsResult.data || []).map((e) => [e.id, e]));
+  const jobItemsMap = new Map((jobItemsResult.data || []).map((j) => [j.id, j]));
 
   return reports.map((report) => ({
     ...report,
@@ -341,6 +346,7 @@ async function enrichReportsWithDetails(
     reporter: report.reported_by_worker_id ? workersMap.get(report.reported_by_worker_id) ?? null : null,
     report_reason: report.report_reason_id ? reasonsMap.get(report.report_reason_id) ?? null : null,
     status_event: report.status_event_id ? statusEventsMap.get(report.status_event_id) ?? null : null,
+    job_item: report.job_item_id ? jobItemsMap.get(report.job_item_id) ?? null : null,
   })) as ReportWithDetails[];
 }
 

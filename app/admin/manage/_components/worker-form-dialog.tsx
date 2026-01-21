@@ -22,7 +22,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { CheckCircle2 } from "lucide-react";
 import type { Worker, WorkerRole } from "@/lib/types";
-import type { SupportedLanguage } from "@/lib/i18n/translations";
 import { CreatableCombobox } from "@/components/forms/creatable-combobox";
 import { checkWorkerActiveSessionAdminApi } from "@/lib/api/admin-management";
 
@@ -50,9 +49,6 @@ export const WorkerFormDialog = ({
   const [localOpen, setLocalOpen] = useState(false);
   const [fullName, setFullName] = useState(worker?.full_name ?? "");
   const [workerCode, setWorkerCode] = useState(worker?.worker_code ?? "");
-  const [language, setLanguage] = useState<SupportedLanguage | "auto">(
-    worker?.language ?? "auto",
-  );
   const [role, setRole] = useState<WorkerRole>(worker?.role ?? "worker");
   const [department, setDepartment] = useState(worker?.department ?? "");
   const [isActive, setIsActive] = useState(worker?.is_active ?? true);
@@ -66,7 +62,6 @@ export const WorkerFormDialog = ({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setFullName(worker.full_name);
     setWorkerCode(worker.worker_code);
-    setLanguage(worker.language ?? "auto");
     setRole(worker.role);
     setDepartment(worker.department ?? "");
     setIsActive(worker.is_active);
@@ -94,7 +89,6 @@ export const WorkerFormDialog = ({
       await onSubmit({
         full_name: fullName.trim(),
         worker_code: workerCode.trim(),
-        language,
         role: role as Worker["role"],
         department: department.trim() || null,
         is_active: isActive,
@@ -109,7 +103,6 @@ export const WorkerFormDialog = ({
         setLocalOpen(false);
         setFullName("");
         setWorkerCode("");
-        setLanguage("auto");
         setRole("worker");
         setDepartment("");
         setIsActive(true);
@@ -201,40 +194,20 @@ export const WorkerFormDialog = ({
             inputId="department"
           />
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label className="text-foreground/80">שפה</Label>
-              <Select
-                value={language ?? "auto"}
-                onValueChange={(value) =>
-                  setLanguage((value || "auto") as SupportedLanguage | "auto")
-                }
-              >
-                <SelectTrigger aria-label="בחירת שפה" className="border-input bg-secondary text-foreground/80">
-                  <SelectValue placeholder="בחר שפה" />
-                </SelectTrigger>
-                <SelectContent className="border-input bg-secondary">
-                  <SelectItem value="auto" className="text-foreground/80 focus:bg-muted">אוטומטי</SelectItem>
-                  <SelectItem value="he" className="text-foreground/80 focus:bg-muted">עברית</SelectItem>
-                  <SelectItem value="ru" className="text-foreground/80 focus:bg-muted">רוסית</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-foreground/80">תפקיד</Label>
-              <Select
-                value={role}
-                onValueChange={(value) => setRole((value || "worker") as WorkerRole)}
-              >
-                <SelectTrigger aria-label="בחירת תפקיד" className="border-input bg-secondary text-foreground/80">
-                  <SelectValue placeholder="בחר תפקיד" />
-                </SelectTrigger>
-                <SelectContent className="border-input bg-secondary">
-                  <SelectItem value="worker" className="text-foreground/80 focus:bg-muted">עובד</SelectItem>
-                  <SelectItem value="admin" className="text-foreground/80 focus:bg-muted">מנהל</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="space-y-2">
+            <Label className="text-foreground/80">תפקיד</Label>
+            <Select
+              value={role}
+              onValueChange={(value) => setRole((value || "worker") as WorkerRole)}
+            >
+              <SelectTrigger aria-label="בחירת תפקיד" className="border-input bg-secondary text-foreground/80">
+                <SelectValue placeholder="בחר תפקיד" />
+              </SelectTrigger>
+              <SelectContent className="border-input bg-secondary">
+                <SelectItem value="worker" className="text-foreground/80 focus:bg-muted">עובד</SelectItem>
+                <SelectItem value="admin" className="text-foreground/80 focus:bg-muted">מנהל</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-2">
             <Label className="text-foreground/80">סטטוס</Label>

@@ -46,7 +46,6 @@ export async function PUT(
     const worker = await updateWorker(id, {
       worker_code: body.worker_code,
       full_name: body.full_name,
-      language: body.language,
       role: body.role,
       department: body.department,
       is_active: body.is_active,

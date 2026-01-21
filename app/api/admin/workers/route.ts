@@ -71,7 +71,6 @@ export async function POST(request: Request) {
     const worker = await createWorker({
       worker_code: body.worker_code,
       full_name: body.full_name,
-      language: body.language ?? "auto",
       role: body.role ?? "worker",
       department: body.department ?? null,
       is_active: body.is_active ?? true,

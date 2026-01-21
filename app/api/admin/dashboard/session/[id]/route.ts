@@ -42,6 +42,46 @@ export type SessionGeneralReport = {
   statusEventEndedAt: string | null;
   statusDefinitionLabelHe: string | null;
   statusDefinitionColorHex: string | null;
+  /** True for first product QA approval requests */
+  isFirstProductQa: boolean;
+  /** Job item ID for QA reports */
+  jobItemId: string | null;
+  /** Job item name for QA reports */
+  jobItemName: string | null;
+  /** Station name for display */
+  stationName: string | null;
+};
+
+export type SessionScrapReport = {
+  id: string;
+  description: string | null;
+  imageUrl: string | null;
+  status: "new" | "approved";
+  createdAt: string;
+  reporterName: string | null;
+  reporterCode: string | null;
+  jobItemId: string | null;
+  jobItemName: string | null;
+};
+
+export type ProductionPeriod = {
+  jobItemId: string;
+  jobItemName: string;
+  jobNumber: string;
+  plannedQuantity: number;
+  startedAt: string;
+  endedAt: string | null;
+  /** Quantity reported in THIS session */
+  quantityGood: number;
+  quantityScrap: number;
+  /** Total completed across ALL sessions (from job_item_progress - terminal only) */
+  totalCompletedGood: number;
+  /** Step-level tracking for non-terminal stations */
+  jobItemStepId: string | null;
+  stepPosition: number | null;
+  isTerminal: boolean;
+  /** Total at THIS step across ALL sessions */
+  stepTotalGood: number;
 };
 
 export type SessionDetail = {
@@ -67,6 +107,8 @@ export type SessionDetail = {
   setupTimeSeconds: number;
   malfunctions: SessionMalfunctionReport[];
   generalReports: SessionGeneralReport[];
+  scrapReports: SessionScrapReport[];
+  productionPeriods: ProductionPeriod[];
 };
 
 type RawSession = {
@@ -77,8 +119,6 @@ type RawSession = {
   status: SessionStatus;
   started_at: string;
   ended_at: string | null;
-  total_good: number;
-  total_scrap: number;
   forced_closed_at: string | null;
   current_status_id?: StatusEventState | null;
   current_status_code?: StatusEventState | null;
@@ -98,8 +138,6 @@ const SESSION_SELECT = `
   status,
   started_at,
   ended_at,
-  total_good,
-  total_scrap,
   current_status_id,
   last_status_change_at,
   forced_closed_at,
@@ -267,6 +305,9 @@ export async function GET(
       status: "new" | "approved";
       created_at: string;
       status_event_id: string | null;
+      is_first_product_qa: boolean | null;
+      job_item_id: string | null;
+      station_id: string | null;
       workers: { full_name: string | null; worker_code: string | null } | null;
       report_reasons: { label_he: string | null } | null;
       status_events: {
@@ -274,6 +315,8 @@ export async function GET(
         ended_at: string | null;
         status_definitions: { label_he: string | null; color_hex: string | null } | null;
       } | null;
+      job_items: { name: string } | null;
+      stations: { name: string } | null;
     };
 
     const { data: generalReportsData } = await supabase
@@ -286,9 +329,14 @@ export async function GET(
         status,
         created_at,
         status_event_id,
+        is_first_product_qa,
+        job_item_id,
+        station_id,
         workers:reported_by_worker_id(full_name, worker_code),
         report_reasons:report_reason_id(label_he),
-        status_events:status_event_id(started_at, ended_at, status_definitions(label_he, color_hex))
+        status_events:status_event_id(started_at, ended_at, status_definitions(label_he, color_hex)),
+        job_items:job_item_id(name),
+        stations:station_id(name)
       `)
       .eq("session_id", sessionId)
       .eq("type", "general")
@@ -311,7 +359,210 @@ export async function GET(
       statusEventEndedAt: r.status_events?.ended_at ?? null,
       statusDefinitionLabelHe: r.status_events?.status_definitions?.label_he ?? null,
       statusDefinitionColorHex: r.status_events?.status_definitions?.color_hex ?? null,
+      isFirstProductQa: r.is_first_product_qa === true,
+      jobItemId: r.job_item_id,
+      jobItemName: r.job_items?.name ?? null,
+      stationName: r.stations?.name ?? null,
     }));
+
+    // Fetch scrap reports linked to this session
+    type RawScrapReport = {
+      id: string;
+      description: string | null;
+      image_url: string | null;
+      status: "new" | "approved";
+      created_at: string;
+      workers: { full_name: string | null; worker_code: string | null } | null;
+      status_events: {
+        job_item_id: string | null;
+        job_items: { name: string } | null;
+      } | null;
+    };
+
+    const { data: scrapReportsData } = await supabase
+      .from("reports")
+      .select(`
+        id,
+        description,
+        image_url,
+        status,
+        created_at,
+        workers:reported_by_worker_id(full_name, worker_code),
+        status_events:status_event_id(job_item_id, job_items:job_item_id(name))
+      `)
+      .eq("session_id", sessionId)
+      .eq("type", "scrap")
+      .order("created_at", { ascending: false });
+
+    const scrapReports: SessionScrapReport[] = (
+      (scrapReportsData as unknown as RawScrapReport[]) ?? []
+    ).map((r) => ({
+      id: r.id,
+      description: r.description,
+      imageUrl: r.image_url,
+      status: r.status,
+      createdAt: r.created_at,
+      reporterName: r.workers?.full_name ?? null,
+      reporterCode: r.workers?.worker_code ?? null,
+      jobItemId: r.status_events?.job_item_id ?? null,
+      jobItemName: r.status_events?.job_items?.name ?? null,
+    }));
+
+    // Fetch production periods - aggregated by job_item for production status events
+    type RawProductionEvent = {
+      job_item_id: string;
+      job_item_step_id: string | null;
+      started_at: string;
+      ended_at: string | null;
+      quantity_good: number | null;
+      quantity_scrap: number | null;
+      job_items: {
+        name: string;
+        planned_quantity: number;
+        jobs: { job_number: string } | null;
+        job_item_progress: { completed_good: number } | null;
+      } | null;
+      job_item_steps: {
+        position: number;
+        is_terminal: boolean;
+      } | null;
+    };
+
+    const { data: productionEventsData } = await supabase
+      .from("status_events")
+      .select(`
+        job_item_id,
+        job_item_step_id,
+        started_at,
+        ended_at,
+        quantity_good,
+        quantity_scrap,
+        job_items:job_item_id(
+          name,
+          planned_quantity,
+          jobs(job_number),
+          job_item_progress(completed_good)
+        ),
+        job_item_steps:job_item_step_id(
+          position,
+          is_terminal
+        ),
+        status_definitions!inner(machine_state)
+      `)
+      .eq("session_id", sessionId)
+      .eq("status_definitions.machine_state", "production")
+      .not("job_item_id", "is", null)
+      .order("started_at", { ascending: true });
+
+    const productionEvents = (productionEventsData as unknown as RawProductionEvent[]) ?? [];
+
+    // Collect unique step IDs and job item IDs for totals calculation
+    const stepIds = new Set<string>();
+    const jobItemIds = new Set<string>();
+    for (const event of productionEvents) {
+      if (event.job_item_step_id) {
+        stepIds.add(event.job_item_step_id);
+      }
+      if (event.job_item_id) {
+        jobItemIds.add(event.job_item_id);
+      }
+    }
+
+    // Query step totals across ALL sessions
+    const stepTotalsMap = new Map<string, number>();
+    if (stepIds.size > 0) {
+      const { data: stepTotals } = await supabase
+        .from("status_events")
+        .select("job_item_step_id, quantity_good")
+        .in("job_item_step_id", Array.from(stepIds))
+        .gt("quantity_good", 0);
+
+      for (const row of stepTotals ?? []) {
+        if (row.job_item_step_id && row.quantity_good) {
+          const current = stepTotalsMap.get(row.job_item_step_id) ?? 0;
+          stepTotalsMap.set(row.job_item_step_id, current + row.quantity_good);
+        }
+      }
+    }
+
+    // Query job item totals across ALL sessions (from status_events for fresh data)
+    const jobItemTotalsMap = new Map<string, number>();
+    if (jobItemIds.size > 0) {
+      const { data: jobItemTotals } = await supabase
+        .from("status_events")
+        .select("job_item_id, quantity_good")
+        .in("job_item_id", Array.from(jobItemIds))
+        .gt("quantity_good", 0);
+
+      for (const row of jobItemTotals ?? []) {
+        if (row.job_item_id && row.quantity_good) {
+          const current = jobItemTotalsMap.get(row.job_item_id) ?? 0;
+          jobItemTotalsMap.set(row.job_item_id, current + row.quantity_good);
+        }
+      }
+    }
+
+    // Aggregate production events by job_item_id
+    const productionMap = new Map<string, {
+      jobItemId: string;
+      jobItemName: string;
+      jobNumber: string;
+      plannedQuantity: number;
+      startedAt: string;
+      endedAt: string | null;
+      quantityGood: number;
+      quantityScrap: number;
+      totalCompletedGood: number;
+      jobItemStepId: string | null;
+      stepPosition: number | null;
+      isTerminal: boolean;
+      stepTotalGood: number;
+    }>();
+
+    for (const event of productionEvents) {
+      if (!event.job_item_id || !event.job_items) continue;
+
+      const existing = productionMap.get(event.job_item_id);
+      if (existing) {
+        // Update aggregated values
+        existing.quantityGood += event.quantity_good ?? 0;
+        existing.quantityScrap += event.quantity_scrap ?? 0;
+        // Update end time if this event is later
+        if (event.ended_at) {
+          if (!existing.endedAt || new Date(event.ended_at) > new Date(existing.endedAt)) {
+            existing.endedAt = event.ended_at;
+          }
+        } else {
+          existing.endedAt = null; // Still ongoing
+        }
+      } else {
+        productionMap.set(event.job_item_id, {
+          jobItemId: event.job_item_id,
+          jobItemName: event.job_items.name,
+          jobNumber: event.job_items.jobs?.job_number ?? "לא ידוע",
+          plannedQuantity: event.job_items.planned_quantity,
+          startedAt: event.started_at,
+          endedAt: event.ended_at,
+          quantityGood: event.quantity_good ?? 0,
+          quantityScrap: event.quantity_scrap ?? 0,
+          // Use fresh data from status_events instead of potentially stale job_item_progress
+          totalCompletedGood: jobItemTotalsMap.get(event.job_item_id) ?? 0,
+          jobItemStepId: event.job_item_step_id,
+          stepPosition: event.job_item_steps?.position ?? null,
+          isTerminal: event.job_item_steps?.is_terminal ?? true,
+          stepTotalGood: event.job_item_step_id
+            ? (stepTotalsMap.get(event.job_item_step_id) ?? 0)
+            : 0,
+        });
+      }
+    }
+
+    const productionPeriods: ProductionPeriod[] = Array.from(productionMap.values());
+
+    // Derive session totals from status_events (summed in productionPeriods)
+    // This replaces the dropped sessions.total_good/total_scrap columns
+    const totalGood = productionPeriods.reduce((sum, p) => sum + p.quantityGood, 0);
+    const totalScrap = productionPeriods.reduce((sum, p) => sum + p.quantityScrap, 0);
 
     const session: SessionDetail = {
       id: row.id,
@@ -327,8 +578,8 @@ export async function GET(
       lastStatusChangeAt: row.last_status_change_at ?? row.started_at,
       startedAt: row.started_at,
       endedAt: row.ended_at,
-      totalGood: row.total_good ?? 0,
-      totalScrap: row.total_scrap ?? 0,
+      totalGood,
+      totalScrap,
       plannedQuantity: row.jobs?.planned_quantity ?? null,
       forcedClosedAt: row.forced_closed_at,
       durationSeconds,
@@ -336,6 +587,8 @@ export async function GET(
       setupTimeSeconds,
       malfunctions,
       generalReports,
+      scrapReports,
+      productionPeriods,
     };
 
     return NextResponse.json({ session });

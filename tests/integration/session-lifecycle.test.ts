@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { createSession, startStatusEvent, completeSession } from "@/lib/data/sessions";
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import { createSession, startStatusEvent, completeSession, closeActiveSessionsForWorker } from "@/lib/data/sessions";
 import { TestFactory, TestCleanup, getTestSupabase } from "../helpers";
 
 describe("Session Lifecycle", () => {
@@ -20,6 +20,14 @@ describe("Session Lifecycle", () => {
     testJob = await TestFactory.createJob("session_test");
     productionStatus = await TestFactory.getProductionStatus();
     stoppageStatus = await TestFactory.getStoppageStatus();
+  });
+
+  // Close active sessions before each test to ensure isolation
+  beforeEach(async () => {
+    if (testWorker?.id) {
+      const closedIds = await closeActiveSessionsForWorker(testWorker.id);
+      createdSessionIds.push(...closedIds);
+    }
   });
 
   afterAll(async () => {

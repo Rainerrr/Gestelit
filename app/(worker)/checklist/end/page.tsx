@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useReducer, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Trash2, CheckCircle2 } from "lucide-react";
+import { Trash2, CheckCircle2 } from "lucide-react";
 import { ChecklistItemsList } from "@/components/checklists/checklist-items";
 import { FormSection } from "@/components/forms/form-section";
 import { PageHeader } from "@/components/layout/page-header";
@@ -28,9 +28,9 @@ export default function ClosingChecklistPage() {
   const {
     worker,
     station,
-    job,
     sessionId,
     totals,
+    checklist: checklistState,
     completeChecklist,
     reset,
     setWorker,
@@ -78,11 +78,22 @@ export default function ClosingChecklistPage() {
       router.replace("/station");
       return;
     }
-    if (worker && station && !job) {
-      router.replace("/job");
+    // If end checklist is already completed, session is done - go to station selection
+    if (checklistState.endCompleted) {
+      const currentWorker = worker;
+      reset();
+      clearPersistedSessionState();
+      setWorker(currentWorker);
+      router.replace("/station");
       return;
     }
-  }, [worker, station, job, router]);
+    // If start checklist not completed, user arrived here out-of-order - redirect to work
+    if (!checklistState.startCompleted && sessionId) {
+      router.replace("/work");
+      return;
+    }
+    // Job is now optional - bound when entering production status
+  }, [worker, station, sessionId, checklistState, reset, setWorker, router]);
 
   useEffect(() => {
     if (!station) {
@@ -104,7 +115,7 @@ export default function ClosingChecklistPage() {
     };
   }, [station]);
 
-  if (!worker || !station || !job || !sessionId) {
+  if (!worker || !station || !sessionId) {
     return null;
   }
 
@@ -187,7 +198,7 @@ export default function ClosingChecklistPage() {
     <>
       <BackButton href="/work" />
       <PageHeader
-        eyebrow={job.job_number}
+        eyebrow={station.name}
         title={t("checklist.end.title")}
         subtitle={t("checklist.end.subtitle")}
       />

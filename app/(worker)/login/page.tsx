@@ -3,7 +3,6 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FormSection } from "@/components/forms/form-section";
-import { LanguageSelect } from "@/components/language/language-select";
 import { PageHeader } from "@/components/layout/page-header";
 import { BackButton } from "@/components/navigation/back-button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -17,11 +16,10 @@ import {
   getPersistedSessionState,
   clearPersistedSessionState,
 } from "@/lib/utils/session-storage";
-import type { SupportedLanguage } from "@/lib/i18n/translations";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { t, setLanguage } = useTranslation();
+  const { t } = useTranslation();
   const {
     setWorker,
     reset,
@@ -67,9 +65,6 @@ export default function LoginPage() {
       if (typeof window !== "undefined") {
         window.localStorage.setItem("workerCode", worker.worker_code);
       }
-      if (worker.language && worker.language !== "auto") {
-        setLanguage(worker.language as SupportedLanguage);
-      }
       setError(null);
       let activeSession = null;
       try {
@@ -83,8 +78,8 @@ export default function LoginPage() {
         router.push("/station");
         return;
       }
-      // New flow: job entry before station selection
-      router.push("/job");
+      // New flow: station selection first, job selection deferred to production entry
+      router.push("/station");
     } catch {
       setError(t("login.error.notFound"));
       // Clear persisted state if auto-login fails (worker code no longer valid)
@@ -119,25 +114,19 @@ export default function LoginPage() {
             </Button>
           }
         >
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="worker" className="text-muted-foreground">{t("login.workerIdLabel")}</Label>
-              <Input
-                id="worker"
-                inputMode="numeric"
-                placeholder={t("login.workerIdPlaceholder")}
-                value={workerId}
-                onChange={(event) => setWorkerId(event.target.value)}
-                className="border-border bg-white text-right text-foreground placeholder:text-muted-foreground focus:border-primary/50 focus:ring-primary/30 dark:bg-secondary"
-              />
-              <p className="text-xs text-muted-foreground">
-                {t("login.subtitle")}
-              </p>
-            </div>
-            <LanguageSelect
-              label={t("login.languageLabel")}
-              className="self-start"
+          <div className="space-y-2">
+            <Label htmlFor="worker" className="text-muted-foreground">{t("login.workerIdLabel")}</Label>
+            <Input
+              id="worker"
+              inputMode="numeric"
+              placeholder={t("login.workerIdPlaceholder")}
+              value={workerId}
+              onChange={(event) => setWorkerId(event.target.value)}
+              className="border-border bg-white text-right text-foreground placeholder:text-muted-foreground focus:border-primary/50 focus:ring-primary/30 dark:bg-secondary"
             />
+            <p className="text-xs text-muted-foreground">
+              {t("login.subtitle")}
+            </p>
           </div>
 
           {error ? (

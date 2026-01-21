@@ -45,12 +45,15 @@ const CustomTooltip = ({ segment }: { segment: TimelineSegment }) => {
   const duration = segment.end - segment.start;
   const hasReport = segment.reportType && segment.reportReasonLabel;
   const isMalfunction = segment.reportType === "malfunction";
+  // Show job item context if available (even without quantity reported yet)
+  const hasJobItem = !!segment.jobItemName;
+  const hasQuantity = (segment.quantityGood ?? 0) > 0;
 
   return (
     <div
       className="pointer-events-none rounded-lg bg-popover overflow-hidden border border-border shadow-lg"
       style={{
-        minWidth: 150,
+        minWidth: 180,
         direction: "rtl",
       }}
     >
@@ -61,6 +64,34 @@ const CustomTooltip = ({ segment }: { segment: TimelineSegment }) => {
         {segment.label}
       </div>
       <div className="px-3 py-2 space-y-1.5">
+        {/* Job item context (shown even without quantity) */}
+        {hasJobItem && (
+          <div className="pb-1.5 border-b border-border space-y-1">
+            <div className="flex justify-between items-center text-xs">
+              <span className="text-muted-foreground">פריט</span>
+              <span className="text-foreground font-medium truncate max-w-[120px]">
+                {segment.jobItemName}
+              </span>
+            </div>
+            {segment.jobNumber && (
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-muted-foreground">הזמנה</span>
+                <span className="text-foreground font-mono">#{segment.jobNumber}</span>
+              </div>
+            )}
+            {hasQuantity ? (
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-muted-foreground">כמות טובה</span>
+                <span className="text-emerald-400 font-semibold">{segment.quantityGood}</span>
+              </div>
+            ) : (
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-muted-foreground">כמות טובה</span>
+                <span className="text-muted-foreground italic">ממתין לדיווח</span>
+              </div>
+            )}
+          </div>
+        )}
         {/* Report info */}
         {hasReport && (
           <div className="flex items-center justify-center gap-2 text-xs pb-1.5 border-b border-border">
@@ -74,20 +105,14 @@ const CustomTooltip = ({ segment }: { segment: TimelineSegment }) => {
             </span>
           </div>
         )}
-        <div className="flex justify-between items-center text-xs">
-          <span className="text-muted-foreground">התחלה</span>
-          <span className="text-foreground font-medium tabular-nums">
-            {formatTime(segment.start)}
-          </span>
+        {/* Times - compact horizontal layout */}
+        <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+          <span className="tabular-nums">{formatTime(segment.start)}</span>
+          <span>-</span>
+          <span className="tabular-nums">{formatTime(segment.end)}</span>
         </div>
-        <div className="flex justify-between items-center text-xs">
-          <span className="text-muted-foreground">סיום</span>
-          <span className="text-foreground font-medium tabular-nums">
-            {formatTime(segment.end)}
-          </span>
-        </div>
-        <div className="flex justify-between items-center text-xs pt-1 border-t border-border">
-          <span className="text-muted-foreground">משך</span>
+        {/* Duration below */}
+        <div className="flex justify-center items-center text-xs pt-1 border-t border-border">
           <span className="text-foreground font-semibold tabular-nums">
             {formatDuration(duration)}
           </span>

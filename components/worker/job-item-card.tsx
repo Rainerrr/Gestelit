@@ -10,7 +10,7 @@ import type { StationSelectionJobItem } from "@/lib/types";
 type JobItemCardProps = {
   jobItem: StationSelectionJobItem;
   selectedStationId: string | null;
-  onStationSelect: (stationId: string, jobItemStationId: string) => void;
+  onStationSelect: (stationId: string, jobItemStepId: string) => void;
   disabled?: boolean;
 };
 
@@ -26,8 +26,10 @@ export const JobItemCard = ({
 }: JobItemCardProps) => {
   const { t } = useTranslation();
 
-  const isProductionLine = jobItem.kind === "line";
+  // Post Phase 5: All items are pipelines. Determine if it's a multi-station pipeline
+  // by checking the station count (single station vs production line UX)
   const stationCount = jobItem.pipelineStations.length;
+  const isProductionLine = stationCount > 1;
 
   // Check if any station in this job item is selected
   const hasSelection = jobItem.pipelineStations.some(
@@ -46,15 +48,15 @@ export const JobItemCard = ({
         // Container with horizontal split
         "flex items-stretch gap-0 rounded-xl border overflow-hidden transition-all",
         hasSelection
-          ? "border-cyan-500/50 bg-slate-900/90"
-          : "border-slate-700/50 bg-slate-900/50"
+          ? "border-cyan-500/50 bg-card/90"
+          : "border-border/50 bg-card/50"
       )}
     >
       {/* INFO PANEL - First in DOM = RIGHT side in RTL */}
       <div
         className={cn(
           "w-44 flex-shrink-0 p-4 flex flex-col justify-center",
-          "border-l border-slate-700/50",
+          "border-l border-border/50",
           isProductionLine ? "bg-blue-950/30" : "bg-cyan-950/30"
         )}
       >
@@ -68,7 +70,7 @@ export const JobItemCard = ({
         </div>
 
         {/* Name */}
-        <h3 className="text-base font-bold text-slate-100 leading-tight mb-2">
+        <h3 className="text-base font-bold text-foreground leading-tight mb-2">
           {jobItem.name}
         </h3>
 
@@ -85,7 +87,7 @@ export const JobItemCard = ({
         </span>
 
         {/* Stats */}
-        <div className="text-xs text-slate-500 space-y-0.5">
+        <div className="text-xs text-muted-foreground space-y-0.5">
           {isProductionLine && (
             <div>{t("station.stationCount", { count: stationCount })}</div>
           )}
@@ -111,7 +113,7 @@ export const JobItemCard = ({
               showPosition={false}
               onClick={() => {
                 if (!isSingleStationDisabled) {
-                  onStationSelect(singleStation.id, singleStation.jobItemStationId);
+                  onStationSelect(singleStation.id, singleStation.jobItemStepId);
                 }
               }}
             />

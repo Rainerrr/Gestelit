@@ -68,7 +68,6 @@ export class AdminActionError extends Error {
 type WorkerInput = {
   worker_code: string;
   full_name: string;
-  language?: string | null;
   role?: Worker["role"];
   department?: string | null;
   is_active?: boolean;
@@ -193,7 +192,7 @@ export async function fetchAllWorkers(options?: {
   let query = supabase
     .from("workers")
     .select(
-      "id, worker_code, full_name, language, role, department, is_active, created_at, updated_at, worker_stations(count), sessions(count)",
+      "id, worker_code, full_name, role, department, is_active, created_at, updated_at, worker_stations(count), sessions(count)",
     )
     .order("full_name", { ascending: true });
 
@@ -225,7 +224,6 @@ export async function fetchAllWorkers(options?: {
       id: row.id,
       worker_code: row.worker_code,
       full_name: row.full_name,
-      language: row.language,
       role: row.role,
       department: row.department ?? null,
       is_active: row.is_active,
@@ -315,7 +313,6 @@ export async function createWorker(payload: WorkerInput): Promise<Worker> {
     .insert({
       worker_code: workerCode,
       full_name: fullName,
-      language: payload.language ?? "auto",
       role: payload.role ?? "worker",
       department: normalizeDepartment(payload.department),
       is_active: payload.is_active ?? true,
@@ -355,7 +352,6 @@ export async function updateWorker(id: string, payload: WorkerUpdateInput): Prom
     .update({
       worker_code: payload.worker_code?.trim() ?? current.worker_code,
       full_name: payload.full_name?.trim() ?? current.full_name,
-      language: payload.language ?? current.language ?? "auto",
       role: payload.role ?? current.role,
       department: normalizeDepartment(payload.department ?? current.department ?? null),
       is_active: payload.is_active ?? current.is_active,

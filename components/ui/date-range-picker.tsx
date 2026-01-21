@@ -19,6 +19,8 @@ type DateRangePickerProps = {
   onChange: (range: DateRange | undefined) => void;
   placeholder?: string;
   className?: string;
+  /** Allow selecting future dates (default: false - future dates disabled) */
+  allowFutureDates?: boolean;
 };
 
 const hebrewMonths = [
@@ -43,6 +45,7 @@ export const DateRangePicker = ({
   onChange,
   placeholder = "בחר תאריכים",
   className,
+  allowFutureDates = false,
 }: DateRangePickerProps) => {
   const [open, setOpen] = React.useState(false);
   const [tempRange, setTempRange] = React.useState<DateRange | undefined>(value);
@@ -93,7 +96,8 @@ export const DateRangePicker = ({
     const parsed = parse(inputValue, "dd/MM/yyyy", new Date());
     const now = new Date();
     now.setHours(23, 59, 59, 999);
-    if (isValid(parsed) && inputValue.length === 10 && parsed <= now) {
+    const isValidDate = isValid(parsed) && inputValue.length === 10 && (allowFutureDates || parsed <= now);
+    if (isValidDate) {
       setTempRange((prev) => ({
         from: parsed,
         to: prev?.to && parsed <= prev.to ? prev.to : undefined,
@@ -109,7 +113,8 @@ export const DateRangePicker = ({
     const parsed = parse(inputValue, "dd/MM/yyyy", new Date());
     const now = new Date();
     now.setHours(23, 59, 59, 999);
-    if (isValid(parsed) && inputValue.length === 10 && tempRange?.from && parsed >= tempRange.from && parsed <= now) {
+    const isValidDate = isValid(parsed) && inputValue.length === 10 && tempRange?.from && parsed >= tempRange.from && (allowFutureDates || parsed <= now);
+    if (isValidDate) {
       setTempRange((prev) => ({
         from: prev?.from,
         to: parsed,
@@ -333,7 +338,7 @@ export const DateRangePicker = ({
                 showOutsideDays={false}
                 locale={he}
                 weekStartsOn={0}
-                disabled={{ after: today }}
+                disabled={allowFutureDates ? undefined : { after: today }}
                 formatters={{
                   formatWeekdayName: (date) => hebrewDays[date.getDay()],
                 }}
@@ -355,7 +360,7 @@ export const DateRangePicker = ({
                 showOutsideDays={false}
                 locale={he}
                 weekStartsOn={0}
-                disabled={{ after: today }}
+                disabled={allowFutureDates ? undefined : { after: today }}
                 formatters={{
                   formatWeekdayName: (date) => hebrewDays[date.getDay()],
                 }}

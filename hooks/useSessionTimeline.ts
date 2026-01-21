@@ -18,6 +18,11 @@ export type TimelineSegment = {
   dotClass: string;
   reportType?: string | null;
   reportReasonLabel?: string | null;
+  // Production data (populated for production status events)
+  jobItemId?: string | null;
+  jobItemName?: string | null;
+  jobNumber?: string | null;
+  quantityGood?: number;
 };
 
 type UseSessionTimelineArgs = {
@@ -37,6 +42,7 @@ type UseSessionTimelineResult = {
   isActive: boolean;
   isLoading: boolean;
   error: string | null;
+  reload: () => Promise<void>;
 };
 
 const parseDate = (value?: string | null): number | null => {
@@ -51,6 +57,11 @@ type RawEvent = {
   endedAt: string | null;
   reportType?: string | null;
   reportReasonLabel?: string | null;
+  // Production data
+  jobItemId?: string | null;
+  jobItemName?: string | null;
+  jobNumber?: string | null;
+  quantityGood?: number;
 };
 
 const normalizeSegments = ({
@@ -89,6 +100,11 @@ const normalizeSegments = ({
         dotClass: "bg-slate-400",
         reportType: item.reportType,
         reportReasonLabel: item.reportReasonLabel,
+        // Production data
+        jobItemId: item.jobItemId,
+        jobItemName: item.jobItemName,
+        jobNumber: item.jobNumber,
+        quantityGood: item.quantityGood,
       } satisfies TimelineSegment;
     })
     .filter(Boolean) as TimelineSegment[];
@@ -96,32 +112,92 @@ const normalizeSegments = ({
   return items;
 };
 
+/**
+ * Detects if a segment is an "orphan" - a short status event that should be merged.
+ * Orphan events are typically created when:
+ * 1. User switched from production to stoppage but cancelled the report dialog
+ * 2. User switched jobs but cancelled before selecting a new job
+ * 3. User completed a job item and the transition created a short intermediate status
+ *
+ * Criteria for orphan detection:
+ * - Duration < 30 seconds (very short events are likely unintentional)
+ * - No ACTUAL linked report (reportReasonLabel indicates an actual report was created)
+ *   Note: reportType is the status definition's config, not actual report existence
+ * - No production data (quantity = 0 or undefined)
+ */
+const isOrphanSegment = (seg: TimelineSegment): boolean => {
+  const duration = seg.end - seg.start;
+  const ORPHAN_THRESHOLD_MS = 10_000; // 10 seconds (changed from 30s)
+
+  // If it has an ACTUAL linked report (reportReasonLabel is set), it's intentional - not an orphan
+  // Note: reportType is the status definition's report_type (config), not whether a report was created
+  if (seg.reportReasonLabel) return false;
+
+  // If it has production data (quantity reported), it's intentional
+  if (seg.quantityGood && seg.quantityGood > 0) return false;
+
+  // Short events without actual linked reports or production data are orphans
+  return duration < ORPHAN_THRESHOLD_MS;
+};
+
+/**
+ * Merges short "orphan" segments with adjacent segments.
+ *
+ * Algorithm (UPDATED for forward merging):
+ * 1. First pass (right-to-left): Merge orphan segments INTO NEXT segment
+ * 2. Second pass: If first segment is still orphan, merge into second
+ * 3. Third pass: If last segment is orphan (no next), merge into previous
+ *
+ * Only orphan segments merge - events WITH reports/quantities stay visible.
+ * This ensures orphan statuses (e.g., cancelled dialog transitions) are
+ * absorbed by the NEXT legitimate status, not the previous one.
+ */
 const mergeShortSegments = (
   segments: TimelineSegment[],
-  minDurationMs = 180_000, // 3 minutes
 ): TimelineSegment[] => {
   if (segments.length <= 1) return segments;
 
-  const merged: TimelineSegment[] = [];
-  for (const seg of segments) {
-    const duration = seg.end - seg.start;
-    // Never merge segments that have a report type - they're important to show
-    const shouldMerge =
-      duration < minDurationMs &&
-      merged.length > 0 &&
-      !seg.reportType;
+  const result = [...segments];
 
-    if (shouldMerge) {
-      // Extend previous segment to include this short one
-      merged[merged.length - 1] = {
-        ...merged[merged.length - 1],
-        end: seg.end,
+  // Pass 1: Merge orphans FORWARD (iterate right-to-left)
+  for (let i = result.length - 2; i >= 0; i--) {
+    const seg = result[i];
+    const nextSeg = result[i + 1];
+
+    const isOrphan = isOrphanSegment(seg);
+
+    // ONLY merge orphans - events with reports/quantities stay visible
+    if (isOrphan && nextSeg) {
+      // Extend NEXT segment to absorb this orphan's start time
+      result[i + 1] = {
+        ...nextSeg,
+        start: seg.start,
       };
-    } else {
-      merged.push({ ...seg });
+      // Remove the orphan segment
+      result.splice(i, 1);
     }
   }
-  return merged;
+
+  // Pass 2: First segment still orphan -> merge into second
+  if (result.length >= 2 && isOrphanSegment(result[0])) {
+    result[1] = {
+      ...result[1],
+      start: result[0].start,
+    };
+    result.shift();
+  }
+
+  // Pass 3: Last segment orphan (no next to merge into) -> merge into previous
+  if (result.length >= 2 && isOrphanSegment(result[result.length - 1])) {
+    const last = result.length - 1;
+    result[last - 1] = {
+      ...result[last - 1],
+      end: result[last].end,
+    };
+    result.pop();
+  }
+
+  return result;
 };
 
 export const useSessionTimeline = ({
@@ -159,6 +235,11 @@ export const useSessionTimeline = ({
             endedAt: item.endedAt,
             reportType: item.reportType,
             reportReasonLabel: item.reportReasonLabel,
+            // Production data
+            jobItemId: item.jobItemId,
+            jobItemName: item.jobItemName,
+            jobNumber: item.jobNumber,
+            quantityGood: item.quantityGood,
           })),
         );
       } catch (err) {
@@ -272,6 +353,12 @@ export const useSessionTimeline = ({
     stationId,
   ]);
 
+  const reload = useCallback(async () => {
+    if (sessionId) {
+      await load(sessionId);
+    }
+  }, [load, sessionId]);
+
   return {
     segments,
     startTs,
@@ -280,6 +367,7 @@ export const useSessionTimeline = ({
     isActive,
     isLoading,
     error,
+    reload,
   };
 };
 

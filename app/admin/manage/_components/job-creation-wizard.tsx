@@ -16,36 +16,36 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Factory,
   Package,
   Plus,
   Trash2,
-  GitBranch,
-  Cpu,
   Briefcase,
   AlertTriangle,
+  Workflow,
+  Calendar,
 } from "lucide-react";
+import { format } from "date-fns";
+import { he } from "date-fns/locale";
+import { DatePicker } from "@/components/ui/date-picker";
 import type {
   Job,
-  JobItemKind,
-  ProductionLineWithStations,
+  PipelinePresetWithSteps,
   Station,
 } from "@/lib/types";
 import {
   createJobAdminApi,
   createJobItemAdminApi,
-  fetchProductionLinesAdminApi,
+  fetchPipelinePresetsAdminApi,
   fetchStationsAdminApi,
 } from "@/lib/api/admin-management";
+import {
+  PipelineFlowEditor,
+  type PipelineStation,
+} from "@/components/admin/pipeline-flow-editor";
 
 type JobCreationWizardProps = {
   open: boolean;
@@ -55,15 +55,13 @@ type JobCreationWizardProps = {
 
 type WizardStep = "details" | "products" | "review";
 
-type PendingJobItem = {
+type PendingProduct = {
   id: string;
-  kind: JobItemKind;
-  station_id?: string | null;
-  production_line_id?: string | null;
+  name: string;
+  stations: PipelineStation[];
   planned_quantity: number;
-  // Display fields
-  displayName: string;
-  displayType: string;
+  /** Map of station_id -> requires_first_product_approval */
+  firstProductApprovalFlags: Record<string, boolean>;
 };
 
 export const JobCreationWizard = ({
@@ -78,29 +76,31 @@ export const JobCreationWizard = ({
   const [jobNumber, setJobNumber] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [description, setDescription] = useState("");
-  const [plannedQuantity, setPlannedQuantity] = useState("");
+  const [dueDate, setDueDate] = useState<Date | undefined>(undefined);
 
   // Step 2: Products
-  const [productionLines, setProductionLines] = useState<ProductionLineWithStations[]>([]);
+  const [pipelinePresets, setPipelinePresets] = useState<PipelinePresetWithSteps[]>([]);
   const [stations, setStations] = useState<Station[]>([]);
-  const [pendingItems, setPendingItems] = useState<PendingJobItem[]>([]);
+  const [pendingProducts, setPendingProducts] = useState<PendingProduct[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(false);
 
-  // New item form
-  const [newItemKind, setNewItemKind] = useState<JobItemKind>("line");
-  const [newItemStationId, setNewItemStationId] = useState("");
-  const [newItemLineId, setNewItemLineId] = useState("");
-  const [newItemQuantity, setNewItemQuantity] = useState("");
+  // New product form
+  const [newProductName, setNewProductName] = useState("");
+  const [newProductQuantity, setNewProductQuantity] = useState("");
+  const [pipelineStations, setPipelineStations] = useState<PipelineStation[]>([]);
+  const [selectedPresetId, setSelectedPresetId] = useState("");
+  const [selectedStationId, setSelectedStationId] = useState("");
+  const [firstProductFlags, setFirstProductFlags] = useState<Record<string, boolean>>({});
 
-  // Load production lines and stations
+  // Load pipeline presets and stations
   const loadData = useCallback(async () => {
     setIsLoadingData(true);
     try {
-      const [linesRes, stationsRes] = await Promise.all([
-        fetchProductionLinesAdminApi({ includeInactive: false }),
+      const [presetsRes, stationsRes] = await Promise.all([
+        fetchPipelinePresetsAdminApi(),
         fetchStationsAdminApi(),
       ]);
-      setProductionLines(linesRes.lines);
+      setPipelinePresets(presetsRes.presets);
       setStations(stationsRes.stations.map((s) => s.station));
     } catch {
       setError("שגיאה בטעינת הנתונים");
@@ -122,86 +122,126 @@ export const JobCreationWizard = ({
       setJobNumber("");
       setCustomerName("");
       setDescription("");
-      setPlannedQuantity("");
-      setPendingItems([]);
-      setNewItemKind("line");
-      setNewItemStationId("");
-      setNewItemLineId("");
-      setNewItemQuantity("");
+      setDueDate(undefined);
+      setPendingProducts([]);
+      setNewProductName("");
+      setNewProductQuantity("");
+      setPipelineStations([]);
+      setSelectedPresetId("");
+      setSelectedStationId("");
+      setFirstProductFlags({});
       setError(null);
     }
   }, [open]);
 
-  // Filter available stations (not in any production line)
-  const lineStationIds = new Set(
-    productionLines.flatMap((line) => line.stations.map((s) => s.station_id))
-  );
-  const availableStations = stations.filter(
-    (s) => !lineStationIds.has(s.id) && s.is_active
-  );
+  const handleLoadPreset = useCallback(() => {
+    if (!selectedPresetId) return;
 
-  // Already added items
-  const addedLineIds = new Set(
-    pendingItems.filter((i) => i.kind === "line").map((i) => i.production_line_id)
-  );
-  const addedStationIds = new Set(
-    pendingItems.filter((i) => i.kind === "station").map((i) => i.station_id)
-  );
+    const preset = pipelinePresets.find((p) => p.id === selectedPresetId);
+    if (!preset) return;
 
-  const availableLines = productionLines.filter((l) => !addedLineIds.has(l.id));
-  const availableStationsForAdd = availableStations.filter(
-    (s) => !addedStationIds.has(s.id)
-  );
+    const loadedStations = preset.steps
+      .sort((a, b) => a.position - b.position)
+      .map((presetStep) => ({
+        id: presetStep.station_id,
+        station: presetStep.station!,
+        position: presetStep.position,
+      }))
+      .filter((item) => item.station);
 
-  const handleAddItem = () => {
+    setPipelineStations(loadedStations);
+
+    // Load first product approval flags from preset
+    const flags: Record<string, boolean> = {};
+    for (const step of preset.steps) {
+      if (step.requires_first_product_approval) {
+        flags[step.station_id] = true;
+      }
+    }
+    setFirstProductFlags(flags);
+
+    // Auto-fill name from preset if empty
+    if (!newProductName.trim()) {
+      setNewProductName(preset.name);
+    }
+  }, [selectedPresetId, pipelinePresets, newProductName]);
+
+  const handleAddStationToPipeline = useCallback(() => {
+    if (!selectedStationId) return;
+
+    const station = stations.find((s) => s.id === selectedStationId);
+    if (!station) return;
+
+    if (pipelineStations.some((ps) => ps.id === station.id)) {
+      setError("התחנה כבר קיימת בתהליך");
+      return;
+    }
+
+    setPipelineStations((prev) => [
+      ...prev,
+      {
+        id: station.id,
+        station,
+        position: prev.length + 1,
+      },
+    ]);
+
+    setSelectedStationId("");
+    setError(null);
+  }, [selectedStationId, stations, pipelineStations]);
+
+  const handleToggleFirstProductApproval = useCallback((stationId: string) => {
+    setFirstProductFlags((prev) => ({
+      ...prev,
+      [stationId]: !prev[stationId],
+    }));
+  }, []);
+
+  const handleAddProduct = () => {
     setError(null);
 
-    if (!newItemQuantity || parseInt(newItemQuantity) <= 0) {
+    if (!newProductName.trim()) {
+      setError("יש להזין שם מוצר");
+      return;
+    }
+
+    if (!newProductQuantity || parseInt(newProductQuantity) <= 0) {
       setError("יש להזין כמות מתוכננת חיובית");
       return;
     }
 
-    if (newItemKind === "station" && !newItemStationId) {
-      setError("יש לבחור תחנה");
+    if (pipelineStations.length === 0) {
+      setError("יש להוסיף לפחות תחנה אחת למוצר");
       return;
     }
 
-    if (newItemKind === "line" && !newItemLineId) {
-      setError("יש לבחור קו ייצור");
-      return;
+    // Filter flags to only include stations in the pipeline
+    const relevantFlags: Record<string, boolean> = {};
+    for (const station of pipelineStations) {
+      if (firstProductFlags[station.id]) {
+        relevantFlags[station.id] = true;
+      }
     }
 
-    let displayName = "";
-    let displayType = "";
-
-    if (newItemKind === "line") {
-      const line = productionLines.find((l) => l.id === newItemLineId);
-      displayName = line?.name ?? "קו ייצור";
-      displayType = `קו ייצור (${line?.stations.length ?? 0} תחנות)`;
-    } else {
-      const station = stations.find((s) => s.id === newItemStationId);
-      displayName = station?.name ?? "תחנה";
-      displayType = "תחנה בודדת";
-    }
-
-    const newItem: PendingJobItem = {
-      id: crypto.randomUUID(),
-      kind: newItemKind,
-      station_id: newItemKind === "station" ? newItemStationId : null,
-      production_line_id: newItemKind === "line" ? newItemLineId : null,
-      planned_quantity: parseInt(newItemQuantity),
-      displayName,
-      displayType,
+    const newProduct: PendingProduct = {
+      id: `pending-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      name: newProductName.trim(),
+      stations: [...pipelineStations],
+      planned_quantity: parseInt(newProductQuantity),
+      firstProductApprovalFlags: relevantFlags,
     };
 
-    setPendingItems((prev) => [...prev, newItem]);
-    setNewItemStationId("");
-    setNewItemLineId("");
-    setNewItemQuantity("");
+    setPendingProducts((prev) => [...prev, newProduct]);
+    setNewProductName("");
+    setNewProductQuantity("");
+    setPipelineStations([]);
+    setSelectedPresetId("");
+    setSelectedStationId("");
+    setFirstProductFlags({});
   };
 
-  const handleRemoveItem = (id: string) => {
-    setPendingItems((prev) => prev.filter((i) => i.id !== id));
+  const handleRemoveProduct = (id: string) => {
+    setPendingProducts((prev) => prev.filter((p) => p.id !== id));
   };
 
   const handleNextStep = () => {
@@ -214,8 +254,8 @@ export const JobCreationWizard = ({
       }
       setStep("products");
     } else if (step === "products") {
-      if (pendingItems.length === 0) {
-        setError("יש להוסיף לפחות מוצר אחד (קו ייצור או תחנה)");
+      if (pendingProducts.length === 0) {
+        setError("יש להוסיף לפחות מוצר אחד");
         return;
       }
       setStep("review");
@@ -236,26 +276,21 @@ export const JobCreationWizard = ({
     setError(null);
 
     try {
-      // Create the job
-      const parsedQuantity = plannedQuantity.trim()
-        ? parseInt(plannedQuantity.trim(), 10)
-        : null;
-
+      // Create the job (planned_quantity now tracked per job_item)
       const { job } = await createJobAdminApi({
         job_number: jobNumber.trim(),
         customer_name: customerName.trim() || null,
         description: description.trim() || null,
-        planned_quantity:
-          parsedQuantity && !isNaN(parsedQuantity) ? parsedQuantity : null,
+        due_date: dueDate ? format(dueDate, "yyyy-MM-dd") : null,
       });
 
-      // Create all job items
-      for (const item of pendingItems) {
+      // Create all job items (products) - Post Phase 5: pipeline-only model
+      for (const product of pendingProducts) {
         await createJobItemAdminApi(job.id, {
-          kind: item.kind,
-          station_id: item.station_id,
-          production_line_id: item.production_line_id,
-          planned_quantity: item.planned_quantity,
+          name: product.name,
+          station_ids: product.stations.map((s) => s.id),
+          planned_quantity: product.planned_quantity,
+          first_product_approval_flags: product.firstProductApprovalFlags,
         });
       }
 
@@ -273,22 +308,22 @@ export const JobCreationWizard = ({
     }
   };
 
-  const totalPlannedQuantity = pendingItems.reduce(
-    (sum, item) => sum + item.planned_quantity,
+  const totalPlannedQuantity = pendingProducts.reduce(
+    (sum, product) => sum + product.planned_quantity,
     0
   );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="text-right sm:max-w-2xl border-zinc-800 bg-zinc-900 max-h-[90vh] overflow-hidden flex flex-col">
+      <DialogContent className="text-right sm:max-w-2xl border-border bg-card max-h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader className="flex-shrink-0">
-          <DialogTitle className="text-zinc-100 flex items-center gap-2">
-            <Briefcase className="h-5 w-5 text-emerald-500" />
+          <DialogTitle className="text-foreground flex items-center gap-2">
+            <Briefcase className="h-5 w-5 text-primary" />
             יצירת עבודה חדשה
           </DialogTitle>
-          <DialogDescription className="text-zinc-500">
+          <DialogDescription className="text-muted-foreground">
             {step === "details" && "שלב 1: פרטי העבודה הבסיסיים"}
-            {step === "products" && "שלב 2: הגדרת מוצרים (קווי ייצור / תחנות)"}
+            {step === "products" && "שלב 2: הגדרת מוצרים ותהליכי הייצור שלהם"}
             {step === "review" && "שלב 3: סקירה ואישור"}
           </DialogDescription>
         </DialogHeader>
@@ -300,10 +335,10 @@ export const JobCreationWizard = ({
               <div
                 className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-all ${
                   step === s
-                    ? "bg-emerald-500 text-white"
+                    ? "bg-primary text-primary-foreground"
                     : idx < ["details", "products", "review"].indexOf(step)
-                      ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-                      : "bg-zinc-800 text-zinc-500 border border-zinc-700"
+                      ? "bg-primary/20 text-primary border border-primary/30"
+                      : "bg-secondary text-muted-foreground border border-input"
                 }`}
               >
                 {idx < ["details", "products", "review"].indexOf(step) ? (
@@ -316,8 +351,8 @@ export const JobCreationWizard = ({
                 <div
                   className={`w-12 h-0.5 mx-1 ${
                     idx < ["details", "products", "review"].indexOf(step)
-                      ? "bg-emerald-500"
-                      : "bg-zinc-700"
+                      ? "bg-primary"
+                      : "bg-border"
                   }`}
                 />
               )}
@@ -340,7 +375,7 @@ export const JobCreationWizard = ({
           {step === "details" && (
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="wizard_job_number" className="text-zinc-300">
+                <Label htmlFor="wizard_job_number" className="text-foreground/80">
                   מספר עבודה (פק&quot;ע) *
                 </Label>
                 <Input
@@ -348,12 +383,12 @@ export const JobCreationWizard = ({
                   placeholder="הזן מספר עבודה"
                   value={jobNumber}
                   onChange={(e) => setJobNumber(e.target.value)}
-                  className="border-zinc-700 bg-zinc-800 text-zinc-100 placeholder:text-zinc-600 focus:border-emerald-500/50 focus:ring-emerald-500/20"
+                  className="border-input bg-secondary text-foreground placeholder:text-muted-foreground focus:border-primary/50 focus:ring-primary/20"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="wizard_customer" className="text-zinc-300">
+                <Label htmlFor="wizard_customer" className="text-foreground/80">
                   שם לקוח
                 </Label>
                 <Input
@@ -361,12 +396,12 @@ export const JobCreationWizard = ({
                   placeholder="שם הלקוח (אופציונלי)"
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
-                  className="border-zinc-700 bg-zinc-800 text-zinc-100 placeholder:text-zinc-600"
+                  className="border-input bg-secondary text-foreground placeholder:text-muted-foreground"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="wizard_description" className="text-zinc-300">
+                <Label htmlFor="wizard_description" className="text-foreground/80">
                   תיאור
                 </Label>
                 <Textarea
@@ -374,25 +409,23 @@ export const JobCreationWizard = ({
                   placeholder="תיאור העבודה (אופציונלי)"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  className="border-zinc-700 bg-zinc-800 text-zinc-100 placeholder:text-zinc-600 min-h-[80px]"
+                  className="border-input bg-secondary text-foreground placeholder:text-muted-foreground min-h-[80px]"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="wizard_planned" className="text-zinc-300">
-                  כמות מתוכננת כוללת
+                <Label htmlFor="wizard_due_date" className="text-foreground/80 flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                  תאריך יעד
                 </Label>
-                <Input
-                  id="wizard_planned"
-                  type="number"
-                  min="0"
-                  placeholder="כמות יחידות מתוכננת (אופציונלי)"
-                  value={plannedQuantity}
-                  onChange={(e) => setPlannedQuantity(e.target.value)}
-                  className="border-zinc-700 bg-zinc-800 text-zinc-100 placeholder:text-zinc-600"
+                <DatePicker
+                  value={dueDate}
+                  onChange={setDueDate}
+                  placeholder="בחר תאריך יעד (אופציונלי)"
+                  className="w-full"
                 />
-                <p className="text-xs text-zinc-500">
-                  כאשר סה&quot;כ הטובים יגיע לכמות המתוכננת, העבודה תסומן כהושלמה
+                <p className="text-xs text-muted-foreground">
+                  תאריך היעד לסיום העבודה. ישמש למיון ומעקב בלוח הניהול.
                 </p>
               </div>
             </div>
@@ -409,51 +442,49 @@ export const JobCreationWizard = ({
                     <strong>חובה להוסיף לפחות מוצר אחד.</strong>
                     <br />
                     <span className="text-blue-400/80">
-                      עובדים יוכלו לעבוד רק בתחנות ששייכות למוצרים שהוגדרו כאן.
+                      כל מוצר מגדיר תהליך ייצור - רצף תחנות שהעובדים יעברו בהן.
                     </span>
                   </p>
                 </div>
               </div>
 
-              {/* Current Items */}
-              {pendingItems.length > 0 && (
+              {/* Current Products */}
+              {pendingProducts.length > 0 && (
                 <div className="space-y-2">
-                  <Label className="text-zinc-300">מוצרים שנוספו</Label>
+                  <Label className="text-foreground/80">מוצרים שנוספו</Label>
                   <div className="space-y-2">
-                    {pendingItems.map((item) => (
+                    {pendingProducts.map((product) => (
                       <div
-                        key={item.id}
-                        className="flex items-center justify-between p-3 rounded-lg bg-zinc-800/50 border border-zinc-700"
+                        key={product.id}
+                        className="flex items-center justify-between p-3 rounded-lg bg-secondary/50 border border-input"
                       >
                         <div className="flex items-center gap-3">
-                          {item.kind === "line" ? (
-                            <div className="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center">
-                              <GitBranch className="h-4 w-4 text-blue-400" />
-                            </div>
-                          ) : (
-                            <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center">
-                              <Cpu className="h-4 w-4 text-emerald-400" />
-                            </div>
-                          )}
+                          <div className="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center">
+                            <Workflow className="h-4 w-4 text-purple-400" />
+                          </div>
                           <div>
-                            <p className="font-medium text-zinc-200">
-                              {item.displayName}
+                            <p className="font-medium text-foreground">
+                              {product.name}
                             </p>
-                            <p className="text-xs text-zinc-500">{item.displayType}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {product.stations.length} שלבים:{" "}
+                              {product.stations.slice(0, 3).map((s) => s.station.name).join(" → ")}
+                              {product.stations.length > 3 && " ..."}
+                            </p>
                           </div>
                         </div>
                         <div className="flex items-center gap-3">
                           <Badge
                             variant="secondary"
-                            className="bg-zinc-700 text-zinc-300 border-zinc-600"
+                            className="bg-secondary text-foreground/70 border-input"
                           >
-                            {item.planned_quantity.toLocaleString()} יח&apos;
+                            {product.planned_quantity.toLocaleString()} יח&apos;
                           </Badge>
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => handleRemoveItem(item.id)}
-                            className="h-7 w-7 text-zinc-500 hover:text-red-400 hover:bg-red-500/10"
+                            onClick={() => handleRemoveProduct(product.id)}
+                            className="h-7 w-7 text-muted-foreground hover:text-red-400 hover:bg-red-500/10"
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -464,129 +495,82 @@ export const JobCreationWizard = ({
                 </div>
               )}
 
-              {/* Add New Item */}
-              <div className="space-y-3 p-4 rounded-xl bg-zinc-800/30 border border-zinc-700/50">
-                <Label className="text-zinc-300">הוסף מוצר</Label>
-
-                {/* Type Toggle */}
-                <div className="flex rounded-lg border border-zinc-700 bg-zinc-800/50 p-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setNewItemKind("line");
-                      setNewItemStationId("");
-                    }}
-                    className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all ${
-                      newItemKind === "line"
-                        ? "bg-blue-500 text-white shadow-sm"
-                        : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700"
-                    }`}
-                  >
-                    <GitBranch className="h-4 w-4" />
-                    קו ייצור
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setNewItemKind("station");
-                      setNewItemLineId("");
-                    }}
-                    className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all ${
-                      newItemKind === "station"
-                        ? "bg-emerald-500 text-white shadow-sm"
-                        : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700"
-                    }`}
-                  >
-                    <Cpu className="h-4 w-4" />
-                    תחנה בודדת
-                  </button>
-                </div>
+              {/* Add New Product */}
+              <div className="space-y-3 p-4 rounded-xl bg-secondary/30 border border-input">
+                <Label className="text-foreground/80">הוסף מוצר</Label>
 
                 {isLoadingData ? (
                   <div className="flex items-center justify-center py-4">
-                    <div className="animate-spin rounded-full h-5 w-5 border-2 border-transparent border-t-emerald-500" />
+                    <div className="animate-spin rounded-full h-5 w-5 border-2 border-transparent border-t-primary" />
                   </div>
                 ) : (
-                  <>
-                    {newItemKind === "line" ? (
-                      <Select
-                        value={newItemLineId}
-                        onValueChange={setNewItemLineId}
-                        disabled={availableLines.length === 0}
-                      >
-                        <SelectTrigger className="border-zinc-700 bg-zinc-800 text-zinc-100">
-                          <SelectValue
-                            placeholder={
-                              availableLines.length === 0
-                                ? "כל קווי הייצור כבר נוספו"
-                                : "בחר קו ייצור..."
-                            }
-                          />
-                        </SelectTrigger>
-                        <SelectContent className="border-zinc-700 bg-zinc-800">
-                          {availableLines.map((line) => (
-                            <SelectItem
-                              key={line.id}
-                              value={line.id}
-                              className="text-zinc-100"
-                            >
-                              {line.name} ({line.stations.length} תחנות)
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <Select
-                        value={newItemStationId}
-                        onValueChange={setNewItemStationId}
-                        disabled={availableStationsForAdd.length === 0}
-                      >
-                        <SelectTrigger className="border-zinc-700 bg-zinc-800 text-zinc-100">
-                          <SelectValue
-                            placeholder={
-                              availableStationsForAdd.length === 0
-                                ? "אין תחנות בודדות זמינות"
-                                : "בחר תחנה..."
-                            }
-                          />
-                        </SelectTrigger>
-                        <SelectContent className="border-zinc-700 bg-zinc-800">
-                          {availableStationsForAdd.map((station) => (
-                            <SelectItem
-                              key={station.id}
-                              value={station.id}
-                              className="text-zinc-100"
-                            >
-                              {station.name} ({station.code})
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    )}
-
-                    <div className="flex gap-2">
+                  <div className="space-y-4">
+                    {/* Section 1: Product Name - Most Prominent */}
+                    <div className="p-4 rounded-xl border-2 border-primary/20 bg-primary/5">
+                      <Label className="text-sm font-semibold flex items-center gap-2 text-foreground">
+                        <Package className="h-4 w-4 text-primary" />
+                        שם המוצר *
+                      </Label>
                       <Input
-                        type="number"
-                        min="1"
-                        placeholder="כמות מתוכננת"
-                        value={newItemQuantity}
-                        onChange={(e) => setNewItemQuantity(e.target.value)}
-                        className="flex-1 border-zinc-700 bg-zinc-800 text-zinc-100 placeholder:text-zinc-600"
+                        placeholder="הזן שם מוצר"
+                        value={newProductName}
+                        onChange={(e) => setNewProductName(e.target.value)}
+                        className="mt-2 text-lg font-medium border-input bg-secondary text-foreground placeholder:text-muted-foreground"
                       />
-                      <Button
-                        onClick={handleAddItem}
-                        disabled={
-                          (newItemKind === "line" && !newItemLineId) ||
-                          (newItemKind === "station" && !newItemStationId) ||
-                          !newItemQuantity
-                        }
-                        className="bg-emerald-600 text-white hover:bg-emerald-500"
-                      >
-                        <Plus className="h-4 w-4 ml-1" />
-                        הוסף
-                      </Button>
                     </div>
-                  </>
+
+                    {/* Section 2: Pipeline - Secondary */}
+                    <div className="p-4 rounded-xl border border-input bg-secondary/20">
+                      <Label className="text-sm font-semibold flex items-center gap-2 text-foreground mb-3">
+                        <Factory className="h-4 w-4 text-blue-400" />
+                        תהליך הייצור *
+                      </Label>
+                      <PipelineFlowEditor
+                        stations={pipelineStations}
+                        onStationsChange={setPipelineStations}
+                        availableStations={stations}
+                        presets={pipelinePresets}
+                        selectedPresetId={selectedPresetId}
+                        onPresetSelect={setSelectedPresetId}
+                        onLoadPreset={handleLoadPreset}
+                        selectedStationId={selectedStationId}
+                        onStationSelect={setSelectedStationId}
+                        onAddStation={handleAddStationToPipeline}
+                        variant="default"
+                        firstProductFlags={firstProductFlags}
+                        onToggleFirstProductQA={handleToggleFirstProductApproval}
+                      />
+                    </div>
+
+                    {/* Section 3: Quantity and Add Button - Tertiary */}
+                    <div className="p-4 rounded-xl border border-input bg-secondary/20">
+                      <Label className="text-sm font-semibold text-foreground mb-2 block">
+                        כמות מתוכננת *
+                      </Label>
+                      <div className="flex gap-2">
+                        <Input
+                          type="number"
+                          min="1"
+                          placeholder="הזן כמות"
+                          value={newProductQuantity}
+                          onChange={(e) => setNewProductQuantity(e.target.value)}
+                          className="flex-1 border-input bg-secondary text-foreground placeholder:text-muted-foreground"
+                        />
+                        <Button
+                          onClick={handleAddProduct}
+                          disabled={
+                            !newProductName.trim() ||
+                            pipelineStations.length === 0 ||
+                            !newProductQuantity
+                          }
+                          className="bg-primary text-primary-foreground hover:bg-primary/90"
+                        >
+                          <Plus className="h-4 w-4 ml-1" />
+                          הוסף מוצר
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
@@ -596,76 +580,72 @@ export const JobCreationWizard = ({
           {step === "review" && (
             <div className="space-y-4">
               {/* Job Summary */}
-              <div className="p-4 rounded-xl bg-zinc-800/50 border border-zinc-700 space-y-3">
-                <h4 className="font-semibold text-zinc-200 flex items-center gap-2">
-                  <Briefcase className="h-4 w-4 text-emerald-500" />
+              <div className="p-4 rounded-xl bg-secondary/50 border border-input space-y-3">
+                <h4 className="font-semibold text-foreground flex items-center gap-2">
+                  <Briefcase className="h-4 w-4 text-primary" />
                   פרטי העבודה
                 </h4>
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
-                    <span className="text-zinc-500">מספר עבודה:</span>
-                    <span className="mr-2 font-mono font-bold text-zinc-100">
+                    <span className="text-muted-foreground">מספר עבודה:</span>
+                    <span className="mr-2 font-mono font-bold text-foreground">
                       {jobNumber}
                     </span>
                   </div>
                   {customerName && (
                     <div>
-                      <span className="text-zinc-500">לקוח:</span>
-                      <span className="mr-2 text-zinc-200">{customerName}</span>
+                      <span className="text-muted-foreground">לקוח:</span>
+                      <span className="mr-2 text-foreground">{customerName}</span>
                     </div>
                   )}
-                  {plannedQuantity && (
+                  {dueDate && (
                     <div>
-                      <span className="text-zinc-500">כמות מתוכננת:</span>
-                      <span className="mr-2 text-zinc-200">
-                        {parseInt(plannedQuantity).toLocaleString()}
+                      <span className="text-muted-foreground">תאריך יעד:</span>
+                      <span className="mr-2 text-foreground">
+                        {format(dueDate, "dd/MM/yyyy", { locale: he })}
                       </span>
                     </div>
                   )}
                 </div>
                 {description && (
-                  <div className="pt-2 border-t border-zinc-700">
-                    <span className="text-zinc-500 text-sm">תיאור:</span>
-                    <p className="text-zinc-300 text-sm mt-1">{description}</p>
+                  <div className="pt-2 border-t border-input">
+                    <span className="text-muted-foreground text-sm">תיאור:</span>
+                    <p className="text-foreground/80 text-sm mt-1">{description}</p>
                   </div>
                 )}
               </div>
 
               {/* Products Summary */}
-              <div className="p-4 rounded-xl bg-zinc-800/50 border border-zinc-700 space-y-3">
-                <h4 className="font-semibold text-zinc-200 flex items-center gap-2">
-                  <Package className="h-4 w-4 text-blue-400" />
-                  מוצרים ({pendingItems.length})
+              <div className="p-4 rounded-xl bg-secondary/50 border border-input space-y-3">
+                <h4 className="font-semibold text-foreground flex items-center gap-2">
+                  <Package className="h-4 w-4 text-purple-400" />
+                  מוצרים ({pendingProducts.length})
                 </h4>
                 <div className="space-y-2">
-                  {pendingItems.map((item) => (
+                  {pendingProducts.map((product) => (
                     <div
-                      key={item.id}
-                      className="flex items-center justify-between py-2 border-b border-zinc-700/50 last:border-0"
+                      key={product.id}
+                      className="flex items-center justify-between py-2 border-b border-input/50 last:border-0"
                     >
                       <div className="flex items-center gap-2">
-                        {item.kind === "line" ? (
-                          <GitBranch className="h-4 w-4 text-blue-400" />
-                        ) : (
-                          <Cpu className="h-4 w-4 text-emerald-400" />
-                        )}
-                        <span className="text-zinc-200">{item.displayName}</span>
+                        <Workflow className="h-4 w-4 text-purple-400" />
+                        <span className="text-foreground">{product.name}</span>
                         <Badge
                           variant="secondary"
-                          className="text-[10px] bg-zinc-700 text-zinc-400"
+                          className="text-[10px] bg-secondary text-muted-foreground"
                         >
-                          {item.displayType}
+                          {product.stations.length} שלבים
                         </Badge>
                       </div>
-                      <span className="font-mono text-zinc-300">
-                        {item.planned_quantity.toLocaleString()} יח&apos;
+                      <span className="font-mono text-foreground/80">
+                        {product.planned_quantity.toLocaleString()} יח&apos;
                       </span>
                     </div>
                   ))}
                 </div>
-                <div className="pt-2 border-t border-zinc-700 flex justify-between">
-                  <span className="text-zinc-400">סה&quot;כ כמות מתוכננת:</span>
-                  <span className="font-mono font-bold text-emerald-400">
+                <div className="pt-2 border-t border-input flex justify-between">
+                  <span className="text-muted-foreground">סה&quot;כ כמות מתוכננת:</span>
+                  <span className="font-mono font-bold text-primary">
                     {totalPlannedQuantity.toLocaleString()} יח&apos;
                   </span>
                 </div>
@@ -689,14 +669,14 @@ export const JobCreationWizard = ({
         </div>
 
         {/* Footer */}
-        <DialogFooter className="flex-shrink-0 flex-row-reverse justify-between border-t border-zinc-800 pt-4 mt-4">
+        <DialogFooter className="flex-shrink-0 flex-row-reverse justify-between border-t border-border pt-4 mt-4">
           <div className="flex gap-2">
             {step !== "details" && (
               <Button
                 variant="outline"
                 onClick={handlePrevStep}
                 disabled={isSubmitting}
-                className="border-zinc-700 bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+                className="border-input bg-secondary text-foreground/80 hover:bg-muted"
               >
                 <ChevronRight className="h-4 w-4 ml-1" />
                 חזרה
@@ -707,7 +687,7 @@ export const JobCreationWizard = ({
               <Button
                 onClick={() => void handleSubmit()}
                 disabled={isSubmitting}
-                className="bg-emerald-600 text-white hover:bg-emerald-500"
+                className="bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 {isSubmitting ? (
                   <>
@@ -724,7 +704,7 @@ export const JobCreationWizard = ({
             ) : (
               <Button
                 onClick={handleNextStep}
-                className="bg-emerald-600 text-white hover:bg-emerald-500"
+                className="bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 המשך
                 <ChevronLeft className="h-4 w-4 mr-1" />
@@ -736,7 +716,7 @@ export const JobCreationWizard = ({
             variant="ghost"
             onClick={() => onOpenChange(false)}
             disabled={isSubmitting}
-            className="text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800"
+            className="text-muted-foreground hover:text-foreground hover:bg-secondary"
           >
             ביטול
           </Button>
