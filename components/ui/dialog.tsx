@@ -62,12 +62,12 @@ const DialogContent = React.forwardRef<
         ref={ref}
         className={cn(
           // Base positioning and sizing - mobile first
-          "fixed z-50 flex flex-col gap-4 border bg-background shadow-lg duration-200",
-          // Mobile: full-screen drawer from bottom
-          "inset-x-0 bottom-0 top-auto max-h-[92vh] w-full rounded-t-xl p-4",
+          "fixed z-50 flex flex-col gap-4 border bg-background shadow-lg duration-200 overscroll-contain",
+          // Mobile: full-screen drawer from bottom with safe area
+          "inset-x-0 bottom-0 top-auto max-h-[85dvh] w-full rounded-t-xl p-4 pb-[max(env(safe-area-inset-bottom,0px),1rem)]",
           // Desktop: centered modal with max widths
           "sm:inset-auto sm:left-[50%] sm:top-[50%] sm:translate-x-[-50%] sm:translate-y-[-50%]",
-          "sm:max-h-[85vh] sm:w-[calc(100vw-2rem)] sm:max-w-lg sm:rounded-xl sm:p-6",
+          "sm:max-h-[85vh] sm:w-[calc(100vw-2rem)] sm:max-w-lg sm:rounded-xl sm:p-6 sm:pb-6",
           // Animations
           "data-[state=open]:animate-in data-[state=closed]:animate-out",
           "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
@@ -81,12 +81,12 @@ const DialogContent = React.forwardRef<
         {...props}
       >
         {headerChild ? <div className="flex-shrink-0">{headerChild}</div> : null}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden -mx-4 px-4 sm:-mx-6 sm:px-6">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden -mx-4 px-4 sm:-mx-6 sm:px-6 overscroll-contain touch-pan-y">
           {bodyChildren}
         </div>
         {footerChild ? <div className="flex-shrink-0">{footerChild}</div> : null}
         {!hideCloseButton && (
-          <DialogPrimitive.Close className="absolute left-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground sm:left-auto sm:right-4">
+          <DialogPrimitive.Close className="absolute left-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground sm:left-auto sm:right-4 active:opacity-100 touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center -m-2">
             <X className="h-4 w-4" />
             <span className="sr-only">Close</span>
           </DialogPrimitive.Close>

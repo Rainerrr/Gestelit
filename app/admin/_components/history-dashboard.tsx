@@ -1,33 +1,22 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { History } from "lucide-react";
+import { History, GitCompareArrows } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AdminLayout } from "./admin-layout";
 import { HistoryFilters, type HistoryFiltersState } from "./history-filters";
-import {
-  HistoryCharts,
-  type StatusSummary,
-} from "./history-charts";
-import { HistoryStatistics } from "./history-statistics";
-import {
-  ThroughputChart,
-  type ThroughputSummary,
-} from "./throughput-chart";
+import type { StatusSummary } from "./history-charts";
+import { HistoryStatistics, computeStats, type StatsMode } from "./history-statistics";
 import { RecentSessionsTable } from "./recent-sessions-table";
 import { useAdminGuard } from "@/hooks/useAdminGuard";
 import {
   fetchStationsAdminApi,
   fetchWorkersAdminApi,
-} from "@/lib/api/admin-management";
-import {
   fetchRecentSessionsAdminApi,
   fetchStatusEventsAdminApi,
-  fetchMonthlyJobThroughputAdminApi,
 } from "@/lib/api/admin-management";
 import type {
   CompletedSession,
-  JobThroughput,
   SessionStatusEvent,
 } from "@/lib/data/admin-dashboard";
 import {
@@ -41,6 +30,15 @@ const SESSIONS_PAGE_SIZE = 50;
 
 type Option = { id: string; label: string };
 
+type SortKey =
+  | "stationName"
+  | "workerName"
+  | "endedAt"
+  | "totalProduction"
+  | "jobItemCount"
+  | "productsPerHour"
+  | "durationSeconds";
+
 export const HistoryDashboard = () => {
   const { hasAccess } = useAdminGuard();
   const [sessions, setSessions] = useState<CompletedSession[]>([]);
@@ -49,34 +47,29 @@ export const HistoryDashboard = () => {
   const [stations, setStations] = useState<Option[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingFilters, setIsLoadingFilters] = useState(true);
-  const [isLoadingJobs, setIsLoadingJobs] = useState(true);
   const [isLoadingStatusEvents, setIsLoadingStatusEvents] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [statusEvents, setStatusEvents] = useState<SessionStatusEvent[]>([]);
-  const [monthlyJobs, setMonthlyJobs] = useState<JobThroughput[]>([]);
-  const [monthCursor, setMonthCursor] = useState(() => {
-    const now = new Date();
-    return { year: now.getFullYear(), month: now.getMonth() + 1 };
-  });
-  const [pageIndex, setPageIndex] = useState(0);
   const [sort, setSort] = useState<{
-    key:
-      | "jobNumber"
-      | "stationName"
-      | "workerName"
-      | "endedAt"
-      | "durationSeconds"
-      | "status"
-      | "totalGood"
-      | "totalScrap";
+    key: SortKey;
     direction: "asc" | "desc";
   }>({
     key: "endedAt",
     direction: "desc",
   });
   const [sessionsPageIndex, setSessionsPageIndex] = useState(0);
+
+  // Compare mode state
+  const [compareMode, setCompareMode] = useState(false);
+  const [statsMode, setStatsMode] = useState<StatsMode>("total");
+  const [filtersB, setFiltersB] = useState<HistoryFiltersState>({});
+  const [sessionsB, setSessionsB] = useState<CompletedSession[]>([]);
+  const [statusEventsB, setStatusEventsB] = useState<SessionStatusEvent[]>([]);
+  const [isLoadingB, setIsLoadingB] = useState(false);
+  const [isLoadingStatusEventsB, setIsLoadingStatusEventsB] = useState(false);
+
   const stationIds = useMemo(
     () =>
       Array.from(
@@ -88,8 +81,25 @@ export const HistoryDashboard = () => {
       ),
     [sessions],
   );
+  const stationIdsB = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          sessionsB
+            .map((session) => session.stationId)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      ),
+    [sessionsB],
+  );
+
+  const allStationIds = useMemo(
+    () => Array.from(new Set([...stationIds, ...stationIdsB])),
+    [stationIds, stationIdsB],
+  );
+
   const { dictionary, isLoading: isStatusesLoading } = useStatusDictionary(
-    stationIds,
+    allStationIds,
   );
 
   const loadFiltersData = useCallback(async () => {
@@ -160,25 +170,43 @@ export const HistoryDashboard = () => {
     }
   }, []);
 
-  const loadMonthlyJobs = useCallback(
-    async (targetMonth: { year: number; month: number }) => {
-      setIsLoadingJobs(true);
+  const loadSessionsB = useCallback(
+    async (nextFilters: HistoryFiltersState) => {
+      setIsLoadingB(true);
       try {
-        const { throughput: items } = await fetchMonthlyJobThroughputAdminApi({
-          year: targetMonth.year,
-          month: targetMonth.month,
+        const { sessions: data } = await fetchRecentSessionsAdminApi({
+          workerId: nextFilters.workerId,
+          stationId: nextFilters.stationId,
+          jobNumber: nextFilters.jobNumber?.trim(),
+          limit: 500,
         });
-        setMonthlyJobs(items);
-        setPageIndex(0);
+        setSessionsB(data);
       } catch (error) {
-        console.error("[history-dashboard] failed to fetch monthly jobs", error);
-        setMonthlyJobs([]);
+        console.error("[history-dashboard] failed to fetch sessions B", error);
+        setSessionsB([]);
       } finally {
-        setIsLoadingJobs(false);
+        setIsLoadingB(false);
       }
     },
     [],
   );
+
+  const loadStatusEventsB = useCallback(async (sessionIds: string[]) => {
+    if (sessionIds.length === 0) {
+      setStatusEventsB([]);
+      return;
+    }
+    setIsLoadingStatusEventsB(true);
+    try {
+      const { events } = await fetchStatusEventsAdminApi(sessionIds);
+      setStatusEventsB(events);
+    } catch (error) {
+      console.error("[history-dashboard] failed to fetch status events B", error);
+      setStatusEventsB([]);
+    } finally {
+      setIsLoadingStatusEventsB(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (hasAccess !== true) return;
@@ -196,10 +224,17 @@ export const HistoryDashboard = () => {
     void loadStatusEvents(ids);
   }, [hasAccess, sessions, loadStatusEvents]);
 
+  // B-side effects (only run when compare mode is active)
   useEffect(() => {
-    if (hasAccess !== true) return;
-    void loadMonthlyJobs(monthCursor);
-  }, [hasAccess, monthCursor, loadMonthlyJobs]);
+    if (hasAccess !== true || !compareMode) return;
+    void loadSessionsB(filtersB);
+  }, [hasAccess, compareMode, filtersB, loadSessionsB]);
+
+  useEffect(() => {
+    if (hasAccess !== true || !compareMode) return;
+    const ids = sessionsB.map((session) => session.id);
+    void loadStatusEventsB(ids);
+  }, [hasAccess, compareMode, sessionsB, loadStatusEventsB]);
 
   useEffect(() => {
     setSelectedIds((prev) => {
@@ -213,9 +248,86 @@ export const HistoryDashboard = () => {
     });
   }, [dictionary, sessions, statusEvents]);
 
-  const statusData: StatusSummary[] = useMemo(() => {
+  const jobNumbers = useMemo(
+    () => sessions.map((session) => session.jobNumber).filter(Boolean),
+    [sessions],
+  );
+
+  const jobNumbersB = useMemo(
+    () => sessionsB.map((session) => session.jobNumber).filter(Boolean),
+    [sessionsB],
+  );
+
+  const filteredSessions = useMemo(() => {
+    if (!filters.dateRange?.from) return sessions;
+
+    const fromDate = new Date(filters.dateRange.from);
+    fromDate.setHours(0, 0, 0, 0);
+
+    const toDate = filters.dateRange.to
+      ? new Date(filters.dateRange.to)
+      : new Date(filters.dateRange.from);
+    toDate.setHours(23, 59, 59, 999);
+
+    return sessions.filter((session) => {
+      const sessionDate = new Date(session.startedAt);
+      return sessionDate >= fromDate && sessionDate <= toDate;
+    });
+  }, [sessions, filters.dateRange]);
+
+  const filteredStatusEvents = useMemo(() => {
+    const filteredIds = new Set(filteredSessions.map((s) => s.id));
+    return statusEvents.filter((event) => filteredIds.has(event.sessionId));
+  }, [filteredSessions, statusEvents]);
+
+  // B-side filtered data
+  const filteredSessionsB = useMemo(() => {
+    if (!compareMode) return [];
+    if (!filtersB.dateRange?.from) return sessionsB;
+
+    const fromDate = new Date(filtersB.dateRange.from);
+    fromDate.setHours(0, 0, 0, 0);
+    const toDate = filtersB.dateRange.to
+      ? new Date(filtersB.dateRange.to)
+      : new Date(filtersB.dateRange.from);
+    toDate.setHours(23, 59, 59, 999);
+
+    return sessionsB.filter((session) => {
+      const sessionDate = new Date(session.startedAt);
+      return sessionDate >= fromDate && sessionDate <= toDate;
+    });
+  }, [compareMode, sessionsB, filtersB.dateRange]);
+
+  const filteredStatusEventsB = useMemo(() => {
+    if (!compareMode) return [];
+    const filteredIds = new Set(filteredSessionsB.map((s) => s.id));
+    return statusEventsB.filter((event) => filteredIds.has(event.sessionId));
+  }, [compareMode, filteredSessionsB, statusEventsB]);
+
+  // Computed stats for comparison
+  const statsA = useMemo(
+    () => computeStats(filteredSessions, filteredStatusEvents, dictionary),
+    [filteredSessions, filteredStatusEvents, dictionary],
+  );
+
+  const statsB = useMemo(
+    () => compareMode ? computeStats(filteredSessionsB, filteredStatusEventsB, dictionary) : null,
+    [compareMode, filteredSessionsB, filteredStatusEventsB, dictionary],
+  );
+
+  const computeStatusData = useCallback((
+    sessions: CompletedSession[],
+    events: SessionStatusEvent[],
+  ): StatusSummary[] => {
     const totals = new Map<string, StatusSummary>();
     let otherDuration = 0;
+
+    const otherGlobalStatusId = (() => {
+      for (const [id, def] of dictionary.global) {
+        if (def.is_protected && def.label_he === "אחר") return id;
+      }
+      return null;
+    })();
 
     const nowTs = Date.now();
     const sessionEndTimes = new Map<string, number>();
@@ -224,7 +336,7 @@ export const HistoryDashboard = () => {
       sessionEndTimes.set(session.id, new Date(endedAt).getTime());
     });
 
-    statusEvents.forEach((event) => {
+    events.forEach((event) => {
       const startTs = new Date(event.startedAt).getTime();
       const fallbackEndTs = sessionEndTimes.get(event.sessionId) ?? nowTs;
       const explicitEndTs = event.endedAt
@@ -232,12 +344,10 @@ export const HistoryDashboard = () => {
         : fallbackEndTs;
       const endTs = Math.min(explicitEndTs, fallbackEndTs, nowTs);
       const durationMs = endTs - startTs;
-      if (Number.isNaN(durationMs) || durationMs <= 0) {
-        return;
-      }
+      if (Number.isNaN(durationMs) || durationMs <= 0) return;
 
       const scope = getStatusScopeFromDictionary(event.status, dictionary);
-      if (scope === "station" || scope === "unknown") {
+      if (scope === "unknown" || scope === "station" || event.status === otherGlobalStatusId) {
         otherDuration += durationMs;
         return;
       }
@@ -269,117 +379,20 @@ export const HistoryDashboard = () => {
 
     const combined: StatusSummary[] = [...ordered, ...extras];
     if (otherDuration > 0) {
-      combined.push({
-        key: "other_station_statuses",
-        label: "אחר",
-        value: otherDuration,
-      });
+      combined.push({ key: "other_combined", label: "אחר", value: otherDuration });
     }
-
     return combined;
-  }, [dictionary, sessions, statusEvents]);
+  }, [dictionary]);
 
-  const monthLabel = useMemo(() => {
-    const monthNames = [
-      "ינואר",
-      "פברואר",
-      "מרץ",
-      "אפריל",
-      "מאי",
-      "יוני",
-      "יולי",
-      "אוגוסט",
-      "ספטמבר",
-      "אוקטובר",
-      "נובמבר",
-      "דצמבר",
-    ];
-    const name = monthNames[monthCursor.month - 1] ?? "";
-    return `${name} ${monthCursor.year}`;
-  }, [monthCursor]);
-
-  const totalPages = useMemo(() => {
-    const pageSize = 5;
-    return Math.max(1, Math.ceil(monthlyJobs.length / pageSize));
-  }, [monthlyJobs.length]);
-
-  useEffect(() => {
-    const maxPage = Math.max(0, totalPages - 1);
-    if (pageIndex > maxPage) {
-      setPageIndex(maxPage);
-    }
-  }, [pageIndex, totalPages]);
-
-  const handlePrevMonth = () => {
-    setMonthCursor((prev) => {
-      if (prev.month === 1) {
-        return { year: prev.year - 1, month: 12 };
-      }
-      return { year: prev.year, month: prev.month - 1 };
-    });
-  };
-
-  const handleNextMonth = () => {
-    setMonthCursor((prev) => {
-      if (prev.month === 12) {
-        return { year: prev.year + 1, month: 1 };
-      }
-      return { year: prev.year, month: prev.month + 1 };
-    });
-  };
-
-  const handlePrevPage = () => {
-    setPageIndex((prev) => Math.max(0, prev - 1));
-  };
-
-  const handleNextPage = () => {
-    setPageIndex((prev) => Math.min(totalPages - 1, prev + 1));
-  };
-
-  const pageLabel = useMemo(
-    () => `${pageIndex + 1} / ${totalPages}`,
-    [pageIndex, totalPages],
+  const statusData: StatusSummary[] = useMemo(
+    () => computeStatusData(filteredSessions, filteredStatusEvents),
+    [computeStatusData, filteredSessions, filteredStatusEvents],
   );
 
-  const throughputData: ThroughputSummary[] = useMemo(() => {
-    const pageSize = 5;
-    const start = pageIndex * pageSize;
-    const end = start + pageSize;
-    return monthlyJobs.slice(start, end).map((job) => ({
-      name: job.jobNumber,
-      label: job.jobNumber,
-      good: job.totalGood,
-      scrap: job.totalScrap,
-      planned: job.plannedQuantity ?? 0,
-    }));
-  }, [monthlyJobs, pageIndex]);
-
-  const jobNumbers = useMemo(
-    () => sessions.map((session) => session.jobNumber).filter(Boolean),
-    [sessions],
+  const statusDataB: StatusSummary[] = useMemo(
+    () => compareMode ? computeStatusData(filteredSessionsB, filteredStatusEventsB) : [],
+    [compareMode, computeStatusData, filteredSessionsB, filteredStatusEventsB],
   );
-
-  const filteredSessions = useMemo(() => {
-    if (!filters.dateRange?.from) return sessions;
-
-    const fromDate = new Date(filters.dateRange.from);
-    fromDate.setHours(0, 0, 0, 0);
-
-    const toDate = filters.dateRange.to
-      ? new Date(filters.dateRange.to)
-      : new Date(filters.dateRange.from);
-    toDate.setHours(23, 59, 59, 999);
-
-    return sessions.filter((session) => {
-      const sessionDate = new Date(session.startedAt);
-      return sessionDate >= fromDate && sessionDate <= toDate;
-    });
-  }, [sessions, filters.dateRange]);
-
-  const filteredStatusEvents = useMemo(() => {
-    const filteredIds = new Set(filteredSessions.map((s) => s.id));
-    return statusEvents.filter((event) => filteredIds.has(event.sessionId));
-  }, [filteredSessions, statusEvents]);
 
   const sortedSessions = useMemo(() => {
     const list = [...filteredSessions];
@@ -387,8 +400,6 @@ export const HistoryDashboard = () => {
 
     const getValue = (session: CompletedSession) => {
       switch (sort.key) {
-        case "jobNumber":
-          return session.jobNumber ?? "";
         case "stationName":
           return session.stationName ?? "";
         case "workerName":
@@ -397,12 +408,15 @@ export const HistoryDashboard = () => {
           return new Date(session.endedAt).getTime();
         case "durationSeconds":
           return session.durationSeconds ?? 0;
-        case "status":
-          return session.currentStatus ?? "";
-        case "totalGood":
-          return session.totalGood ?? 0;
-        case "totalScrap":
-          return session.totalScrap ?? 0;
+        case "totalProduction":
+          return (session.totalGood ?? 0) + (session.totalScrap ?? 0);
+        case "jobItemCount":
+          return session.jobItemCount ?? 0;
+        case "productsPerHour": {
+          const prodTime = session.productionTimeSeconds ?? 0;
+          if (prodTime === 0) return 0;
+          return (session.totalGood ?? 0) / (prodTime / 3600);
+        }
         default:
           return "";
       }
@@ -506,17 +520,7 @@ export const HistoryDashboard = () => {
     }
   };
 
-  const handleSort = (
-    key:
-      | "jobNumber"
-      | "stationName"
-      | "workerName"
-      | "endedAt"
-      | "durationSeconds"
-      | "status"
-      | "totalGood"
-      | "totalScrap",
-  ) => {
+  const handleSort = (key: SortKey) => {
     setSort((prev) =>
       prev.key === key
         ? { key, direction: prev.direction === "asc" ? "desc" : "asc" }
@@ -536,6 +540,17 @@ export const HistoryDashboard = () => {
     return null;
   }
 
+  const handleToggleCompare = () => {
+    setCompareMode((prev) => !prev);
+    if (!compareMode) {
+      // Entering compare mode - initialize B with same filters
+      setFiltersB({});
+    }
+  };
+
+  const isLoadingA = isLoading || isLoadingFilters || isLoadingStatusEvents || isStatusesLoading;
+  const isLoadingBSide = isLoadingB || isLoadingStatusEventsB || isStatusesLoading;
+
   return (
     <AdminLayout
       header={
@@ -544,65 +559,127 @@ export const HistoryDashboard = () => {
             <History className="h-5 w-5 text-primary shrink-0" />
             <h1 className="text-lg font-semibold text-foreground sm:text-xl">היסטוריה</h1>
           </div>
-          <Button
-            variant="outline"
-            onClick={() => setFilters({})}
-            aria-label="איפוס מסננים"
-            className="border-input bg-secondary text-foreground/80 hover:bg-accent hover:text-foreground"
-            size="sm"
-          >
-            איפוס
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant={compareMode ? "default" : "outline"}
+              onClick={handleToggleCompare}
+              aria-label="מצב השוואה"
+              className={compareMode
+                ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                : "border-input bg-secondary text-foreground/80 hover:bg-accent hover:text-foreground"
+              }
+              size="sm"
+            >
+              <GitCompareArrows className="h-4 w-4 ml-1.5" />
+              השוואה
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setFilters({});
+                if (compareMode) setFiltersB({});
+              }}
+              aria-label="איפוס מסננים"
+              className="border-input bg-secondary text-foreground/80 hover:bg-accent hover:text-foreground"
+              size="sm"
+            >
+              איפוס
+            </Button>
+          </div>
         </div>
       }
     >
       <div className="space-y-6">
-        {/* Throughput chart - above filters, independent of filtering */}
-        <ThroughputChart
-          throughputData={throughputData}
-          isLoading={isLoadingJobs}
-          monthLabel={monthLabel}
-          onPrevMonth={handlePrevMonth}
-          onNextMonth={handleNextMonth}
-          canPrevPage={pageIndex > 0}
-          canNextPage={pageIndex < totalPages - 1}
-          onPrevPage={handlePrevPage}
-          onNextPage={handleNextPage}
-          pageLabel={pageLabel}
-        />
+        {/* Average/Total toggle */}
+        <div className="flex items-center justify-center">
+          <div className="flex items-center rounded-lg border border-input overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setStatsMode("total")}
+              className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                statsMode === "total"
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-secondary text-foreground/70 hover:bg-accent"
+              }`}
+            >
+              סה״כ
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatsMode("average")}
+              className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                statsMode === "average"
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-secondary text-foreground/70 hover:bg-accent"
+              }`}
+            >
+              ממוצע לעבודה
+            </button>
+          </div>
+        </div>
 
-        <HistoryFilters
-          workers={workers}
-          stations={stations}
-          jobNumbers={jobNumbers}
-          value={filters}
-          onChange={setFilters}
-        />
-
-        {/* Statistics cards - affected by filters */}
-        <HistoryStatistics
-          sessions={filteredSessions}
-          statusEvents={filteredStatusEvents}
-          dictionary={dictionary}
-          isLoading={
-            isLoading ||
-            isLoadingFilters ||
-            isLoadingStatusEvents ||
-            isStatusesLoading
-          }
-        />
-
-        {/* Status distribution chart - affected by filters */}
-        <HistoryCharts
-          statusData={statusData}
-          isLoading={
-            isLoading ||
-            isLoadingFilters ||
-            isLoadingStatusEvents ||
-            isStatusesLoading
-          }
-          dictionary={dictionary}
-        />
+        {!compareMode ? (
+          <>
+            <HistoryFilters
+              workers={workers}
+              stations={stations}
+              jobNumbers={jobNumbers}
+              value={filters}
+              onChange={setFilters}
+            />
+            <HistoryStatistics
+              sessions={filteredSessions}
+              statusEvents={filteredStatusEvents}
+              dictionary={dictionary}
+              statusData={statusData}
+              isLoading={isLoadingA}
+              mode={statsMode}
+            />
+          </>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Side A */}
+            <div className="space-y-4 rounded-xl border border-border/50 p-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">צד א׳</p>
+              <HistoryFilters
+                workers={workers}
+                stations={stations}
+                jobNumbers={jobNumbers}
+                value={filters}
+                onChange={setFilters}
+              />
+              <HistoryStatistics
+                sessions={filteredSessions}
+                statusEvents={filteredStatusEvents}
+                dictionary={dictionary}
+                statusData={statusData}
+                isLoading={isLoadingA}
+                comparisonStats={statsB}
+                mode={statsMode}
+              />
+            </div>
+            {/* Side B */}
+            <div className="space-y-4 rounded-xl border border-border/50 p-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">צד ב׳</p>
+              <HistoryFilters
+                workers={workers}
+                stations={stations}
+                jobNumbers={jobNumbersB}
+                value={filtersB}
+                onChange={setFiltersB}
+              />
+              <HistoryStatistics
+                sessions={filteredSessionsB}
+                statusEvents={filteredStatusEventsB}
+                dictionary={dictionary}
+                statusData={statusDataB}
+                isLoading={isLoadingBSide}
+                comparisonStats={statsA}
+                mode={statsMode}
+              />
+            </div>
+          </div>
+        )}
 
         {/* Sessions table section */}
         <div className="space-y-3">

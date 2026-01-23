@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Mono, Rubik } from "next/font/google";
 import "./globals.css";
 import { AppProviders } from "@/components/providers/app-providers";
@@ -20,6 +20,14 @@ const plexMono = IBM_Plex_Mono({
 export const metadata: Metadata = {
   title: "Gestelit Work Monitor",
   description: "מערכת ניטור ובקרה לרצפת הייצור",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

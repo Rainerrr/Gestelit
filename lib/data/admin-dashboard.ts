@@ -51,6 +51,9 @@ export type CompletedSession = ActiveSession & {
   durationSeconds: number;
   stoppageTimeSeconds: number;
   setupTimeSeconds: number;
+  productionTimeSeconds: number;
+  jobItemCount: number;
+  jobItemNames: string[];
 };
 
 type SessionRow = {
@@ -602,6 +605,134 @@ const fetchStoppageTimeBySessionIds = (sessionIds: string[]) =>
 const fetchSetupTimeBySessionIds = (sessionIds: string[]) =>
   fetchMachineStateTimeBySessionIds(sessionIds, ["setup"]);
 
+/**
+ * Fetch production time for multiple sessions.
+ * Convenience wrapper for fetchMachineStateTimeBySessionIds.
+ */
+const fetchProductionTimeBySessionIds = (sessionIds: string[]) =>
+  fetchMachineStateTimeBySessionIds(sessionIds, ["production"]);
+
+/**
+ * Fetch derived totals (totalGood, totalScrap) across ALL job items for sessions.
+ * Uses v_session_derived_totals view which sums from all status_events for the session.
+ * Unlike fetchDerivedTotalsBySessionIds (current job item only), this gives full history.
+ */
+const fetchAllDerivedTotalsBySessionIds = async (
+  sessionIds: string[],
+): Promise<Map<string, { totalGood: number; totalScrap: number }>> => {
+  if (sessionIds.length === 0) {
+    return new Map();
+  }
+
+  const supabase = createServiceSupabase();
+  const { data, error } = await supabase
+    .from("v_session_derived_totals")
+    .select("session_id, total_good, total_scrap")
+    .in("session_id", sessionIds);
+
+  if (error) {
+    console.error("[admin-dashboard] Failed to fetch all derived totals", error);
+    return new Map();
+  }
+
+  const totalsMap = new Map<string, { totalGood: number; totalScrap: number }>();
+  for (const row of data ?? []) {
+    if (row.session_id) {
+      totalsMap.set(row.session_id, {
+        totalGood: row.total_good ?? 0,
+        totalScrap: row.total_scrap ?? 0,
+      });
+    }
+  }
+  return totalsMap;
+};
+
+/**
+ * Fetch number of distinct job items worked on per session.
+ * Counts distinct job_item_id from status_events where quantity_good > 0.
+ */
+const fetchJobItemCountBySessionIds = async (
+  sessionIds: string[],
+): Promise<Map<string, number>> => {
+  if (sessionIds.length === 0) {
+    return new Map();
+  }
+
+  const supabase = createServiceSupabase();
+  const { data, error } = await supabase
+    .from("status_events")
+    .select("session_id, job_item_id")
+    .in("session_id", sessionIds)
+    .not("job_item_id", "is", null)
+    .gt("quantity_good", 0);
+
+  if (error) {
+    console.error("[admin-dashboard] Failed to fetch job item counts", error);
+    return new Map();
+  }
+
+  const countMap = new Map<string, Set<string>>();
+  for (const row of data ?? []) {
+    if (row.session_id && row.job_item_id) {
+      const existing = countMap.get(row.session_id) ?? new Set();
+      existing.add(row.job_item_id);
+      countMap.set(row.session_id, existing);
+    }
+  }
+
+  const result = new Map<string, number>();
+  countMap.forEach((set, sessionId) => {
+    result.set(sessionId, set.size);
+  });
+  return result;
+};
+
+/**
+ * Fetch distinct job item names per session (for tooltip display).
+ * Returns names of job items that had quantity_good > 0 reported.
+ */
+const fetchJobItemNamesBySessionIds = async (
+  sessionIds: string[],
+): Promise<Map<string, string[]>> => {
+  if (sessionIds.length === 0) {
+    return new Map();
+  }
+
+  const supabase = createServiceSupabase();
+  const { data, error } = await supabase
+    .from("status_events")
+    .select("session_id, job_item_id, job_items:job_item_id(name)")
+    .in("session_id", sessionIds)
+    .not("job_item_id", "is", null)
+    .gt("quantity_good", 0);
+
+  if (error) {
+    console.error("[admin-dashboard] Failed to fetch job item names", error);
+    return new Map();
+  }
+
+  type JobItemNameRow = {
+    session_id: string;
+    job_item_id: string;
+    job_items: { name: string } | null;
+  };
+
+  const namesMap = new Map<string, Map<string, string>>();
+  for (const row of (data as unknown as JobItemNameRow[]) ?? []) {
+    if (row.session_id && row.job_item_id && row.job_items?.name) {
+      const existing = namesMap.get(row.session_id) ?? new Map();
+      existing.set(row.job_item_id, row.job_items.name);
+      namesMap.set(row.session_id, existing);
+    }
+  }
+
+  const result = new Map<string, string[]>();
+  namesMap.forEach((nameMap, sessionId) => {
+    result.set(sessionId, Array.from(nameMap.values()));
+  });
+  return result;
+};
+
 type FetchRecentSessionsArgs = {
   workerId?: string;
   stationId?: string;
@@ -642,19 +773,24 @@ export const fetchRecentSessions = async (
 
   const rows = (data as unknown as RawActiveSession[]) ?? [];
 
-  // Fetch stoppage, setup times and malfunction counts for all sessions (in parallel)
+  // Fetch all enrichment data in parallel
   const sessionIds = rows.map((row) => row.id);
-  const [stoppageMap, setupMap, malfunctionCountMap] = await Promise.all([
+  const [stoppageMap, setupMap, productionMap, malfunctionCountMap, allDerivedTotals, jobItemCounts, jobItemNames] = await Promise.all([
     fetchStoppageTimeBySessionIds(sessionIds),
     fetchSetupTimeBySessionIds(sessionIds),
+    fetchProductionTimeBySessionIds(sessionIds),
     fetchMalfunctionCountsBySessionIds(sessionIds),
+    fetchAllDerivedTotalsBySessionIds(sessionIds),
+    fetchJobItemCountBySessionIds(sessionIds),
+    fetchJobItemNamesBySessionIds(sessionIds),
   ]);
 
   const sessionsWithNotes = await Promise.all(
     rows.map(async (row) => {
       const lastEventNote = await fetchLastEventNote(row.id);
       const malfunctionCount = malfunctionCountMap.get(row.id) ?? 0;
-      const base = mapActiveSession(row, lastEventNote, malfunctionCount);
+      const totals = allDerivedTotals.get(row.id);
+      const base = mapActiveSession(row, lastEventNote, malfunctionCount, 0, 0, totals);
       const endedAt = row.ended_at ?? row.started_at;
       const durationSeconds = Math.max(
         0,
@@ -665,6 +801,7 @@ export const fetchRecentSessions = async (
       );
       const stoppageTimeSeconds = stoppageMap.get(row.id) ?? 0;
       const setupTimeSeconds = setupMap.get(row.id) ?? 0;
+      const productionTimeSeconds = productionMap.get(row.id) ?? 0;
 
       return {
         ...base,
@@ -672,6 +809,9 @@ export const fetchRecentSessions = async (
         durationSeconds,
         stoppageTimeSeconds,
         setupTimeSeconds,
+        productionTimeSeconds,
+        jobItemCount: jobItemCounts.get(row.id) ?? 0,
+        jobItemNames: jobItemNames.get(row.id) ?? [],
       };
     }),
   );
@@ -813,156 +953,6 @@ export const fetchStatusEventsBySessionIds = async (
   }));
 };
 
-export type JobThroughput = {
-  jobId: string;
-  jobNumber: string;
-  plannedQuantity: number;
-  totalGood: number;
-  totalScrap: number;
-  lastEndedAt: string;
-};
-
-type FetchMonthlyJobThroughputArgs = {
-  year: number;
-  month: number; // 1-12
-  workerId?: string;
-  stationId?: string;
-  jobNumber?: string;
-};
-
-type MonthlySessionRow = {
-  id: string;
-  job_id: string | null;
-  ended_at: string | null;
-  jobs: {
-    job_number: string | null;
-  } | null;
-  // Derived from status_events
-  derived_totals: {
-    total_good: number;
-    total_scrap: number;
-  } | null;
-};
-
-export const fetchMonthlyJobThroughput = async (
-  args: FetchMonthlyJobThroughputArgs,
-): Promise<JobThroughput[]> => {
-  const { year, month, workerId, stationId, jobNumber } = args;
-  if (!year || !month) return [];
-
-  const supabase = createServiceSupabase();
-  const monthStart = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0));
-  const monthEnd = new Date(Date.UTC(year, month, 1, 0, 0, 0));
-
-  // Step 1: Query sessions
-  let query = supabase
-    .from("sessions")
-    .select(
-      `
-      id,
-      job_id,
-      ended_at,
-      jobs:jobs(job_number)
-    `,
-    )
-    .eq("status", "completed")
-    .not("job_id", "is", null)
-    .gte("ended_at", monthStart.toISOString())
-    .lt("ended_at", monthEnd.toISOString());
-
-  if (workerId) {
-    query = query.eq("worker_id", workerId);
-  }
-  if (stationId) {
-    query = query.eq("station_id", stationId);
-  }
-  if (jobNumber) {
-    query = query.eq("jobs.job_number", jobNumber);
-  }
-
-  const { data, error } = await query;
-
-  if (error) {
-    console.error("[admin-dashboard] Failed to fetch monthly jobs", error);
-    return [];
-  }
-
-  const rows = (data as unknown as MonthlySessionRow[]) ?? [];
-  if (rows.length === 0) return [];
-
-  // Step 2: Get derived totals from status_events for these sessions
-  const sessionIds = rows.map((r) => r.id).filter(Boolean);
-  const { data: totalsData } = await supabase
-    .from("v_session_derived_totals")
-    .select("session_id, total_good, total_scrap")
-    .in("session_id", sessionIds);
-
-  const totalsMap = new Map<string, { total_good: number; total_scrap: number }>();
-  (totalsData ?? []).forEach((t: { session_id: string; total_good: number; total_scrap: number }) => {
-    totalsMap.set(t.session_id, { total_good: t.total_good, total_scrap: t.total_scrap });
-  });
-
-  // Step 3: Get planned quantities from job_items (summed per job)
-  const jobIds = [...new Set(rows.map((r) => r.job_id).filter(Boolean))] as string[];
-  const { data: jobItemsData } = await supabase
-    .from("job_items")
-    .select("job_id, planned_quantity")
-    .in("job_id", jobIds)
-    .eq("is_active", true);
-
-  const plannedQtyMap = new Map<string, number>();
-  (jobItemsData ?? []).forEach((ji: { job_id: string; planned_quantity: number }) => {
-    const current = plannedQtyMap.get(ji.job_id) ?? 0;
-    plannedQtyMap.set(ji.job_id, current + (ji.planned_quantity ?? 0));
-  });
-
-  const map = new Map<string, JobThroughput>();
-
-  const pickMockPlannedQuantity = (jobNum: string | null | undefined) => {
-    const options = [40, 50, 60, 70, 80, 90];
-    if (!jobNum) return 50;
-    let hash = 0;
-    for (let i = 0; i < jobNum.length; i += 1) {
-      hash = (hash * 31 + jobNum.charCodeAt(i)) | 0;
-    }
-    const index = Math.abs(hash) % options.length;
-    return options[index];
-  };
-
-  rows.forEach((row) => {
-    if (!row.job_id || !row.ended_at) {
-      return;
-    }
-    const jobNum = row.jobs?.job_number ?? "לא ידוע";
-    const plannedQuantity =
-      plannedQtyMap.get(row.job_id) ?? pickMockPlannedQuantity(jobNum);
-    const totals = totalsMap.get(row.id) ?? { total_good: 0, total_scrap: 0 };
-
-    const current =
-      map.get(row.job_id) ??
-      ({
-        jobId: row.job_id,
-        jobNumber: jobNum,
-        plannedQuantity,
-        totalGood: 0,
-        totalScrap: 0,
-        lastEndedAt: row.ended_at,
-      } satisfies JobThroughput);
-
-    current.totalGood += totals.total_good ?? 0;
-    current.totalScrap += totals.total_scrap ?? 0;
-
-    if (new Date(row.ended_at).getTime() > new Date(current.lastEndedAt).getTime()) {
-      current.lastEndedAt = row.ended_at;
-    }
-
-    map.set(row.job_id, current);
-  });
-
-  return Array.from(map.values()).sort(
-    (a, b) => new Date(b.lastEndedAt).getTime() - new Date(a.lastEndedAt).getTime(),
-  );
-};
 
 // ============================================
 // LIVE JOB PROGRESS (for admin dashboard)

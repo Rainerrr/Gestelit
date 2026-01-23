@@ -44,7 +44,8 @@
       "Bash(powershell -Command \"Get-Process chrome -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep -Seconds 2; echo ''Chrome processes killed''\")",
       "mcp__playwright__browser_tabs",
       "mcp__playwright__browser_press_key",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Bash(git show:*)"
     ]
   }
 }
