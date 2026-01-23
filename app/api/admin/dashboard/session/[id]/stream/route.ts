@@ -162,7 +162,7 @@ type RawSession = {
   last_status_change_at: string | null;
   worker_full_name_snapshot: string | null;
   station_name_snapshot: string | null;
-  jobs: { job_number: string | null; planned_quantity: number | null } | null;
+  jobs: { job_number: string | null } | null;
   stations: { name: string | null; code: string | null; station_type: StationType | null } | null;
   workers: { full_name: string | null; worker_code: string | null } | null;
 };
@@ -180,7 +180,7 @@ const SESSION_SELECT = `
   forced_closed_at,
   worker_full_name_snapshot,
   station_name_snapshot,
-  jobs:jobs(job_number, planned_quantity),
+  jobs:jobs(job_number),
   stations:stations(name, code, station_type),
   workers:workers(full_name, worker_code)
 `;
@@ -598,7 +598,7 @@ async function fetchSessionDetail(sessionId: string): Promise<SessionDetailStrea
     endedAt: row.ended_at,
     totalGood,
     totalScrap,
-    plannedQuantity: row.jobs?.planned_quantity ?? null,
+    plannedQuantity: productionPeriods.length > 0 ? productionPeriods[0].plannedQuantity : null,
     forcedClosedAt: row.forced_closed_at,
     durationSeconds,
     stoppageTimeSeconds,

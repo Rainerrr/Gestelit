@@ -11,7 +11,7 @@ export default function AdminLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="fixed inset-0 overflow-auto bg-background">
+    <div className="fixed inset-0 overflow-auto bg-background overscroll-contain [-webkit-overflow-scrolling:touch] pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)]">
       {children}
     </div>
   );

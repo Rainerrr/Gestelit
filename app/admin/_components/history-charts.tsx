@@ -21,14 +21,6 @@ export type StatusSummary = {
   value: number;
 };
 
-export type ThroughputSummary = {
-  name: string;
-  label: string;
-  good: number;
-  scrap: number;
-  planned: number;
-};
-
 type HistoryChartsProps = {
   statusData: StatusSummary[];
   isLoading: boolean;
@@ -71,12 +63,12 @@ export const HistoryCharts = ({
   const renderStatusPie = () => {
     if (isLoading) {
       return (
-        <div className="flex items-center justify-center h-[260px]">
+        <div className="flex items-center justify-center h-[200px]">
           <div className="flex flex-col items-center gap-3">
             <div className="relative h-8 w-8">
               <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-primary" />
             </div>
-            <p className="text-sm text-muted-foreground">טוען נתונים...</p>
+            <p className="text-sm text-muted-foreground">טוען...</p>
           </div>
         </div>
       );
@@ -94,9 +86,9 @@ export const HistoryCharts = ({
 
     if (normalized.length === 0) {
       return (
-        <div className="flex flex-col items-center justify-center h-[260px] text-muted-foreground">
-          <PieIcon className="h-10 w-10 mb-3 opacity-30" />
-          <p className="text-sm">אין נתונים להצגה</p>
+        <div className="flex flex-col items-center justify-center h-[200px] text-muted-foreground">
+          <PieIcon className="h-8 w-8 mb-2 opacity-30" />
+          <p className="text-xs">אין נתונים</p>
         </div>
       );
     }
@@ -106,7 +98,7 @@ export const HistoryCharts = ({
     return (
       <div className="w-full">
         <div dir="ltr" className="w-full [direction:ltr]">
-          <ResponsiveContainer width="100%" height={240}>
+          <ResponsiveContainer width="100%" height={180}>
             <PieChart>
               <Pie
                 data={normalized}
@@ -114,8 +106,8 @@ export const HistoryCharts = ({
                 nameKey="label"
                 cx="50%"
                 cy="50%"
-                innerRadius={55}
-                outerRadius={85}
+                innerRadius={45}
+                outerRadius={72}
                 paddingAngle={3}
                 onMouseEnter={(_, index) => setActiveIndex(index)}
                 onMouseLeave={() => setActiveIndex(undefined)}
@@ -158,13 +150,13 @@ export const HistoryCharts = ({
 
         {/* Legend */}
         <div
-          className="mt-2 flex flex-wrap justify-center gap-x-5 gap-y-2 text-xs"
+          className="mt-1 flex flex-wrap justify-center gap-x-3 gap-y-1.5 text-[11px]"
           dir="rtl"
         >
           {normalized.map((entry, index) => (
             <div
               key={entry.key ?? entry.label ?? index}
-              className="flex items-center gap-2 cursor-pointer transition-all duration-200"
+              className="flex items-center gap-1.5 cursor-pointer transition-all duration-200"
               style={{
                 opacity: activeIndex !== undefined && activeIndex !== index ? 0.4 : 1,
               }}
@@ -172,7 +164,7 @@ export const HistoryCharts = ({
               onMouseLeave={() => setActiveIndex(undefined)}
             >
               <span
-                className="h-2.5 w-2.5 rounded-full shrink-0"
+                className="h-2 w-2 rounded-full shrink-0"
                 style={{
                   backgroundColor: getStatusColor(entry.key, dictionary),
                 }}
@@ -186,21 +178,14 @@ export const HistoryCharts = ({
   };
 
   return (
-    <div className="rounded-xl border border-border bg-card/50 backdrop-blur-sm overflow-hidden">
-      <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-        <div className="flex items-center gap-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted">
-            <PieIcon className="h-4 w-4 text-muted-foreground" />
-          </div>
-          <div>
-            <h3 className="text-sm font-semibold text-foreground">התפלגות סטטוסים</h3>
-            <p className="text-xs text-muted-foreground">זמן בכל סטטוס</p>
-          </div>
+    <div className="rounded-xl border border-border bg-card/50 backdrop-blur-sm overflow-hidden p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <div className="flex h-6 w-6 items-center justify-center rounded-md bg-muted">
+          <PieIcon className="h-3.5 w-3.5 text-muted-foreground" />
         </div>
+        <h3 className="text-xs font-medium text-muted-foreground">התפלגות סטטוסים</h3>
       </div>
-      <div className="p-5">
-        {renderStatusPie()}
-      </div>
+      {renderStatusPie()}
     </div>
   );
 };

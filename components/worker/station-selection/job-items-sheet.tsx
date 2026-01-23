@@ -327,7 +327,7 @@ export function JobItemsSheet({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto py-4 px-1">
+        <div className="flex-1 overflow-y-auto py-4 px-1 overscroll-contain touch-pan-y [-webkit-overflow-scrolling:touch]">
           {isLoading ? (
             <div className="flex flex-col items-center justify-center h-full gap-4">
               <div className="h-10 w-10 rounded-full border-2 border-cyan-500 border-t-transparent animate-spin" />

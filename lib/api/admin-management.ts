@@ -5,7 +5,6 @@ import type {
   ActiveSession,
   CompletedSession,
   SessionStatusEvent,
-  JobThroughput,
 } from "@/lib/data/admin-dashboard";
 import type { LiveJobProgress } from "@/lib/types";
 import { clearAdminLoggedIn } from "./auth-helpers";
@@ -412,26 +411,6 @@ export async function fetchStatusEventsAdminApi(
   return handleResponse(response);
 }
 
-export async function fetchMonthlyJobThroughputAdminApi(params: {
-  year: number;
-  month: number;
-  workerId?: string;
-  stationId?: string;
-  jobNumber?: string;
-}): Promise<{ throughput: JobThroughput[] }> {
-  const query = new URLSearchParams();
-  query.set("year", params.year.toString());
-  query.set("month", params.month.toString());
-  if (params.workerId) query.set("workerId", params.workerId);
-  if (params.stationId) query.set("stationId", params.stationId);
-  if (params.jobNumber) query.set("jobNumber", params.jobNumber);
-
-  const response = await fetch(
-    `/api/admin/dashboard/monthly-throughput?${query.toString()}`,
-    createAdminRequestInit()
-  );
-  return handleResponse(response);
-}
 
 export async function fetchJobProgressAdminApi(): Promise<{
   jobs: LiveJobProgress[];
