@@ -344,3 +344,69 @@ button,
     min-width: 44px;
   }
 }
+
+/* ==========================================================================
+   NOTIFICATION TOAST ANIMATIONS
+   ========================================================================== */
+
+@keyframes toast-slide-in {
+  from {
+    transform: translateX(-110%) scale(0.95);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes toast-slide-out {
+  from {
+    transform: translateX(0) scale(1);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(-110%) scale(0.95);
+    opacity: 0;
+  }
+}
+
+@keyframes toast-slide-in-top {
+  from {
+    transform: translateY(-2rem) scale(0.95);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes toast-slide-out-top {
+  from {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(-2rem) scale(0.95);
+    opacity: 0;
+  }
+}
+
+.animate-toast-in {
+  animation: toast-slide-in 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.animate-toast-out {
+  animation: toast-slide-out 0.35s ease-in forwards;
+}
+
+@media (max-width: 639px) {
+  .animate-toast-in {
+    animation: toast-slide-in-top 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .animate-toast-out {
+    animation: toast-slide-out-top 0.35s ease-in forwards;
+  }
+}

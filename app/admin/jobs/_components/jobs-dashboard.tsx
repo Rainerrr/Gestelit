@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { CheckCircle2, Briefcase, Archive, ListTodo, BarChart3 } from "lucide-react";
+import { Briefcase, Archive, ListTodo, BarChart3, CheckCircle2 } from "lucide-react";
+import { useNotification } from "@/contexts/NotificationContext";
 import { useAdminGuard } from "@/hooks/useAdminGuard";
 import {
   fetchJobsAdminApi,
@@ -31,23 +31,21 @@ const errorCopy: Record<string, string> = {
 
 export const JobsDashboard = () => {
   const { hasAccess } = useAdminGuard();
+  const { notify } = useNotification();
   const [activeTab, setActiveTab] = useState<ActiveTab>("active");
   const [jobs, setJobs] = useState<JobWithStats[]>([]);
   const [isLoadingJobs, setIsLoadingJobs] = useState<boolean>(true);
-  const [bannerError, setBannerError] = useState<string | null>(null);
-  const [bannerSuccess, setBannerSuccess] = useState<string | null>(null);
 
   // Track if initial data has been loaded
   const initialLoadDoneRef = useRef(false);
 
   const friendlyError = useCallback((error: unknown) => {
     const message = error instanceof Error ? error.message : typeof error === "string" ? error : "UNKNOWN_ERROR";
-    setBannerError(errorCopy[message] ?? "משהו השתבש, נסה שוב.");
-  }, []);
+    notify({ title: "שגיאה", message: errorCopy[message] ?? "משהו השתבש, נסה שוב.", variant: "error" });
+  }, [notify]);
 
   const loadJobs = useCallback(async () => {
     setIsLoadingJobs(true);
-    setBannerError(null);
     try {
       const { jobs: data } = await fetchJobsAdminApi({
         status: "all",
@@ -68,7 +66,6 @@ export const JobsDashboard = () => {
   }, [hasAccess, loadJobs]);
 
   const handleAddJob = async (payload: Partial<Job>) => {
-    setBannerError(null);
     try {
       await createJobAdminApi({
         job_number: payload.job_number ?? "",
@@ -82,7 +79,6 @@ export const JobsDashboard = () => {
   };
 
   const handleUpdateJob = async (id: string, payload: Partial<Job>) => {
-    setBannerError(null);
     try {
       await updateJobAdminApi(id, {
         customer_name: payload.customer_name,
@@ -95,13 +91,10 @@ export const JobsDashboard = () => {
   };
 
   const handleDeleteJob = async (id: string) => {
-    setBannerError(null);
-    setBannerSuccess(null);
     try {
       await deleteJobAdminApi(id);
-      setBannerSuccess("העבודה נמחקה בהצלחה.");
+      notify({ title: "הצלחה", message: "העבודה נמחקה בהצלחה.", variant: "success" });
       await loadJobs();
-      setTimeout(() => setBannerSuccess(null), 5000);
     } catch (error) {
       friendlyError(error);
     }
@@ -146,29 +139,6 @@ export const JobsDashboard = () => {
       mobileBottomBar={<MobileBottomBar capsules={capsuleConfig} />}
     >
       <div className="space-y-4 pb-mobile-nav">
-        {/* Alerts */}
-        {bannerError ? (
-          <Alert
-            variant="destructive"
-            className="border-red-500/30 bg-red-500/10 text-right text-sm text-red-400"
-          >
-            <AlertTitle className="text-red-300">שגיאה</AlertTitle>
-            <AlertDescription>{bannerError}</AlertDescription>
-          </Alert>
-        ) : null}
-        {bannerSuccess ? (
-          <Alert className="border-emerald-500/30 bg-emerald-500/10 text-right text-sm text-emerald-400">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-              <div>
-                <AlertTitle className="text-emerald-300">הצלחה</AlertTitle>
-                <AlertDescription>{bannerSuccess}</AlertDescription>
-              </div>
-            </div>
-          </Alert>
-        ) : null}
-
-        {/* Content */}
         {activeTab === "active" && (
           <JobsManagement
             jobs={jobs}

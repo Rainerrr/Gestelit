@@ -198,7 +198,7 @@ export const HistoryFilters = ({
             </SelectTrigger>
             <SelectContent className="border-input bg-popover max-h-[280px]">
               <SelectItem value={ALL_VALUE} className="text-foreground focus:bg-accent">
-                כל הפק״עים
+                כל העבודות
               </SelectItem>
               {sortedJobNumbers.map((job) => (
                 <SelectItem key={job} value={job} className="text-foreground focus:bg-accent font-mono">

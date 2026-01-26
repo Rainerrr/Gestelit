@@ -16,7 +16,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
-import { CheckCircle2, Calendar } from "lucide-react";
+import { Calendar } from "lucide-react";
+import { useNotification } from "@/contexts/NotificationContext";
 import type { Job } from "@/lib/types";
 import { checkJobActiveSessionAdminApi } from "@/lib/api/admin-management";
 
@@ -39,6 +40,7 @@ export const JobFormDialog = ({
   open,
   onOpenChange,
 }: JobFormDialogProps) => {
+  const { notify } = useNotification();
   const [localOpen, setLocalOpen] = useState(false);
   // Use job.id as key to reset form state when editing different jobs
   const [formKey, setFormKey] = useState(job?.id ?? "new");
@@ -49,7 +51,6 @@ export const JobFormDialog = ({
     job?.due_date ? parseISO(job.due_date) : undefined
   );
   // planned_quantity removed from jobs - now tracked per job_item
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const controlledOpen = open ?? localOpen;
@@ -71,7 +72,6 @@ export const JobFormDialog = ({
     }
 
     setError(null);
-    setSuccessMessage(null);
     setWarningMessage(null);
 
     // Check for active session if editing
@@ -95,7 +95,7 @@ export const JobFormDialog = ({
         due_date: dueDate ? format(dueDate, "yyyy-MM-dd") : null,
       });
 
-      setSuccessMessage("העבודה נשמרה בהצלחה.");
+      notify({ title: "הצלחה", message: "העבודה נשמרה בהצלחה.", variant: "success" });
       setError(null);
       setWarningMessage(null);
 
@@ -110,7 +110,6 @@ export const JobFormDialog = ({
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       setError(errorMessage || "שגיאה בשמירת העבודה");
-      setSuccessMessage(null);
     }
   };
 
@@ -119,7 +118,6 @@ export const JobFormDialog = ({
   const handleDialogOpenChange = (open: boolean) => {
     if (!open) {
       setError(null);
-      setSuccessMessage(null);
       setWarningMessage(null);
     }
     (onOpenChange ?? setLocalOpen)(open);
@@ -147,14 +145,6 @@ export const JobFormDialog = ({
               className="border-primary/30 bg-primary/10 text-right text-sm text-primary"
             >
               <AlertDescription>{warningMessage}</AlertDescription>
-            </Alert>
-          )}
-          {successMessage && (
-            <Alert className="border-emerald-500/30 bg-emerald-500/10 text-right text-sm text-emerald-400">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                <AlertDescription>{successMessage}</AlertDescription>
-              </div>
             </Alert>
           )}
           <div className="space-y-2">

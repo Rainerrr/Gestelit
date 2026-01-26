@@ -490,9 +490,9 @@ export function QuantityReportDialog({
                   // In total modes, select all on focus so user can replace
                   if (mode === "totalJob" || mode === "total") e.target.select();
                 }}
-                style={{ fontSize: "3.5rem", lineHeight: "1" }}
+                style={{ fontSize: "3.5rem", lineHeight: "1", height: "7rem" }}
                 className={cn(
-                  "h-24 text-center font-bold tabular-nums",
+                  "!h-28 text-center font-bold tabular-nums !py-4",
                   "border-2 bg-card/50",
                   "[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
                   "placeholder:text-muted-foreground placeholder:opacity-100",

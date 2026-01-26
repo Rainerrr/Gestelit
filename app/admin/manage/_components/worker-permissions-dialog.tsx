@@ -12,7 +12,7 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { CheckCircle2 } from "lucide-react";
+import { useNotification } from "@/contexts/NotificationContext";
 import type { Station, Worker } from "@/lib/types";
 
 type WorkerPermissionsDialogProps = {
@@ -34,12 +34,12 @@ export const WorkerPermissionsDialog = ({
   onRemove,
   onRefresh,
 }: WorkerPermissionsDialogProps) => {
+  const { notify } = useNotification();
   const [open, setOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const errorCopy: Record<string, string> = {
     ASSIGNMENT_EXISTS: "לעובד כבר יש הרשאה לתחנה.",
     ASSIGNMENT_DELETE_FAILED: "מחיקת ההרשאה נכשלה.",
@@ -48,14 +48,12 @@ export const WorkerPermissionsDialog = ({
 
   useEffect(() => {
     if (!open) {
-      setSuccessMessage(null);
       setErrorText(null);
       return;
     }
     const load = async () => {
       setIsLoading(true);
       setErrorText(null);
-      setSuccessMessage(null);
       const assigned = await onFetchAssignments(worker.id);
       setSelectedIds(new Set(assigned.map((station) => station.id)));
       setIsLoading(false);
@@ -76,7 +74,6 @@ export const WorkerPermissionsDialog = ({
   const handleSave = async () => {
     setIsSaving(true);
     setErrorText(null);
-    setSuccessMessage(null);
 
     try {
       const currentAssignments = await onFetchAssignments(worker.id);
@@ -90,13 +87,11 @@ export const WorkerPermissionsDialog = ({
         ...toRemove.map((stationId) => onRemove(worker.id, stationId)),
       ]);
 
-      setSuccessMessage("ההרשאות עודכנו בהצלחה.");
-      setErrorText(null);
-      // Keep dialog open to show success message
+      notify({ title: "הצלחה", message: "ההרשאות עודכנו בהצלחה.", variant: "success" });
+      setOpen(false);
     } catch (error) {
       const message = error instanceof Error ? error.message : "עדכון ההרשאות נכשל.";
       setErrorText(errorCopy[message] ?? "עדכון ההרשאות נכשל.");
-      setSuccessMessage(null);
     } finally {
       setIsSaving(false);
     }
@@ -150,14 +145,6 @@ export const WorkerPermissionsDialog = ({
             className="border-red-500/30 bg-red-500/10 text-right text-sm text-red-400"
           >
             <AlertDescription>{errorText}</AlertDescription>
-          </Alert>
-        ) : null}
-        {successMessage ? (
-          <Alert className="border-emerald-500/30 bg-emerald-500/10 text-right text-sm text-emerald-400">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-              <AlertDescription>{successMessage}</AlertDescription>
-            </div>
           </Alert>
         ) : null}
         <DialogFooter className="justify-start">

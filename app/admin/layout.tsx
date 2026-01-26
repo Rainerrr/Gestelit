@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { AdminProviders } from "./_components/admin-providers";
 
 export const metadata: Metadata = {
   title: "ניהול | Gestelit Work Monitor",
@@ -12,7 +13,7 @@ export default function AdminLayout({
 }) {
   return (
     <div className="fixed inset-0 overflow-auto bg-background overscroll-contain [-webkit-overflow-scrolling:touch] pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)]">
-      {children}
+      <AdminProviders>{children}</AdminProviders>
     </div>
   );
 }

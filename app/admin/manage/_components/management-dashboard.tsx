@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { CheckCircle2, Users, Cpu, Wrench, Workflow } from "lucide-react";
+import { Users, Cpu, Wrench, Workflow } from "lucide-react";
+import { useNotification } from "@/contexts/NotificationContext";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -93,8 +93,7 @@ export const ManagementDashboard = () => {
   const [presetDialogMode, setPresetDialogMode] = useState<"create" | "edit">("create");
   const [editingPreset, setEditingPreset] = useState<PipelinePresetWithSteps | null>(null);
 
-  const [bannerError, setBannerError] = useState<string | null>(null);
-  const [bannerSuccess, setBannerSuccess] = useState<string | null>(null);
+  const { notify } = useNotification();
 
   // Track if initial data has been loaded to prevent re-running on callback changes
   const initialLoadDoneRef = useRef(false);
@@ -105,8 +104,12 @@ export const ManagementDashboard = () => {
   );
   const friendlyError = useCallback((error: unknown) => {
     const message = error instanceof Error ? error.message : typeof error === "string" ? error : "UNKNOWN_ERROR";
-    setBannerError(errorCopy[message] ?? "משהו השתבש, נסה שוב.");
-  }, []);
+    notify({
+      title: "שגיאה",
+      message: errorCopy[message] ?? "משהו השתבש, נסה שוב.",
+      variant: "error",
+    });
+  }, [notify]);
 
   const loadDepartments = useCallback(async () => {
     try {
@@ -128,7 +131,6 @@ export const ManagementDashboard = () => {
 
   const loadWorkers = useCallback(async () => {
     setIsLoadingWorkers(true);
-    setBannerError(null);
     try {
       const { workers: data } = await fetchWorkersAdminApi({
         department: departmentFilter ?? undefined,
@@ -145,7 +147,6 @@ export const ManagementDashboard = () => {
 
   const loadStations = useCallback(async () => {
     setIsLoadingStations(true);
-    setBannerError(null);
     try {
       const { stations: data } = await fetchStationsAdminApi({
         search: search.trim() || undefined,
@@ -162,7 +163,6 @@ export const ManagementDashboard = () => {
 
   const loadPipelinePresets = useCallback(async () => {
     setIsLoadingPresets(true);
-    setBannerError(null);
     try {
       const { presets } = await fetchPipelinePresetsAdminApi();
       setPipelinePresets(presets);
@@ -226,7 +226,6 @@ export const ManagementDashboard = () => {
   }, [pipelinePresets, stationFilterForPresets, search]);
 
   const handleAddWorker = async (payload: Partial<Worker>) => {
-    setBannerError(null);
     try {
       await createWorkerAdminApi({
         worker_code: payload.worker_code ?? "",
@@ -242,7 +241,6 @@ export const ManagementDashboard = () => {
   };
 
   const handleUpdateWorker = async (id: string, payload: Partial<Worker>) => {
-    setBannerError(null);
     try {
       await updateWorkerAdminApi(id, {
         worker_code: payload.worker_code,
@@ -259,14 +257,10 @@ export const ManagementDashboard = () => {
   };
 
   const handleDeleteWorker = async (id: string) => {
-    setBannerError(null);
-    setBannerSuccess(null);
     try {
       await deleteWorkerAdminApi(id);
-      setBannerSuccess("העובד נמחק בהצלחה.");
+      notify({ title: "הצלחה", message: "העובד נמחק בהצלחה.", variant: "success" });
       await Promise.all([loadWorkers(), loadDepartments()]);
-      // Clear success message after 5 seconds
-      setTimeout(() => setBannerSuccess(null), 5000);
     } catch (error) {
       friendlyError(error);
     }
@@ -300,7 +294,6 @@ export const ManagementDashboard = () => {
   };
 
   const handleAddStation = async (payload: Partial<Station>) => {
-    setBannerError(null);
     try {
       await createStationAdminApi({
         name: payload.name ?? "",
@@ -316,7 +309,6 @@ export const ManagementDashboard = () => {
   };
 
   const handleUpdateStation = async (id: string, payload: Partial<Station>) => {
-    setBannerError(null);
     try {
       await updateStationAdminApi(id, {
         name: payload.name,
@@ -339,7 +331,6 @@ export const ManagementDashboard = () => {
       end_checklist: Station["end_checklist"];
     },
   ) => {
-    setBannerError(null);
     try {
       await updateStationAdminApi(id, {
         start_checklist: payload.start_checklist ?? [],
@@ -354,14 +345,10 @@ export const ManagementDashboard = () => {
   };
 
   const handleDeleteStation = async (id: string) => {
-    setBannerError(null);
-    setBannerSuccess(null);
     try {
       await deleteStationAdminApi(id);
-      setBannerSuccess("התחנה נמחקה בהצלחה.");
+      notify({ title: "הצלחה", message: "התחנה נמחקה בהצלחה.", variant: "success" });
       await Promise.all([loadStations(), loadStationTypes()]);
-      // Clear success message after 5 seconds
-      setTimeout(() => setBannerSuccess(null), 5000);
     } catch (error) {
       friendlyError(error);
     }
@@ -404,7 +391,6 @@ export const ManagementDashboard = () => {
     stationIds: string[];
     firstProductApprovalFlags: Record<string, boolean>;
   }) => {
-    setBannerError(null);
     try {
       if (presetDialogMode === "create") {
         // Create new preset with steps and QA flags
@@ -430,13 +416,10 @@ export const ManagementDashboard = () => {
   };
 
   const handleDeletePipelinePreset = async (id: string) => {
-    setBannerError(null);
-    setBannerSuccess(null);
     try {
       await deletePipelinePresetAdminApi(id);
-      setBannerSuccess("התבנית נמחקה בהצלחה.");
+      notify({ title: "הצלחה", message: "התבנית נמחקה בהצלחה.", variant: "success" });
       await loadPipelinePresets();
-      setTimeout(() => setBannerSuccess(null), 5000);
     } catch (error) {
       friendlyError(error);
       throw error;
@@ -612,28 +595,6 @@ export const ManagementDashboard = () => {
             </div>
           )}
         </div>
-
-        {/* Alerts */}
-        {bannerError ? (
-          <Alert
-            variant="destructive"
-            className="border-red-500/30 bg-red-500/10 text-right text-sm text-red-400"
-          >
-            <AlertTitle className="text-red-300">שגיאה</AlertTitle>
-            <AlertDescription>{bannerError}</AlertDescription>
-          </Alert>
-        ) : null}
-        {bannerSuccess ? (
-          <Alert className="border-emerald-500/30 bg-emerald-500/10 text-right text-sm text-emerald-400">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-              <div>
-                <AlertTitle className="text-emerald-300">הצלחה</AlertTitle>
-                <AlertDescription>{bannerSuccess}</AlertDescription>
-              </div>
-            </div>
-          </Alert>
-        ) : null}
 
         {/* Content */}
         {activeTab === "workers" ? (

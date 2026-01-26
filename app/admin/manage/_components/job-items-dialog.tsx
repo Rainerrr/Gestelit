@@ -16,7 +16,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Check,
-  CheckCircle2,
   ChevronDown,
   ClipboardCheck,
   Package,
@@ -24,6 +23,7 @@ import {
   Trash2,
   Workflow,
 } from "lucide-react";
+import { useNotification } from "@/contexts/NotificationContext";
 import type {
   Job,
   JobItemWithDetails,
@@ -59,10 +59,10 @@ export const JobItemsDialog = ({
   const [items, setItems] = useState<JobItemWithDetails[]>([]);
   const [pipelinePresets, setPipelinePresets] = useState<PipelinePresetWithSteps[]>([]);
   const [stations, setStations] = useState<Station[]>([]);
+  const { notify } = useNotification();
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // New product form state
   const [showAddForm, setShowAddForm] = useState(false);
@@ -203,7 +203,7 @@ export const JobItemsDialog = ({
         first_product_approval_flags: firstProductFlags,
       });
 
-      setSuccessMessage("המוצר נוסף בהצלחה");
+      notify({ title: "הצלחה", message: "המוצר נוסף בהצלחה.", variant: "success" });
       setShowAddForm(false);
       setNewProductName("");
       setNewProductQuantity("");
@@ -212,8 +212,6 @@ export const JobItemsDialog = ({
       setSelectedStationId("");
       setFirstProductFlags({});
       await loadData();
-
-      setTimeout(() => setSuccessMessage(null), 3000);
     } catch (err) {
       const message = err instanceof Error ? err.message : "שגיאה בהוספת מוצר";
       setError(message);
@@ -238,12 +236,10 @@ export const JobItemsDialog = ({
         planned_quantity: parseInt(editQuantity),
       });
 
-      setSuccessMessage("הכמות עודכנה בהצלחה");
+      notify({ title: "הצלחה", message: "הכמות עודכנה בהצלחה.", variant: "success" });
       setEditingItemId(null);
       setEditQuantity("");
       await loadData();
-
-      setTimeout(() => setSuccessMessage(null), 3000);
     } catch (err) {
       const message = err instanceof Error ? err.message : "שגיאה בעדכון כמות";
       setError(message);
@@ -261,10 +257,8 @@ export const JobItemsDialog = ({
     try {
       await deleteJobItemAdminApi(job.id, itemId);
 
-      setSuccessMessage("המוצר נמחק בהצלחה");
+      notify({ title: "הצלחה", message: "המוצר נמחק בהצלחה.", variant: "success" });
       await loadData();
-
-      setTimeout(() => setSuccessMessage(null), 3000);
     } catch (err) {
       const message = err instanceof Error ? err.message : "שגיאה במחיקת מוצר";
       if (message === "HAS_ACTIVE_SESSIONS") {
@@ -313,7 +307,6 @@ export const JobItemsDialog = ({
 
   const handleClose = () => {
     setError(null);
-    setSuccessMessage(null);
     setShowAddForm(false);
     setEditingItemId(null);
     setNewProductName("");
@@ -359,15 +352,6 @@ export const JobItemsDialog = ({
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
-          {successMessage && (
-            <Alert className="border-emerald-500/30 bg-emerald-500/10 text-right text-sm text-emerald-400">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                <AlertDescription>{successMessage}</AlertDescription>
-              </div>
-            </Alert>
-          )}
-
           {isLoading ? (
             <div className="flex flex-col items-center justify-center py-8 gap-3">
               <div className="relative h-8 w-8">

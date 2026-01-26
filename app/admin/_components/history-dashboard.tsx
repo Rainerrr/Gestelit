@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { History, GitCompareArrows } from "lucide-react";
+import { History, GitCompareArrows, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AdminLayout } from "./admin-layout";
 import { HistoryFilters, type HistoryFiltersState } from "./history-filters";
@@ -69,6 +69,8 @@ export const HistoryDashboard = () => {
   const [statusEventsB, setStatusEventsB] = useState<SessionStatusEvent[]>([]);
   const [isLoadingB, setIsLoadingB] = useState(false);
   const [isLoadingStatusEventsB, setIsLoadingStatusEventsB] = useState(false);
+  const [mobileCompareSide, setMobileCompareSide] = useState<"a" | "b">("a");
+  const [allJobNumbers, setAllJobNumbers] = useState<string[]>([]);
 
   const stationIds = useMemo(
     () =>
@@ -105,8 +107,12 @@ export const HistoryDashboard = () => {
   const loadFiltersData = useCallback(async () => {
     setIsLoadingFilters(true);
     try {
-      const [{ workers: workersData }, { stations: stationsData }] =
-        await Promise.all([fetchWorkersAdminApi({}), fetchStationsAdminApi()]);
+      const [{ workers: workersData }, { stations: stationsData }, { sessions: allSessions }] =
+        await Promise.all([
+          fetchWorkersAdminApi({}),
+          fetchStationsAdminApi(),
+          fetchRecentSessionsAdminApi({ limit: 500 }),
+        ]);
       setWorkers(
         workersData
           .map((item) => ({
@@ -122,6 +128,9 @@ export const HistoryDashboard = () => {
             label: item.station.name,
           }))
           .filter((item) => Boolean(item.id)),
+      );
+      setAllJobNumbers(
+        Array.from(new Set(allSessions.map((s) => s.jobNumber).filter(Boolean)))
       );
     } catch (error) {
       console.error("[history-dashboard] failed to load filters", error);
@@ -248,15 +257,8 @@ export const HistoryDashboard = () => {
     });
   }, [dictionary, sessions, statusEvents]);
 
-  const jobNumbers = useMemo(
-    () => sessions.map((session) => session.jobNumber).filter(Boolean),
-    [sessions],
-  );
-
-  const jobNumbersB = useMemo(
-    () => sessionsB.map((session) => session.jobNumber).filter(Boolean),
-    [sessionsB],
-  );
+  const jobNumbers = allJobNumbers;
+  const jobNumbersB = allJobNumbers;
 
   const filteredSessions = useMemo(() => {
     if (!filters.dateRange?.from) return sessions;
@@ -581,43 +583,15 @@ export const HistoryDashboard = () => {
               }}
               aria-label="איפוס מסננים"
               className="border-input bg-secondary text-foreground/80 hover:bg-accent hover:text-foreground"
-              size="sm"
+              size="icon"
             >
-              איפוס
+              <RotateCcw className="h-4 w-4" />
             </Button>
           </div>
         </div>
       }
     >
       <div className="space-y-6">
-        {/* Average/Total toggle */}
-        <div className="flex items-center justify-center">
-          <div className="flex items-center rounded-lg border border-input overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setStatsMode("total")}
-              className={`px-3 py-1.5 text-xs font-medium transition-colors ${
-                statsMode === "total"
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-secondary text-foreground/70 hover:bg-accent"
-              }`}
-            >
-              סה״כ
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatsMode("average")}
-              className={`px-3 py-1.5 text-xs font-medium transition-colors ${
-                statsMode === "average"
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-secondary text-foreground/70 hover:bg-accent"
-              }`}
-            >
-              ממוצע לעבודה
-            </button>
-          </div>
-        </div>
-
         {!compareMode ? (
           <>
             <HistoryFilters
@@ -627,6 +601,33 @@ export const HistoryDashboard = () => {
               value={filters}
               onChange={setFilters}
             />
+            {/* Average/Total toggle */}
+            <div className="flex items-center justify-center">
+              <div className="flex items-center rounded-lg border border-input overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setStatsMode("total")}
+                  className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                    statsMode === "total"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-secondary text-foreground/70 hover:bg-accent"
+                  }`}
+                >
+                  סה״כ
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatsMode("average")}
+                  className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                    statsMode === "average"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-secondary text-foreground/70 hover:bg-accent"
+                  }`}
+                >
+                  ממוצע למשמרת
+                </button>
+              </div>
+            </div>
             <HistoryStatistics
               sessions={filteredSessions}
               statusEvents={filteredStatusEvents}
@@ -637,48 +638,134 @@ export const HistoryDashboard = () => {
             />
           </>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Side A */}
-            <div className="space-y-4 rounded-xl border border-border/50 p-3">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">צד א׳</p>
-              <HistoryFilters
-                workers={workers}
-                stations={stations}
-                jobNumbers={jobNumbers}
-                value={filters}
-                onChange={setFilters}
-              />
-              <HistoryStatistics
-                sessions={filteredSessions}
-                statusEvents={filteredStatusEvents}
-                dictionary={dictionary}
-                statusData={statusData}
-                isLoading={isLoadingA}
-                comparisonStats={statsB}
-                mode={statsMode}
-              />
+          <>
+            {/* Mobile side toggle - fixed bottom pill */}
+            <div className="lg:hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
+              <div className="inline-flex items-center rounded-full overflow-hidden shadow-xl border border-border/80 bg-card/95 backdrop-blur-md">
+                <button
+                  type="button"
+                  onClick={() => setMobileCompareSide("a")}
+                  className={`px-5 py-2.5 text-sm font-bold transition-all ${
+                    mobileCompareSide === "a"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-secondary/80 text-muted-foreground active:bg-accent"
+                  }`}
+                  aria-label="הצג צד א׳"
+                >
+                  צד א׳
+                </button>
+                <div className="w-px h-6 bg-border/60" />
+                <button
+                  type="button"
+                  onClick={() => setMobileCompareSide("b")}
+                  className={`px-5 py-2.5 text-sm font-bold transition-all ${
+                    mobileCompareSide === "b"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-secondary/80 text-muted-foreground active:bg-accent"
+                  }`}
+                  aria-label="הצג צד ב׳"
+                >
+                  צד ב׳
+                </button>
+              </div>
             </div>
-            {/* Side B */}
-            <div className="space-y-4 rounded-xl border border-border/50 p-3">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">צד ב׳</p>
-              <HistoryFilters
-                workers={workers}
-                stations={stations}
-                jobNumbers={jobNumbersB}
-                value={filtersB}
-                onChange={setFiltersB}
-              />
-              <HistoryStatistics
-                sessions={filteredSessionsB}
-                statusEvents={filteredStatusEventsB}
-                dictionary={dictionary}
-                statusData={statusDataB}
-                isLoading={isLoadingBSide}
-                comparisonStats={statsA}
-                mode={statsMode}
-              />
+
+            {/* Desktop: side by side, Mobile: show active side only */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {/* Side A */}
+              <div className={`space-y-4 rounded-xl border border-border/50 p-3 ${mobileCompareSide !== "a" ? "hidden lg:block" : ""}`}>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">צד א׳</p>
+                <HistoryFilters
+                  workers={workers}
+                  stations={stations}
+                  jobNumbers={jobNumbers}
+                  value={filters}
+                  onChange={setFilters}
+                />
+                <div className="flex items-center justify-center">
+                  <div className="flex items-center rounded-lg border border-input overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setStatsMode("total")}
+                      className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                        statsMode === "total"
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-secondary text-foreground/70 hover:bg-accent"
+                      }`}
+                    >
+                      סה״כ
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setStatsMode("average")}
+                      className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                        statsMode === "average"
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-secondary text-foreground/70 hover:bg-accent"
+                      }`}
+                    >
+                      ממוצע למשמרת
+                    </button>
+                  </div>
+                </div>
+                <HistoryStatistics
+                  sessions={filteredSessions}
+                  statusEvents={filteredStatusEvents}
+                  dictionary={dictionary}
+                  statusData={statusData}
+                  isLoading={isLoadingA}
+                  comparisonStats={statsB}
+                  mode={statsMode}
+                />
+              </div>
+              {/* Side B */}
+              <div className={`space-y-4 rounded-xl border border-border/50 p-3 ${mobileCompareSide !== "b" ? "hidden lg:block" : ""}`}>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">צד ב׳</p>
+                <HistoryFilters
+                  workers={workers}
+                  stations={stations}
+                  jobNumbers={jobNumbersB}
+                  value={filtersB}
+                  onChange={setFiltersB}
+                />
+                <div className="flex items-center justify-center">
+                  <div className="flex items-center rounded-lg border border-input overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setStatsMode("total")}
+                      className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                        statsMode === "total"
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-secondary text-foreground/70 hover:bg-accent"
+                      }`}
+                    >
+                      סה״כ
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setStatsMode("average")}
+                      className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                        statsMode === "average"
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-secondary text-foreground/70 hover:bg-accent"
+                      }`}
+                    >
+                      ממוצע למשמרת
+                    </button>
+                  </div>
+                </div>
+                <HistoryStatistics
+                  sessions={filteredSessionsB}
+                  statusEvents={filteredStatusEventsB}
+                  dictionary={dictionary}
+                  statusData={statusDataB}
+                  isLoading={isLoadingBSide}
+                  comparisonStats={statsA}
+                  mode={statsMode}
+                />
+              </div>
             </div>
-          </div>
+          </>
         )}
 
         {/* Sessions table section */}

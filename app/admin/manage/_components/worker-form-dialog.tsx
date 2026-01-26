@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2 } from "lucide-react";
+import { useNotification } from "@/contexts/NotificationContext";
 import type { Worker, WorkerRole } from "@/lib/types";
 import { CreatableCombobox } from "@/components/forms/creatable-combobox";
 import { checkWorkerActiveSessionAdminApi } from "@/lib/api/admin-management";
@@ -46,13 +46,13 @@ export const WorkerFormDialog = ({
   open,
   onOpenChange,
 }: WorkerFormDialogProps) => {
+  const { notify } = useNotification();
   const [localOpen, setLocalOpen] = useState(false);
   const [fullName, setFullName] = useState(worker?.full_name ?? "");
   const [workerCode, setWorkerCode] = useState(worker?.worker_code ?? "");
   const [role, setRole] = useState<WorkerRole>(worker?.role ?? "worker");
   const [department, setDepartment] = useState(worker?.department ?? "");
   const [isActive, setIsActive] = useState(worker?.is_active ?? true);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const controlledOpen = open ?? localOpen;
@@ -73,7 +73,6 @@ export const WorkerFormDialog = ({
     }
 
     setError(null);
-    setSuccessMessage(null);
     setWarningMessage(null);
 
     // Check for active session if editing
@@ -94,7 +93,7 @@ export const WorkerFormDialog = ({
         is_active: isActive,
       });
 
-      setSuccessMessage("העובד נשמר בהצלחה.");
+      notify({ title: "הצלחה", message: "העובד נשמר בהצלחה.", variant: "success" });
       setError(null);
       setWarningMessage(null);
 
@@ -110,7 +109,6 @@ export const WorkerFormDialog = ({
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       setError(errorMessage || "שגיאה בשמירת העובד");
-      setSuccessMessage(null);
     }
   };
 
@@ -119,7 +117,6 @@ export const WorkerFormDialog = ({
   const handleDialogOpenChange = (open: boolean) => {
     if (!open) {
       setError(null);
-      setSuccessMessage(null);
       setWarningMessage(null);
     }
     (onOpenChange ?? setLocalOpen)(open);
@@ -147,14 +144,6 @@ export const WorkerFormDialog = ({
               className="border-primary/30 bg-primary/10 text-right text-sm text-primary"
             >
               <AlertDescription>{warningMessage}</AlertDescription>
-            </Alert>
-          )}
-          {successMessage && (
-            <Alert className="border-emerald-500/30 bg-emerald-500/10 text-right text-sm text-emerald-400">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                <AlertDescription>{successMessage}</AlertDescription>
-              </div>
             </Alert>
           )}
           <div className="space-y-2">

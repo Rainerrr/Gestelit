@@ -27,9 +27,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { useNotification } from "@/contexts/NotificationContext";
 import type { Station, StationChecklistItem } from "@/lib/types";
 import {
-  CheckCircle2,
   GripVertical,
   ListChecks,
   Plus,
@@ -202,6 +202,7 @@ export const StationChecklistDialog = ({
   onSubmit,
   loading = false,
 }: StationChecklistDialogProps) => {
+  const { notify } = useNotification();
   const [activeTab, setActiveTab] = useState<ChecklistKind>("start");
   const [startItems, setStartItems] = useState<StationChecklistItem[]>(() =>
     normalizeInitialItems(station.start_checklist),
@@ -210,7 +211,6 @@ export const StationChecklistDialog = ({
     normalizeInitialItems(station.end_checklist),
   );
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
   const [activeList, setActiveList] = useState<ChecklistKind | null>(null);
 
   const sensors = useSensors(
@@ -226,7 +226,6 @@ export const StationChecklistDialog = ({
     const timer = window.setTimeout(() => {
       setActiveTab("start");
       setError(null);
-      setSuccess(null);
       setStartItems(nextStart);
       setEndItems(nextEnd);
     }, 0);
@@ -298,7 +297,6 @@ export const StationChecklistDialog = ({
 
   const resetStates = () => {
     setError(null);
-    setSuccess(null);
     setActiveList(null);
   };
 
@@ -356,13 +354,11 @@ export const StationChecklistDialog = ({
         start_checklist: trimmedStart,
         end_checklist: trimmedEnd,
       });
-      setSuccess("הצ'קליסט נשמר בהצלחה.");
+      notify({ title: "הצלחה", message: "הצ'קליסט נשמר בהצלחה.", variant: "success" });
       setError(null);
-      // Keep dialog open to show success message
     } catch (err) {
       const message = err instanceof Error ? err.message : "שמירת הצ'קליסט נכשלה.";
       setError(message || "שמירת הצ'קליסט נכשלה.");
-      setSuccess(null);
     }
   };
 
@@ -455,15 +451,6 @@ export const StationChecklistDialog = ({
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           ) : null}
-          {success ? (
-            <Alert className="border-emerald-500/30 bg-emerald-500/10 text-right text-sm text-emerald-400">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                <AlertDescription>{success}</AlertDescription>
-              </div>
-            </Alert>
-          ) : null}
-
           <div className="flex items-center gap-2 flex-wrap">
             {tabMeta.map((tab) => (
               <Button

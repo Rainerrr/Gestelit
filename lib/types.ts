@@ -8,6 +8,36 @@ export type StatusCode = string; // status_definition.id
 export type StatusEventState = StatusCode;
 export type SessionAbandonReason = "worker_choice" | "expired";
 
+export type NotificationType =
+  | "report_malfunction"
+  | "report_general"
+  | "report_scrap"
+  | "session_started"
+  | "session_completed"
+  | "session_aborted"
+  | "first_product_qa_pending"
+  | "job_due_soon"
+  | "crud_success"
+  | "crud_error";
+
+export type NotificationActionType =
+  | "view_report"
+  | "view_session"
+  | "approve_qa"
+  | "view_job";
+
+export interface Notification {
+  id: string;
+  notification_type: NotificationType;
+  title: string;
+  message: string;
+  action_type?: NotificationActionType | null;
+  action_payload?: Record<string, unknown> | null;
+  is_read: boolean;
+  is_dismissed: boolean;
+  created_at: string;
+}
+
 export interface Worker {
   id: string;
   worker_code: string;

@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { changeAdminPasswordApi } from "@/lib/api/admin-management";
 import { setAdminPassword } from "@/lib/api/auth-helpers";
+import { useNotification } from "@/contexts/NotificationContext";
 
 type ChangePasswordDialogProps = {
   isOpen: boolean;
@@ -24,6 +25,7 @@ export const ChangePasswordDialog = ({
   isOpen,
   onOpenChange,
 }: ChangePasswordDialogProps) => {
+  const { notify } = useNotification();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -67,8 +69,7 @@ export const ChangePasswordDialog = ({
         // Update stored password
         setAdminPassword(newPassword);
         handleDialogChange(false);
-        // Show success message (you might want to add a toast notification here)
-        alert("סיסמה עודכנה בהצלחה. יש לעדכן את משתנה הסביבה ADMIN_PASSWORD ולהפעיל מחדש את האפליקציה.");
+        notify({ title: "הצלחה", message: "סיסמה עודכנה בהצלחה. יש לעדכן את משתנה הסביבה ADMIN_PASSWORD ולהפעיל מחדש.", variant: "success" });
       } else {
         setError(result.message || "שגיאה בעדכון הסיסמה");
       }

@@ -61,9 +61,14 @@ export async function GET(request: Request) {
 
   const stream = new ReadableStream({
     async start(controller) {
-      const send = (payload: StreamEvent) => controller.enqueue(serialize(payload));
-      const sendError = (message: string) =>
+      const send = (payload: StreamEvent) => {
+        if (isClosing) return;
+        controller.enqueue(serialize(payload));
+      };
+      const sendError = (message: string) => {
+        if (isClosing) return;
         controller.enqueue(serialize({ type: "error", message }));
+      };
 
       channel = supabase.channel("admin-job-progress-stream");
 
@@ -82,6 +87,7 @@ export async function GET(request: Request) {
       };
 
       heartbeat = setInterval(() => {
+        if (isClosing) return;
         controller.enqueue(encoder.encode(": keep-alive\n\n"));
       }, 25_000);
 
