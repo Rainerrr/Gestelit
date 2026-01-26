@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Plus, CheckCircle2, AlertCircle } from "lucide-react";
+import { useNotification } from "@/contexts/NotificationContext";
+import { Plus, AlertCircle } from "lucide-react";
 import type { MachineState, StatusDefinition, StatusReportType } from "@/lib/types";
 import {
   createStatusDefinitionAdminApi,
@@ -15,10 +16,10 @@ import { StatusCard, PROTECTED_LABELS_HE } from "./status-card";
 
 export const GlobalStatusesManagement = () => {
   const [statuses, setStatuses] = useState<StatusDefinition[]>([]);
+  const { notify } = useNotification();
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [activeColorPickerId, setActiveColorPickerId] = useState<string | null>(null);
   const [pendingDeletedIds, setPendingDeletedIds] = useState<string[]>([]);
 
@@ -112,7 +113,6 @@ export const GlobalStatusesManagement = () => {
 
   const handleSave = async () => {
     setError(null);
-    setSuccessMessage(null);
     setIsSaving(true);
 
     const editableStatuses = statuses.filter(
@@ -152,7 +152,7 @@ export const GlobalStatusesManagement = () => {
       }
 
       setPendingDeletedIds([]);
-      setSuccessMessage("הסטטוסים נשמרו בהצלחה.");
+      notify({ title: "הצלחה", message: "הסטטוסים נשמרו בהצלחה.", variant: "success" });
       await loadStatuses();
     } catch (err) {
       setError(err instanceof Error ? err.message : "שגיאה בשמירת הסטטוסים");
@@ -220,15 +220,6 @@ export const GlobalStatusesManagement = () => {
             <div className="flex items-center gap-2">
               <AlertCircle className="h-4 w-4 shrink-0" />
               <AlertDescription>{error}</AlertDescription>
-            </div>
-          </Alert>
-        )}
-
-        {successMessage && (
-          <Alert className="border-emerald-500/30 bg-emerald-500/10 text-right text-sm text-emerald-400">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 shrink-0" />
-              <AlertDescription>{successMessage}</AlertDescription>
             </div>
           </Alert>
         )}

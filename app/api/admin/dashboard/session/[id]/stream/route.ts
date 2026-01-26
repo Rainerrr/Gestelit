@@ -473,15 +473,11 @@ async function fetchSessionDetail(sessionId: string): Promise<SessionDetailStrea
 
   const productionEvents = (productionEventsData as unknown as RawProductionEvent[]) ?? [];
 
-  // Collect unique step IDs and job item IDs for totals calculation
+  // Collect unique step IDs for per-step totals calculation
   const stepIds = new Set<string>();
-  const jobItemIds = new Set<string>();
   for (const event of productionEvents) {
     if (event.job_item_step_id) {
       stepIds.add(event.job_item_step_id);
-    }
-    if (event.job_item_id) {
-      jobItemIds.add(event.job_item_id);
     }
   }
 
@@ -502,22 +498,6 @@ async function fetchSessionDetail(sessionId: string): Promise<SessionDetailStrea
     }
   }
 
-  // Query job item totals across ALL sessions (fixes stale job_item_progress issue)
-  const jobItemTotalsMap = new Map<string, number>();
-  if (jobItemIds.size > 0) {
-    const { data: jobItemTotals } = await supabase
-      .from("status_events")
-      .select("job_item_id, quantity_good")
-      .in("job_item_id", Array.from(jobItemIds))
-      .gt("quantity_good", 0);
-
-    for (const row of jobItemTotals ?? []) {
-      if (row.job_item_id && row.quantity_good) {
-        const current = jobItemTotalsMap.get(row.job_item_id) ?? 0;
-        jobItemTotalsMap.set(row.job_item_id, current + row.quantity_good);
-      }
-    }
-  }
 
   // Aggregate production events by job_item_id
   const productionMap = new Map<string, {
@@ -562,7 +542,9 @@ async function fetchSessionDetail(sessionId: string): Promise<SessionDetailStrea
         endedAt: event.ended_at,
         quantityGood: event.quantity_good ?? 0,
         quantityScrap: event.quantity_scrap ?? 0,
-        totalCompletedGood: jobItemTotalsMap.get(event.job_item_id) ?? 0,
+        totalCompletedGood: event.job_item_step_id
+          ? (stepTotalsMap.get(event.job_item_step_id) ?? 0)
+          : 0,
         jobItemStepId: event.job_item_step_id,
         stepPosition: event.job_item_steps?.position ?? null,
         isTerminal: event.job_item_steps?.is_terminal ?? true,
@@ -639,9 +621,14 @@ export async function GET(
 
   const stream = new ReadableStream({
     async start(controller) {
-      const send = (payload: StreamEvent) => controller.enqueue(serialize(payload));
-      const sendError = (message: string) =>
+      const send = (payload: StreamEvent) => {
+        if (isClosing) return;
+        controller.enqueue(serialize(payload));
+      };
+      const sendError = (message: string) => {
+        if (isClosing) return;
         controller.enqueue(serialize({ type: "error", message }));
+      };
 
       const clearHeartbeat = () => {
         if (heartbeat) {
@@ -651,6 +638,7 @@ export async function GET(
       };
 
       heartbeat = setInterval(() => {
+        if (isClosing) return;
         controller.enqueue(encoder.encode(": keep-alive\n\n"));
       }, 25_000);
 

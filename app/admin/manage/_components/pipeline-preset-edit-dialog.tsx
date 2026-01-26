@@ -13,7 +13,8 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, Trash2 } from "lucide-react";
+import { useNotification } from "@/contexts/NotificationContext";
+import { Trash2 } from "lucide-react";
 import type { PipelinePresetWithSteps, Station } from "@/lib/types";
 import { PipelineFlowEditor, type PipelineStation } from "@/components/admin/pipeline-flow-editor";
 
@@ -46,12 +47,12 @@ export const PipelinePresetEditDialog = ({
   const [selectedStationId, setSelectedStationId] = useState("");
   const [firstProductFlags, setFirstProductFlags] = useState<Record<string, boolean>>({});
 
+  const { notify } = useNotification();
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Track if we've already initialized this dialog session
   const hasInitializedRef = useRef(false);
@@ -71,7 +72,6 @@ export const PipelinePresetEditDialog = ({
     const load = async () => {
       setIsLoading(true);
       setError(null);
-      setSuccessMessage(null);
       setShowDeleteConfirm(false);
 
       try {
@@ -149,7 +149,6 @@ export const PipelinePresetEditDialog = ({
 
     setIsSaving(true);
     setError(null);
-    setSuccessMessage(null);
 
     try {
       await onSave({
@@ -158,12 +157,11 @@ export const PipelinePresetEditDialog = ({
         firstProductApprovalFlags: firstProductFlags,
       });
 
+      notify({ title: "הצלחה", message: "התבנית נשמרה בהצלחה.", variant: "success" });
+
       if (mode === "create") {
         // Close dialog automatically after successful creation
         onOpenChange(false);
-      } else {
-        // For edit mode, show success banner
-        setSuccessMessage("התבנית נשמרה בהצלחה.");
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "שגיאה בשמירה";
@@ -201,7 +199,6 @@ export const PipelinePresetEditDialog = ({
 
   const handleClose = () => {
     setError(null);
-    setSuccessMessage(null);
     setShowDeleteConfirm(false);
     setSelectedStationId("");
     onOpenChange(false);
@@ -235,15 +232,6 @@ export const PipelinePresetEditDialog = ({
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
-          {successMessage && (
-            <Alert className="border-emerald-500/30 bg-emerald-500/10 text-right text-sm text-emerald-400">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                <AlertDescription>{successMessage}</AlertDescription>
-              </div>
-            </Alert>
-          )}
-
           {isLoading ? (
             <div className="flex flex-col items-center justify-center py-12 gap-3">
               <div className="relative h-10 w-10">

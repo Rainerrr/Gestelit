@@ -128,10 +128,8 @@ export const ProductionOverviewTable = ({
         </thead>
         <tbody>
           {productionPeriods.map((period, idx) => {
-            // Use step-level totals for non-terminal stations, job_item_progress for terminal
-            const displayTotal = period.isTerminal
-              ? period.totalCompletedGood
-              : period.stepTotalGood;
+            // Always use per-step totals (scoped to this pipeline step)
+            const displayTotal = period.stepTotalGood;
             const isComplete = displayTotal >= period.plannedQuantity;
 
             return (

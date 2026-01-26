@@ -13,7 +13,8 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Plus, Trash2, CheckCircle2 } from "lucide-react";
+import { useNotification } from "@/contexts/NotificationContext";
+import { Plus, Trash2 } from "lucide-react";
 import type {
   MachineState,
   Station,
@@ -80,8 +81,8 @@ export const StationFormDialog = ({
   const [statusError, setStatusError] = useState<string | null>(null);
   const [activeColorPickerId, setActiveColorPickerId] = useState<string | null>(null);
   const [pendingDeletedStatusIds, setPendingDeletedStatusIds] = useState<string[]>([]);
+  const { notify } = useNotification();
   const [isSavingStatuses, setIsSavingStatuses] = useState(false);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
   const controlledOpen = open ?? localOpen;
   const availableStationTypes = useMemo(
@@ -95,7 +96,6 @@ export const StationFormDialog = ({
       setStatusError(null);
       setActiveColorPickerId(null);
       setPendingDeletedStatusIds([]);
-      setSuccessMessage(null);
       setWarningMessage(null);
     }
     (onOpenChange ?? setLocalOpen)(open);
@@ -153,7 +153,6 @@ export const StationFormDialog = ({
 
     setError(null);
     setStatusError(null);
-    setSuccessMessage(null);
     setWarningMessage(null);
 
     // Check for active session if editing
@@ -242,7 +241,7 @@ export const StationFormDialog = ({
         station_reasons: payloadReasons,
       });
 
-      setSuccessMessage("התחנה נשמרה בהצלחה.");
+      notify({ title: "הצלחה", message: "התחנה נשמרה בהצלחה.", variant: "success" });
       setError(null);
       setWarningMessage(null);
 
@@ -258,7 +257,6 @@ export const StationFormDialog = ({
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       setError(errorMessage || "שגיאה בשמירת התחנה");
-      setSuccessMessage(null);
     }
   };
 
@@ -447,15 +445,6 @@ export const StationFormDialog = ({
               <AlertDescription>{warningMessage}</AlertDescription>
             </Alert>
           )}
-          {successMessage && (
-            <Alert className="border-emerald-500/30 bg-emerald-500/10 text-right text-sm text-emerald-400">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                <AlertDescription>{successMessage}</AlertDescription>
-              </div>
-            </Alert>
-          )}
-
           {/* Station Name */}
           <div className="space-y-1.5">
             <Label htmlFor="station_name" className="text-foreground/80 text-sm">שם תחנה</Label>

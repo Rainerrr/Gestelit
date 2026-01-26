@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/sheet";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { ChangePasswordDialog } from "./change-password-dialog";
+import { NotificationCenter } from "@/components/notifications/notification-center";
 import { fetchReportsCountsAdminApi } from "@/lib/api/admin-management";
 import { useScrollDirection } from "@/hooks/useScrollDirection";
 import { cn } from "@/lib/utils";
@@ -222,6 +223,9 @@ export const AdminLayout = ({ children, header, mobileBottomBar }: AdminLayoutPr
           >
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1 pr-12 lg:pr-0">{header}</div>
+              <div className="flex items-center shrink-0">
+                <NotificationCenter />
+              </div>
             </div>
           </header>
 
