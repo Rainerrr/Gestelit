@@ -19,7 +19,6 @@ import { useTranslation } from "@/hooks/useTranslation";
 import { useWorkerSession } from "@/contexts/WorkerSessionContext";
 import {
   abandonSessionApi,
-  createSessionApi,
   fetchStationsWithOccupancyApi,
   fetchStationJobItemCountsApi,
 } from "@/lib/api/client";
@@ -88,11 +87,9 @@ export default function StationPage() {
     sessionStartedAt,
     hasActiveSession,
     setStation,
-    setSessionId,
-    setSessionStartedAt,
-    setCurrentStatus,
     pendingRecovery,
     setPendingRecovery,
+    setPendingStation,
     hydrateFromSnapshot,
     reset,
     setWorker,
@@ -107,9 +104,9 @@ export default function StationPage() {
   // Selection state
   const [selectedStationId, setSelectedStationId] = useState<string | null>(null);
 
-  // Session creation state
-  const [isCreatingSession, setIsCreatingSession] = useState(false);
-  const [sessionError, setSessionError] = useState<string | null>(null);
+  // Navigation state (no longer creating sessions here)
+  const [isNavigating, setIsNavigating] = useState(false);
+  const [navigationError, setNavigationError] = useState<string | null>(null);
 
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
@@ -302,67 +299,40 @@ export default function StationPage() {
   }, [countdownExpired, handleDiscardSession]);
 
   const handleStationSelect = useCallback(
-    async (stationId: string) => {
+    (stationId: string) => {
       if (isRecoveryBlocking || !worker) return;
 
-      const station = stations.find((s) => s.id === stationId);
-      if (!station) return;
+      const selectedStation = stations.find((s) => s.id === stationId);
+      if (!selectedStation) return;
+
+      // Check if station is occupied (another worker is using it)
+      if (selectedStation.occupancy.isOccupied && !selectedStation.occupancy.isGracePeriod) {
+        setNavigationError(t("station.error.occupied"));
+        return;
+      }
 
       setSelectedStationId(stationId);
-      setSessionError(null);
-      setIsCreatingSession(true);
+      setNavigationError(null);
+      setIsNavigating(true);
 
-      try {
-        // Create session with station only (no job yet - job is selected when entering production)
-        const session = await createSessionApi(
-          worker.id,
-          station.id,
-          null, // No job at station selection time
-          instanceId
-        );
+      // Store station in context for pending session creation
+      // Session will be created on the work page after checklist completion
+      const stationForContext = {
+        id: selectedStation.id,
+        name: selectedStation.name,
+        code: selectedStation.code,
+        station_type: selectedStation.station_type,
+        is_active: selectedStation.is_active,
+      };
 
-        // Create station object for context
-        const stationForContext = {
-          id: station.id,
-          name: station.name,
-          code: station.code,
-          station_type: station.station_type,
-          is_active: station.is_active,
-        };
+      // Set both station (for display) and pendingStation (for deferred session creation)
+      setStation(stationForContext);
+      setPendingStation(stationForContext);
 
-        setStation(stationForContext);
-        setSessionId(session.id);
-        setSessionStartedAt(session.started_at ?? null);
-        setCurrentStatus(undefined);
-
-        // Persist session state (no job yet)
-        persistSessionState({
-          sessionId: session.id,
-          workerId: worker.id,
-          workerCode: worker.worker_code,
-          workerFullName: worker.full_name,
-          stationId: station.id,
-          stationName: station.name,
-          stationCode: station.code,
-          jobId: null,
-          jobNumber: null,
-          startedAt: session.started_at ?? new Date().toISOString(),
-          totals: { good: 0, scrap: 0 },
-        });
-
-        router.push("/checklist/start");
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "SESSION_FAILED";
-        if (message === "STATION_OCCUPIED") {
-          setSessionError(t("station.error.occupied"));
-        } else {
-          setSessionError(t("station.error.sessionFailed"));
-        }
-      } finally {
-        setIsCreatingSession(false);
-      }
+      // Navigate to checklist - session will be created on work page
+      router.push("/checklist/start");
     },
-    [isRecoveryBlocking, worker, stations, instanceId, setStation, setSessionId, setSessionStartedAt, setCurrentStatus, router, t]
+    [isRecoveryBlocking, worker, stations, setStation, setPendingStation, router, t]
   );
 
   const handleResumeSession = useCallback(() => {
@@ -450,7 +420,7 @@ export default function StationPage() {
       ) : null}
 
       {/* Main Content */}
-      <div className={cn("max-w-6xl", (isRecoveryBlocking || isCreatingSession) && "pointer-events-none opacity-50")}>
+      <div className={cn("max-w-6xl", (isRecoveryBlocking || isNavigating) && "pointer-events-none opacity-50")}>
         {isLoading ? (
           // Loading skeleton
           <div className="space-y-4">
@@ -550,10 +520,10 @@ export default function StationPage() {
           </div>
         )}
 
-        {/* Session error display */}
-        {sessionError && (
+        {/* Navigation error display */}
+        {navigationError && (
           <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-center">
-            <p className="text-sm font-medium text-red-400">{sessionError}</p>
+            <p className="text-sm font-medium text-red-400">{navigationError}</p>
           </div>
         )}
       </div>

@@ -79,6 +79,10 @@ export const translations = {
     he: "שפת ממשק",
     ru: "Язык интерфейса",
   },
+  "common.loading": {
+    he: "טוען...",
+    ru: "Загрузка...",
+  },
   "common.worker": {
     he: "עובד",
     ru: "Работник",
@@ -1039,6 +1043,10 @@ export const translations = {
   "work.error.loadStatuses": {
     he: "שגיאה בטעינת סטטוסים",
     ru: "Ошибка загрузки статусов",
+  },
+  "work.creatingSession": {
+    he: "מתחיל משמרת...",
+    ru: "Начинаю смену...",
   },
   // ============================================
   // FIRST PRODUCT QA translations

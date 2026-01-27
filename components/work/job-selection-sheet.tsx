@@ -119,7 +119,7 @@ function CompactJobItemCard({ jobItem, onSelect, animationDelay, disabled }: Com
         "transition-all duration-200",
         isComplete || disabled
           ? "border-border/30 opacity-50"
-          : "border-border/50 hover:border-cyan-500/50 hover:shadow-lg hover:shadow-cyan-500/10",
+          : "border-border/50 can-hover:hover:border-cyan-500/50 can-hover:hover:shadow-lg can-hover:hover:shadow-cyan-500/10",
         // Entrance animation
         "animate-in fade-in slide-in-from-bottom-2"
       )}
@@ -193,10 +193,10 @@ function CompactJobItemCard({ jobItem, onSelect, animationDelay, disabled }: Com
             ? "bg-muted text-muted-foreground cursor-not-allowed"
             : [
                 "bg-gradient-to-r from-cyan-600 to-cyan-500",
-                "hover:from-cyan-500 hover:to-cyan-400",
+                "can-hover:hover:from-cyan-500 can-hover:hover:to-cyan-400",
                 "text-slate-900",
                 "shadow-lg shadow-cyan-500/20",
-                "hover:shadow-cyan-500/40",
+                "can-hover:hover:shadow-cyan-500/40",
                 "active:scale-[0.98]",
               ]
         )}

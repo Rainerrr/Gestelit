@@ -48,6 +48,8 @@ type WorkerSessionState = {
     endCompleted: boolean;
   };
   pendingRecovery: WorkerResumeSession | null;
+  // Pending station for deferred session creation (session created on work page, not station page)
+  pendingStation?: Station | null;
   // New state for deferred job binding
   activeJobItem?: ActiveJobItemContext | null;
   currentStatusEventId?: string | null;
@@ -69,6 +71,7 @@ type WorkerSessionAction =
   | { type: "setTotals"; payload: Partial<WorkerSessionState["totals"]> }
   | { type: "completeChecklist"; payload: "start" | "end" }
   | { type: "setPendingRecovery"; payload?: WorkerResumeSession | null }
+  | { type: "setPendingStation"; payload?: Station | null }
   | { type: "hydrateFromSnapshot"; payload: WorkerResumeSession }
   | { type: "reset" }
   // New actions for deferred job binding
@@ -91,6 +94,7 @@ const WorkerSessionContext = createContext<
       updateTotals: (totals: Partial<WorkerSessionState["totals"]>) => void;
       completeChecklist: (kind: "start" | "end") => void;
       setPendingRecovery: (payload?: WorkerResumeSession | null) => void;
+      setPendingStation: (station?: Station | null) => void;
       hydrateFromSnapshot: (payload: WorkerResumeSession) => void;
       reset: () => void;
       // New actions for deferred job binding
@@ -114,6 +118,7 @@ const initialState: WorkerSessionState = {
     endCompleted: false,
   },
   pendingRecovery: null,
+  pendingStation: null,
   // New state for deferred job binding
   activeJobItem: null,
   currentStatusEventId: null,
@@ -159,6 +164,11 @@ function reducer(
       return {
         ...state,
         pendingRecovery: action.payload ?? null,
+      };
+    case "setPendingStation":
+      return {
+        ...state,
+        pendingStation: action.payload ?? null,
       };
     case "hydrateFromSnapshot": {
       const { session, station, job, sessionTotals } = action.payload;
@@ -257,6 +267,11 @@ export function WorkerSessionProvider({
       dispatch({ type: "setPendingRecovery", payload }),
     [],
   );
+  const setPendingStation = useCallback(
+    (station?: Station | null) =>
+      dispatch({ type: "setPendingStation", payload: station }),
+    [],
+  );
   const hydrateFromSnapshot = useCallback(
     (payload: WorkerResumeSession) =>
       dispatch({ type: "hydrateFromSnapshot", payload }),
@@ -300,6 +315,7 @@ export function WorkerSessionProvider({
       updateTotals,
       completeChecklist,
       setPendingRecovery,
+      setPendingStation,
       hydrateFromSnapshot,
       reset,
       // New actions
@@ -317,6 +333,7 @@ export function WorkerSessionProvider({
       setCurrentStatus,
       setJob,
       setPendingRecovery,
+      setPendingStation,
       setSessionId,
       setSessionStartedAt,
       setStation,

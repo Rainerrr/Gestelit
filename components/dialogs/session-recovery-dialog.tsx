@@ -51,6 +51,8 @@ export interface SessionRecoveryDialogProps {
   onDiscard: () => void;
   /** Called when dialog is closed via backdrop click or escape */
   onClose?: () => void;
+  /** When true, prevents closing via backdrop click, escape key, or close button */
+  preventDismiss?: boolean;
 }
 
 // ============================================
@@ -66,6 +68,7 @@ export function SessionRecoveryDialog({
   onResume,
   onDiscard,
   onClose,
+  preventDismiss = false,
 }: SessionRecoveryDialogProps) {
   const { t } = useTranslation();
 
@@ -89,6 +92,10 @@ export function SessionRecoveryDialog({
   }, [session, countdownMs]);
 
   const handleOpenChange = (newOpen: boolean) => {
+    // When preventDismiss is true, don't allow closing via onOpenChange
+    if (preventDismiss && !newOpen) {
+      return;
+    }
     if (!newOpen && onClose) {
       onClose();
     }
@@ -100,7 +107,13 @@ export function SessionRecoveryDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent dir="rtl" className="border-border bg-card">
+      <DialogContent
+        dir="rtl"
+        className="border-border bg-card"
+        hideCloseButton={preventDismiss}
+        onPointerDownOutside={preventDismiss ? (e) => e.preventDefault() : undefined}
+        onEscapeKeyDown={preventDismiss ? (e) => e.preventDefault() : undefined}
+      >
         <DialogHeader>
           <DialogTitle className="text-foreground">
             {t("station.resume.title")}
@@ -154,14 +167,14 @@ export function SessionRecoveryDialog({
             variant="outline"
             onClick={onDiscard}
             disabled={isLoading}
-            className="w-full justify-center border-input bg-secondary text-foreground/80 hover:bg-accent hover:text-foreground sm:w-auto"
+            className="w-full justify-center border-input bg-secondary text-foreground/80 can-hover:hover:bg-accent can-hover:hover:text-foreground sm:w-auto"
           >
             {isLoading ? t("station.resume.discarding") : t("station.resume.discard")}
           </Button>
           <Button
             type="button"
             onClick={onResume}
-            className="w-full justify-center bg-primary font-medium text-primary-foreground hover:bg-primary/90 sm:w-auto"
+            className="w-full justify-center bg-primary font-medium text-primary-foreground can-hover:hover:bg-primary/90 sm:w-auto"
             disabled={isLoading}
           >
             {t("station.resume.resume")}

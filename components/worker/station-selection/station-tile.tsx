@@ -78,8 +78,8 @@ export function StationTile({
         ],
         tileState === "available" && [
           "border-emerald-500/60 bg-gradient-to-b from-emerald-500/15 to-emerald-600/5",
-          "hover:border-emerald-400 hover:bg-emerald-500/20",
-          "hover:shadow-lg hover:shadow-emerald-500/20",
+          "can-hover:hover:border-emerald-400 can-hover:hover:bg-emerald-500/20",
+          "can-hover:hover:shadow-lg can-hover:hover:shadow-emerald-500/20",
           "active:scale-[0.97] cursor-pointer",
         ],
         tileState === "occupied" && [

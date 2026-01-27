@@ -297,7 +297,10 @@ const LiveJobProgressComponent = ({ className }: LiveJobProgressProps) => {
           const isMultiStation = wipDistribution.length > 1;
           const isSingleStation = wipDistribution.length === 1;
           const plannedQuantity = assignment.plannedQuantity || 0;
-          const completedGood = assignment.completedGood || 0;
+          // Use terminal station's WIP as completed count (they're the same thing)
+          const terminalWip = wipDistribution.find((w) => w.isTerminal);
+          const completedGood = terminalWip?.goodAvailable ?? 0;
+          // Total WIP across all stations
           const totalWip = wipDistribution.reduce((sum, w) => sum + w.goodAvailable, 0);
           const completionPercent = plannedQuantity > 0
             ? Math.min(100, Math.round((completedGood / plannedQuantity) * 100))
@@ -408,55 +411,55 @@ const LiveJobProgressComponent = ({ className }: LiveJobProgressProps) => {
               {/* Production Line / Pipeline - Segmented Bar (hide when collapsed) */}
               {isMultiStation && wipDistribution.length > 0 && !isCollapsed && (
                 <div className="space-y-3">
-                  {/* Segmented Progress Bar - Use flex-grow for proportional sizing */}
+                  {/* Segmented Progress Bar - Each station's WIP as percentage of planned quantity */}
                   <div className="h-12 rounded-xl overflow-hidden bg-muted/50 flex">
-                    {wipDistribution.map((wip, idx) => {
-                      const segmentStyle = getSegmentStyle(idx, wipDistribution.length, wip.isTerminal);
-                      const isBottleneck = idx === bottleneckIdx && maxWip > 0;
-                      const hasWip = wip.goodAvailable > 0;
-                      const stagePercent = plannedQuantity > 0 ? (wip.goodAvailable / plannedQuantity) * 100 : 0;
+                    {/* WIP segments for all stations (terminal = completed, others = in-progress) */}
+                    {wipDistribution
+                      .filter((wip) => wip.goodAvailable > 0)
+                      .map((wip) => {
+                        const idx = wipDistribution.indexOf(wip);
+                        const segmentStyle = getSegmentStyle(idx, wipDistribution.length, wip.isTerminal);
+                        const isBottleneck = idx === bottleneckIdx && maxWip > 0;
+                        const stagePercent = plannedQuantity > 0 ? (wip.goodAvailable / plannedQuantity) * 100 : 0;
 
-                      // Skip segments with no WIP (don't show empty station slots in bar)
-                      if (!hasWip) return null;
-
-                      return (
-                        <div
-                          key={wip.jobItemStepId}
-                          className={`h-full flex items-center justify-center relative transition-all ${segmentStyle.bg} ${
-                            isBottleneck ? "ring-2 ring-white/50 ring-inset" : ""
-                          }`}
-                          style={{
-                            flex: `${wip.goodAvailable} 1 0%`,
-                            minWidth: "50px",
-                          }}
-                        >
-                          <div className="flex flex-col items-center justify-center px-1">
-                            <span className="text-[10px] font-medium truncate max-w-full drop-shadow-sm text-white/90">
-                              {wip.stationName}
-                            </span>
-                            <span className="text-sm font-bold font-mono text-white drop-shadow-md">
-                              {showPercentages
-                                ? `${Math.round(stagePercent)}%`
-                                : wip.goodAvailable.toLocaleString()}
-                            </span>
+                        return (
+                          <div
+                            key={wip.jobItemStepId}
+                            className={`h-full flex items-center justify-center relative transition-all ${segmentStyle.bg} ${
+                              isBottleneck ? "ring-2 ring-white/50 ring-inset" : ""
+                            }`}
+                            style={{
+                              width: `${stagePercent}%`,
+                              minWidth: "50px",
+                            }}
+                          >
+                            <div className="flex flex-col items-center justify-center px-1">
+                              <span className="text-[10px] font-medium truncate max-w-full drop-shadow-sm text-white/90">
+                                {wip.stationName}
+                              </span>
+                              <span className="text-sm font-bold font-mono text-white drop-shadow-md">
+                                {showPercentages
+                                  ? `${Math.round(stagePercent)}%`
+                                  : wip.goodAvailable.toLocaleString()}
+                              </span>
+                            </div>
+                            {isBottleneck && (
+                              <div className="absolute top-1 right-1 w-2 h-2 rounded-full bg-white animate-pulse" />
+                            )}
+                            {idx < wipDistribution.length - 1 && (
+                              <div className="absolute left-0 top-0 bottom-0 w-px bg-black/30" />
+                            )}
                           </div>
-                          {isBottleneck && (
-                            <div className="absolute top-1 right-1 w-2 h-2 rounded-full bg-white animate-pulse" />
-                          )}
-                          {idx < wipDistribution.length - 1 && (
-                            <div className="absolute left-0 top-0 bottom-0 w-px bg-black/30" />
-                          )}
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
 
-                    {/* Remaining space - at the end, flex-1 makes it fill remaining width */}
+                    {/* Remaining space - products not yet in pipeline */}
                     {totalWip < plannedQuantity && (
                       <div className="h-full flex items-center justify-center flex-1" style={{ minWidth: "40px" }}>
                         <span className="text-[10px] text-muted-foreground font-mono">
                           {showPercentages
                             ? `${Math.round(((plannedQuantity - totalWip) / plannedQuantity) * 100)}% נותרו`
-                            : `${(plannedQuantity - totalWip).toLocaleString()} נותרו`}
+                            : `${(plannedQuantity - completedGood).toLocaleString()} נותרו`}
                         </span>
                       </div>
                     )}

@@ -8,14 +8,12 @@ import { PageHeader } from "@/components/layout/page-header";
 import { BackButton } from "@/components/navigation/back-button";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Spinner } from "@/components/ui/spinner";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useWorkerSession } from "@/contexts/WorkerSessionContext";
 import {
   abandonSessionApi,
   fetchChecklistApi,
-  startStatusEventApi,
-  submitChecklistResponsesApi,
-  fetchStationStatusesApi,
 } from "@/lib/api/client";
 import { clearPersistedSessionState } from "@/lib/utils/session-storage";
 import type { SessionAbandonReason, StationChecklist, StationChecklistItem } from "@/lib/types";
@@ -30,17 +28,19 @@ export default function OpeningChecklistPage() {
   const {
     worker,
     station,
+    pendingStation,
     job,
     sessionId,
     sessionStartedAt,
     checklist: checklistState,
     hasActiveSession,
     completeChecklist,
-    setCurrentStatus,
-    setSessionStartedAt,
     reset,
     setWorker,
   } = useWorkerSession();
+
+  // Station to use: either from active session or pending (new flow)
+  const effectiveStation = station ?? pendingStation;
 
   const [responses, setResponses] = useState<Record<string, boolean>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -100,20 +100,21 @@ export default function OpeningChecklistPage() {
       router.replace("/login");
       return;
     }
-    if (worker && !station) {
+    // Need either station (from existing session) or pendingStation (new flow)
+    if (worker && !effectiveStation) {
       router.replace("/station");
       return;
     }
     // Job is now optional - bound when entering production status
-  }, [worker, station, router]);
+  }, [worker, effectiveStation, router]);
 
   useEffect(() => {
-    if (!station) {
+    if (!effectiveStation) {
       return;
     }
     let active = true;
     dispatch({ type: "start" });
-    fetchChecklistApi(station.id, "start")
+    fetchChecklistApi(effectiveStation.id, "start")
       .then((result) => {
         if (!active) return;
         dispatch({ type: "resolve", payload: result });
@@ -125,7 +126,7 @@ export default function OpeningChecklistPage() {
     return () => {
       active = false;
     };
-  }, [station]);
+  }, [effectiveStation]);
 
   // ===== Recovery Handlers =====
   // Define handlers before the countdown effect that uses them
@@ -196,13 +197,14 @@ export default function OpeningChecklistPage() {
     router.push("/work");
   }, [router]);
 
-  const handleDialogClose = useCallback(() => {
-    // Closing should navigate back to /work (user must make a choice)
-    router.push("/work");
-  }, [router]);
-
-  if (!worker || !station || !sessionId) {
-    return null;
+  // Guard: need worker and either active station or pending station
+  // sessionId is NOT required in new flow (deferred session creation)
+  if (!worker || !effectiveStation) {
+    return (
+      <div className="flex h-[50vh] items-center justify-center">
+        <Spinner size="lg" label={t("common.loading")} />
+      </div>
+    );
   }
 
   const checklist = state.checklist;
@@ -228,48 +230,37 @@ export default function OpeningChecklistPage() {
       return;
     }
     setSubmitError(null);
-    try {
-      const payload = Object.entries(responses).map(
-        ([item_id, value_bool]) => ({
-          item_id,
-          value_bool,
-        }),
-      );
-      const { session } = await submitChecklistResponsesApi(
-        sessionId,
-        station.id,
-        "start",
-        payload,
-      );
-      if (session?.started_at) {
-        setSessionStartedAt(session.started_at);
-      }
-      const statuses = await fetchStationStatusesApi(station.id);
-      // Find a stoppage status by machine_state (language-agnostic approach)
-      const stoppedStatus =
-        statuses.find((item) => item.machine_state === "stoppage") ??
-        statuses.find((item) => item.scope === "global") ??
-        statuses[0];
 
-      if (stoppedStatus?.id) {
-        await startStatusEventApi({
-          sessionId,
-          statusDefinitionId: stoppedStatus.id,
-        });
-        setCurrentStatus(stoppedStatus.id);
-      }
-      completeChecklist("start");
-      router.push("/work");
+    // In the new flow, session doesn't exist yet (created on work page).
+    // We store the checklist responses locally and submit them when the session is created.
+    // For now, just mark checklist as completed and navigate to work page.
+    // The work page will create the session and handle the initial status event.
+
+    // Store checklist responses in sessionStorage for submission after session creation
+    const payload = Object.entries(responses).map(
+      ([item_id, value_bool]) => ({
+        item_id,
+        value_bool,
+      }),
+    );
+    try {
+      sessionStorage.setItem(
+        "pendingChecklistResponses",
+        JSON.stringify(payload)
+      );
     } catch {
-      setSubmitError(t("checklist.error.submit"));
+      // Ignore storage errors - checklist is optional
     }
+
+    completeChecklist("start");
+    router.push("/work");
   };
 
   return (
     <>
       <BackButton href="/station" />
       <PageHeader
-        eyebrow={station.name}
+        eyebrow={effectiveStation.name}
         title={t("checklist.start.title")}
         subtitle={t("checklist.start.subtitle")}
       />
@@ -292,9 +283,9 @@ export default function OpeningChecklistPage() {
           }
         >
           {state.loading ? (
-            <p className="rounded-xl border border-dashed border-border bg-muted/30 p-4 text-right text-sm text-muted-foreground">
-              {t("checklist.loading")}
-            </p>
+            <div className="flex justify-center py-8">
+              <Spinner size="md" label={t("checklist.loading")} />
+            </div>
           ) : !checklist ? (
             <p className="rounded-xl border border-dashed border-border bg-muted/30 p-4 text-right text-sm text-muted-foreground">
               {t("checklist.empty")}
@@ -321,7 +312,7 @@ export default function OpeningChecklistPage() {
         ) : null}
       </form>
 
-      {/* Recovery Dialog for back-navigation */}
+      {/* Recovery Dialog for back-navigation - non-dismissable */}
       <SessionRecoveryDialog
         open={isBackNavigationRecovery}
         session={recoveryInfo}
@@ -330,7 +321,7 @@ export default function OpeningChecklistPage() {
         error={resumeError}
         onResume={handleResumeSession}
         onDiscard={() => handleDiscardSession()}
-        onClose={handleDialogClose}
+        preventDismiss
       />
     </>
   );

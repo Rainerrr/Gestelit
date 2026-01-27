@@ -3,8 +3,9 @@
 -- for a job_item_id, causing multi-step pipelines to show inflated progress.
 -- Fix: Filter by job_item_step_id so each step's progress is isolated.
 
--- 1. Update the view to scope totals by job_item_step_id
-CREATE OR REPLACE VIEW public.v_session_current_job_item_totals AS
+-- 1. Drop and recreate view (can't use CREATE OR REPLACE when changing columns)
+DROP VIEW IF EXISTS public.v_session_current_job_item_totals;
+CREATE VIEW public.v_session_current_job_item_totals AS
 SELECT
   s.id AS session_id,
   s.job_item_id,

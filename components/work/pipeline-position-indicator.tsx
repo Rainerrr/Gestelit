@@ -4,6 +4,19 @@ import { ChevronLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { PipelineNeighborStation } from "@/lib/api/client";
 
+// Format large numbers compactly (e.g., 3M, 1.5K)
+const formatCompactNumber = (num: number): string => {
+  if (num >= 1_000_000) {
+    const millions = num / 1_000_000;
+    return millions % 1 === 0 ? `${millions}M` : `${millions.toFixed(1)}M`;
+  }
+  if (num >= 10_000) {
+    const thousands = num / 1_000;
+    return thousands % 1 === 0 ? `${thousands}K` : `${thousands.toFixed(1)}K`;
+  }
+  return num.toLocaleString();
+};
+
 // ============================================
 // TYPES
 // ============================================
@@ -78,8 +91,8 @@ export function PipelinePositionIndicator({
       </div>
 
       {/* Pipeline Flow Visualization */}
-      <div className="flex items-center justify-center gap-2">
-        {/* Previous Station (RTL: on the right) */}
+      <div className="flex items-center justify-center gap-1.5 min-w-0">
+        {/* Previous Station (RTL: on the right) - UPSTREAM */}
         {prevStation ? (
           <StationNode
             name={prevStation.name}
@@ -88,13 +101,13 @@ export function PipelinePositionIndicator({
             isOccupied={!!prevStation.occupiedBy}
             occupiedBy={prevStation.occupiedBy}
             wipCount={upstreamWip}
-            wipLabel="ממתין"
+            wipLabel="ממתינים לנו"
             variant="previous"
             compact={compact}
           />
         ) : (
-          <div className="flex h-12 w-12 items-center justify-center rounded-lg border-2 border-dashed border-border/30 text-xs text-muted-foreground">
-            התחלה
+          <div className="flex h-16 min-w-14 max-w-20 flex-1 flex-col items-center justify-center rounded-lg border-2 border-dashed border-emerald-500/30 text-[10px] text-emerald-500/70 px-1">
+            <span>התחלה</span>
           </div>
         )}
 
@@ -104,38 +117,34 @@ export function PipelinePositionIndicator({
         {/* Current Station - Simplified */}
         <div
           className={cn(
-            "flex flex-col items-center justify-center rounded-xl border-2 px-4 py-3",
+            "flex flex-col items-center justify-center rounded-xl border-2 px-2 py-2 min-w-0 flex-shrink-0",
             "border-cyan-500/50 bg-cyan-500/10",
-            compact ? "min-w-20" : "min-w-24"
+            compact ? "max-w-20" : "max-w-28"
           )}
         >
           <span className="text-[10px] font-medium text-cyan-400/70 uppercase tracking-wider">
-            העמדה שלנו
+            את כאן
           </span>
-          {currentStationName ? (
-            <span className="text-sm font-bold text-cyan-300 line-clamp-1 text-center mt-0.5">
+          {currentStationName && (
+            <span className="text-xs font-bold text-cyan-300 line-clamp-1 text-center mt-0.5 max-w-full truncate px-1">
               {currentStationName}
             </span>
-          ) : (
-            <span className="text-lg font-bold tabular-nums text-cyan-300">
-              #{currentPosition}
-            </span>
           )}
-          <div className="mt-1 flex items-center gap-1">
-            <span className="text-lg font-bold tabular-nums text-cyan-400">
-              {sessionGoodCount.toLocaleString()}
+          <div className="mt-1 flex flex-col items-center">
+            <span className="text-sm font-bold tabular-nums text-cyan-400">
+              {formatCompactNumber(sessionGoodCount)}
             </span>
-            <span className="text-[10px] text-cyan-400/60">יחידות</span>
+            <span className="text-[9px] text-cyan-400/60">דווח במשמרת</span>
           </div>
           {isTerminal && (
-            <span className="text-[10px] font-medium text-emerald-400 mt-0.5">סיום</span>
+            <span className="text-[9px] font-medium text-emerald-400 mt-0.5">סיום</span>
           )}
         </div>
 
         {/* Arrow: Current → Next */}
         <ChevronLeft className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
 
-        {/* Next Station (RTL: on the left) */}
+        {/* Next Station (RTL: on the left) - DOWNSTREAM */}
         {nextStation ? (
           <StationNode
             name={nextStation.name}
@@ -144,30 +153,30 @@ export function PipelinePositionIndicator({
             isOccupied={!!nextStation.occupiedBy}
             occupiedBy={nextStation.occupiedBy}
             wipCount={waitingOutput}
-            wipLabel="יוצא"
+            wipLabel="יוצאים הלאה"
             variant="next"
             compact={compact}
           />
         ) : (
-          <div className="flex h-12 w-12 items-center justify-center rounded-lg border-2 border-dashed border-emerald-600/30 text-xs text-emerald-500">
-            סיום
+          <div className="flex h-16 min-w-14 max-w-20 flex-1 flex-col items-center justify-center rounded-lg border-2 border-dashed border-rose-500/30 text-[10px] text-rose-500/70 px-1">
+            <span>סיום</span>
           </div>
         )}
       </div>
 
       {/* WIP Summary Bar */}
-      <div className="mt-3 flex items-center justify-between text-xs">
+      <div className="mt-2 flex items-center justify-between text-[10px]">
         <div className="flex items-center gap-1">
           {waitingOutput > 0 && (
-            <span className="rounded bg-amber-500/20 px-1.5 py-0.5 font-semibold text-amber-400">
-              {waitingOutput} יוצא →
+            <span className="rounded bg-rose-500/20 px-1.5 py-0.5 font-semibold text-rose-400 tabular-nums">
+              {formatCompactNumber(waitingOutput)} יוצא →
             </span>
           )}
         </div>
         <div className="flex items-center gap-1">
           {upstreamWip > 0 && (
-            <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 font-semibold text-emerald-400">
-              ← {upstreamWip} ממתין
+            <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 font-semibold text-emerald-400 tabular-nums">
+              ← {formatCompactNumber(upstreamWip)} ממתין
             </span>
           )}
         </div>
@@ -208,51 +217,49 @@ function StationNode({
   return (
     <div
       className={cn(
-        "flex flex-col items-center rounded-lg border-2 px-2 py-1.5 transition-colors",
+        "flex flex-col items-center rounded-lg border-2 px-1.5 py-1.5 transition-colors min-w-0 flex-1 max-w-24 overflow-hidden",
         isOccupied
           ? "border-amber-500/40 bg-amber-500/5"
           : isPrevious
             ? "border-emerald-500/30 bg-emerald-500/5"
-            : "border-border/30 bg-muted/30",
-        compact ? "min-w-14" : "min-w-16"
+            : "border-rose-500/30 bg-rose-500/5"
       )}
     >
-      {/* Station Code */}
+      {/* Station Name - truncated */}
       <span
         className={cn(
-          "text-xs font-bold",
+          "text-[10px] font-bold truncate max-w-full px-0.5",
           isOccupied
             ? "text-amber-400"
             : isPrevious
               ? "text-emerald-400"
-              : "text-muted-foreground"
+              : "text-rose-400"
         )}
       >
-        {code}
+        {name}
       </span>
 
-      {/* Position Number */}
-      <span className="text-sm font-semibold tabular-nums text-foreground">
-        #{position}
-      </span>
-
-      {/* Occupancy or WIP */}
+      {/* Occupancy or WIP status */}
       {isOccupied ? (
-        <span className="truncate text-[10px] text-amber-500 max-w-full">
+        <span className="truncate text-[9px] text-amber-500 max-w-full">
           {occupiedBy?.split(" ")[0] ?? "תפוס"}
         </span>
-      ) : wipCount > 0 ? (
+      ) : (
+        <span className="text-[9px] text-muted-foreground">פנוי</span>
+      )}
+
+      {/* WIP count - prominently displayed */}
+      <div className="mt-0.5 flex flex-col items-center">
+        <span className="text-[9px] text-muted-foreground">{wipLabel}</span>
         <span
           className={cn(
-            "text-[10px] font-medium",
-            isPrevious ? "text-emerald-400" : "text-amber-400"
+            "text-sm font-bold tabular-nums",
+            isPrevious ? "text-emerald-400" : "text-rose-400"
           )}
         >
-          {wipCount} {wipLabel}
+          {formatCompactNumber(wipCount)}
         </span>
-      ) : (
-        <span className="text-[10px] text-muted-foreground">פנוי</span>
-      )}
+      </div>
     </div>
   );
 }

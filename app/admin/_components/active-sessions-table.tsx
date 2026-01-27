@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useMemo, useSyncExternalStore } from "react";
+import { memo, useMemo, useState, useSyncExternalStore } from "react";
 import type { KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -15,6 +15,7 @@ import {
   TrendingDown,
   Settings,
   User,
+  XCircle,
 } from "lucide-react";
 import type { StatusDictionary } from "@/lib/status";
 import type { CurrentJobItemInfo } from "@/lib/data/admin-dashboard";
@@ -22,6 +23,7 @@ import {
   useAdminSession,
   useAdminSessionIds,
   useAdminSessionsLoading,
+  useAdminSessionsRefresh,
 } from "@/contexts/AdminSessionsContext";
 import {
   getStatusColorFromDictionary,
@@ -35,6 +37,15 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 type ActiveSessionsTableProps = {
@@ -745,6 +756,12 @@ const ActiveSessionsTableComponent = ({
   const router = useRouter();
   const sessionIds = useAdminSessionIds();
   const isLoading = useAdminSessionsLoading() || isDictionaryLoading;
+  const refresh = useAdminSessionsRefresh();
+
+  // Close all sessions state
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [resetResult, setResetResult] = useState<string | null>(null);
 
   const sortedSessions = useMemo(() => [...sessionIds], [sessionIds]);
 
@@ -752,20 +769,71 @@ const ActiveSessionsTableComponent = ({
     router.push(`/admin/session/${sessionId}`);
   };
 
+  const handleForceCloseSessions = async () => {
+    setResetting(true);
+    setResetResult(null);
+    try {
+      const response = await fetch("/api/admin/sessions/close-all", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Admin-Password": window.localStorage.getItem("adminPassword") || "",
+        },
+      });
+      if (!response.ok) {
+        throw new Error("close_failed");
+      }
+      const result = (await response.json()) as { closed: number };
+      setResetResult(
+        result.closed === 0
+          ? "לא נמצאו תחנות פעילות לסגירה."
+          : `נסגרו ${result.closed} תחנות פעילות.`,
+      );
+      await refresh();
+      setResetDialogOpen(false);
+    } catch (error) {
+      setResetResult("הסגירה נכשלה.");
+      console.error(error);
+    } finally {
+      setResetting(false);
+    }
+  };
+
   return (
-    <div className="rounded-xl border border-border bg-card/50 backdrop-blur-sm overflow-visible">
-      {/* Header */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-        <div className="flex items-center gap-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
-            <Activity className="h-4 w-4 text-primary" />
+    <>
+      <div className="rounded-xl border border-border bg-card/50 backdrop-blur-sm overflow-visible">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+          <div className="flex items-center gap-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
+              <Activity className="h-4 w-4 text-primary" />
+            </div>
+            <div>
+              <h3 className="text-base font-semibold text-foreground">תחנות פעילות</h3>
+              <p className="text-xs text-muted-foreground">{sortedSessions.length} תחנות</p>
+            </div>
           </div>
-          <div>
-            <h3 className="text-base font-semibold text-foreground">תחנות פעילות</h3>
-            <p className="text-xs text-muted-foreground">{sortedSessions.length} תחנות</p>
+          <div className="flex items-center gap-2">
+            {resetResult && (
+              <div className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/10 px-3 py-1.5">
+                <div className="h-1.5 w-1.5 rounded-full bg-primary" />
+                <p className="text-xs font-medium text-primary">{resetResult}</p>
+              </div>
+            )}
+            {sortedSessions.length > 0 && (
+              <Button
+                variant="destructive"
+                onClick={() => setResetDialogOpen(true)}
+                className="bg-red-600 hover:bg-red-700 border-0 font-medium"
+                size="sm"
+              >
+                <XCircle className="h-4 w-4 ml-1" />
+                <span className="hidden sm:inline">סגירת הכל</span>
+                <span className="sm:hidden">סגירה</span>
+              </Button>
+            )}
           </div>
         </div>
-      </div>
 
       {/* Content */}
       {isLoading ? (
@@ -814,7 +882,36 @@ const ActiveSessionsTableComponent = ({
           </div>
         </>
       )}
-    </div>
+      </div>
+
+      <Dialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
+        <DialogContent className="border-border bg-card text-right sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold text-foreground">לסגור את כל התחנות הפעילות?</DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              פעולה זו תסגור את כל הסשנים הפעילים ותעדכן את הדשבורד.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-row-reverse justify-start gap-2 sm:flex-row-reverse">
+            <Button
+              variant="destructive"
+              onClick={() => void handleForceCloseSessions()}
+              disabled={resetting}
+              className="bg-red-600 hover:bg-red-700 border-0 font-medium"
+            >
+              {resetting ? "סוגר..." : "כן, סגור הכל"}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setResetDialogOpen(false)}
+              className="border-input bg-secondary text-foreground/80 hover:bg-accent hover:text-foreground"
+            >
+              ביטול
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 };
 
