@@ -205,147 +205,6 @@
 }
 
 /* ==========================================================================
-   MOBILE TOUCH HANDLING FIXES
-   ========================================================================== */
-
-/* Touch-action: Enable smooth scrolling and prevent gesture conflicts */
-.touch-scroll-y {
-  touch-action: pan-y;
-  -webkit-overflow-scrolling: touch;
-}
-
-.touch-scroll-x {
-  touch-action: pan-x;
-  -webkit-overflow-scrolling: touch;
-}
-
-.touch-scroll-both {
-  touch-action: pan-x pan-y;
-  -webkit-overflow-scrolling: touch;
-}
-
-/* Apply touch-action to common scrollable containers */
-.overflow-auto,
-.overflow-y-auto,
-.overflow-x-auto,
-.overflow-scroll {
-  -webkit-overflow-scrolling: touch;
-}
-
-/* Prevent accidental zoom on form inputs while allowing scrolling */
-input,
-textarea,
-select,
-button {
-  touch-action: manipulation;
-}
-
-/* Prevent text selection on interactive elements for better touch UX */
-button,
-[role="button"],
-.select-none {
-  -webkit-user-select: none;
-  user-select: none;
-}
-
-/* ==========================================================================
-   HOVER STATE FIXES FOR TOUCH DEVICES
-   Prevent "ghost hover" states that persist after touch
-   ========================================================================== */
-
-/* Only apply hover styles on devices that support hover */
-@media (hover: hover) and (pointer: fine) {
-  .hover-enabled\:hover\:bg-muted\/50:hover {
-    background-color: hsl(var(--muted) / 0.5);
-  }
-}
-
-/* Touch devices: Use :active for immediate feedback instead of hover */
-@media (hover: none) {
-  /* Remove hover background changes on touch devices */
-  button:hover,
-  [role="button"]:hover {
-    background-color: inherit;
-  }
-
-  /* Stronger active state feedback for touch */
-  button:active,
-  [role="button"]:active {
-    opacity: 0.8;
-    transform: scale(0.98);
-  }
-
-  /* Table row hover - disable on touch */
-  tr:hover {
-    background-color: inherit !important;
-  }
-
-  /* Card/list item hover - disable on touch */
-  .hover\:bg-muted\/50:hover,
-  .hover\:bg-accent:hover {
-    background-color: inherit;
-  }
-}
-
-/* ==========================================================================
-   SAFE AREA AND KEYBOARD VISIBILITY
-   ========================================================================== */
-
-/* Safe area padding utilities */
-.safe-area-inset-bottom {
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-}
-
-.safe-area-inset-top {
-  padding-top: env(safe-area-inset-top, 0px);
-}
-
-/* Bottom sheet safe area - accounts for home indicator and keyboard */
-.bottom-sheet-safe {
-  padding-bottom: max(env(safe-area-inset-bottom, 0px), 1rem);
-}
-
-/* When keyboard is visible, sheets should account for it */
-@supports (height: 100dvh) {
-  .keyboard-aware {
-    max-height: 100dvh;
-  }
-}
-
-/* ==========================================================================
-   IOS SCROLL PERFORMANCE
-   ========================================================================== */
-
-/* Prevent iOS rubber-band bounce on fixed containers */
-.scroll-container {
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
-}
-
-/* Prevent zoom on double-tap for specific elements */
-.no-double-tap-zoom {
-  touch-action: manipulation;
-}
-
-/* ==========================================================================
-   TOUCH TARGET SIZE (iOS minimum 44px)
-   ========================================================================== */
-
-/* Utility for ensuring minimum touch target */
-.touch-target {
-  min-height: 44px;
-  min-width: 44px;
-}
-
-/* Mobile-specific touch target adjustments */
-@media (max-width: 640px) {
-  .touch-target-mobile {
-    min-height: 44px;
-    min-width: 44px;
-  }
-}
-
-/* ==========================================================================
    NOTIFICATION TOAST ANIMATIONS
    ========================================================================== */
 
@@ -408,5 +267,21 @@ button,
 
   .animate-toast-out {
     animation: toast-slide-out-top 0.35s ease-in forwards;
+  }
+}
+
+/* ==========================================================================
+   TOUCH DEVICE UTILITIES
+   ========================================================================== */
+
+@layer utilities {
+  /* Prevent accidental hovers during scrolling on touch */
+  .touch-scroll-guard {
+    @apply scroll-mt-4;
+  }
+
+  /* Ensure minimum touch target size (WCAG 2.5.5) */
+  .touch-target {
+    @apply min-h-[44px] min-w-[44px];
   }
 }

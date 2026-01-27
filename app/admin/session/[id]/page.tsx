@@ -2,11 +2,19 @@
 
 import { useEffect, useState, useCallback, useRef, use } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Clock, Package, AlertTriangle, Trash2, TrendingDown, Settings, Building, User, Calendar, RefreshCw } from "lucide-react";
+import { ArrowRight, Clock, Package, AlertTriangle, Trash2, TrendingDown, Settings, Building, User, Calendar, RefreshCw, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { AdminLayout } from "../../_components/admin-layout";
 import { VisSessionTimeline } from "../../_components/vis-session-timeline";
 import { useSessionTimeline } from "@/hooks/useSessionTimeline";
@@ -123,6 +131,8 @@ export default function SessionDetailPage({ params }: Props) {
   const { hasAccess } = useAdminGuard();
 
   const [stationReasons, setStationReasons] = useState<StationReason[] | null>(null);
+  const [isEndSessionDialogOpen, setEndSessionDialogOpen] = useState(false);
+  const [isEndingSession, setIsEndingSession] = useState(false);
 
   // Use real-time session hook
   const {
@@ -185,6 +195,26 @@ export default function SessionDetailPage({ params }: Props) {
   const handleRefresh = useCallback(async () => {
     await Promise.all([refresh(), timeline.reload()]);
   }, [refresh, timeline]);
+
+  // Handler to end the session
+  const handleEndSession = useCallback(async () => {
+    setIsEndingSession(true);
+    try {
+      const response = await fetch(`/api/admin/sessions/${sessionId}/end`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        throw new Error("Failed to end session");
+      }
+      setEndSessionDialogOpen(false);
+      await refresh();
+    } catch (err) {
+      console.error("[session-page] Failed to end session:", err);
+    } finally {
+      setIsEndingSession(false);
+    }
+  }, [sessionId, refresh]);
 
   // Detect status changes from SSE and trigger timeline reload
   const lastStatusChangeRef = useRef<string | null>(null);
@@ -338,9 +368,20 @@ export default function SessionDetailPage({ params }: Props) {
           <ConnectionIndicator state={connectionState} />
           <div className="flex-1" />
           {isActive && (
-            <Badge className="border-emerald-500/30 bg-emerald-500/10 text-emerald-400">
-              פעילה
-            </Badge>
+            <>
+              <Badge className="border-emerald-500/30 bg-emerald-500/10 text-emerald-400">
+                פעילה
+              </Badge>
+              <Button
+                onClick={() => setEndSessionDialogOpen(true)}
+                variant="destructive"
+                size="sm"
+                className="bg-red-600 hover:bg-red-700 border-0 font-medium"
+              >
+                <XCircle className="h-4 w-4 ml-1" />
+                סיום משמרת
+              </Button>
+            </>
           )}
           <Button
             onClick={() => void handleRefresh()}
@@ -596,6 +637,35 @@ export default function SessionDetailPage({ params }: Props) {
           </CardContent>
         </Card>
       </div>
+
+      {/* End Session Confirmation Dialog */}
+      <Dialog open={isEndSessionDialogOpen} onOpenChange={setEndSessionDialogOpen}>
+        <DialogContent className="border-border bg-card text-right sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold text-foreground">לסיים את המשמרת?</DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              פעולה זו תסיים את המשמרת עבור {session.workerName} בתחנה {session.stationName}.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-row-reverse justify-start gap-2 sm:flex-row-reverse">
+            <Button
+              variant="destructive"
+              onClick={() => void handleEndSession()}
+              disabled={isEndingSession}
+              className="bg-red-600 hover:bg-red-700 border-0 font-medium"
+            >
+              {isEndingSession ? "מסיים..." : "כן, סיים משמרת"}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setEndSessionDialogOpen(false)}
+              className="border-input bg-secondary text-foreground/80 hover:bg-accent hover:text-foreground"
+            >
+              ביטול
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AdminLayout>
   );
 }

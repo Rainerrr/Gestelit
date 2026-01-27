@@ -40,6 +40,7 @@ import {
   bindJobItemToSessionApi,
   checkFirstProductApprovalApi,
   createReportApi,
+  createSessionApi,
   createStatusEventWithReportApi,
   endProductionStatusApi,
   fetchJobItemsAtStationApi,
@@ -47,6 +48,7 @@ import {
   fetchSessionScrapReportsApi,
   fetchSessionTotalsApi,
   startStatusEventApi,
+  submitChecklistResponsesApi,
   submitFirstProductApprovalApi,
   takeoverSessionApi,
   type FirstProductApprovalStatus,
@@ -84,6 +86,8 @@ import type { ReportReason, StationReason, StatusDefinition } from "@/lib/types"
 import { useSessionHeartbeat } from "@/hooks/useSessionHeartbeat";
 import { useSessionBroadcast } from "@/hooks/useSessionBroadcast";
 import { fetchStationStatusesApi } from "@/lib/api/client";
+import { persistSessionState } from "@/lib/utils/session-storage";
+import { Spinner, FullPageSpinner } from "@/components/ui/spinner";
 
 type StatusVisual = {
   dotColor: string;
@@ -137,30 +141,184 @@ function formatDuration(elapsedSeconds: number) {
 }
 
 export default function WorkPage() {
-  const { worker, station, job, sessionId } = useWorkerSession();
+  const {
+    worker,
+    station,
+    pendingStation,
+    sessionId,
+    setStation,
+    setSessionId,
+    setSessionStartedAt,
+    setCurrentStatus,
+    setPendingStation,
+    completeChecklist,
+    checklist: checklistState,
+  } = useWorkerSession();
   const router = useRouter();
+  const { t } = useTranslation();
 
-  // Route guards - must come before any conditional returns that use hooks
-  // Note: job is now optional - workers select job when entering production
+  // State for deferred session creation
+  const [isCreatingSession, setIsCreatingSession] = useState(false);
+  const [sessionError, setSessionError] = useState<string | null>(null);
+  const sessionCreationAttempted = useRef(false);
+
+  // Use effective station (either from active session or pending)
+  const effectiveStation = station ?? pendingStation;
+
+  // Memoize instanceId to avoid recreating on each render
+  const instanceId = useMemo(() => getOrCreateInstanceId(), []);
+
+  // Route guards - redirect if missing required context
   useEffect(() => {
     if (!worker) {
       router.replace("/login");
       return;
     }
-    if (worker && !station) {
+    // Need either station (existing session) or pendingStation (new flow)
+    if (worker && !effectiveStation) {
       router.replace("/station");
+    }
+  }, [worker, effectiveStation, router]);
+
+  // Deferred session creation: create session when page loads with pendingStation but no sessionId
+  useEffect(() => {
+    // Skip if already have session, not have pending station, or already attempted
+    if (sessionId || !pendingStation || !worker || sessionCreationAttempted.current) {
       return;
     }
-    // Session must exist - job is now optional (selected when entering production)
-    if (worker && station && !sessionId) {
-      router.replace("/station");
-    }
-  }, [worker, station, sessionId, router]);
 
-  // Guard render - don't render content until session is ready
-  // Note: job is optional now - it gets bound when entering production
-  if (!worker || !station || !sessionId) {
-    return null;
+    sessionCreationAttempted.current = true;
+
+    const createSessionAndSetup = async () => {
+      setIsCreatingSession(true);
+      setSessionError(null);
+
+      try {
+        // 1. Create the session
+        const session = await createSessionApi(
+          worker.id,
+          pendingStation.id,
+          null, // No job at session creation time
+          instanceId
+        );
+
+        // 2. Submit pending checklist responses if any
+        try {
+          const pendingResponses = sessionStorage.getItem("pendingChecklistResponses");
+          if (pendingResponses) {
+            const responses = JSON.parse(pendingResponses);
+            await submitChecklistResponsesApi(
+              session.id,
+              pendingStation.id,
+              "start",
+              responses
+            );
+            sessionStorage.removeItem("pendingChecklistResponses");
+          }
+        } catch {
+          // Checklist submission is optional - don't fail session creation
+          console.warn("[WorkPage] Failed to submit checklist responses");
+        }
+
+        // 3. Fetch statuses and set initial stoppage status
+        const statuses = await fetchStationStatusesApi(pendingStation.id);
+        const stoppedStatus =
+          statuses.find((item) => item.machine_state === "stoppage") ??
+          statuses.find((item) => item.scope === "global") ??
+          statuses[0];
+
+        if (stoppedStatus?.id) {
+          await startStatusEventApi({
+            sessionId: session.id,
+            statusDefinitionId: stoppedStatus.id,
+          });
+          setCurrentStatus(stoppedStatus.id);
+        }
+
+        // 4. Update context with new session
+        setStation(pendingStation);
+        setSessionId(session.id);
+        setSessionStartedAt(session.started_at ?? null);
+        setPendingStation(null);
+
+        // 5. Mark checklist as completed (it was completed before navigation)
+        if (!checklistState.startCompleted) {
+          completeChecklist("start");
+        }
+
+        // 6. Persist session state
+        persistSessionState({
+          sessionId: session.id,
+          workerId: worker.id,
+          workerCode: worker.worker_code,
+          workerFullName: worker.full_name,
+          stationId: pendingStation.id,
+          stationName: pendingStation.name,
+          stationCode: pendingStation.code,
+          jobId: null,
+          jobNumber: null,
+          startedAt: session.started_at ?? new Date().toISOString(),
+          totals: { good: 0, scrap: 0 },
+        });
+      } catch (error) {
+        console.error("[WorkPage] Failed to create session:", error);
+        const message = error instanceof Error ? error.message : "SESSION_FAILED";
+        if (message === "STATION_OCCUPIED") {
+          setSessionError(t("station.error.occupied"));
+        } else {
+          setSessionError(t("station.error.sessionFailed"));
+        }
+      } finally {
+        setIsCreatingSession(false);
+      }
+    };
+
+    void createSessionAndSetup();
+  }, [
+    sessionId,
+    pendingStation,
+    worker,
+    instanceId,
+    setStation,
+    setSessionId,
+    setSessionStartedAt,
+    setCurrentStatus,
+    setPendingStation,
+    completeChecklist,
+    checklistState.startCompleted,
+    t,
+  ]);
+
+  // Loading state while creating session
+  if (isCreatingSession) {
+    return <FullPageSpinner label={t("work.creatingSession")} />;
+  }
+
+  // Error state if session creation failed
+  if (sessionError) {
+    return (
+      <div className="flex h-[50vh] flex-col items-center justify-center gap-4 p-4">
+        <div className="rounded-xl border-2 border-red-500/30 bg-red-500/10 p-6 text-center">
+          <p className="text-lg font-semibold text-red-400">{sessionError}</p>
+          <Button
+            variant="outline"
+            className="mt-4"
+            onClick={() => router.replace("/station")}
+          >
+            {t("station.tryAgain")}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // Guard render - wait for session to be ready
+  if (!worker || !effectiveStation || !sessionId) {
+    return (
+      <div className="flex h-[50vh] items-center justify-center">
+        <Spinner size="lg" label={t("common.loading")} />
+      </div>
+    );
   }
 
   // Wrap with PipelineProvider so inner content can use usePipelineContext()
@@ -1097,12 +1255,8 @@ function WorkPageContent() {
   };
 
   const handleQuantityReportCancel = () => {
-    // Quantity reporting is required when leaving production
-    // But allow cancel if it was a job switch (user can stay with current job)
-    if (!isPendingJobSwitch) {
-      // Can't cancel when leaving production - keep dialog open
-      return;
-    }
+    // Allow cancel for both job switches and status switches
+    // Worker can stay in current production state
     setQuantityReportDialogOpen(false);
     setPendingExitStatusId(null);
     setIsPendingJobSwitch(false);
@@ -2139,7 +2293,7 @@ function WorkPageContent() {
         onSubmit={handleQuantityReportSubmit}
         onCancel={handleQuantityReportCancel}
         isSubmitting={isQuantityReportSubmitting}
-        required={!isPendingJobSwitch}
+        required={false}
         jobItemName={activeJobItem?.name}
       />
 

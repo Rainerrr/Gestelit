@@ -6,6 +6,19 @@ import { cn } from "@/lib/utils";
 import { useTranslation } from "@/hooks/useTranslation";
 import type { Station } from "@/lib/types";
 
+// Format large numbers compactly (e.g., 3M, 1.5K)
+const formatCompactNumber = (num: number): string => {
+  if (num >= 1_000_000) {
+    const millions = num / 1_000_000;
+    return millions % 1 === 0 ? `${millions}M` : `${millions.toFixed(1)}M`;
+  }
+  if (num >= 10_000) {
+    const thousands = num / 1_000;
+    return thousands % 1 === 0 ? `${thousands}K` : `${thousands.toFixed(1)}K`;
+  }
+  return num.toLocaleString();
+};
+
 // ============================================
 // TYPES
 // ============================================
@@ -156,7 +169,7 @@ const NeighborStationCard = ({
   return (
     <div
       className={cn(
-        "relative flex h-full min-h-[100px] w-full flex-col justify-between rounded-xl border-2 p-3 transition-all duration-300",
+        "relative flex h-full min-h-[100px] w-full flex-col justify-between rounded-xl border-2 p-3 transition-all duration-300 min-w-0 overflow-hidden",
         isUpstream
           ? "border-amber-500/40 bg-gradient-to-b from-amber-50/80 to-amber-50/30 dark:border-amber-500/30 dark:from-amber-500/10 dark:to-amber-500/5"
           : "border-sky-500/40 bg-gradient-to-b from-sky-50/80 to-sky-50/30 dark:border-sky-500/30 dark:from-sky-500/10 dark:to-sky-500/5"
@@ -190,12 +203,13 @@ const NeighborStationCard = ({
         </p>
         <p
           className={cn(
-            "font-mono text-2xl font-bold tabular-nums transition-all duration-300",
+            "font-mono font-bold tabular-nums transition-all duration-300",
+            wipCount >= 10_000 ? "text-xl" : "text-2xl",
             isUpstream ? "text-amber-600 dark:text-amber-400" : "text-sky-600 dark:text-sky-400",
             isWipAnimating && "scale-110"
           )}
         >
-          {wipCount.toLocaleString()}
+          {formatCompactNumber(wipCount)}
         </p>
       </div>
 
@@ -525,20 +539,23 @@ type CurrentStationCardProps = {
 };
 
 const CurrentStationCard = ({ station, position, output, outputLabel }: CurrentStationCardProps) => (
-  <div className="rounded-xl border-2 border-primary/40 bg-gradient-to-b from-primary/10 to-primary/5 p-3 shadow-sm">
-    <div className="flex items-center justify-between">
-      <span className="rounded-full bg-primary/20 px-2.5 py-0.5 text-[10px] font-bold tabular-nums text-primary">
+  <div className="rounded-xl border-2 border-primary/40 bg-gradient-to-b from-primary/10 to-primary/5 p-3 shadow-sm min-w-0 overflow-hidden">
+    <div className="flex items-center justify-between gap-2">
+      <span className="rounded-full bg-primary/20 px-2.5 py-0.5 text-[10px] font-bold tabular-nums text-primary flex-shrink-0">
         #{position}
       </span>
-      <div className="text-right">
-        <h3 className="text-sm font-bold text-foreground line-clamp-1">{station.name}</h3>
+      <div className="text-right min-w-0">
+        <h3 className="text-sm font-bold text-foreground truncate">{station.name}</h3>
         <p className="text-[10px] text-muted-foreground">{station.code}</p>
       </div>
     </div>
     <div className="mt-2 text-right">
       <p className="text-[10px] font-medium text-primary/70">{outputLabel}</p>
-      <p className="font-mono text-xl font-bold tabular-nums text-primary">
-        {output.toLocaleString()}
+      <p className={cn(
+        "font-mono font-bold tabular-nums text-primary",
+        output >= 10_000 ? "text-lg" : "text-xl"
+      )}>
+        {formatCompactNumber(output)}
       </p>
     </div>
   </div>
@@ -659,7 +676,7 @@ export const ProductionPipeline = ({
 
         {/* Flow grid: RTL layout - first item appears on RIGHT visually */}
         {/* Visual order (RTL): Upstream (right) → Current (center) → Downstream (left) */}
-        <div className="grid grid-cols-[1fr,auto,1.2fr,auto,1fr] items-stretch gap-1">
+        <div className="grid grid-cols-[1fr,auto,1.2fr,auto,1fr] items-stretch gap-1 min-w-0 overflow-hidden">
           {/* Upstream station (RIGHT in RTL) - where products COME FROM */}
           <NeighborStationCard
             station={prevStation}

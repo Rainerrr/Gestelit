@@ -1,22 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { LayoutDashboard } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   AdminSessionsProvider,
   useAdminSessionCount,
   useAdminSessionStats,
   useAdminSessionsLoading,
-  useAdminSessionsRefresh,
   useAdminSessionsSelector,
   useAdminStationIds,
   useAdminConnectionState,
@@ -171,48 +161,14 @@ const ConnectionIndicator = () => {
 
 const AdminDashboardContent = () => {
   const { hasAccess } = useAdminGuard();
-  const refresh = useAdminSessionsRefresh();
   const isInitialLoading = useAdminSessionsLoading();
   const stationIds = useAdminStationIds();
-  const [resetDialogOpen, setResetDialogOpen] = useState(false);
-  const [resetting, setResetting] = useState(false);
-  const [resetResult, setResetResult] = useState<string | null>(null);
 
   const { dictionary, isLoading: isStatusesLoading } = useStatusDictionary(
     stationIds,
   );
 
-  useIdleSessionCleanup(refresh);
-
-  const handleForceCloseSessions = async () => {
-    setResetting(true);
-    setResetResult(null);
-    try {
-      const response = await fetch("/api/admin/sessions/close-all", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Admin-Password": window.localStorage.getItem("adminPassword") || "",
-        },
-      });
-      if (!response.ok) {
-        throw new Error("close_failed");
-      }
-      const result = (await response.json()) as { closed: number };
-      setResetResult(
-        result.closed === 0
-          ? "לא נמצאו תחנות פעילות לסגירה."
-          : `נסגרו ${result.closed} תחנות פעילות.`,
-      );
-      await refresh();
-      setResetDialogOpen(false);
-    } catch (error) {
-      setResetResult("הסגירה נכשלה.");
-      console.error(error);
-    } finally {
-      setResetting(false);
-    }
-  };
+  useIdleSessionCleanup();
 
   const isLoading = isInitialLoading || isStatusesLoading;
 
@@ -235,35 +191,15 @@ const AdminDashboardContent = () => {
   }
 
   return (
-    <>
-      <AdminLayout
-        header={
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <LayoutDashboard className="h-5 w-5 text-primary shrink-0" />
-                <h1 className="text-lg font-semibold text-foreground sm:text-xl">דשבורד</h1>
-                <ConnectionIndicator />
-              </div>
-              <Button
-                variant="destructive"
-                onClick={() => setResetDialogOpen(true)}
-                className="bg-red-600 hover:bg-red-700 border-0 font-medium"
-                size="sm"
-              >
-                <span className="hidden sm:inline">סגירת כל התחנות</span>
-                <span className="sm:hidden">סגירה</span>
-              </Button>
-            </div>
-            {resetResult ? (
-              <div className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2">
-                <div className="h-1.5 w-1.5 rounded-full bg-primary" />
-                <p className="text-sm font-medium text-primary">{resetResult}</p>
-              </div>
-            ) : null}
-          </div>
-        }
-      >
+    <AdminLayout
+      header={
+        <div className="flex items-center gap-3">
+          <LayoutDashboard className="h-5 w-5 text-primary shrink-0" />
+          <h1 className="text-lg font-semibold text-foreground sm:text-xl">דשבורד</h1>
+          <ConnectionIndicator />
+        </div>
+      }
+    >
         <div className="space-y-6">
           <KpiCardsSection dictionary={dictionary} isLoading={isLoading} />
           <ActiveSessionsTable
@@ -271,36 +207,7 @@ const AdminDashboardContent = () => {
             isDictionaryLoading={isStatusesLoading}
           />
           <StatusChartsSection dictionary={dictionary} isLoading={isLoading} />
-        </div>
-      </AdminLayout>
-
-      <Dialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
-        <DialogContent className="border-border bg-card text-right sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-bold text-foreground">לסגור את כל התחנות הפעילות?</DialogTitle>
-            <DialogDescription className="text-muted-foreground">
-              פעולה זו תסגור את כל הסשנים הפעילים ותעדכן את הדשבורד.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="flex-row-reverse justify-start gap-2 sm:flex-row-reverse">
-            <Button
-              variant="destructive"
-              onClick={handleForceCloseSessions}
-              disabled={resetting}
-              className="bg-red-600 hover:bg-red-700 border-0 font-medium"
-            >
-              {resetting ? "סוגר..." : "כן, סגור הכל"}
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => setResetDialogOpen(false)}
-              className="border-input bg-secondary text-foreground/80 hover:bg-accent hover:text-foreground"
-            >
-              ביטול
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+      </div>
+    </AdminLayout>
   );
 };

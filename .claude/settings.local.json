@@ -45,7 +45,23 @@
       "mcp__playwright__browser_tabs",
       "mcp__playwright__browser_press_key",
       "Bash(dir:*)",
-      "Bash(git show:*)"
+      "Bash(git show:*)",
+      "Bash(powershell -Command:*)",
+      "Bash(npx next dev:*)",
+      "mcp__playwright__browser_run_code",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr diff:*)",
+      "Bash(npm run test:*)",
+      "mcp__plugin_github_github__pull_request_read",
+      "mcp__plugin_github_github__get_me",
+      "mcp__plugin_github_github__list_pull_requests",
+      "mcp__plugin_github_github__search_repositories",
+      "mcp__github__get_pull_request",
+      "mcp__github__get_pull_request_files",
+      "mcp__github__search_code",
+      "mcp__github__get_pull_request_comments",
+      "mcp__github__get_pull_request_reviews",
+      "Bash(npx tsx:*)"
     ]
   }
 }

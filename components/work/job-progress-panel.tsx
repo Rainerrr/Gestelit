@@ -10,6 +10,19 @@ import type { ActiveJobItemContext } from "@/contexts/WorkerSessionContext";
 import type { Job } from "@/lib/types";
 import type { PipelineNeighborStation } from "@/lib/api/client";
 
+// Format large numbers compactly (e.g., 3M, 15K) for mobile readability
+const formatCompactNumber = (num: number): string => {
+  if (num >= 1_000_000) {
+    const millions = num / 1_000_000;
+    return millions % 1 === 0 ? `${millions}M` : `${millions.toFixed(1)}M`;
+  }
+  if (num >= 10_000) {
+    const thousands = num / 1_000;
+    return thousands % 1 === 0 ? `${thousands}K` : `${thousands.toFixed(1)}K`;
+  }
+  return num.toLocaleString();
+};
+
 // ============================================
 // TYPES
 // ============================================
@@ -224,7 +237,7 @@ export function JobProgressPanel({
           <div className="rounded-lg bg-card/80 border border-border px-4 py-3 text-center">
             <div className="text-xs font-medium text-muted-foreground">{t("jobProgress.totalReported")}</div>
             <div className="text-2xl font-bold tabular-nums text-emerald-700 dark:text-emerald-400">
-              {totalCompleted.toLocaleString()}
+              {formatCompactNumber(totalCompleted)}
             </div>
           </div>
 
@@ -236,7 +249,7 @@ export function JobProgressPanel({
                 ? "text-emerald-700 dark:text-emerald-400"
                 : "text-foreground"
             )}>
-              {Math.max(0, activeJobItem.plannedQuantity - totalCompleted).toLocaleString()}
+              {formatCompactNumber(Math.max(0, activeJobItem.plannedQuantity - totalCompleted))}
             </div>
           </div>
         </div>
@@ -496,7 +509,7 @@ function EndStationTile({ completedCount, isAnimating }: EndStationTileProps) {
           "text-lg font-bold tabular-nums text-emerald-800 dark:text-emerald-300 transition-all duration-300",
           isAnimating && "animate-pulse"
         )}>
-          {completedCount.toLocaleString()}
+          {formatCompactNumber(completedCount)}
         </span>
       </div>
       <span className="text-[9px] text-emerald-700/70 dark:text-emerald-400/70 mt-0.5">{t("pipeline.finishedProducts")}</span>
@@ -580,7 +593,7 @@ function NeighborStationTile({
             isAnimating && "animate-pulse"
           )}
         >
-          {wipCount.toLocaleString()}
+          {formatCompactNumber(wipCount)}
         </span>
       </div>
     </div>

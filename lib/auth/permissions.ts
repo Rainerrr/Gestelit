@@ -21,6 +21,13 @@ export class ForbiddenError extends Error {
   }
 }
 
+export class NotFoundError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "NotFoundError";
+  }
+}
+
 /**
  * Require a worker to be authenticated
  * Throws UnauthorizedError if no worker found
@@ -150,7 +157,7 @@ export async function requireSessionOwnership(
   }
 
   if (!session) {
-    throw new ForbiddenError("Session not found");
+    throw new NotFoundError("Session not found");
   }
 
   if (session.worker_id !== worker.id) {
@@ -190,6 +197,13 @@ export function createErrorResponse(
     return NextResponse.json(
       { error: "FORBIDDEN", message: error.message },
       { status: 403 },
+    );
+  }
+
+  if (error instanceof NotFoundError) {
+    return NextResponse.json(
+      { error: "NOT_FOUND", message: error.message },
+      { status: 404 },
     );
   }
 
