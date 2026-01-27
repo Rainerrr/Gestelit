@@ -127,9 +127,11 @@ export async function POST(request: Request) {
       throw new Error(error.message || "Database error");
     }
 
+    // RPC returns JSONB: { newStatusEvent: { id, session_id, ... } }
+    // Unwrap to return flat structure expected by client
     return NextResponse.json({
       success: true,
-      newStatusEvent: data,
+      newStatusEvent: data?.newStatusEvent ?? null,
     });
   } catch (error) {
     return createErrorResponse(error, "END_PRODUCTION_FAILED");
