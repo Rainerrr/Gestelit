@@ -341,57 +341,92 @@ export default function SessionDetailPage({ params }: Props) {
   return (
     <AdminLayout
       header={
-        <div className="flex items-center gap-3 flex-wrap">
-          <Button onClick={() => router.back()} variant="ghost" size="sm" className="text-muted-foreground hover:bg-accent hover:text-foreground">
-            <ArrowRight className="h-4 w-4" />
-          </Button>
-          <Separator orientation="vertical" className="h-5" />
-          {/* Station */}
-          <div className="flex items-center gap-1.5">
-            <Building className="h-4 w-4 text-blue-500" />
-            <span className="font-medium text-foreground">{session.stationName}</span>
-          </div>
-          <Separator orientation="vertical" className="h-4 hidden sm:block" />
-          {/* Worker */}
-          <div className="flex items-center gap-1.5 hidden sm:flex">
-            <User className="h-4 w-4 text-emerald-500" />
-            <span className="text-sm text-muted-foreground">{session.workerName}</span>
-          </div>
-          <Separator orientation="vertical" className="h-4 hidden md:block" />
-          {/* Start date and time */}
-          <div className="flex items-center gap-1.5 hidden md:flex">
-            <Calendar className="h-4 w-4 text-amber-500" />
-            <span className="text-sm text-muted-foreground">
-              {formatDate(session.startedAt)} · {formatTime(session.startedAt)}
-            </span>
-          </div>
-          <ConnectionIndicator state={connectionState} />
-          <div className="flex-1" />
-          {isActive && (
-            <>
-              <Badge className="border-emerald-500/30 bg-emerald-500/10 text-emerald-400">
-                פעילה
-              </Badge>
+        <div className="space-y-2 sm:space-y-0">
+          {/* Top row: navigation + station info + actions */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            <Button onClick={() => router.back()} variant="ghost" size="sm" className="shrink-0 text-muted-foreground hover:bg-accent hover:text-foreground">
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+            <Separator orientation="vertical" className="h-5 hidden sm:block" />
+            {/* Station */}
+            <div className="flex items-center gap-1.5 min-w-0">
+              <Building className="h-4 w-4 text-blue-500 shrink-0" />
+              <span className="font-medium text-foreground truncate">{session.stationName}</span>
+            </div>
+            <Separator orientation="vertical" className="h-4 hidden sm:block" />
+            {/* Worker */}
+            <div className="hidden sm:flex items-center gap-1.5">
+              <User className="h-4 w-4 text-emerald-500" />
+              <span className="text-sm text-muted-foreground">{session.workerName}</span>
+            </div>
+            <Separator orientation="vertical" className="h-4 hidden md:block" />
+            {/* Start date and time */}
+            <div className="hidden md:flex items-center gap-1.5">
+              <Calendar className="h-4 w-4 text-amber-500" />
+              <span className="text-sm text-muted-foreground">
+                {formatDate(session.startedAt)} · {formatTime(session.startedAt)}
+              </span>
+            </div>
+            <ConnectionIndicator state={connectionState} />
+            <div className="flex-1" />
+            {/* Desktop actions - hidden on mobile */}
+            <div className="hidden sm:flex items-center gap-2">
+              {isActive && (
+                <>
+                  <Badge className="border-emerald-500/30 bg-emerald-500/10 text-emerald-400">
+                    פעילה
+                  </Badge>
+                  <Button
+                    onClick={() => setEndSessionDialogOpen(true)}
+                    variant="destructive"
+                    size="sm"
+                    className="bg-red-600 hover:bg-red-700 border-0 font-medium"
+                  >
+                    <XCircle className="h-4 w-4 ml-1" />
+                    סיום משמרת
+                  </Button>
+                </>
+              )}
               <Button
-                onClick={() => setEndSessionDialogOpen(true)}
-                variant="destructive"
+                onClick={() => void handleRefresh()}
+                variant="ghost"
                 size="sm"
-                className="bg-red-600 hover:bg-red-700 border-0 font-medium"
+                disabled={isRefreshing}
+                className="text-muted-foreground hover:bg-accent hover:text-foreground"
               >
-                <XCircle className="h-4 w-4 ml-1" />
-                סיום משמרת
+                <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
               </Button>
-            </>
-          )}
-          <Button
-            onClick={() => void handleRefresh()}
-            variant="ghost"
-            size="sm"
-            disabled={isRefreshing}
-            className="text-muted-foreground hover:bg-accent hover:text-foreground"
-          >
-            <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
-          </Button>
+            </div>
+          </div>
+          {/* Mobile actions row */}
+          <div className="flex sm:hidden items-center gap-2">
+            {isActive && (
+              <>
+                <Badge className="border-emerald-500/30 bg-emerald-500/10 text-emerald-400">
+                  פעילה
+                </Badge>
+                <Button
+                  onClick={() => setEndSessionDialogOpen(true)}
+                  variant="destructive"
+                  size="sm"
+                  className="bg-red-600 hover:bg-red-700 border-0 font-medium"
+                >
+                  <XCircle className="h-4 w-4 ml-1" />
+                  סיום משמרת
+                </Button>
+              </>
+            )}
+            <div className="flex-1" />
+            <Button
+              onClick={() => void handleRefresh()}
+              variant="ghost"
+              size="sm"
+              disabled={isRefreshing}
+              className="text-muted-foreground hover:bg-accent hover:text-foreground"
+            >
+              <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
+            </Button>
+          </div>
         </div>
       }
     >
@@ -622,6 +657,7 @@ export default function SessionDetailPage({ params }: Props) {
           generalReports={session.generalReports ?? []}
           scrapReports={session.scrapReports ?? []}
           stationReasons={stationReasons}
+          sessionStatus={session.status}
         />
 
         {/* Production Overview Card */}

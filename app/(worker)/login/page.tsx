@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useTranslation } from "@/hooks/useTranslation";
+import { Spinner } from "@/components/ui/spinner";
 import { useWorkerSession } from "@/contexts/WorkerSessionContext";
 import { fetchWorkerActiveSessionApi, loginWorkerApi } from "@/lib/api/client";
 import {
@@ -28,6 +29,7 @@ export default function LoginPage() {
   const formRef = useRef<HTMLFormElement>(null);
   const [workerId, setWorkerId] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isAutoLogging, setIsAutoLogging] = useState(false);
   const autoLoginAttempted = useRef(false);
 
@@ -57,6 +59,7 @@ export default function LoginPage() {
       return;
     }
 
+    setIsSubmitting(true);
     try {
       const worker = await loginWorkerApi(trimmedId);
       reset();
@@ -87,6 +90,7 @@ export default function LoginPage() {
         clearPersistedSessionState();
       }
     } finally {
+      setIsSubmitting(false);
       setIsAutoLogging(false);
     }
   };
@@ -107,10 +111,15 @@ export default function LoginPage() {
             <Button
               type="submit"
               size="lg"
-              disabled={isAutoLogging}
+              disabled={isSubmitting || isAutoLogging}
               className="w-full justify-center bg-primary font-medium text-primary-foreground hover:bg-primary/90 sm:w-auto sm:min-w-48"
             >
-              {isAutoLogging ? t("checklist.loading") : t("login.submit")}
+              {(isSubmitting || isAutoLogging) ? (
+                <span className="flex items-center gap-2">
+                  <Spinner size="sm" className="flex-row gap-0 [&>div]:border-primary-foreground [&>div]:border-t-transparent" />
+                  {"מעביר לבחירת תחנה"}
+                </span>
+              ) : t("login.submit")}
             </Button>
           }
         >

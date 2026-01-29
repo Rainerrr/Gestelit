@@ -279,12 +279,35 @@ export function QuantityReportDialog({
     }
   }, [plannedQuantity, totalCompletedBefore, sessionTotals.good, mode]);
 
+  // Calculate the scrap value needed to fill remaining as scrap (mode-aware)
+  const scrapFillValue = useMemo(() => {
+    if (!plannedQuantity || previewValues.remaining === undefined) return 0;
+    const scrapFill = previewValues.remaining;
+    if (mode === "totalJob" || mode === "total") {
+      return sessionTotals.scrap + scrapFill;
+    }
+    return scrapFill;
+  }, [plannedQuantity, previewValues.remaining, mode, sessionTotals.scrap]);
+
   // Fill remaining to complete job item
   const handleFillRemaining = useCallback(() => {
     if (!plannedQuantity) return;
     setGoodInput(String(fillToCompleteValue));
     setError(null);
   }, [plannedQuantity, fillToCompleteValue]);
+
+  // Fill scrap to complete job item (remaining as scrap)
+  const handleFillScrapToComplete = useCallback(() => {
+    if (!plannedQuantity || previewValues.remaining === undefined || previewValues.remaining <= 0) return;
+    const scrapFill = previewValues.remaining;
+    if (mode === "totalJob" || mode === "total") {
+      setScrapInput(String(sessionTotals.scrap + scrapFill));
+    } else {
+      setScrapInput(String(scrapFill));
+    }
+    setIsScrapExpanded(true);
+    setError(null);
+  }, [plannedQuantity, previewValues.remaining, mode, sessionTotals.scrap]);
 
   // Image handling
   const handleScrapImageChange = useCallback((file: File | null) => {
@@ -598,6 +621,18 @@ export function QuantityReportDialog({
                       )}
                     />
                   </div>
+
+                  {/* Fill scrap to complete job item */}
+                  {plannedQuantity && previewValues.remaining !== undefined && previewValues.remaining > 0 && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleFillScrapToComplete}
+                      className="w-full h-10 border-2 border-rose-500/60 bg-rose-500/10 text-rose-300 font-bold text-base hover:bg-rose-500/20 hover:border-rose-400"
+                    >
+                      {`השלם כמות פסולים לסגירת פק"ע (${scrapFillValue.toLocaleString()})`}
+                    </Button>
+                  )}
 
                   {/* Note textarea (required if scrap > 0) */}
                   <div className="space-y-2">

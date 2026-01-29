@@ -20,6 +20,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -1801,6 +1802,7 @@ function WorkPageContent() {
         <DialogContent dir="rtl" className="border-border bg-card">
           <DialogHeader>
             <DialogTitle className="text-foreground">{t("work.dialog.fault.title")}</DialogTitle>
+            <DialogDescription className="sr-only">דיווח תקלה</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 text-right">
             <div className="space-y-2">
@@ -2115,6 +2117,7 @@ function WorkPageContent() {
         <DialogContent dir="rtl" className="border-border bg-card">
           <DialogHeader>
             <DialogTitle className="text-foreground">{t("work.dialog.report.title")}</DialogTitle>
+            <DialogDescription className="sr-only">דיווח כללי</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 text-right">
             <div className="space-y-2">
@@ -2226,6 +2229,7 @@ function WorkPageContent() {
         <DialogContent dir="rtl" className="border-border bg-card">
           <DialogHeader>
             <DialogTitle className="text-foreground">{t("work.dialog.finish.title")}</DialogTitle>
+            <DialogDescription className="sr-only">אישור סיום עבודה</DialogDescription>
             <CardDescription className="text-muted-foreground">{t("work.dialog.finish.description")}</CardDescription>
           </DialogHeader>
           <DialogFooter className="flex flex-col gap-2 sm:flex-row sm:justify-end">

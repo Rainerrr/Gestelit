@@ -5,6 +5,7 @@ import {
   fetchAllStations,
   type StationWithStats,
 } from "@/lib/data/admin-management";
+import { invalidateStationsCache } from "@/lib/cache/static-cache";
 import type { StationReason, StationType } from "@/lib/types";
 import {
   requireAdminPassword,
@@ -17,6 +18,9 @@ type StationPayload = {
   station_type?: StationType;
   is_active?: boolean;
   station_reasons?: StationReason[] | null;
+  maintenance_enabled?: boolean;
+  maintenance_last_date?: string | null;
+  maintenance_interval_days?: number | null;
 };
 
 const respondWithError = (error: unknown) => {
@@ -74,8 +78,12 @@ export async function POST(request: Request) {
       station_type: body.station_type,
       is_active: body.is_active ?? true,
       station_reasons: body.station_reasons ?? [],
+      maintenance_enabled: body.maintenance_enabled ?? false,
+      maintenance_last_date: body.maintenance_last_date ?? null,
+      maintenance_interval_days: body.maintenance_interval_days ?? null,
     });
 
+    await invalidateStationsCache();
     return NextResponse.json({ station });
   } catch (error) {
     return respondWithError(error);

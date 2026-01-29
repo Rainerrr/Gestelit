@@ -5,8 +5,21 @@ import { useSearchParams } from "next/navigation";
 import { Trash2, RefreshCw, CheckCircle2, AlertTriangle, Package, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
   fetchScrapReportsAdminApi,
   updateReportStatusAdminApi,
+  deleteReportAdminApi,
+  deleteAllReportsAdminApi,
 } from "@/lib/api/admin-management";
 import type { StationWithScrapReports } from "@/lib/data/reports";
 import { ViewToggle } from "@/app/admin/reports/_components/view-toggle";
@@ -48,6 +61,30 @@ const ScrapReportsDashboardInner = () => {
       await handleRefresh();
     } catch (err) {
       console.error("[scrap-reports] Failed to approve:", err);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    setIsUpdating(true);
+    try {
+      await deleteReportAdminApi(id);
+      await handleRefresh();
+    } catch (err) {
+      console.error("[scrap-reports] Failed to delete:", err);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleDeleteAll = async () => {
+    setIsUpdating(true);
+    try {
+      await deleteAllReportsAdminApi("scrap");
+      await handleRefresh();
+    } catch (err) {
+      console.error("[scrap-reports] Failed to delete all:", err);
     } finally {
       setIsUpdating(false);
     }
@@ -96,16 +133,48 @@ const ScrapReportsDashboardInner = () => {
             ניהול ואישור דיווחי פסולים
           </p>
         </div>
-        <Button
-          variant="outline"
-          onClick={handleRefresh}
-          disabled={isRefreshing}
-          size="sm"
-          className="gap-2"
-        >
-          <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
-          רענון
-        </Button>
+        <div className="flex gap-2">
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 text-red-400 border-red-500/30 hover:bg-red-500/10 hover:text-red-300"
+                disabled={allReports.length === 0 || isUpdating}
+              >
+                <Trash2 className="h-4 w-4" />
+                מחק הכל
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>מחיקת כל דיווחי הפסולים</AlertDialogTitle>
+                <AlertDialogDescription>
+                  פעולה זו תמחק את כל {allReports.length} דיווחי הפסולים. פעולה זו אינה ניתנת לביטול.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>ביטול</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => void handleDeleteAll()}
+                  className="bg-red-500 hover:bg-red-600"
+                >
+                  מחק הכל
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+          <Button
+            variant="outline"
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            size="sm"
+            className="gap-2"
+          >
+            <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
+            רענון
+          </Button>
+        </div>
       </div>
 
       {/* Summary cards */}
@@ -238,6 +307,7 @@ const ScrapReportsDashboardInner = () => {
           reports={filteredReports}
           reportType="scrap"
           onApprove={handleApprove}
+          onDelete={handleDelete}
           isUpdating={isUpdating}
         />
       ) : (
@@ -245,6 +315,7 @@ const ScrapReportsDashboardInner = () => {
           reports={filteredReports}
           reportType="scrap"
           onApprove={handleApprove}
+          onDelete={handleDelete}
           isUpdating={isUpdating}
         />
       )}

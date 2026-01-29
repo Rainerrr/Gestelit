@@ -18,7 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import {
   fetchGeneralReportsAdminApi,
@@ -266,6 +266,7 @@ const QaReportCard = ({
       <Dialog open={imageOpen} onOpenChange={setImageOpen}>
         <DialogContent className="max-w-4xl w-auto p-0 bg-black/95 border-border/50 overflow-hidden">
           <DialogTitle className="sr-only">תמונת דיווח</DialogTitle>
+          <DialogDescription className="sr-only">תצוגה מוגדלת של תמונת דיווח</DialogDescription>
           <button
             type="button"
             onClick={() => setImageOpen(false)}

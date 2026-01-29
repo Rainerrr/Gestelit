@@ -399,7 +399,7 @@ export const HistoryStatistics = ({
   const isCompareMode = Boolean(adjustedComparisonStats);
 
   const getCardClassName = (item: StatItem) => {
-    const base = `relative overflow-hidden rounded-xl border border-border p-3 transition-all duration-200 hover:shadow-md hover:border-border/80 border-r-[3px]`;
+    const base = `relative overflow-hidden rounded-xl border border-border p-2 sm:p-3 transition-all duration-200 hover:shadow-md hover:border-border/80 border-r-[3px]`;
 
     if (!isCompareMode) {
       return `${base} bg-gradient-to-bl ${item.theme.gradient} ${item.theme.accentBorder}`;
@@ -439,8 +439,8 @@ export const HistoryStatistics = ({
                     key={item.label}
                     className={getCardClassName(item)}
                   >
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <div className={`p-1 rounded-lg ${isCompareMode && indicator ? (indicator.isHigher ? "bg-emerald-500/15" : "bg-red-500/15") : item.theme.iconBg}`}>
+                    <div className="flex items-center gap-2 mb-1 sm:mb-1.5">
+                      <div className={`p-0.5 sm:p-1 rounded-lg ${isCompareMode && indicator ? (indicator.isHigher ? "bg-emerald-500/15" : "bg-red-500/15") : item.theme.iconBg}`}>
                         <span className={isCompareMode && indicator ? (indicator.isHigher ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400") : item.theme.iconColor}>
                           {item.icon}
                         </span>
@@ -457,7 +457,7 @@ export const HistoryStatistics = ({
                         </span>
                       )}
                     </div>
-                    <div className="text-lg font-bold text-foreground tracking-tight leading-none">
+                    <div className="text-base sm:text-lg font-bold text-foreground tracking-tight leading-none">
                       {item.value}
                     </div>
                     {item.subValue && (

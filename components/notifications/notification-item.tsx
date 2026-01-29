@@ -11,6 +11,7 @@ import {
   Clock,
   UserCheck,
   UserX,
+  Wrench,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -29,6 +30,7 @@ const iconMap: Record<NotificationType, LucideIcon> = {
   session_aborted: UserX,
   first_product_qa_pending: ClipboardCheck,
   job_due_soon: Clock,
+  station_maintenance_due: Wrench,
   crud_success: CheckCircle2,
   crud_error: X,
 };
@@ -42,6 +44,7 @@ const colorMap: Record<NotificationType, string> = {
   session_aborted: "text-red-400 bg-red-500/10",
   first_product_qa_pending: "text-amber-500 bg-amber-500/10",
   job_due_soon: "text-orange-400 bg-orange-500/10",
+  station_maintenance_due: "text-orange-400 bg-orange-500/10",
   crud_success: "text-emerald-400 bg-emerald-500/10",
   crud_error: "text-red-400 bg-red-500/10",
 };

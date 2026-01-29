@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { updatePipelinePresetSteps } from "@/lib/data/pipeline-presets";
+import { invalidatePipelinePresetsCache } from "@/lib/cache/static-cache";
 import {
   requireAdminPassword,
   createErrorResponse,
@@ -46,6 +47,7 @@ export async function PUT(request: Request, context: RouteContext) {
       body.station_ids,
       body.first_product_approval_flags ?? {},
     );
+    await invalidatePipelinePresetsCache();
     return NextResponse.json({ steps });
   } catch (error) {
     if (error instanceof Error && error.message === "DUPLICATE_STATION_IN_PRESET") {

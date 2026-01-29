@@ -1,4 +1,5 @@
 import { createServiceSupabase } from "@/lib/supabase/client";
+import { subDays } from "date-fns";
 import type {
   Report,
   ReportStatus,
@@ -7,6 +8,20 @@ import type {
   Station,
   StationReason,
 } from "@/lib/types";
+
+// Query options for pagination and filtering at scale
+export interface ReportQueryOptions {
+  /** Maximum number of reports to fetch (default: 200) */
+  limit?: number;
+  /** Offset for pagination */
+  offset?: number;
+  /** Only fetch reports created after this date (default: 30 days ago) */
+  since?: Date;
+  /** Only fetch reports created before this date */
+  until?: Date;
+  /** Filter by station ID */
+  stationId?: string;
+}
 
 // Grouped report types for admin views
 export type StationWithReports = {
@@ -81,6 +96,51 @@ export async function createReport(payload: CreateReportPayload): Promise<Report
   return data as Report;
 }
 
+// Delete a single report
+export async function deleteReport(reportId: string): Promise<void> {
+  const supabase = createServiceSupabase();
+
+  const { error } = await supabase
+    .from("reports")
+    .delete()
+    .eq("id", reportId);
+
+  if (error) {
+    throw new Error(`Failed to delete report: ${error.message}`);
+  }
+}
+
+// Delete all reports of a specific type
+export async function deleteReportsByType(
+  type: ReportType,
+  options?: { olderThanDays?: number }
+): Promise<number> {
+  const supabase = createServiceSupabase();
+
+  let query = supabase
+    .from("reports")
+    .delete()
+    .eq("type", type);
+
+  if (options?.olderThanDays) {
+    const cutoffDate = subDays(new Date(), options.olderThanDays);
+    query = query.lt("created_at", cutoffDate.toISOString());
+  }
+
+  const { data, error } = await query.select("id");
+
+  if (error) {
+    throw new Error(`Failed to delete reports: ${error.message}`);
+  }
+
+  return data?.length ?? 0;
+}
+
+// Auto-cleanup old general reports (older than 30 days)
+export async function cleanupOldGeneralReports(): Promise<number> {
+  return deleteReportsByType("general", { olderThanDays: 30 });
+}
+
 // Update report status
 export type UpdateReportStatusPayload = {
   reportId: string;
@@ -114,17 +174,34 @@ export async function updateReportStatus(
 }
 
 // Get malfunction reports (open/known) grouped by station
-export async function getMalfunctionReportsGroupedByStation(): Promise<
-  StationWithReports[]
-> {
+export async function getMalfunctionReportsGroupedByStation(
+  options: ReportQueryOptions = {}
+): Promise<StationWithReports[]> {
   const supabase = createServiceSupabase();
 
-  const { data: reports, error: reportsError } = await supabase
+  const limit = options.limit ?? 200;
+  const since = options.since ?? subDays(new Date(), 30);
+
+  let query = supabase
     .from("reports")
     .select("*")
     .eq("type", "malfunction")
     .in("status", ["open", "known"])
-    .order("created_at", { ascending: false });
+    .gte("created_at", since.toISOString())
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (options.until) {
+    query = query.lte("created_at", options.until.toISOString());
+  }
+  if (options.stationId) {
+    query = query.eq("station_id", options.stationId);
+  }
+  if (options.offset) {
+    query = query.range(options.offset, options.offset + limit - 1);
+  }
+
+  const { data: reports, error: reportsError } = await query;
 
   if (reportsError) {
     throw new Error(`Failed to fetch malfunction reports: ${reportsError.message}`);
@@ -138,17 +215,34 @@ export async function getMalfunctionReportsGroupedByStation(): Promise<
 }
 
 // Get archived malfunction reports (solved)
-export async function getArchivedMalfunctionReports(): Promise<
-  StationWithArchivedReports[]
-> {
+export async function getArchivedMalfunctionReports(
+  options: ReportQueryOptions = {}
+): Promise<StationWithArchivedReports[]> {
   const supabase = createServiceSupabase();
 
-  const { data: reports, error: reportsError } = await supabase
+  const limit = options.limit ?? 200;
+  const since = options.since ?? subDays(new Date(), 90); // Archived: 90 days default
+
+  let query = supabase
     .from("reports")
     .select("*")
     .eq("type", "malfunction")
     .eq("status", "solved")
-    .order("status_changed_at", { ascending: false });
+    .gte("status_changed_at", since.toISOString())
+    .order("status_changed_at", { ascending: false })
+    .limit(limit);
+
+  if (options.until) {
+    query = query.lte("status_changed_at", options.until.toISOString());
+  }
+  if (options.stationId) {
+    query = query.eq("station_id", options.stationId);
+  }
+  if (options.offset) {
+    query = query.range(options.offset, options.offset + limit - 1);
+  }
+
+  const { data: reports, error: reportsError } = await query;
 
   if (reportsError) {
     throw new Error(`Failed to fetch archived reports: ${reportsError.message}`);
@@ -165,21 +259,35 @@ export async function getArchivedMalfunctionReports(): Promise<
 export async function getGeneralReports(options?: {
   status?: "new" | "approved";
   limit?: number;
+  since?: Date;
+  until?: Date;
+  stationId?: string;
+  offset?: number;
 }): Promise<ReportWithDetails[]> {
   const supabase = createServiceSupabase();
+
+  const limit = options?.limit ?? 200;
+  const since = options?.since ?? subDays(new Date(), 30);
 
   let query = supabase
     .from("reports")
     .select("*")
     .eq("type", "general")
-    .order("created_at", { ascending: false });
+    .gte("created_at", since.toISOString())
+    .order("created_at", { ascending: false })
+    .limit(limit);
 
   if (options?.status) {
     query = query.eq("status", options.status);
   }
-
-  if (options?.limit) {
-    query = query.limit(options.limit);
+  if (options?.until) {
+    query = query.lte("created_at", options.until.toISOString());
+  }
+  if (options?.stationId) {
+    query = query.eq("station_id", options.stationId);
+  }
+  if (options?.offset) {
+    query = query.range(options.offset, options.offset + limit - 1);
   }
 
   const { data: reports, error } = await query;
@@ -196,16 +304,33 @@ export async function getGeneralReports(options?: {
 }
 
 // Get scrap reports grouped by station
-export async function getScrapReportsGroupedByStation(): Promise<
-  StationWithScrapReports[]
-> {
+export async function getScrapReportsGroupedByStation(
+  options: ReportQueryOptions = {}
+): Promise<StationWithScrapReports[]> {
   const supabase = createServiceSupabase();
 
-  const { data: reports, error: reportsError } = await supabase
+  const limit = options.limit ?? 200;
+  const since = options.since ?? subDays(new Date(), 30);
+
+  let query = supabase
     .from("reports")
     .select("*")
     .eq("type", "scrap")
-    .order("created_at", { ascending: false });
+    .gte("created_at", since.toISOString())
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (options.until) {
+    query = query.lte("created_at", options.until.toISOString());
+  }
+  if (options.stationId) {
+    query = query.eq("station_id", options.stationId);
+  }
+  if (options.offset) {
+    query = query.range(options.offset, options.offset + limit - 1);
+  }
+
+  const { data: reports, error: reportsError } = await query;
 
   if (reportsError) {
     throw new Error(`Failed to fetch scrap reports: ${reportsError.message}`);
@@ -455,21 +580,40 @@ async function groupScrapReportsByStation(
 // =============================================================================
 
 /**
- * Filter reports to only include ongoing ones (status event still active)
+ * Filter reports to only include ongoing ones (status event still active AND session still active)
+ * A report is only "ongoing" if:
+ * 1. Its status event hasn't ended (ended_at === null), AND
+ * 2. Its linked session is still active (not completed/aborted)
  */
 export function filterOngoingReports(
   reports: ReportWithDetails[]
 ): ReportWithDetails[] {
-  return reports.filter((r) => r.status_event?.ended_at === null);
+  return reports.filter((r) => {
+    // Status event must be open
+    const statusEventOpen = r.status_event?.ended_at === null;
+    // Session must be active (if session exists)
+    const sessionActive = !r.session || r.session.status === "active";
+    return statusEventOpen && sessionActive;
+  });
 }
 
 /**
- * Filter reports to only include finished ones (status event ended)
+ * Filter reports to only include finished ones (status event ended OR session completed)
+ * A report is "finished" if:
+ * 1. Its status event has ended (ended_at !== null), OR
+ * 2. It has no status event, OR
+ * 3. Its linked session is completed/aborted (even if status event wasn't properly closed)
  */
 export function filterFinishedReports(
   reports: ReportWithDetails[]
 ): ReportWithDetails[] {
-  return reports.filter((r) => r.status_event?.ended_at !== null || !r.status_event);
+  return reports.filter((r) => {
+    // If status event is closed, it's finished
+    if (r.status_event?.ended_at !== null || !r.status_event) return true;
+    // If session is not active, the report should be considered finished
+    if (r.session && r.session.status !== "active") return true;
+    return false;
+  });
 }
 
 /**

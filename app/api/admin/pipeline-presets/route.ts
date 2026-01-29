@@ -3,6 +3,7 @@ import {
   fetchAllPipelinePresets,
   createPipelinePreset,
 } from "@/lib/data/pipeline-presets";
+import { invalidatePipelinePresetsCache } from "@/lib/cache/static-cache";
 import {
   requireAdminPassword,
   createErrorResponse,
@@ -58,6 +59,7 @@ export async function POST(request: Request) {
       station_ids: body.station_ids ?? [],
       first_product_approval_flags: body.first_product_approval_flags ?? {},
     });
+    await invalidatePipelinePresetsCache();
     return NextResponse.json({ preset });
   } catch (error) {
     return createErrorResponse(error, "PIPELINE_PRESET_CREATE_FAILED");

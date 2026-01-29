@@ -112,10 +112,10 @@ export const HistoryFilters = ({
       </div>
 
       {/* Filter dropdowns row */}
-      <div className="p-4 flex flex-wrap items-center gap-3">
+      <div className="p-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
         {/* Worker filter */}
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted shrink-0">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="hidden sm:flex h-8 w-8 items-center justify-center rounded-lg bg-muted shrink-0">
             <User className="h-4 w-4 text-muted-foreground" />
           </div>
           <Select
@@ -126,7 +126,7 @@ export const HistoryFilters = ({
           >
             <SelectTrigger
               aria-label="סינון לפי עובד"
-              className="w-[160px] border-input bg-secondary text-foreground focus:ring-primary/30 h-9"
+              className="w-full sm:w-[160px] min-h-[44px] border-input bg-secondary text-foreground focus:ring-primary/30 h-9"
             >
               <SelectValue placeholder="כל העובדים" />
             </SelectTrigger>
@@ -147,8 +147,8 @@ export const HistoryFilters = ({
         <div className="h-6 w-px bg-border hidden sm:block" />
 
         {/* Station filter */}
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted shrink-0">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="hidden sm:flex h-8 w-8 items-center justify-center rounded-lg bg-muted shrink-0">
             <MapPin className="h-4 w-4 text-muted-foreground" />
           </div>
           <Select
@@ -159,7 +159,7 @@ export const HistoryFilters = ({
           >
             <SelectTrigger
               aria-label="סינון לפי תחנה"
-              className="w-[160px] border-input bg-secondary text-foreground focus:ring-primary/30 h-9"
+              className="w-full sm:w-[160px] min-h-[44px] border-input bg-secondary text-foreground focus:ring-primary/30 h-9"
             >
               <SelectValue placeholder="כל התחנות" />
             </SelectTrigger>
@@ -180,8 +180,8 @@ export const HistoryFilters = ({
         <div className="h-6 w-px bg-border hidden sm:block" />
 
         {/* Job number dropdown (quick select from existing) */}
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted shrink-0">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="hidden sm:flex h-8 w-8 items-center justify-center rounded-lg bg-muted shrink-0">
             <FileText className="h-4 w-4 text-muted-foreground" />
           </div>
           <Select
@@ -192,7 +192,7 @@ export const HistoryFilters = ({
           >
             <SelectTrigger
               aria-label='בחירת פק"ע'
-              className="w-[140px] border-input bg-secondary text-foreground focus:ring-primary/30 h-9"
+              className="w-full sm:w-[160px] min-h-[44px] border-input bg-secondary text-foreground focus:ring-primary/30 h-9"
             >
               <SelectValue placeholder='בחר פק"ע' />
             </SelectTrigger>
@@ -213,15 +213,15 @@ export const HistoryFilters = ({
         <div className="h-6 w-px bg-border hidden sm:block" />
 
         {/* Date range filter */}
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted shrink-0">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="hidden sm:flex h-8 w-8 items-center justify-center rounded-lg bg-muted shrink-0">
             <Calendar className="h-4 w-4 text-muted-foreground" />
           </div>
           <DateRangePicker
             value={value.dateRange}
             onChange={handleDateRangeChange}
             placeholder="סנן לפי תאריך"
-            className="w-[180px] sm:w-[220px]"
+            className="w-full sm:w-[220px]"
           />
         </div>
 

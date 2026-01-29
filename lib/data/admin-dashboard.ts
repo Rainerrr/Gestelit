@@ -1,4 +1,5 @@
 import { createServiceSupabase } from "@/lib/supabase/client";
+import { subDays } from "date-fns";
 import type {
   Job,
   JobItemWithDetails,
@@ -415,6 +416,90 @@ export const fetchActiveSessions = async (): Promise<ActiveSession[]> => {
   );
 };
 
+/**
+ * Optimized version using RPC to fetch all enrichment data in single query.
+ * Use this for better performance at scale (50+ concurrent workers).
+ * Falls back to fetchActiveSessions if RPC is not available.
+ */
+export const fetchActiveSessionsEnriched = async (): Promise<ActiveSession[]> => {
+  const supabase = createServiceSupabase();
+
+  // Type for RPC result row
+  type EnrichedRow = {
+    session_id: string;
+    worker_id: string | null;
+    worker_full_name: string | null;
+    worker_code: string | null;
+    station_id: string | null;
+    station_name: string | null;
+    station_code: string | null;
+    station_type: string | null;
+    job_id: string | null;
+    job_number: string | null;
+    job_item_id: string | null;
+    job_item_name: string | null;
+    job_item_step_id: string | null;
+    current_status_id: string | null;
+    status_name: string | null;
+    status_color: string | null;
+    machine_state: string | null;
+    started_at: string;
+    last_status_change_at: string | null;
+    last_seen_at: string | null;
+    malfunction_count: number;
+    stoppage_seconds: number;
+    setup_seconds: number;
+    production_seconds: number;
+    total_good: number;
+    total_scrap: number;
+    current_job_item_good: number;
+    current_job_item_scrap: number;
+  };
+
+  const { data, error } = await supabase.rpc("get_active_sessions_enriched");
+
+  if (error) {
+    console.error("[admin-dashboard] Enriched RPC failed, falling back to standard fetch", error);
+    // Fallback to the original multi-query approach
+    return fetchActiveSessions();
+  }
+
+  const rows = (data as EnrichedRow[]) ?? [];
+
+  console.log(`[admin-dashboard] Fetched ${rows.length} active sessions (enriched RPC)`);
+
+  // Map RPC result to ActiveSession type
+  return rows.map((row): ActiveSession => ({
+    id: row.session_id,
+    jobId: row.job_id ?? "",
+    jobNumber: row.job_number ?? "",
+    stationId: row.station_id,
+    stationName: row.station_name ?? "Unknown",
+    stationType: row.station_type as StationType | null,
+    workerId: row.worker_id ?? "",
+    workerName: row.worker_full_name ?? "Unknown",
+    status: "active" as SessionStatus,
+    currentStatus: row.current_status_id as StatusEventState | null,
+    lastStatusChangeAt: row.last_status_change_at ?? row.started_at,
+    startedAt: row.started_at,
+    totalGood: row.total_good,
+    totalScrap: row.total_scrap,
+    forcedClosedAt: null,
+    lastEventNote: null,  // Not included in RPC for simplicity
+    lastSeenAt: row.last_seen_at,
+    malfunctionCount: row.malfunction_count,
+    stoppageTimeSeconds: row.stoppage_seconds,
+    setupTimeSeconds: row.setup_seconds,
+    currentJobItem: row.job_item_id ? {
+      jobItemId: row.job_item_id,
+      jobItemName: row.job_item_name ?? "",
+      plannedQuantity: 0,  // Would need additional join for this
+      totalCompletedGood: 0,  // Would need additional join for this
+      sessionGood: row.current_job_item_good,
+    } : null,
+  }));
+};
+
 export const fetchActiveSessionById = async (
   sessionId: string,
 ): Promise<ActiveSession | null> => {
@@ -739,17 +824,28 @@ const fetchJobItemNamesBySessionIds = async (
   return result;
 };
 
-type FetchRecentSessionsArgs = {
+export type FetchRecentSessionsArgs = {
   workerId?: string;
   stationId?: string;
   jobNumber?: string;
   limit?: number;
+  /** Date range start - defaults to 7 days ago */
+  since?: Date;
+  /** Date range end - defaults to now */
+  until?: Date;
 };
 
 export const fetchRecentSessions = async (
   args: FetchRecentSessionsArgs = {},
 ): Promise<CompletedSession[]> => {
-  const { workerId, stationId, jobNumber, limit = 8 } = args;
+  const {
+    workerId,
+    stationId,
+    jobNumber,
+    limit = 50,  // Increased default from 8 to 50 with date filtering
+    since = subDays(new Date(), 7),  // Default: last 7 days
+    until,
+  } = args;
   const supabase = createServiceSupabase();
 
   // Use !inner join on jobs when filtering by jobNumber so PostgREST
@@ -763,8 +859,13 @@ export const fetchRecentSessions = async (
     .from("sessions")
     .select(selectStr)
     .not("ended_at", "is", null)
+    .gte("ended_at", since.toISOString())  // Date range filter for scale
     .order("ended_at", { ascending: false })
     .limit(limit);
+
+  if (until) {
+    query = query.lte("ended_at", until.toISOString());
+  }
 
   if (workerId) {
     query = query.eq("worker_id", workerId);

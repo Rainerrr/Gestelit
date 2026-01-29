@@ -8,13 +8,28 @@ import {
   AlertTriangle,
   Inbox,
   Activity,
+  Trash2,
+  Clock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
   fetchGeneralReportsAdminApi,
   fetchReportReasonsAdminApi,
   updateReportStatusAdminApi,
+  deleteReportAdminApi,
+  deleteAllReportsAdminApi,
 } from "@/lib/api/admin-management";
 import type { ReportWithDetails, ReportReason } from "@/lib/types";
 import { ReasonsManager } from "./reasons-manager";
@@ -73,6 +88,30 @@ const GeneralReportsDashboardInner = () => {
     void fetchReportReasonsAdminApi().then((data) => setReasons(data.reasons));
   };
 
+  const handleDelete = async (id: string) => {
+    setIsUpdating(true);
+    try {
+      await deleteReportAdminApi(id);
+      await handleRefresh();
+    } catch (err) {
+      console.error("[general-reports] Failed to delete:", err);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleDeleteAll = async () => {
+    setIsUpdating(true);
+    try {
+      await deleteAllReportsAdminApi("general");
+      await handleRefresh();
+    } catch (err) {
+      console.error("[general-reports] Failed to delete all:", err);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
   // Filter reports by status
   const filteredReports = useMemo(() => {
     if (!reports) return [];
@@ -110,6 +149,36 @@ const GeneralReportsDashboardInner = () => {
         </div>
         <div className="flex gap-2">
           <ReasonsManager reasons={reasons} onUpdate={handleReasonsUpdate} />
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 text-red-400 border-red-500/30 hover:bg-red-500/10 hover:text-red-300"
+                disabled={allReports.length === 0 || isUpdating}
+              >
+                <Trash2 className="h-4 w-4" />
+                מחק הכל
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>מחיקת כל הדיווחים הכלליים</AlertDialogTitle>
+                <AlertDialogDescription>
+                  פעולה זו תמחק את כל {allReports.length} הדיווחים הכלליים. פעולה זו אינה ניתנת לביטול.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>ביטול</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => void handleDeleteAll()}
+                  className="bg-red-500 hover:bg-red-600"
+                >
+                  מחק הכל
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
           <Button
             variant="outline"
             onClick={handleRefresh}
@@ -123,6 +192,14 @@ const GeneralReportsDashboardInner = () => {
             רענון
           </Button>
         </div>
+      </div>
+
+      {/* Auto-cleanup notice */}
+      <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-muted/30 border border-border/50">
+        <Clock className="h-4 w-4 text-muted-foreground shrink-0" />
+        <p className="text-sm text-muted-foreground">
+          דיווחים כלליים ישנים יותר מחודש נמחקים אוטומטית
+        </p>
       </div>
 
       {/* Stats Cards */}
@@ -317,6 +394,7 @@ const GeneralReportsDashboardInner = () => {
           reports={filteredReports}
           reportType="general"
           onApprove={handleApprove}
+          onDelete={handleDelete}
           isUpdating={isUpdating}
         />
       ) : (
@@ -324,6 +402,7 @@ const GeneralReportsDashboardInner = () => {
           reports={filteredReports}
           reportType="general"
           onApprove={handleApprove}
+          onDelete={handleDelete}
           isUpdating={isUpdating}
         />
       )}

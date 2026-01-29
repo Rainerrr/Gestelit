@@ -17,6 +17,7 @@ export type NotificationType =
   | "session_aborted"
   | "first_product_qa_pending"
   | "job_due_soon"
+  | "station_maintenance_due"
   | "crud_success"
   | "crud_error";
 
@@ -24,7 +25,8 @@ export type NotificationActionType =
   | "view_report"
   | "view_session"
   | "approve_qa"
-  | "view_job";
+  | "view_job"
+  | "view_maintenance";
 
 export interface Notification {
   id: string;
@@ -59,8 +61,27 @@ export interface Station {
   end_checklist?: StationChecklistItem[] | null;
   station_reasons?: StationReason[] | null;
   station_statuses?: StatusDefinition[] | null;
+  // Maintenance tracking fields
+  maintenance_enabled?: boolean;
+  maintenance_last_date?: string | null; // YYYY-MM-DD
+  maintenance_interval_days?: number | null;
   created_at?: string;
   updated_at?: string;
+}
+
+// Maintenance tracking types
+export type MaintenanceStatus = "overdue" | "due_soon" | "ok" | "not_tracked";
+
+export interface StationMaintenanceInfo {
+  id: string;
+  name: string;
+  code: string;
+  maintenance_enabled: boolean;
+  maintenance_last_date: string | null;
+  maintenance_interval_days: number | null;
+  next_maintenance_date: string | null;
+  days_until_due: number | null;
+  maintenance_status: MaintenanceStatus;
 }
 
 export interface WorkerStation {
