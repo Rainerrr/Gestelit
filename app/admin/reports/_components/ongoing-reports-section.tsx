@@ -16,6 +16,7 @@ type OngoingReportsSectionProps = {
   hideStationBadge?: boolean;
   onStatusChange?: (id: string, status: MalfunctionReportStatus) => Promise<void>;
   onApprove?: (id: string) => Promise<void>;
+  onDelete?: (id: string) => Promise<void>;
   isUpdating: boolean;
 };
 
@@ -26,6 +27,7 @@ export const OngoingReportsSection = ({
   hideStationBadge = false,
   onStatusChange,
   onApprove,
+  onDelete,
   isUpdating,
 }: OngoingReportsSectionProps) => {
   if (reports.length === 0) return null;
@@ -81,6 +83,7 @@ export const OngoingReportsSection = ({
                 hideStationBadge={hideStationBadge}
                 onStatusChange={onStatusChange}
                 onApprove={onApprove}
+                onDelete={onDelete}
                 isUpdating={isUpdating}
               />
             </div>

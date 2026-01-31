@@ -2,11 +2,24 @@
 
 import { useCallback, useState, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { AlertTriangle, Eye, RefreshCw, CheckCircle2, Wrench, Activity } from "lucide-react";
+import { AlertTriangle, Eye, RefreshCw, CheckCircle2, Wrench, Activity, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import {
   fetchMalfunctionReportsAdminApi,
   updateReportStatusAdminApi,
+  deleteReportAdminApi,
+  deleteAllReportsAdminApi,
 } from "@/lib/api/admin-management";
 import type { StationWithReports, StationWithArchivedReports } from "@/lib/data/reports";
 import type { MalfunctionReportStatus, ReportWithDetails } from "@/lib/types";
@@ -101,6 +114,33 @@ const MalfunctionsDashboardInner = () => {
     void refreshReports();
   };
 
+  const handleDelete = async (id: string) => {
+    setIsUpdating(true);
+    try {
+      await deleteReportAdminApi(id);
+      setArchiveFetched(false);
+      await refreshReports();
+    } catch (err) {
+      console.error("[malfunctions] Failed to delete:", err);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleDeleteAll = async () => {
+    setIsUpdating(true);
+    try {
+      await deleteAllReportsAdminApi("malfunction");
+      setArchiveFetched(false);
+      setArchivedStations([]);
+      await refreshReports();
+    } catch (err) {
+      console.error("[malfunctions] Failed to delete all:", err);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
   const totalOpen = allStations.reduce((sum, s) => sum + s.openCount, 0);
   const totalKnown = allStations.reduce((sum, s) => sum + s.knownCount, 0);
   const ongoingCount = filterOngoingReports(allReports).length;
@@ -117,16 +157,48 @@ const MalfunctionsDashboardInner = () => {
             ניהול ומעקב אחר תקלות
           </p>
         </div>
-        <Button
-          variant="outline"
-          onClick={handleRefresh}
-          disabled={isRefreshing}
-          size="sm"
-          className="gap-2"
-        >
-          <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
-          רענון
-        </Button>
+        <div className="flex gap-2">
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 text-red-400 border-red-500/30 hover:bg-red-500/10 hover:text-red-300"
+                disabled={(allReports.length === 0 && archivedReports.length === 0) || isUpdating}
+              >
+                <Trash2 className="h-4 w-4" />
+                מחק הכל
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>מחיקת כל התקלות</AlertDialogTitle>
+                <AlertDialogDescription>
+                  פעולה זו תמחק את כל התקלות כולל הארכיון. פעולה זו אינה ניתנת לביטול.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>ביטול</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => void handleDeleteAll()}
+                  className="bg-red-500 hover:bg-red-600"
+                >
+                  מחק הכל
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+          <Button
+            variant="outline"
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            size="sm"
+            className="gap-2"
+          >
+            <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
+            רענון
+          </Button>
+        </div>
       </div>
 
       {/* Summary cards */}
@@ -273,6 +345,7 @@ const MalfunctionsDashboardInner = () => {
           reports={allReports}
           reportType="malfunction"
           onStatusChange={handleStatusChange}
+          onDelete={handleDelete}
           isUpdating={isUpdating}
         />
       ) : (
@@ -280,6 +353,7 @@ const MalfunctionsDashboardInner = () => {
           reports={allReports}
           reportType="malfunction"
           onStatusChange={handleStatusChange}
+          onDelete={handleDelete}
           isUpdating={isUpdating}
           showArchive
           archivedReports={archivedReports}

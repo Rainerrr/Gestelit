@@ -3,6 +3,7 @@ import {
   deleteStatusDefinition,
   updateStatusDefinition,
 } from "@/lib/data/status-definitions";
+import { invalidateStatusDefinitionsCache } from "@/lib/cache/static-cache";
 import type { MachineState, StatusScope } from "@/lib/types";
 import {
   requireAdminPassword,
@@ -57,6 +58,7 @@ export async function PUT(request: Request, context: StatusDefinitionRouteContex
     }).catch(() => {});
     // #endregion
     const status = await updateStatusDefinition(id, body);
+    await invalidateStatusDefinitionsCache();
     fetch("http://127.0.0.1:7242/ingest/e9e360f1-cac8-4774-88a3-e97a664d1472", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -124,6 +126,7 @@ export async function DELETE(
     }).catch(() => {});
     // #endregion
     await deleteStatusDefinition(id);
+    await invalidateStatusDefinitionsCache();
     fetch("http://127.0.0.1:7242/ingest/e9e360f1-cac8-4774-88a3-e97a664d1472", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

@@ -144,6 +144,7 @@ type UnifiedReportCardProps = {
   hideStationBadge?: boolean;
   onStatusChange?: (id: string, status: MalfunctionReportStatus) => Promise<void>;
   onApprove?: (id: string) => Promise<void>;
+  onDelete?: (id: string) => Promise<void>;
   isUpdating: boolean;
   isHighlighted?: boolean;
 };
@@ -158,6 +159,7 @@ export const UnifiedReportCard = ({
   hideStationBadge = false,
   onStatusChange,
   onApprove,
+  onDelete,
   isUpdating,
   isHighlighted = false,
 }: UnifiedReportCardProps) => {
@@ -177,7 +179,10 @@ export const UnifiedReportCard = ({
 
   // Derived state
   const statusEvent = report.status_event;
-  const isOngoing = statusEvent?.ended_at === null;
+  // A report is only "ongoing" if status event is open AND session is still active
+  const statusEventOpen = statusEvent?.ended_at === null;
+  const sessionActive = !report.session || report.session.status === "active";
+  const isOngoing = statusEventOpen && sessionActive;
   const hasExpandableContent = report.description || report.image_url;
 
   // Get reason label based on report type
@@ -213,6 +218,13 @@ export const UnifiedReportCard = ({
   const handleApprove = () => {
     if (onApprove) {
       void onApprove(report.id);
+    }
+  };
+
+  // Handle delete
+  const handleDelete = () => {
+    if (onDelete) {
+      void onDelete(report.id);
     }
   };
 
@@ -455,8 +467,8 @@ export const UnifiedReportCard = ({
         </div>
       </div>
 
-      {/* Expandable content: Description + Image */}
-      {expanded && hasExpandableContent && (
+      {/* Expandable content: Description + Image + Delete */}
+      {expanded && (hasExpandableContent || onDelete) && (
         <div className="border-t border-border/30 bg-muted/5 px-4 py-4 space-y-4">
           {/* Description */}
           {report.description && (
@@ -493,6 +505,22 @@ export const UnifiedReportCard = ({
                   </div>
                 </div>
               </button>
+            </div>
+          )}
+
+          {/* Delete button */}
+          {onDelete && (
+            <div className="pt-2 border-t border-border/20">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleDelete}
+                disabled={isUpdating}
+                className="h-8 px-3 gap-2 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                מחק דיווח
+              </Button>
             </div>
           )}
         </div>

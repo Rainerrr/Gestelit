@@ -54,6 +54,7 @@ type PerStationViewProps = {
   reportType: ReportType;
   onStatusChange?: (id: string, status: MalfunctionReportStatus) => Promise<void>;
   onApprove?: (id: string) => Promise<void>;
+  onDelete?: (id: string) => Promise<void>;
   isUpdating: boolean;
   // Archive-related props (malfunction only)
   showArchive?: boolean;
@@ -72,6 +73,7 @@ export const PerStationView = ({
   reportType,
   onStatusChange,
   onApprove,
+  onDelete,
   isUpdating,
   showArchive = false,
   archivedReports = [],
@@ -183,6 +185,7 @@ export const PerStationView = ({
           hideStationBadge
           onStatusChange={onStatusChange}
           onApprove={onApprove}
+          onDelete={onDelete}
           isUpdating={isUpdating}
         />
       )}
@@ -198,6 +201,7 @@ export const PerStationView = ({
               reportType={reportType}
               onStatusChange={onStatusChange}
               onApprove={onApprove}
+              onDelete={onDelete}
               isUpdating={isUpdating}
               highlightReportId={highlightReportId}
             />
@@ -295,6 +299,7 @@ export const PerStationView = ({
                     reportType={reportType}
                     onStatusChange={onStatusChange}
                     onApprove={onApprove}
+                    onDelete={onDelete}
                     isUpdating={isUpdating}
                     isArchive
                     highlightReportId={highlightReportId}

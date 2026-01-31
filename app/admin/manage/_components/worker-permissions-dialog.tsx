@@ -6,6 +6,7 @@ import {
   DialogContent,
   DialogFooter,
   DialogHeader,
+  DialogDescription,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
@@ -111,6 +112,7 @@ export const WorkerPermissionsDialog = ({
       <DialogContent className="text-right border-border bg-card">
         <DialogHeader>
           <DialogTitle className="text-foreground">הרשאות תחנות עבור {worker.full_name}</DialogTitle>
+          <DialogDescription className="sr-only">ניהול הרשאות תחנות לעובד</DialogDescription>
         </DialogHeader>
         <div className="space-y-3 pr-1 max-h-[50vh] overflow-y-auto">
           {isLoading ? (

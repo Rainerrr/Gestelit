@@ -6,6 +6,7 @@ import {
   DialogContent,
   DialogFooter,
   DialogHeader,
+  DialogDescription,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
@@ -128,6 +129,7 @@ export const WorkerFormDialog = ({
       <DialogContent className="text-right border-border bg-card">
         <DialogHeader>
           <DialogTitle className="text-foreground">{dialogTitle}</DialogTitle>
+          <DialogDescription className="sr-only">טופס הוספה או עריכה של עובד</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           {error && (

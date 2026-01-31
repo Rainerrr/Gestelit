@@ -60,6 +60,7 @@ type DateSectionProps = {
   stationReasons?: StationReason[] | null;
   onStatusChange?: (id: string, status: MalfunctionReportStatus) => Promise<void>;
   onApprove?: (id: string) => Promise<void>;
+  onDelete?: (id: string) => Promise<void>;
   isUpdating: boolean;
 };
 
@@ -70,6 +71,7 @@ const DateSection = ({
   stationReasons,
   onStatusChange,
   onApprove,
+  onDelete,
   isUpdating,
 }: DateSectionProps) => {
   if (reports.length === 0) return null;
@@ -122,6 +124,7 @@ const DateSection = ({
               stationReasons={stationReasons}
               onStatusChange={onStatusChange}
               onApprove={onApprove}
+              onDelete={onDelete}
               isUpdating={isUpdating}
             />
           ))}
@@ -140,6 +143,7 @@ type FeedViewProps = {
   stationReasons?: StationReason[] | null;
   onStatusChange?: (id: string, status: MalfunctionReportStatus) => Promise<void>;
   onApprove?: (id: string) => Promise<void>;
+  onDelete?: (id: string) => Promise<void>;
   isUpdating: boolean;
 };
 
@@ -152,6 +156,7 @@ export const FeedView = ({
   stationReasons,
   onStatusChange,
   onApprove,
+  onDelete,
   isUpdating,
 }: FeedViewProps) => {
   // Segment reports into ongoing and finished, then group finished by date
@@ -200,6 +205,7 @@ export const FeedView = ({
         stationReasons={stationReasons}
         onStatusChange={onStatusChange}
         onApprove={onApprove}
+        onDelete={onDelete}
         isUpdating={isUpdating}
       />
 
@@ -213,6 +219,7 @@ export const FeedView = ({
           stationReasons={stationReasons}
           onStatusChange={onStatusChange}
           onApprove={onApprove}
+          onDelete={onDelete}
           isUpdating={isUpdating}
         />
       ))}

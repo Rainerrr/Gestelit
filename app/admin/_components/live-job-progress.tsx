@@ -186,15 +186,78 @@ const LiveJobProgressComponent = ({ className }: LiveJobProgressProps) => {
   return (
     <div className={`rounded-xl border border-border bg-card/50 backdrop-blur-sm overflow-hidden ${className}`}>
       {/* Header */}
-      <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border">
-        <div className="flex items-center gap-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
-            <Briefcase className="h-4 w-4 text-primary" />
+      <div className="px-4 sm:px-5 py-4 border-b border-border space-y-3 sm:space-y-0">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
+              <Briefcase className="h-4 w-4 text-primary" />
+            </div>
+            <h3 className="text-base font-semibold text-foreground">התקדמות עבודות</h3>
           </div>
-          <h3 className="text-base font-semibold text-foreground">התקדמות עבודות</h3>
+
+          {/* Desktop controls - inline */}
+          <div className="hidden sm:flex items-center gap-3">
+            {/* Segmented Toggle Buttons */}
+            <div className="flex items-center rounded-lg bg-muted p-0.5">
+              <button
+                type="button"
+                onClick={() => setShowPercentages(false)}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                  !showPercentages
+                    ? "bg-accent text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                יחידות
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowPercentages(true)}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                  showPercentages
+                    ? "bg-accent text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                אחוזים
+              </button>
+            </div>
+
+            {/* Pagination Controls */}
+            <div className="flex items-center rounded-lg bg-muted p-0.5">
+              <button
+                type="button"
+                onClick={handlePrevious}
+                disabled={currentIndex === 0}
+                className={`p-1.5 rounded-md transition-all ${
+                  currentIndex === 0
+                    ? "text-muted-foreground/50 cursor-not-allowed"
+                    : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                }`}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+              <span className="px-2 text-xs font-mono text-muted-foreground min-w-[40px] text-center">
+                {currentIndex + 1} / {totalJobs}
+              </span>
+              <button
+                type="button"
+                onClick={handleNext}
+                disabled={currentIndex === totalJobs - 1}
+                className={`p-1.5 rounded-md transition-all ${
+                  currentIndex === totalJobs - 1
+                    ? "text-muted-foreground/50 cursor-not-allowed"
+                    : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                }`}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        {/* Mobile controls - row below title */}
+        <div className="flex sm:hidden items-center justify-between gap-2">
           {/* Segmented Toggle Buttons */}
           <div className="flex items-center rounded-lg bg-muted p-0.5">
             <button

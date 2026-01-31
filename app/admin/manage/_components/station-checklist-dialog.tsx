@@ -23,6 +23,7 @@ import {
   Dialog,
   DialogContent,
   DialogFooter,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -440,6 +441,7 @@ export const StationChecklistDialog = ({
               {station.code}
             </Badge>
           </DialogTitle>
+          <DialogDescription className="sr-only">עריכת צ׳קליסטים לתחנה</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">

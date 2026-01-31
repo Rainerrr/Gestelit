@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { format, parseISO } from "date-fns";
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
+  DialogDescription,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
@@ -13,8 +15,10 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { DatePicker } from "@/components/ui/date-picker";
+import { Switch } from "@/components/ui/switch";
 import { useNotification } from "@/contexts/NotificationContext";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, Calendar } from "lucide-react";
 import type {
   MachineState,
   Station,
@@ -77,8 +81,14 @@ export const StationFormDialog = ({
   );
   const [stationStatuses, setStationStatuses] = useState<StatusDefinition[]>([]);
   const [isLoadingStatuses, setIsLoadingStatuses] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [statusError, setStatusError] = useState<string | null>(null);
+  // Maintenance tracking state
+  const [maintenanceEnabled, setMaintenanceEnabled] = useState(station?.maintenance_enabled ?? false);
+  const [maintenanceLastDate, setMaintenanceLastDate] = useState<Date | undefined>(
+    station?.maintenance_last_date ? parseISO(station.maintenance_last_date) : undefined
+  );
+  const [maintenanceIntervalDays, setMaintenanceIntervalDays] = useState(
+    station?.maintenance_interval_days?.toString() ?? ""
+  );
   const [activeColorPickerId, setActiveColorPickerId] = useState<string | null>(null);
   const [pendingDeletedStatusIds, setPendingDeletedStatusIds] = useState<string[]>([]);
   const { notify } = useNotification();
@@ -92,8 +102,6 @@ export const StationFormDialog = ({
 
   const handleDialogOpenChange = (open: boolean) => {
     if (!open) {
-      setError(null);
-      setStatusError(null);
       setActiveColorPickerId(null);
       setPendingDeletedStatusIds([]);
       setWarningMessage(null);
@@ -113,6 +121,10 @@ export const StationFormDialog = ({
         (reason) => reason.id !== GENERAL_STATION_REASON_ID,
       ),
     );
+    // Sync maintenance fields
+    setMaintenanceEnabled(station.maintenance_enabled ?? false);
+    setMaintenanceLastDate(station.maintenance_last_date ? parseISO(station.maintenance_last_date) : undefined);
+    setMaintenanceIntervalDays(station.maintenance_interval_days?.toString() ?? "");
     void loadStatuses(station.id);
   }, [station, mode]);
 
@@ -128,7 +140,6 @@ export const StationFormDialog = ({
       return;
     }
     setIsLoadingStatuses(true);
-    setStatusError(null);
     setPendingDeletedStatusIds([]);
     try {
       const { statuses } = await fetchStatusDefinitionsAdminApi({
@@ -139,7 +150,7 @@ export const StationFormDialog = ({
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : "שגיאה בטעינת הסטטוסים";
-      setStatusError(message);
+      notify({ title: "שגיאה", message, variant: "error" });
       setStationStatuses([]);
     } finally {
       setIsLoadingStatuses(false);
@@ -151,8 +162,6 @@ export const StationFormDialog = ({
       return;
     }
 
-    setError(null);
-    setStatusError(null);
     setWarningMessage(null);
 
     // Check for active session if editing
@@ -175,7 +184,7 @@ export const StationFormDialog = ({
       (reason) => !reason.label_he || !reason.label_ru,
     );
     if (hasEmpty) {
-      setError("יש למלא תוויות בעברית וברוסית לכל תקלה.");
+      notify({ title: "שגיאה", message: "יש למלא תוויות בעברית וברוסית לכל תקלה.", variant: "error" });
       return;
     }
 
@@ -191,7 +200,7 @@ export const StationFormDialog = ({
     });
 
     if (hasDuplicates) {
-      setError("יש לוודא שתוויות התקלה ייחודיות בכל שפה.");
+      notify({ title: "שגיאה", message: "יש לוודא שתוויות התקלה ייחודיות בכל שפה.", variant: "error" });
       return;
     }
 
@@ -207,8 +216,21 @@ export const StationFormDialog = ({
       preparedStatuses.some((status) => !status.label_he.trim());
 
     if (hasInvalidStatus) {
-      setStatusError("יש למלא שם סטטוס בעברית לכל שורה.");
+      notify({ title: "שגיאה", message: "יש למלא שם סטטוס בעברית לכל שורה.", variant: "error" });
       return;
+    }
+
+    // Validate maintenance fields if enabled
+    if (maintenanceEnabled) {
+      if (!maintenanceLastDate) {
+        notify({ title: "שגיאה", message: "יש לבחור תאריך טיפול אחרון כאשר מעקב טיפולים מופעל.", variant: "error" });
+        return;
+      }
+      const intervalNum = parseInt(maintenanceIntervalDays, 10);
+      if (!maintenanceIntervalDays || isNaN(intervalNum) || intervalNum < 1) {
+        notify({ title: "שגיאה", message: "יש להזין מרווח תקין בין טיפולים (מספר ימים חיובי).", variant: "error" });
+        return;
+      }
     }
 
     if (
@@ -220,7 +242,7 @@ export const StationFormDialog = ({
         await syncStationStatuses(station.id, preparedStatuses);
       } catch (err) {
         const message = err instanceof Error ? err.message : "שמירת סטטוסים נכשלה";
-        setStatusError(message);
+        notify({ title: "שגיאה", message, variant: "error" });
         setIsSavingStatuses(false);
         return;
       }
@@ -239,10 +261,15 @@ export const StationFormDialog = ({
         station_type: normalizedType,
         is_active: isActive,
         station_reasons: payloadReasons,
+        // Maintenance tracking fields
+        maintenance_enabled: maintenanceEnabled,
+        maintenance_last_date: maintenanceEnabled && maintenanceLastDate ? format(maintenanceLastDate, "yyyy-MM-dd") : null,
+        maintenance_interval_days: maintenanceEnabled && maintenanceIntervalDays
+          ? parseInt(maintenanceIntervalDays, 10)
+          : null,
       });
 
       notify({ title: "הצלחה", message: "התחנה נשמרה בהצלחה.", variant: "success" });
-      setError(null);
       setWarningMessage(null);
 
       // Keep dialog open if controlled, otherwise close for create mode
@@ -253,10 +280,14 @@ export const StationFormDialog = ({
         setType("other");
         setIsActive(true);
         setStationReasons([]);
+        // Reset maintenance fields
+        setMaintenanceEnabled(false);
+        setMaintenanceLastDate(undefined);
+        setMaintenanceIntervalDays("");
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      setError(errorMessage || "שגיאה בשמירת התחנה");
+      notify({ title: "שגיאה", message: errorMessage || "שגיאה בשמירת התחנה", variant: "error" });
     }
   };
 
@@ -264,9 +295,6 @@ export const StationFormDialog = ({
 
   const handleCodeChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setCode(event.target.value);
-    if (error) {
-      setError(null);
-    }
   };
 
   const handleAddReason = () => {
@@ -427,16 +455,9 @@ export const StationFormDialog = ({
       <DialogContent className="text-right sm:max-w-2xl border-border bg-card">
         <DialogHeader>
           <DialogTitle className="text-foreground">{dialogTitle}</DialogTitle>
+          <DialogDescription className="sr-only">טופס הוספה או עריכה של תחנה</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
-          {error && (
-            <Alert
-              variant="destructive"
-              className="border-red-500/30 bg-red-500/10 text-right text-sm text-red-400"
-            >
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
           {warningMessage && (
             <Alert
               variant="destructive"
@@ -581,14 +602,6 @@ export const StationFormDialog = ({
                 <span className="text-xs">הוסף</span>
               </Button>
             </div>
-            {statusError && (
-              <Alert
-                variant="destructive"
-                className="border-red-500/30 bg-red-500/10 text-xs text-red-400"
-              >
-                <AlertDescription>{statusError}</AlertDescription>
-              </Alert>
-            )}
             {isLoadingStatuses ? (
               <p className="rounded-md border border-dashed border-input bg-muted/30 px-3 py-2 text-center text-xs text-muted-foreground">
                 טוען סטטוסים...
@@ -618,6 +631,68 @@ export const StationFormDialog = ({
                       compact
                     />
                   ))}
+              </div>
+            )}
+          </div>
+
+          {/* Maintenance Tracking */}
+          <div className="space-y-2 rounded-lg border border-input bg-secondary/30 p-3">
+            <div className="flex items-center justify-between">
+              <div className="text-right">
+                <p className="text-sm font-medium text-foreground/80">מעקב טיפולים</p>
+                <p className="text-xs text-muted-foreground">הפעל תזכורות לטיפולים מתוזמנים</p>
+              </div>
+              <Switch
+                checked={maintenanceEnabled}
+                onCheckedChange={setMaintenanceEnabled}
+                disabled={loading}
+                aria-label="הפעל מעקב טיפולים"
+              />
+            </div>
+
+            {maintenanceEnabled && (
+              <div className="space-y-3 pt-3 border-t border-border/50">
+                <div className="space-y-1.5">
+                  <Label htmlFor="maintenance_last_date" className="text-foreground/80 text-sm flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-muted-foreground" />
+                    תאריך טיפול אחרון
+                  </Label>
+                  <DatePicker
+                    id="maintenance_last_date"
+                    value={maintenanceLastDate}
+                    onChange={setMaintenanceLastDate}
+                    placeholder="בחר תאריך טיפול אחרון"
+                    className="w-full"
+                    allowFuture={false}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="maintenance_interval" className="text-foreground/80 text-sm">
+                    מרווח בין טיפולים (ימים)
+                  </Label>
+                  <Input
+                    id="maintenance_interval"
+                    type="number"
+                    min="1"
+                    placeholder="לדוגמה: 90"
+                    value={maintenanceIntervalDays}
+                    onChange={(e) => setMaintenanceIntervalDays(e.target.value)}
+                    disabled={loading}
+                    className="border-input bg-secondary text-foreground placeholder:text-muted-foreground"
+                  />
+                </div>
+
+                {maintenanceLastDate && maintenanceIntervalDays && (
+                  <div className="rounded-md bg-primary/5 border border-primary/20 px-3 py-2 text-xs text-foreground/80">
+                    <span className="font-medium text-primary">טיפול הבא:</span>{" "}
+                    {(() => {
+                      const nextDate = new Date(maintenanceLastDate);
+                      nextDate.setDate(nextDate.getDate() + parseInt(maintenanceIntervalDays, 10));
+                      return nextDate.toLocaleDateString("he-IL");
+                    })()}
+                  </div>
+                )}
               </div>
             )}
           </div>

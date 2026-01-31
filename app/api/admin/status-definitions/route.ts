@@ -3,6 +3,7 @@ import {
   createStatusDefinition,
   fetchStatusDefinitionsByStationIds,
 } from "@/lib/data/status-definitions";
+import { invalidateStatusDefinitionsCache } from "@/lib/cache/static-cache";
 import type { MachineState, StatusScope } from "@/lib/types";
 import {
   requireAdminPassword,
@@ -66,6 +67,7 @@ export async function POST(request: Request) {
       machine_state: body.machine_state,
       report_type: body.report_type,
     });
+    await invalidateStatusDefinitionsCache();
     return NextResponse.json({ status });
   } catch (error) {
     return NextResponse.json(

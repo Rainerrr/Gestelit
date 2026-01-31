@@ -16,7 +16,8 @@ import {
  *    job_item_id, and job_item_step_id (records production context)
  * 2. Creates new status event for the next status
  * 3. Updates sessions.current_status_id
- * 4. Updates WIP balances via update_session_quantities_atomic_v4
+ * 4. Updates WIP balances via update_session_quantities_atomic_v5
+ *    (uses optimistic locking for better concurrency)
  */
 
 type EndProductionPayload = {
@@ -92,7 +93,17 @@ export async function POST(request: Request) {
           { status: 400 }
         );
       }
-      // Handle WIP update errors from update_session_quantities_atomic_v4
+      // Handle WIP update errors from update_session_quantities_atomic_v5
+      if (error.message.includes("WIP_UPDATE_FAILED: CONCURRENT_MODIFICATION")) {
+        return NextResponse.json(
+          {
+            error: "CONCURRENT_MODIFICATION",
+            message: "Concurrent update detected. Please retry the operation.",
+            retryable: true
+          },
+          { status: 409 }
+        );
+      }
       if (error.message.includes("WIP_UPDATE_FAILED: JOB_ITEM_STEP_NOT_FOUND")) {
         return NextResponse.json(
           {

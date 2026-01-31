@@ -27,6 +27,7 @@ type StationAccordionCardProps = {
   reportType: ReportType;
   onStatusChange?: (id: string, status: MalfunctionReportStatus) => Promise<void>;
   onApprove?: (id: string) => Promise<void>;
+  onDelete?: (id: string) => Promise<void>;
   isUpdating: boolean;
   defaultExpanded?: boolean;
   highlightReportId?: string | null;
@@ -39,6 +40,7 @@ export const StationAccordionCard = ({
   reportType,
   onStatusChange,
   onApprove,
+  onDelete,
   isUpdating,
   defaultExpanded = false,
   highlightReportId,
@@ -86,14 +88,14 @@ export const StationAccordionCard = ({
         type="button"
         onClick={() => setExpanded(!expanded)}
         className={cn(
-          "w-full flex items-center justify-between gap-4 px-5 py-4 text-right transition-colors",
+          "w-full flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 px-4 sm:px-5 py-4 text-right transition-colors",
           expanded ? "bg-primary/5" : "hover:bg-accent/30"
         )}
       >
-        <div className="flex items-center gap-4 flex-1 min-w-0">
+        <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
           <div
             className={cn(
-              "flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border transition-colors",
+              "flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-lg border transition-colors",
               expanded ? "bg-primary/10 border-primary/30" : "bg-secondary border-border"
             )}
           >
@@ -105,8 +107,8 @@ export const StationAccordionCard = ({
             />
           </div>
 
-          <div className="flex flex-col items-start min-w-0">
-            <h3 className="text-base font-semibold text-foreground truncate">
+          <div className="flex flex-col items-start min-w-0 flex-1">
+            <h3 className="text-base font-semibold text-foreground truncate max-w-full">
               {station.name}
             </h3>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -115,9 +117,23 @@ export const StationAccordionCard = ({
               <span>{station.station_type}</span>
             </div>
           </div>
+
+          {/* Expand/collapse icon - visible on mobile in same row as station name */}
+          <div
+            className={cn(
+              "flex sm:hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors",
+              expanded ? "bg-primary/10" : "bg-secondary"
+            )}
+          >
+            {expanded ? (
+              <ChevronUp className="h-4 w-4 text-primary" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            )}
+          </div>
         </div>
 
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0 flex-wrap">
           {/* Badges based on report type */}
           {isArchive ? (
             // Archive mode: show solved/approved count
@@ -176,20 +192,15 @@ export const StationAccordionCard = ({
             </>
           )}
 
-          {/* Expand/collapse icon */}
+          {/* Expand/collapse icon - desktop only (mobile version is inline with station name) */}
           <div
             className={cn(
-              "flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
+              "hidden sm:flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
               expanded ? "bg-primary/10" : "bg-secondary"
             )}
           >
             {expanded ? (
-              <ChevronUp
-                className={cn(
-                  "h-4 w-4 transition-colors",
-                  expanded ? "text-primary" : "text-muted-foreground"
-                )}
-              />
+              <ChevronUp className="h-4 w-4 text-primary" />
             ) : (
               <ChevronDown className="h-4 w-4 text-muted-foreground" />
             )}
@@ -214,6 +225,7 @@ export const StationAccordionCard = ({
                 hideStationBadge
                 onStatusChange={onStatusChange}
                 onApprove={onApprove}
+                onDelete={onDelete}
                 isUpdating={isUpdating}
                 isHighlighted={report.id === highlightReportId}
               />

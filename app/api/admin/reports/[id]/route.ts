@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdminPassword, createErrorResponse } from "@/lib/auth/permissions";
-import { updateReportStatus } from "@/lib/data/reports";
+import { updateReportStatus, deleteReport } from "@/lib/data/reports";
 import type { ReportStatus } from "@/lib/types";
 
 const VALID_STATUSES: ReportStatus[] = ["new", "approved", "open", "known", "solved"];
@@ -49,6 +49,30 @@ export async function PATCH(
 
     return NextResponse.json(
       { error: "REPORT_UPDATE_FAILED", details: message },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    await requireAdminPassword(request);
+  } catch (error) {
+    return createErrorResponse(error);
+  }
+
+  const { id } = await params;
+
+  try {
+    await deleteReport(id);
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "UNKNOWN_ERROR";
+    return NextResponse.json(
+      { error: "REPORT_DELETE_FAILED", details: message },
       { status: 500 }
     );
   }

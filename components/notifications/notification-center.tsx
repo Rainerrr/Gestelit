@@ -55,6 +55,10 @@ export const NotificationCenter = () => {
         router.push("/admin/jobs");
         break;
       }
+      case "view_maintenance": {
+        router.push("/admin/maintenance");
+        break;
+      }
     }
   };
 

@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import type { SessionMalfunctionReport, SessionGeneralReport, SessionScrapReport } from "@/app/api/admin/dashboard/session/[id]/route";
 import type { StationReason } from "@/lib/types";
@@ -198,9 +198,11 @@ const malfunctionStatusConfig = {
 const MalfunctionReportCard = ({
   report,
   stationReasons,
+  sessionStatus = "active",
 }: {
   report: SessionMalfunctionReport;
   stationReasons: StationReason[] | null | undefined;
+  sessionStatus?: "active" | "completed" | "aborted";
 }) => {
   const [expanded, setExpanded] = useState(false);
   const [imageOpen, setImageOpen] = useState(false);
@@ -210,7 +212,8 @@ const MalfunctionReportCard = ({
   const StatusIcon = config.icon;
   const hasExpandableContent = report.description || report.imageUrl;
   const hasStatusEvent = report.statusEventId && report.statusEventStartedAt;
-  const isOngoing = hasStatusEvent && !report.statusEventEndedAt;
+  // Report is only ongoing if status event is open AND session is still active
+  const isOngoing = hasStatusEvent && !report.statusEventEndedAt && sessionStatus === "active";
 
   return (
     <div
@@ -368,6 +371,7 @@ const MalfunctionReportCard = ({
       <Dialog open={imageOpen} onOpenChange={setImageOpen}>
         <DialogContent className="max-w-4xl w-auto p-0 bg-black/95 border-border/50 overflow-hidden">
           <DialogTitle className="sr-only">תמונת דיווח</DialogTitle>
+          <DialogDescription className="sr-only">תצוגה מוגדלת של תמונת דיווח</DialogDescription>
           <button
             type="button"
             onClick={() => setImageOpen(false)}
@@ -393,14 +397,17 @@ const MalfunctionReportCard = ({
 // =============================================================================
 const GeneralReportCard = ({
   report,
+  sessionStatus = "active",
 }: {
   report: SessionGeneralReport;
+  sessionStatus?: "active" | "completed" | "aborted";
 }) => {
   const [expanded, setExpanded] = useState(false);
   const [imageOpen, setImageOpen] = useState(false);
 
   const hasStatusEvent = report.statusEventId && report.statusEventStartedAt;
-  const isOngoing = hasStatusEvent && !report.statusEventEndedAt;
+  // Report is only ongoing if status event is open AND session is still active
+  const isOngoing = hasStatusEvent && !report.statusEventEndedAt && sessionStatus === "active";
   const isNew = report.status === "new";
   const hasExpandableContent = report.description || report.imageUrl;
 
@@ -550,6 +557,7 @@ const GeneralReportCard = ({
       <Dialog open={imageOpen} onOpenChange={setImageOpen}>
         <DialogContent className="max-w-4xl w-auto p-0 bg-black/95 border-border/50 overflow-hidden">
           <DialogTitle className="sr-only">תמונת דיווח</DialogTitle>
+          <DialogDescription className="sr-only">תצוגה מוגדלת של תמונת דיווח</DialogDescription>
           <button
             type="button"
             onClick={() => setImageOpen(false)}
@@ -712,6 +720,7 @@ const ScrapReportCard = ({
       <Dialog open={imageOpen} onOpenChange={setImageOpen}>
         <DialogContent className="max-w-4xl w-auto p-0 bg-black/95 border-border/50 overflow-hidden">
           <DialogTitle className="sr-only">תמונת דיווח</DialogTitle>
+          <DialogDescription className="sr-only">תצוגה מוגדלת של תמונת דיווח</DialogDescription>
           <button
             type="button"
             onClick={() => setImageOpen(false)}
@@ -905,6 +914,7 @@ const QaReportCard = ({
       <Dialog open={imageOpen} onOpenChange={setImageOpen}>
         <DialogContent className="max-w-4xl w-auto p-0 bg-black/95 border-border/50 overflow-hidden">
           <DialogTitle className="sr-only">תמונת דיווח</DialogTitle>
+          <DialogDescription className="sr-only">תצוגה מוגדלת של תמונת דיווח</DialogDescription>
           <button
             type="button"
             onClick={() => setImageOpen(false)}
@@ -1016,6 +1026,8 @@ type SessionReportsWidgetProps = {
   generalReports: SessionGeneralReport[];
   scrapReports: SessionScrapReport[];
   stationReasons: StationReason[] | null | undefined;
+  /** Session status - when not "active", all reports are considered finished */
+  sessionStatus?: "active" | "completed" | "aborted";
 };
 
 export const SessionReportsWidget = ({
@@ -1023,6 +1035,7 @@ export const SessionReportsWidget = ({
   generalReports,
   scrapReports,
   stationReasons,
+  sessionStatus = "active",
 }: SessionReportsWidgetProps) => {
   // Determine default tab: show tab with most reports, preference order: malfunction > scrap > general
   const getDefaultTab = (): ReportTypeToggle => {
@@ -1049,15 +1062,17 @@ export const SessionReportsWidget = ({
   }, [generalReports]);
 
   // Sort non-QA reports: ongoing first, then by date
+  // Report is only "ongoing" if status event is open AND session is still active
   const sortedGeneralReports = useMemo(() => {
+    const isSessionActive = sessionStatus === "active";
     return [...nonQaGeneralReports].sort((a, b) => {
-      const aOngoing = a.statusEventId && !a.statusEventEndedAt;
-      const bOngoing = b.statusEventId && !b.statusEventEndedAt;
+      const aOngoing = isSessionActive && a.statusEventId && !a.statusEventEndedAt;
+      const bOngoing = isSessionActive && b.statusEventId && !b.statusEventEndedAt;
       if (aOngoing && !bOngoing) return -1;
       if (!aOngoing && bOngoing) return 1;
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
-  }, [nonQaGeneralReports]);
+  }, [nonQaGeneralReports, sessionStatus]);
 
   // Sort QA reports: pending first, then by date
   const sortedQaReports = useMemo(() => {
@@ -1162,7 +1177,7 @@ export const SessionReportsWidget = ({
               </div>
             ) : (
               sortedGeneralReports.map((report) => (
-                <GeneralReportCard key={report.id} report={report} />
+                <GeneralReportCard key={report.id} report={report} sessionStatus={sessionStatus} />
               ))
             )}
           </div>
@@ -1181,6 +1196,7 @@ export const SessionReportsWidget = ({
                   key={report.id}
                   report={report}
                   stationReasons={stationReasons}
+                  sessionStatus={sessionStatus}
                 />
               ))}
             {reportType === "scrap" &&

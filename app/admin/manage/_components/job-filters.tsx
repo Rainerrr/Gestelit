@@ -113,10 +113,10 @@ export const JobFilters = ({
       </div>
 
       {/* Filter dropdowns row */}
-      <div className="p-4 flex flex-wrap items-center gap-3">
+      <div className="p-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
         {/* Job Item filter */}
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted shrink-0">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="hidden sm:flex h-8 w-8 items-center justify-center rounded-lg bg-muted shrink-0">
             <Package className="h-4 w-4 text-muted-foreground" />
           </div>
           <Select
@@ -127,7 +127,7 @@ export const JobFilters = ({
           >
             <SelectTrigger
               aria-label="סינון לפי מוצר"
-              className="w-[160px] border-input bg-secondary text-foreground focus:ring-primary/30 h-9"
+              className="w-full sm:w-[160px] min-h-[44px] border-input bg-secondary text-foreground focus:ring-primary/30 h-9"
             >
               <SelectValue placeholder="כל המוצרים" />
             </SelectTrigger>
@@ -155,8 +155,8 @@ export const JobFilters = ({
         <div className="h-6 w-px bg-border hidden sm:block" />
 
         {/* Client filter */}
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted shrink-0">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="hidden sm:flex h-8 w-8 items-center justify-center rounded-lg bg-muted shrink-0">
             <User className="h-4 w-4 text-muted-foreground" />
           </div>
           <Select
@@ -167,7 +167,7 @@ export const JobFilters = ({
           >
             <SelectTrigger
               aria-label="סינון לפי לקוח"
-              className="w-[160px] border-input bg-secondary text-foreground focus:ring-primary/30 h-9"
+              className="w-full sm:w-[160px] min-h-[44px] border-input bg-secondary text-foreground focus:ring-primary/30 h-9"
             >
               <SelectValue placeholder="כל הלקוחות" />
             </SelectTrigger>
@@ -195,15 +195,15 @@ export const JobFilters = ({
         <div className="h-6 w-px bg-border hidden sm:block" />
 
         {/* Due Date Range filter */}
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted shrink-0">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="hidden sm:flex h-8 w-8 items-center justify-center rounded-lg bg-muted shrink-0">
             <Calendar className="h-4 w-4 text-muted-foreground" />
           </div>
           <DateRangePicker
             value={value.dueDateRange}
             onChange={handleDueDateRangeChange}
             placeholder="סינון לפי טווח תאריכים"
-            className="w-[220px]"
+            className="w-full sm:w-[220px]"
             allowFutureDates
           />
         </div>

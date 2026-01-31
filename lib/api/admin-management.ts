@@ -26,6 +26,9 @@ type StationPayload = {
   station_reasons?: Station["station_reasons"];
   start_checklist?: Station["start_checklist"];
   end_checklist?: Station["end_checklist"];
+  maintenance_enabled?: boolean;
+  maintenance_last_date?: string | null;
+  maintenance_interval_days?: number | null;
 };
 
 type WorkerUpdatePayload = Partial<WorkerPayload>;
@@ -384,12 +387,18 @@ export async function fetchRecentSessionsAdminApi(params?: {
   stationId?: string;
   jobNumber?: string;
   limit?: number;
+  /** Date range start - required for scale (defaults to 7 days ago server-side) */
+  since?: Date;
+  /** Date range end */
+  until?: Date;
 }): Promise<{ sessions: CompletedSession[] }> {
   const query = new URLSearchParams();
   if (params?.workerId) query.set("workerId", params.workerId);
   if (params?.stationId) query.set("stationId", params.stationId);
   if (params?.jobNumber) query.set("jobNumber", params.jobNumber);
   if (params?.limit) query.set("limit", params.limit.toString());
+  if (params?.since) query.set("since", params.since.toISOString());
+  if (params?.until) query.set("until", params.until.toISOString());
 
   const response = await fetch(
     `/api/admin/dashboard/recent-sessions?${query.toString()}`,
@@ -549,15 +558,40 @@ export async function fetchReportsCountsAdminApi(): Promise<{ counts: ReportCoun
   return handleResponse(response);
 }
 
+// Common pagination options for report queries
+export interface ReportApiOptions {
+  limit?: number;
+  offset?: number;
+  since?: Date;
+  until?: Date;
+  stationId?: string;
+}
+
+// Helper to build query string with pagination params
+function buildReportQueryParams(
+  type: string,
+  options?: ReportApiOptions & { includeArchived?: boolean }
+): URLSearchParams {
+  const query = new URLSearchParams();
+  query.set("type", type);
+
+  if (options?.includeArchived) query.set("includeArchived", "true");
+  if (options?.limit) query.set("limit", options.limit.toString());
+  if (options?.offset) query.set("offset", options.offset.toString());
+  if (options?.since) query.set("since", options.since.toISOString());
+  if (options?.until) query.set("until", options.until.toISOString());
+  if (options?.stationId) query.set("stationId", options.stationId);
+
+  return query;
+}
+
 export async function fetchMalfunctionReportsAdminApi(params?: {
   includeArchived?: boolean;
-}): Promise<{
+} & ReportApiOptions): Promise<{
   stations: StationWithReports[];
   archived?: StationWithArchivedReports[];
 }> {
-  const query = new URLSearchParams();
-  query.set("type", "malfunction");
-  if (params?.includeArchived) query.set("includeArchived", "true");
+  const query = buildReportQueryParams("malfunction", params);
 
   const response = await fetch(
     `/api/admin/reports?${query.toString()}`,
@@ -566,21 +600,29 @@ export async function fetchMalfunctionReportsAdminApi(params?: {
   return handleResponse(response);
 }
 
-export async function fetchGeneralReportsAdminApi(): Promise<{
+export async function fetchGeneralReportsAdminApi(
+  params?: ReportApiOptions
+): Promise<{
   reports: ReportWithDetails[];
 }> {
+  const query = buildReportQueryParams("general", params);
+
   const response = await fetch(
-    "/api/admin/reports?type=general",
+    `/api/admin/reports?${query.toString()}`,
     createAdminRequestInit()
   );
   return handleResponse(response);
 }
 
-export async function fetchScrapReportsAdminApi(): Promise<{
+export async function fetchScrapReportsAdminApi(
+  params?: ReportApiOptions
+): Promise<{
   stations: StationWithScrapReports[];
 }> {
+  const query = buildReportQueryParams("scrap", params);
+
   const response = await fetch(
-    "/api/admin/reports?type=scrap",
+    `/api/admin/reports?${query.toString()}`,
     createAdminRequestInit()
   );
   return handleResponse(response);
@@ -597,6 +639,35 @@ export async function updateReportStatusAdminApi(
       method: "PATCH",
       body: JSON.stringify({ status, adminNotes }),
     })
+  );
+  return handleResponse(response);
+}
+
+export async function deleteReportAdminApi(id: string): Promise<{ success: boolean }> {
+  const response = await fetch(
+    `/api/admin/reports/${id}`,
+    createAdminRequestInit({ method: "DELETE" })
+  );
+  return handleResponse(response);
+}
+
+export async function deleteAllReportsAdminApi(
+  type: ReportType
+): Promise<{ success: boolean; deletedCount: number }> {
+  const response = await fetch(
+    `/api/admin/reports?type=${type}`,
+    createAdminRequestInit({ method: "DELETE" })
+  );
+  return handleResponse(response);
+}
+
+export async function cleanupOldGeneralReportsAdminApi(): Promise<{
+  success: boolean;
+  deletedCount: number;
+}> {
+  const response = await fetch(
+    `/api/admin/reports?type=general&autoCleanup=true`,
+    createAdminRequestInit({ method: "DELETE" })
   );
   return handleResponse(response);
 }

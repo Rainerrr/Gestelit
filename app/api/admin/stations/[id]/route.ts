@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { AdminActionError, deleteStation, updateStation } from "@/lib/data/admin-management";
+import { invalidateStationsCache } from "@/lib/cache/static-cache";
 import type { StationChecklistItem, StationReason, StationType } from "@/lib/types";
 import {
   requireAdminPassword,
@@ -14,6 +15,9 @@ type StationPayload = {
   station_reasons?: StationReason[] | null;
   start_checklist?: StationChecklistItem[] | null;
   end_checklist?: StationChecklistItem[] | null;
+  maintenance_enabled?: boolean;
+  maintenance_last_date?: string | null;
+  maintenance_interval_days?: number | null;
 };
 
 const respondWithError = (error: unknown) => {
@@ -61,8 +65,12 @@ export async function PUT(
       station_reasons: body.station_reasons,
       start_checklist: body.start_checklist,
       end_checklist: body.end_checklist,
+      maintenance_enabled: body.maintenance_enabled,
+      maintenance_last_date: body.maintenance_last_date,
+      maintenance_interval_days: body.maintenance_interval_days,
     });
 
+    await invalidateStationsCache();
     return NextResponse.json({ station });
   } catch (error) {
     return respondWithError(error);
@@ -82,6 +90,7 @@ export async function DELETE(
   try {
     const { id } = await context.params;
     await deleteStation(id);
+    await invalidateStationsCache();
     return NextResponse.json({ ok: true });
   } catch (error) {
     return respondWithError(error);

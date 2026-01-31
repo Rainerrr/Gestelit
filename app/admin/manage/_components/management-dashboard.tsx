@@ -301,6 +301,9 @@ export const ManagementDashboard = () => {
         station_type: payload.station_type ?? "other",
         is_active: payload.is_active ?? true,
         station_reasons: payload.station_reasons,
+        maintenance_enabled: payload.maintenance_enabled,
+        maintenance_last_date: payload.maintenance_last_date,
+        maintenance_interval_days: payload.maintenance_interval_days,
       });
       await Promise.all([loadStations(), loadStationTypes()]);
     } catch (error) {
@@ -316,6 +319,9 @@ export const ManagementDashboard = () => {
         station_type: payload.station_type ?? "other",
         is_active: payload.is_active,
         station_reasons: payload.station_reasons,
+        maintenance_enabled: payload.maintenance_enabled,
+        maintenance_last_date: payload.maintenance_last_date,
+        maintenance_interval_days: payload.maintenance_interval_days,
       });
       // Don't refresh immediately - let the dialog show success message
       // Refresh will happen when dialog closes

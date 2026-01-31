@@ -5,6 +5,7 @@ import {
   deletePipelinePreset,
   isPipelinePresetInUse,
 } from "@/lib/data/pipeline-presets";
+import { invalidatePipelinePresetsCache } from "@/lib/cache/static-cache";
 import {
   requireAdminPassword,
   createErrorResponse,
@@ -69,6 +70,7 @@ export async function PUT(request: Request, context: RouteContext) {
     const preset = await updatePipelinePreset(id, {
       name: body.name,
     });
+    await invalidatePipelinePresetsCache();
     return NextResponse.json({ preset });
   } catch (error) {
     return createErrorResponse(error, "PIPELINE_PRESET_UPDATE_FAILED");
@@ -110,6 +112,7 @@ export async function DELETE(request: Request, context: RouteContext) {
     }
 
     await deletePipelinePreset(id);
+    await invalidatePipelinePresetsCache();
     return NextResponse.json({ success: true });
   } catch (error) {
     if (error instanceof Error && error.message === "PIPELINE_PRESET_IN_USE") {

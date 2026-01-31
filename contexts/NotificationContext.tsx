@@ -16,6 +16,7 @@ import {
   updateNotificationAdminApi,
   checkDueJobsAdminApi,
 } from "@/lib/api/notifications";
+import { triggerMaintenanceCheckApi } from "@/lib/api/maintenance";
 import type { Notification } from "@/lib/types";
 
 type ToastVariant = "success" | "error" | "info" | "warning";
@@ -76,6 +77,7 @@ const notificationTypeToVariant: Record<string, ToastVariant> = {
   session_aborted: "warning",
   first_product_qa_pending: "warning",
   job_due_soon: "warning",
+  station_maintenance_due: "warning",
 };
 
 type StreamEvent =
@@ -280,12 +282,14 @@ export const NotificationProvider = ({ children }: NotificationProviderProps) =>
     }
   }, []);
 
-  // Check due jobs periodically
+  // Check due jobs and maintenance periodically
   useEffect(() => {
     void checkDueJobsAdminApi().catch(() => {});
+    void triggerMaintenanceCheckApi().catch(() => {});
 
     const interval = setInterval(() => {
       void checkDueJobsAdminApi().catch(() => {});
+      void triggerMaintenanceCheckApi().catch(() => {});
     }, DUE_JOBS_CHECK_INTERVAL);
 
     return () => clearInterval(interval);
