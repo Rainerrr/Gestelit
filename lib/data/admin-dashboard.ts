@@ -829,7 +829,7 @@ export type FetchRecentSessionsArgs = {
   stationId?: string;
   jobNumber?: string;
   limit?: number;
-  /** Date range start - defaults to 7 days ago */
+  /** Date range start - defaults to 90 days ago */
   since?: Date;
   /** Date range end - defaults to now */
   until?: Date;
@@ -843,7 +843,7 @@ export const fetchRecentSessions = async (
     stationId,
     jobNumber,
     limit = 50,  // Increased default from 8 to 50 with date filtering
-    since = subDays(new Date(), 7),  // Default: last 7 days
+    since = subDays(new Date(), 90),  // Default: last 90 days
     until,
   } = args;
   const supabase = createServiceSupabase();

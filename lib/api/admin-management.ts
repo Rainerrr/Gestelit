@@ -387,7 +387,7 @@ export async function fetchRecentSessionsAdminApi(params?: {
   stationId?: string;
   jobNumber?: string;
   limit?: number;
-  /** Date range start - required for scale (defaults to 7 days ago server-side) */
+  /** Date range start - defaults to 90 days ago server-side */
   since?: Date;
   /** Date range end */
   until?: Date;

@@ -22,6 +22,7 @@ export async function POST(request: Request) {
   const image = formData.get("image");
   const workerId = formData.get("workerId");
   const statusEventIdParam = formData.get("statusEventId");
+  const skipStatusEventLookup = formData.get("skipStatusEventLookup") === "true";
 
   // Validate type
   if (!type || typeof type !== "string" || !VALID_REPORT_TYPES.includes(type as ReportType)) {
@@ -68,7 +69,7 @@ export async function POST(request: Request) {
   if (typeof statusEventIdParam === "string" && statusEventIdParam.trim().length > 0) {
     // Use the explicitly provided status event ID (for when status event was just created)
     statusEventId = statusEventIdParam;
-  } else if (sessionId && typeof sessionId === "string" && sessionId.trim().length > 0) {
+  } else if (!skipStatusEventLookup && sessionId && typeof sessionId === "string" && sessionId.trim().length > 0) {
     // Fall back to looking up current open status event for the session
     const supabase = createServiceSupabase();
     const { data: openEvent } = await supabase

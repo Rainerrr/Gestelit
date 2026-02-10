@@ -49,7 +49,7 @@ Migrations are in `supabase/migrations/` with timestamp prefixes (YYYYMMDDHHMMSS
 - **Framework**: Next.js 16 (App Router) with React 19
 - **Database**: Supabase (PostgreSQL) with Row Level Security
 - **Styling**: TailwindCSS + shadcn/ui components
-- **Language Direction**: RTL-first (Hebrew primary)
+- **Language Direction**: RTL-first (Hebrew primary, Russian secondary)
 - **Path Alias**: `@/` resolves to project root
 
 ### Key Directories
@@ -58,11 +58,16 @@ Migrations are in `supabase/migrations/` with timestamp prefixes (YYYYMMDDHHMMSS
 - `app/api/` - Backend API routes (all use service role Supabase client)
 - `lib/data/` - Server-side Supabase query functions (reusable across routes)
 - `lib/api/` - Client-side API wrappers (auto-add auth headers)
+- `lib/hooks/` - Real-time subscription hooks (`useRealtimeSession`, `useRealtimeReports`, `useRealtimeJobProgress`, `useLiveDuration`)
+- `lib/constants.ts` - Session timeouts, heartbeat intervals, grace periods
 - `lib/types.ts` - All TypeScript types for domain entities
-- `contexts/` - React contexts (`WorkerSessionContext`, `LanguageContext`, `PipelineContext`, `JobProgressContext`)
+- `hooks/` - Page-level hooks (`useTranslation`, `useSessionHeartbeat`, `useIdleSessionCleanup`, `useAdminGuard`, `useSessionBroadcast`)
+- `contexts/` - React contexts (`WorkerSessionContext`, `LanguageContext`, `PipelineContext`, `JobProgressContext`, `AdminSessionsContext`, `NotificationContext`)
 - `components/work/` - Worker session UI components (progress panel, dialogs, pipeline display)
 - `components/worker/` - Worker flow components (job cards, station selection)
 - `components/dialogs/` - Shared dialog components used across worker/admin
+- `components/layout/` - Layout components (page-header)
+- `components/forms/` - Form components (form-section, creatable-combobox)
 - `supabase/migrations/` - Database migrations (run via Supabase CLI)
 - `docs/` - Comprehensive documentation (see `docs/README.md` for index)
 
@@ -228,6 +233,34 @@ Reports are the generalized tracking system (replacing legacy malfunctions). Thr
 - `lib/data/reports.ts` - All report CRUD, grouping functions, and view transformations
 - Status definitions have `report_type` field (`none` | `malfunction` | `general`) to trigger automatic report creation
 
+### Real-Time System
+
+The system uses multiple real-time mechanisms for live updates:
+
+| Mechanism | Use Case | Direction |
+|-----------|----------|-----------|
+| SSE Streams | Admin dashboard updates | Server → Client |
+| Heartbeat | Session keep-alive | Client → Server |
+| Supabase Realtime | Database subscriptions | Server → Client |
+| BroadcastChannel | Multi-tab coordination | Client ↔ Client |
+
+**SSE Stream Endpoints:**
+- `/api/admin/dashboard/active-sessions/stream` - Live session updates for admin dashboard
+- `/api/admin/dashboard/job-progress/stream` - Job progress changes
+- `/api/admin/dashboard/session/[id]/stream` - Single session detail updates
+- `/api/admin/reports/stream` - Report changes (malfunction/general/scrap)
+- `/api/admin/notifications/stream` - Admin notification feed
+- `/api/sessions/pipeline/stream` - Pipeline WIP balance updates for workers
+
+SSE streams use Supabase Realtime subscriptions server-side and emit typed events (`initial`, `update`, `insert`, `delete`) to the client via `EventSource`.
+
+### Admin Notification System
+
+Admin notifications alert when specific conditions are met (e.g., jobs nearing due date, long idle sessions):
+- `/api/admin/notifications/check-due-jobs` - Scans for approaching deadlines
+- `/api/admin/notifications/cleanup` - Removes expired notifications
+- `NotificationContext` provides real-time notification state to admin UI
+
 ### Storage
 Image uploads use service role client via `lib/utils/storage.ts`. Max 5MB, type-validated.
 
@@ -263,7 +296,7 @@ Required:
 
 Migration `20251215112227_enable_rls_policies.sql` enables Row Level Security on all tables. Must run in all environments. API routes use service role to bypass RLS.
 
-## Worker Session Contexts
+## Contexts
 
 **WorkerSessionContext (`contexts/WorkerSessionContext.tsx`):**
 - Manages active session state (worker, station, job item, status)
@@ -281,6 +314,14 @@ Migration `20251215112227_enable_rls_policies.sql` enables Row Level Security on
 - Tracks job-level progress (reported vs remaining)
 - Aggregates across all job items
 - Used by progress panel components
+
+**AdminSessionsContext (`contexts/AdminSessionsContext.tsx`):**
+- Manages real-time session data for admin dashboard
+- Connects to SSE stream for live session updates
+
+**NotificationContext (`contexts/NotificationContext.tsx`):**
+- Provides admin notification state and actions (mark read, dismiss, clear all)
+- Connects to notification SSE stream
 
 ## Key Worker Components
 
@@ -304,6 +345,17 @@ Migration `20251215112227_enable_rls_policies.sql` enables Row Level Security on
 - Shows upstream WIP (products waiting to consume)
 - Shows downstream WIP (products at next station)
 - Highlights current station position
+
+## File Naming Conventions
+
+| Type | Pattern | Example |
+|------|---------|---------|
+| Components | kebab-case `.tsx` | `job-progress-panel.tsx` |
+| Utilities | camelCase `.ts` | `formatTime.ts` |
+| API routes | `route.ts` in directory | `app/api/sessions/route.ts` |
+| Data layer | kebab-case `.ts` | `lib/data/job-items.ts` |
+| Hooks | camelCase `.ts` | `useRealtimeSession.ts` |
+| Migrations | `YYYYMMDDHHMMSS_name.sql` | `20260110123456_add_wip.sql` |
 
 ## Security Notes
 

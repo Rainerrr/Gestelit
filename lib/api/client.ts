@@ -390,6 +390,7 @@ export async function createReportApi(input: {
   image?: File | null;
   workerId?: string;
   statusEventId?: string;
+  skipStatusEventLookup?: boolean;
 }): Promise<Report> {
   const formData = new FormData();
   formData.append("type", input.type);
@@ -416,6 +417,9 @@ export async function createReportApi(input: {
   }
   if (input.statusEventId) {
     formData.append("statusEventId", input.statusEventId);
+  }
+  if (input.skipStatusEventLookup) {
+    formData.append("skipStatusEventLookup", "true");
   }
 
   const response = await fetch("/api/reports", {
