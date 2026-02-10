@@ -1773,15 +1773,21 @@ function WorkPageContent() {
                 {t("work.actions.finishWarning")}
               </CardDescription>
             </CardHeader>
-            <CardContent className="text-right">
+            <CardContent className="space-y-2 text-right">
               <Button
                 type="button"
                 variant="destructive"
                 className="w-full justify-center border-0 bg-rose-600 hover:bg-rose-700"
+                disabled={isInProduction}
                 onClick={() => setEndSessionDialogOpen(true)}
               >
                 {t("work.actions.finish")}
               </Button>
+              {isInProduction && (
+                <p className="text-xs text-muted-foreground">
+                  {t("work.actions.finishBlockedProduction")}
+                </p>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -2068,7 +2074,7 @@ function WorkPageContent() {
                     // Only update UI status after successful atomic operation
                     setCurrentStatus(pendingStatusId);
                   } else {
-                    // No status change - just create the report
+                    // No status change - just create the report (standalone, not linked to status event)
                     await createReportApi({
                       type: "malfunction",
                       stationId: station.id,
@@ -2077,6 +2083,7 @@ function WorkPageContent() {
                       image: faultImage,
                       workerId: worker?.id,
                       sessionId: sessionId,
+                      skipStatusEventLookup: true,
                     });
                   }
 
