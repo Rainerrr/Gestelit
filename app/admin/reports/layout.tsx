@@ -2,37 +2,43 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { AlertTriangle, FileText, Trash2, LayoutList } from "lucide-react";
+import { useState, useEffect } from "react";
+import { AlertTriangle, FileText, PackageX, LayoutList } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AdminLayout } from "../_components/admin-layout";
 import { useAdminGuard } from "@/hooks/useAdminGuard";
+import { fetchReportsCountsAdminApi, type ReportCounts } from "@/lib/api/admin-management";
 
 const reportsTabs = [
   {
     href: "/admin/reports/malfunctions",
     label: "תקלות",
     icon: AlertTriangle,
+    countKey: "malfunction" as keyof ReportCounts,
   },
   {
     href: "/admin/reports/general",
     label: "כלליים",
     icon: FileText,
+    countKey: "general" as keyof ReportCounts,
   },
   {
     href: "/admin/reports/scrap",
     label: "פסולים",
-    icon: Trash2,
+    icon: PackageX,
+    countKey: "scrap" as keyof ReportCounts,
   },
 ];
 
 // Moved outside component to avoid creating during render
-const MobileBottomBar = ({ pathname }: { pathname: string }) => (
+const MobileBottomBar = ({ pathname, reportCounts }: { pathname: string; reportCounts: ReportCounts | null }) => (
   <div className="fixed bottom-0 left-0 right-0 z-50 sm:hidden">
     <div className="border-t border-border/80 bg-card/95 backdrop-blur-md px-2 py-1.5 safe-area-pb">
       <div className="flex items-center justify-around">
         {reportsTabs.map((tab) => {
           const isActive = pathname === tab.href;
           const Icon = tab.icon;
+          const count = reportCounts?.[tab.countKey] ?? 0;
           return (
             <Link
               key={tab.href}
@@ -44,10 +50,17 @@ const MobileBottomBar = ({ pathname }: { pathname: string }) => (
                   : "text-muted-foreground active:bg-accent"
               )}
             >
-              <Icon className={cn(
-                "h-5 w-5",
-                isActive ? "text-primary" : ""
-              )} />
+              <div className="relative">
+                <Icon className={cn(
+                  "h-5 w-5",
+                  isActive ? "text-primary" : ""
+                )} />
+                {count > 0 && (
+                  <span className="absolute -top-1.5 -left-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
+                    {count > 9 ? "9+" : count}
+                  </span>
+                )}
+              </div>
               <span className={cn(
                 "text-[11px] font-medium",
                 isActive ? "text-primary" : ""
@@ -69,6 +82,20 @@ export default function ReportsLayout({
 }) {
   const pathname = usePathname();
   const { hasAccess } = useAdminGuard();
+  const [reportCounts, setReportCounts] = useState<ReportCounts | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchCounts = async () => {
+      try {
+        const { counts } = await fetchReportsCountsAdminApi();
+        if (!cancelled) setReportCounts(counts);
+      } catch { /* badge won't show */ }
+    };
+    void fetchCounts();
+    const interval = setInterval(() => void fetchCounts(), 30000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, []);
 
   // Loading state
   if (hasAccess === null) {
@@ -106,6 +133,7 @@ export default function ReportsLayout({
               {reportsTabs.map((tab) => {
                 const isActive = pathname === tab.href;
                 const Icon = tab.icon;
+                const count = reportCounts?.[tab.countKey] ?? 0;
                 return (
                   <Link
                     key={tab.href}
@@ -122,6 +150,11 @@ export default function ReportsLayout({
                       isActive ? "text-primary" : ""
                     )} />
                     <span>{tab.label}</span>
+                    {count > 0 && (
+                      <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">
+                        {count > 99 ? "99+" : count}
+                      </span>
+                    )}
                   </Link>
                 );
               })}
@@ -132,7 +165,7 @@ export default function ReportsLayout({
           <div className="hidden sm:block shrink-0 w-[100px]" />
         </div>
       }
-      mobileBottomBar={<MobileBottomBar pathname={pathname} />}
+      mobileBottomBar={<MobileBottomBar pathname={pathname} reportCounts={reportCounts} />}
     >
       {/* Page content */}
       {children}

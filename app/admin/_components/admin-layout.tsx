@@ -16,6 +16,7 @@ import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { ChangePasswordDialog } from "./change-password-dialog";
 import { NotificationCenter } from "@/components/notifications/notification-center";
 import { fetchReportsCountsAdminApi } from "@/lib/api/admin-management";
+import { fetchMaintenanceStationsApi } from "@/lib/api/maintenance";
 import { useScrollDirection } from "@/hooks/useScrollDirection";
 import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
@@ -41,26 +42,37 @@ export const AdminLayout = ({ children, header, mobileBottomBar }: AdminLayoutPr
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [pendingReportsCount, setPendingReportsCount] = useState(0);
+  const [pendingMaintenanceCount, setPendingMaintenanceCount] = useState(0);
   const { scrollDirection, isAtTop } = useScrollDirection();
 
   useEffect(() => {
     let cancelled = false;
 
-    const fetchReportsCount = async () => {
+    const fetchCounts = async () => {
       try {
-        const { counts } = await fetchReportsCountsAdminApi();
-        // Total pending = open malfunctions + pending general + pending scrap
+        const [{ counts }, { stations }] = await Promise.all([
+          fetchReportsCountsAdminApi(),
+          fetchMaintenanceStationsApi(),
+        ]);
         if (!cancelled) {
           setPendingReportsCount(counts.total);
+          const maintenanceCount = stations.reduce(
+            (sum, s) =>
+              sum +
+              s.services.filter(
+                (sv) => sv.maintenance_status === "overdue" || sv.maintenance_status === "due_soon"
+              ).length,
+            0
+          );
+          setPendingMaintenanceCount(maintenanceCount);
         }
       } catch {
-        // Silently fail - badge just won't show
+        // Silently fail - badges just won't show
       }
     };
 
-    void fetchReportsCount();
-    // Refresh count every 30 seconds
-    const interval = setInterval(() => void fetchReportsCount(), 30000);
+    void fetchCounts();
+    const interval = setInterval(() => void fetchCounts(), 30000);
     return () => {
       cancelled = true;
       clearInterval(interval);
@@ -94,6 +106,7 @@ export const AdminLayout = ({ children, header, mobileBottomBar }: AdminLayoutPr
     }
 
     const showReportsBadge = item.href === "/admin/reports" && pendingReportsCount > 0;
+    const showMaintenanceBadge = item.href === "/admin/maintenance" && pendingMaintenanceCount > 0;
 
     return (
       <Link
@@ -109,7 +122,7 @@ export const AdminLayout = ({ children, header, mobileBottomBar }: AdminLayoutPr
       >
         <div className="relative">
           <Icon className={`h-4 w-4 transition-colors ${isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground"}`} />
-          {showReportsBadge && (
+          {(showReportsBadge || showMaintenanceBadge) && (
             <span className="absolute -top-1 -left-1 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-card" />
           )}
         </div>
