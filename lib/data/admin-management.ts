@@ -85,8 +85,7 @@ type StationInput = {
   end_checklist?: StationChecklistItem[] | null;
   // Maintenance tracking fields
   maintenance_enabled?: boolean;
-  maintenance_last_date?: string | null;
-  maintenance_interval_days?: number | null;
+  maintenance_services?: unknown[];
 };
 
 type StationUpdateInput = Partial<StationInput>;
@@ -248,7 +247,7 @@ export async function fetchAllStations(options?: {
   let query = supabase
     .from("stations")
     .select(
-      "id, name, code, station_type, is_active, start_checklist, end_checklist, station_reasons, maintenance_enabled, maintenance_last_date, maintenance_interval_days, created_at, updated_at, worker_stations(count), sessions(count)",
+      "id, name, code, station_type, is_active, start_checklist, end_checklist, station_reasons, maintenance_enabled, maintenance_services, created_at, updated_at, worker_stations(count), sessions(count)",
     )
     .order("name", { ascending: true });
 
@@ -286,8 +285,7 @@ export async function fetchAllStations(options?: {
       end_checklist: row.end_checklist,
       station_reasons: mergeStationReasonsWithDefault(row.station_reasons),
       maintenance_enabled: row.maintenance_enabled ?? false,
-      maintenance_last_date: row.maintenance_last_date ?? null,
-      maintenance_interval_days: row.maintenance_interval_days ?? null,
+      maintenance_services: row.maintenance_services ?? [],
       created_at: row.created_at,
       updated_at: row.updated_at,
     },
@@ -464,12 +462,11 @@ export async function createStation(payload: StationInput): Promise<Station> {
       station_type: stationType,
       is_active: payload.is_active ?? true,
       station_reasons: stationReasons,
-      start_checklist: startChecklist ?? null,
-      end_checklist: endChecklist ?? null,
+      start_checklist: startChecklist ?? [],
+      end_checklist: endChecklist ?? [],
       // Maintenance tracking fields
       maintenance_enabled: payload.maintenance_enabled ?? false,
-      maintenance_last_date: payload.maintenance_last_date ?? null,
-      maintenance_interval_days: payload.maintenance_interval_days ?? null,
+      maintenance_services: payload.maintenance_services ?? [],
     })
     .select("*")
     .maybeSingle();
@@ -538,14 +535,10 @@ export async function updateStation(id: string, payload: StationUpdateInput): Pr
     payload.maintenance_enabled !== undefined
       ? payload.maintenance_enabled
       : current.maintenance_enabled ?? false;
-  const maintenanceLastDate =
-    payload.maintenance_last_date !== undefined
-      ? payload.maintenance_last_date
-      : current.maintenance_last_date ?? null;
-  const maintenanceIntervalDays =
-    payload.maintenance_interval_days !== undefined
-      ? payload.maintenance_interval_days
-      : current.maintenance_interval_days ?? null;
+  const maintenanceServices =
+    payload.maintenance_services !== undefined
+      ? payload.maintenance_services
+      : (current as Record<string, unknown>).maintenance_services ?? [];
 
   const { data, error } = await supabase
     .from("stations")
@@ -559,8 +552,7 @@ export async function updateStation(id: string, payload: StationUpdateInput): Pr
       end_checklist: endChecklist ?? null,
       // Maintenance tracking fields
       maintenance_enabled: maintenanceEnabled,
-      maintenance_last_date: maintenanceEnabled ? maintenanceLastDate : null,
-      maintenance_interval_days: maintenanceEnabled ? maintenanceIntervalDays : null,
+      maintenance_services: maintenanceEnabled ? maintenanceServices : [],
     })
     .eq("id", id)
     .select("*")

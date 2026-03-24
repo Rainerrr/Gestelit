@@ -16,8 +16,8 @@ import {
  *    job_item_id, and job_item_step_id (records production context)
  * 2. Creates new status event for the next status
  * 3. Updates sessions.current_status_id
- * 4. Updates WIP balances via update_session_quantities_atomic_v5
- *    (uses optimistic locking for better concurrency)
+ * 4. Updates WIP balances via update_session_quantities_v6
+ *    (independent reporting, no upstream consumption)
  */
 
 type EndProductionPayload = {
@@ -59,7 +59,7 @@ export async function POST(request: Request) {
     const supabase = createServiceSupabase();
 
     // Call the atomic RPC function
-    const { data, error } = await supabase.rpc("end_production_status_atomic", {
+    const { data, error } = await supabase.rpc("end_production_status_atomic_v2", {
       p_session_id: body.sessionId,
       p_status_event_id: body.statusEventId,
       p_quantity_good: body.quantityGood,
@@ -93,7 +93,7 @@ export async function POST(request: Request) {
           { status: 400 }
         );
       }
-      // Handle WIP update errors from update_session_quantities_atomic_v5
+      // Handle WIP update errors from update_session_quantities_v6
       if (error.message.includes("WIP_UPDATE_FAILED: CONCURRENT_MODIFICATION")) {
         return NextResponse.json(
           {

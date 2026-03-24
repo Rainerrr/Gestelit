@@ -3,33 +3,15 @@
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Briefcase,
-  CheckCircle2,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
-  ChevronUp,
-  Factory,
   Package,
-  Zap,
-  User,
 } from "lucide-react";
+import { JobItemProgressCard, type StationProgressData } from "@/components/work/job-item-progress-card";
 import { useRealtimeJobProgress } from "@/lib/hooks/useRealtimeJobProgress";
 import { useAdminActiveJobsSummary } from "@/contexts/AdminSessionsContext";
 import type { LiveJobProgress as LiveJobProgressData, WipStationData, LiveJobItemAssignment } from "@/lib/types";
 
-// Gradient colors based on position (red -> orange -> yellow -> lime -> green)
-const getSegmentStyle = (idx: number, total: number, isTerminal: boolean) => {
-  if (isTerminal || total <= 1) {
-    return { bg: "bg-emerald-500", color: "#10b981" };
-  }
-  const ratio = idx / Math.max(1, total - 1);
-
-  if (ratio <= 0.2) return { bg: "bg-red-500", color: "#ef4444" };
-  if (ratio <= 0.4) return { bg: "bg-orange-500", color: "#f97316" };
-  if (ratio <= 0.6) return { bg: "bg-amber-500", color: "#f59e0b" };
-  if (ratio <= 0.8) return { bg: "bg-lime-500", color: "#84cc16" };
-  return { bg: "bg-green-500", color: "#22c55e" };
-};
 
 type LiveJobProgressProps = {
   className?: string;
@@ -119,6 +101,21 @@ const LiveJobProgressComponent = ({ className }: LiveJobProgressProps) => {
     return [...mergedJobs].sort(
       (a, b) => b.activeSessionCount - a.activeSessionCount
     );
+  }, [mergedJobs]);
+
+  // Seed collapsed state for completed items on first meaningful load
+  useEffect(() => {
+    if (mergedJobs.length === 0) return;
+    const completedIds = new Set<string>();
+    for (const job of mergedJobs) {
+      for (const item of job.jobItems) {
+        const total = (item.completedGood || 0) + (item.completedScrap || 0);
+        if (item.plannedQuantity > 0 && total >= item.plannedQuantity) {
+          completedIds.add(item.jobItem.id);
+        }
+      }
+    }
+    setCollapsedItems((prev) => (prev.size === 0 && completedIds.size > 0 ? completedIds : prev));
   }, [mergedJobs]);
 
   // Keep current index in bounds when jobs change
@@ -349,277 +346,41 @@ const LiveJobProgressComponent = ({ className }: LiveJobProgressProps) => {
         {[...job.jobItems]
           .map((assignment) => {
             const plannedQty = assignment.plannedQuantity || 0;
-            const completedQty = assignment.completedGood || 0;
-            const isComplete = plannedQty > 0 && completedQty >= plannedQty;
-            return { assignment, isComplete };
+            const completedGood = assignment.completedGood || 0;
+            const completedScrap = assignment.completedScrap || 0;
+            const totalCompleted = completedGood + completedScrap;
+            const isComplete = plannedQty > 0 && totalCompleted >= plannedQty;
+            return { assignment, isComplete, completedGood, completedScrap };
           })
           .sort((a, b) => (a.isComplete === b.isComplete ? 0 : a.isComplete ? 1 : -1))
-          .map(({ assignment, isComplete }) => {
-          // Post Phase 5: all items are pipelines, determine multi-station by step count
-          const wipDistribution = assignment.wipDistribution || [];
-          const isMultiStation = wipDistribution.length > 1;
-          const isSingleStation = wipDistribution.length === 1;
-          const plannedQuantity = assignment.plannedQuantity || 0;
-          // Use terminal station's WIP as completed count (they're the same thing)
-          const terminalWip = wipDistribution.find((w) => w.isTerminal);
-          const completedGood = terminalWip?.goodAvailable ?? 0;
-          // Total WIP across all stations
-          const totalWip = wipDistribution.reduce((sum, w) => sum + w.goodAvailable, 0);
-          const completionPercent = plannedQuantity > 0
-            ? Math.min(100, Math.round((completedGood / plannedQuantity) * 100))
-            : 0;
+          .map(({ assignment, completedGood, completedScrap }) => {
+            const wipDistribution = assignment.wipDistribution || [];
+            const stations: StationProgressData[] = wipDistribution.map((wip) => ({
+              stepId: wip.jobItemStepId,
+              stationName: wip.stationName,
+              position: wip.position,
+              isTerminal: wip.isTerminal,
+              goodReported: wip.goodReported,
+              scrapReported: wip.scrapReported,
+              hasActiveSession: wip.hasActiveSession,
+              activeWorkers: (wip as WipStationData & { activeWorkers?: string[] }).activeWorkers ?? [],
+            }));
 
-          // Find bottleneck for production lines (highest WIP excluding terminal)
-          const nonTerminalWip = wipDistribution.filter((w) => !w.isTerminal);
-          const maxWip = Math.max(0, ...nonTerminalWip.map((w) => w.goodAvailable));
-          const bottleneckIdx = maxWip > 0
-            ? wipDistribution.findIndex((w) => !w.isTerminal && w.goodAvailable === maxWip)
-            : -1;
-
-          // Check if this item is collapsed
-          const isCollapsed = collapsedItems.has(assignment.jobItem.id);
-
-          return (
-            <div
-              key={assignment.jobItem.id}
-              className={`space-y-3 border-t border-border pt-3 first:border-t-0 first:pt-0 rounded-lg transition-all ${
-                isComplete ? "bg-emerald-500/5 border border-emerald-500/20 p-3 -mx-1" : ""
-              }`}
-            >
-              {/* Assignment Header */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div
-                    className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                      isComplete
-                        ? "bg-emerald-500/30 border border-emerald-500/50"
-                        : isMultiStation
-                        ? "bg-blue-500/20 border border-blue-500/30"
-                        : "bg-emerald-500/20 border border-emerald-500/30"
-                    }`}
-                  >
-                    {isComplete ? (
-                      <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                    ) : isMultiStation ? (
-                      <Factory className="h-4 w-4 text-blue-400" />
-                    ) : (
-                      <Zap className="h-4 w-4 text-emerald-400" />
-                    )}
-                  </div>
-                  <div className="text-sm">
-                    <span className={isComplete ? "text-emerald-400 font-medium" : isMultiStation ? "text-blue-400 font-medium" : "text-emerald-400 font-medium"}>
-                      {assignment.jobItem.name || assignment.jobItem.pipeline_preset?.name || "מוצר"}
-                    </span>
-                    {isComplete && (
-                      <span className="mr-2 text-[10px] text-emerald-500 bg-emerald-500/20 px-1.5 py-0.5 rounded">
-                        הושלם
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="text-left">
-                    <div className={`text-lg font-bold font-mono ${isComplete ? "text-emerald-400" : "text-emerald-400"}`}>
-                      {showPercentages ? `${completionPercent}%` : completedGood.toLocaleString()}
-                    </div>
-                    <div className="text-[9px] text-muted-foreground">
-                      {showPercentages ? "הושלם" : `מתוך ${plannedQuantity.toLocaleString()}`}
-                    </div>
-                  </div>
-                  {/* Collapse toggle for completed items */}
-                  {isComplete && (
-                    <button
-                      type="button"
-                      onClick={() => toggleCollapsed(assignment.jobItem.id)}
-                      className="p-1 rounded hover:bg-accent transition-colors"
-                      aria-label={isCollapsed ? "הרחב" : "צמצם"}
-                    >
-                      {isCollapsed ? (
-                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                      ) : (
-                        <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                      )}
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Single Station - Simple Progress Bar (hide when collapsed) */}
-              {isSingleStation && !isCollapsed && (
-                <div className="h-12 rounded-xl overflow-hidden bg-muted/50 flex items-center">
-                  <div
-                    className={`h-full flex items-center justify-center transition-all relative ${
-                      isComplete ? "bg-emerald-500" : "bg-emerald-500"
-                    }`}
-                    style={{ width: `${completionPercent}%`, minWidth: completionPercent > 0 ? "60px" : "0" }}
-                  >
-                    {completionPercent > 0 && (
-                      <span className="text-sm font-bold font-mono text-white drop-shadow-md">
-                        {showPercentages ? `${completionPercent}%` : completedGood.toLocaleString()}
-                      </span>
-                    )}
-                  </div>
-                  {completionPercent < 100 && (
-                    <div className="flex-1 h-full flex items-center justify-center">
-                      <span className="text-[10px] text-muted-foreground font-mono">
-                        {showPercentages
-                          ? `${100 - completionPercent}% נותרו`
-                          : `${(plannedQuantity - completedGood).toLocaleString()} נותרו`}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Production Line / Pipeline - Segmented Bar (hide when collapsed) */}
-              {isMultiStation && wipDistribution.length > 0 && !isCollapsed && (
-                <div className="space-y-3">
-                  {/* Segmented Progress Bar - Each station's WIP as percentage of planned quantity */}
-                  <div className="h-12 rounded-xl overflow-hidden bg-muted/50 flex">
-                    {/* WIP segments for all stations (terminal = completed, others = in-progress) */}
-                    {wipDistribution
-                      .filter((wip) => wip.goodAvailable > 0)
-                      .map((wip) => {
-                        const idx = wipDistribution.indexOf(wip);
-                        const segmentStyle = getSegmentStyle(idx, wipDistribution.length, wip.isTerminal);
-                        const isBottleneck = idx === bottleneckIdx && maxWip > 0;
-                        const stagePercent = plannedQuantity > 0 ? (wip.goodAvailable / plannedQuantity) * 100 : 0;
-
-                        return (
-                          <div
-                            key={wip.jobItemStepId}
-                            className={`h-full flex items-center justify-center relative transition-all ${segmentStyle.bg} ${
-                              isBottleneck ? "ring-2 ring-white/50 ring-inset" : ""
-                            }`}
-                            style={{
-                              width: `${stagePercent}%`,
-                              minWidth: "50px",
-                            }}
-                          >
-                            <div className="flex flex-col items-center justify-center px-1">
-                              <span className="text-[10px] font-medium truncate max-w-full drop-shadow-sm text-white/90">
-                                {wip.stationName}
-                              </span>
-                              <span className="text-sm font-bold font-mono text-white drop-shadow-md">
-                                {showPercentages
-                                  ? `${Math.round(stagePercent)}%`
-                                  : wip.goodAvailable.toLocaleString()}
-                              </span>
-                            </div>
-                            {isBottleneck && (
-                              <div className="absolute top-1 right-1 w-2 h-2 rounded-full bg-white animate-pulse" />
-                            )}
-                            {idx < wipDistribution.length - 1 && (
-                              <div className="absolute left-0 top-0 bottom-0 w-px bg-black/30" />
-                            )}
-                          </div>
-                        );
-                      })}
-
-                    {/* Remaining space - products not yet in pipeline */}
-                    {totalWip < plannedQuantity && (
-                      <div className="h-full flex items-center justify-center flex-1" style={{ minWidth: "40px" }}>
-                        <span className="text-[10px] text-muted-foreground font-mono">
-                          {showPercentages
-                            ? `${Math.round(((plannedQuantity - totalWip) / plannedQuantity) * 100)}% נותרו`
-                            : `${(plannedQuantity - completedGood).toLocaleString()} נותרו`}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Station Legend - More prominent with worker names */}
-                  <div className="bg-muted/50 rounded-lg p-3">
-                    <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
-                      {wipDistribution.map((wip, idx) => {
-                        const segmentStyle = getSegmentStyle(idx, wipDistribution.length, wip.isTerminal);
-                        const activeWorkers = (wip as WipStationData & { activeWorkers?: string[] }).activeWorkers ?? [];
-                        const hasActiveWorkers = activeWorkers.length > 0;
-
-                        return (
-                          <div key={wip.jobItemStepId} className="flex items-center gap-2">
-                            {/* Station indicator with pulse */}
-                            <div className="flex items-center gap-1.5">
-                              <div className="relative w-3 h-3 flex items-center justify-center">
-                                {wip.hasActiveSession && (
-                                  <span
-                                    className="absolute w-3 h-3 rounded-full animate-ping opacity-75"
-                                    style={{ backgroundColor: segmentStyle.color }}
-                                  />
-                                )}
-                                <span
-                                  className="relative w-2.5 h-2.5 rounded-full"
-                                  style={{ backgroundColor: segmentStyle.color }}
-                                />
-                              </div>
-                              <span className={`text-xs font-medium ${
-                                wip.hasActiveSession ? "text-foreground" : "text-muted-foreground"
-                              }`}>
-                                {wip.stationName}
-                              </span>
-                            </div>
-
-                            {/* Worker names for active stations */}
-                            {hasActiveWorkers && (
-                              <div className="flex items-center gap-1 bg-accent rounded px-1.5 py-0.5">
-                                <User className="w-3 h-3 text-emerald-400" />
-                                <span className="text-[10px] text-emerald-300 font-medium">
-                                  {activeWorkers.join(", ")}
-                                </span>
-                              </div>
-                            )}
-
-                            {/* Arrow separator */}
-                            {idx < wipDistribution.length - 1 && (
-                              <ChevronLeft className="h-3 w-3 text-muted-foreground/50 mx-0.5" />
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Single Station Legend (hide when collapsed) */}
-              {isSingleStation && wipDistribution.length > 0 && !isCollapsed && (
-                <div className="bg-muted/50 rounded-lg p-3">
-                  <div className="flex items-center gap-3">
-                    {wipDistribution.map((wip) => {
-                      const activeWorkers = (wip as WipStationData & { activeWorkers?: string[] }).activeWorkers ?? [];
-                      const hasActiveWorkers = activeWorkers.length > 0;
-
-                      return (
-                        <div key={wip.jobItemStepId} className="flex items-center gap-2">
-                          <div className="relative w-3 h-3 flex items-center justify-center">
-                            {wip.hasActiveSession && (
-                              <span className="absolute w-3 h-3 rounded-full bg-emerald-500 animate-ping opacity-75" />
-                            )}
-                            <span className="relative w-2.5 h-2.5 rounded-full bg-emerald-500" />
-                          </div>
-                          <span className={`text-xs font-medium ${
-                            wip.hasActiveSession ? "text-foreground" : "text-muted-foreground"
-                          }`}>
-                            {wip.stationName}
-                          </span>
-
-                          {hasActiveWorkers && (
-                            <div className="flex items-center gap-1 bg-accent rounded px-1.5 py-0.5">
-                              <User className="w-3 h-3 text-emerald-400" />
-                              <span className="text-[10px] text-emerald-300 font-medium">
-                                {activeWorkers.join(", ")}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })}
+            return (
+              <JobItemProgressCard
+                key={assignment.jobItem.id}
+                id={assignment.jobItem.id}
+                name={assignment.jobItem.name || assignment.jobItem.pipeline_preset?.name || "מוצר"}
+                plannedQuantity={assignment.plannedQuantity || 0}
+                completedGood={completedGood}
+                completedScrap={completedScrap}
+                stations={stations}
+                showPercentages={showPercentages}
+                isCollapsed={collapsedItems.has(assignment.jobItem.id)}
+                onToggleCollapsed={toggleCollapsed}
+              />
+            );
+          })}
       </div>
     </div>
   );

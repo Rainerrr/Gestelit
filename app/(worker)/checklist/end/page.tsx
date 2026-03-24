@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useReducer, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Trash2, CheckCircle2 } from "lucide-react";
+import { PackageX, CheckCircle2 } from "lucide-react";
 import { ChecklistItemsList } from "@/components/checklists/checklist-items";
 import { FormSection } from "@/components/forms/form-section";
 import { PageHeader } from "@/components/layout/page-header";
@@ -249,7 +249,7 @@ export default function ClosingChecklistPage() {
           <div className="rounded-xl border border-amber-500/30 bg-amber-50 p-4 text-right dark:border-amber-500/30 dark:bg-amber-500/10">
             <div className="flex items-start gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-500/20 dark:bg-amber-500/20">
-                <Trash2 className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                <PackageX className="h-5 w-5 text-amber-600 dark:text-amber-400" />
               </div>
               <div className="flex-1 space-y-2">
                 <div className="flex items-center justify-between gap-2">
@@ -283,7 +283,7 @@ export default function ClosingChecklistPage() {
                     onClick={() => setScrapReportDialogOpen(true)}
                     className="mt-2 border-amber-500/50 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 dark:text-amber-400"
                   >
-                    <Trash2 className="h-4 w-4 ml-2" />
+                    <PackageX className="h-4 w-4 ml-2" />
                     {t("checklist.scrap.fillReport")}
                   </Button>
                 ) : null}

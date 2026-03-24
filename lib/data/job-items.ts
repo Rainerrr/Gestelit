@@ -367,7 +367,8 @@ export async function createJobItem(
       const wipBalances = (insertedSteps ?? []).map((step) => ({
         job_item_id: jobItem.id,
         job_item_step_id: step.id,
-        good_available: 0,
+        good_reported: 0,
+        scrap_reported: 0,
       }));
 
       const { error: wipError } = await supabase
@@ -386,6 +387,7 @@ export async function createJobItem(
         .insert({
           job_item_id: jobItem.id,
           completed_good: 0,
+          completed_scrap: 0,
         });
 
       if (progressError) {
@@ -495,7 +497,7 @@ export async function deleteJobItem(id: string): Promise<void> {
 
   const supabase = createServiceSupabase();
 
-  // CASCADE will handle job_item_stations, wip_balances, wip_consumptions
+  // CASCADE will handle job_item_steps, wip_balances
   const { error } = await supabase.from("job_items").delete().eq("id", id);
 
   if (error) {
@@ -780,29 +782,7 @@ export async function getAvailableJobsForStation(
     return [];
   }
 
-  // Get per-step progress to filter out completed steps
-  const stepIds = data.map((row) => {
-    const typedRow = row as unknown as { id: string };
-    return typedRow.id;
-  });
-
-  const { data: totalsData, error: totalsError } = await supabase
-    .from("status_events")
-    .select("job_item_step_id, quantity_good")
-    .in("job_item_step_id", stepIds)
-    .gt("quantity_good", 0);
-
-  if (totalsError) {
-    throw new Error(`Failed to fetch quantity totals: ${totalsError.message}`);
-  }
-
-  const completedByStep = new Map<string, number>();
-  for (const event of totalsData ?? []) {
-    const current = completedByStep.get(event.job_item_step_id) ?? 0;
-    completedByStep.set(event.job_item_step_id, current + (event.quantity_good ?? 0));
-  }
-
-  // Group by job, only counting items where this step is not yet completed
+  // Group by job - no completion filtering (job items never auto-hide)
   type JobRow = { id: string; job_number: string; customer_name: string | null; description: string | null };
   const jobMap = new Map<string, { job: JobRow; itemCount: number }>();
 
@@ -818,10 +798,6 @@ export async function getAvailableJobsForStation(
     };
 
     if (!typedRow.job_items.jobs) continue;
-
-    // Skip if this step is already completed
-    const completedGood = completedByStep.get(typedRow.id) ?? 0;
-    if (completedGood >= typedRow.job_items.planned_quantity) continue;
 
     const jobId = typedRow.job_items.jobs.id;
     const existing = jobMap.get(jobId);
@@ -847,9 +823,8 @@ export type AvailableJobItem = {
   name: string;
   plannedQuantity: number;
   completedGood: number;
+  completedScrap: number;
   remaining: number;
-  /** @deprecated Use jobItemStepId */
-  jobItemStationId: string;
   jobItemStepId: string;
 };
 
@@ -902,9 +877,9 @@ export async function getJobItemsForStationAndJob(
   // Fetch completed quantities from status_events filtered by step ID (per-step progress)
   const { data: totalsData, error: totalsError } = await supabase
     .from("status_events")
-    .select("job_item_step_id, quantity_good")
+    .select("job_item_step_id, quantity_good, quantity_scrap")
     .in("job_item_step_id", stepIds)
-    .gt("quantity_good", 0);
+    .or("quantity_good.gt.0,quantity_scrap.gt.0");
 
   if (totalsError) {
     throw new Error(`Failed to fetch quantity totals: ${totalsError.message}`);
@@ -912,11 +887,15 @@ export async function getJobItemsForStationAndJob(
 
   // Sum quantities per step (per-station progress, not global)
   const completedByStep = new Map<string, number>();
+  const scrapByStep = new Map<string, number>();
   for (const event of totalsData ?? []) {
-    const current = completedByStep.get(event.job_item_step_id) ?? 0;
-    completedByStep.set(event.job_item_step_id, current + (event.quantity_good ?? 0));
+    const currentGood = completedByStep.get(event.job_item_step_id) ?? 0;
+    completedByStep.set(event.job_item_step_id, currentGood + (event.quantity_good ?? 0));
+    const currentScrap = scrapByStep.get(event.job_item_step_id) ?? 0;
+    scrapByStep.set(event.job_item_step_id, currentScrap + (event.quantity_scrap ?? 0));
   }
 
+  // No completion filter - job items never auto-hide
   return data
     .map((row) => {
       const typedRow = row as unknown as {
@@ -934,6 +913,7 @@ export async function getJobItemsForStationAndJob(
       const item = typedRow.job_items;
       // Per-step completed: only what THIS station has reported
       const completedGood = completedByStep.get(typedRow.id) ?? 0;
+      const completedScrap = scrapByStep.get(typedRow.id) ?? 0;
       const name = item.name || item.pipeline_presets?.name || "מוצר";
 
       return {
@@ -942,12 +922,11 @@ export async function getJobItemsForStationAndJob(
         name,
         plannedQuantity: item.planned_quantity,
         completedGood,
-        remaining: Math.max(0, item.planned_quantity - completedGood),
-        jobItemStationId: typedRow.id,
+        completedScrap,
+        remaining: Math.max(0, item.planned_quantity - completedGood - completedScrap),
         jobItemStepId: typedRow.id,
       };
-    })
-    .filter((item) => item.remaining > 0);
+    });
 }
 
 // ============================================
@@ -1017,9 +996,9 @@ export async function getJobItemCountsByStation(
 
   const { data: totalsData, error: totalsError } = await supabase
     .from("status_events")
-    .select("job_item_step_id, quantity_good")
+    .select("job_item_step_id, quantity_good, quantity_scrap")
     .in("job_item_step_id", stepIds)
-    .gt("quantity_good", 0);
+    .or("quantity_good.gt.0,quantity_scrap.gt.0");
 
   if (totalsError) {
     throw new Error(`Failed to fetch quantity totals: ${totalsError.message}`);
@@ -1027,9 +1006,12 @@ export async function getJobItemCountsByStation(
 
   // Sum quantities per step (per-station progress)
   const completedByStep = new Map<string, number>();
+  const scrapByStep = new Map<string, number>();
   for (const event of totalsData ?? []) {
-    const current = completedByStep.get(event.job_item_step_id) ?? 0;
-    completedByStep.set(event.job_item_step_id, current + (event.quantity_good ?? 0));
+    const currentGood = completedByStep.get(event.job_item_step_id) ?? 0;
+    completedByStep.set(event.job_item_step_id, currentGood + (event.quantity_good ?? 0));
+    const currentScrap = scrapByStep.get(event.job_item_step_id) ?? 0;
+    scrapByStep.set(event.job_item_step_id, currentScrap + (event.quantity_scrap ?? 0));
   }
 
   // 4. Count uncompleted items per station
@@ -1040,7 +1022,7 @@ export async function getJobItemCountsByStation(
     countMap.set(stationId, 0);
   }
 
-  // Count items where this step's completed < planned
+  // Count items where this step's completed (good + scrap) < planned
   for (const row of data) {
     const typedRow = row as unknown as {
       id: string;
@@ -1052,10 +1034,11 @@ export async function getJobItemCountsByStation(
     };
 
     const completedGood = completedByStep.get(typedRow.id) ?? 0;
+    const completedScrap = scrapByStep.get(typedRow.id) ?? 0;
     const plannedQuantity = typedRow.job_items.planned_quantity;
 
-    // Only count if this station's step is not completed
-    if (completedGood < plannedQuantity) {
+    // Completion now includes scrap: good + scrap >= planned
+    if ((completedGood + completedScrap) < plannedQuantity) {
       const current = countMap.get(typedRow.station_id) ?? 0;
       countMap.set(typedRow.station_id, current + 1);
     }
@@ -1081,6 +1064,7 @@ export async function getJobItemsAtStation(
   name: string;
   plannedQuantity: number;
   completedGood: number;
+  completedScrap: number;
   jobItemStepId: string;
 }[]> {
   const supabase = createServiceSupabase();
@@ -1117,9 +1101,9 @@ export async function getJobItemsAtStation(
 
   const { data: totalsData, error: totalsError } = await supabase
     .from("status_events")
-    .select("job_item_step_id, quantity_good")
+    .select("job_item_step_id, quantity_good, quantity_scrap")
     .in("job_item_step_id", stepIds)
-    .gt("quantity_good", 0);
+    .or("quantity_good.gt.0,quantity_scrap.gt.0");
 
   if (totalsError) {
     throw new Error(`Failed to fetch quantity totals: ${totalsError.message}`);
@@ -1127,11 +1111,15 @@ export async function getJobItemsAtStation(
 
   // Sum quantities per step (per-station progress)
   const completedByStep = new Map<string, number>();
+  const scrapByStep = new Map<string, number>();
   for (const event of totalsData ?? []) {
-    const current = completedByStep.get(event.job_item_step_id) ?? 0;
-    completedByStep.set(event.job_item_step_id, current + (event.quantity_good ?? 0));
+    const currentGood = completedByStep.get(event.job_item_step_id) ?? 0;
+    completedByStep.set(event.job_item_step_id, currentGood + (event.quantity_good ?? 0));
+    const currentScrap = scrapByStep.get(event.job_item_step_id) ?? 0;
+    scrapByStep.set(event.job_item_step_id, currentScrap + (event.quantity_scrap ?? 0));
   }
 
+  // No completion filter - job items never auto-hide
   return data
     .map((row) => {
       const typedRow = row as unknown as {
@@ -1147,6 +1135,7 @@ export async function getJobItemsAtStation(
 
       const item = typedRow.job_items;
       const completedGood = completedByStep.get(typedRow.id) ?? 0;
+      const completedScrap = scrapByStep.get(typedRow.id) ?? 0;
       return {
         id: item.id,
         jobId: item.job_id,
@@ -1155,10 +1144,10 @@ export async function getJobItemsAtStation(
         name: item.name,
         plannedQuantity: item.planned_quantity,
         completedGood,
+        completedScrap,
         jobItemStepId: typedRow.id,
       };
-    })
-    .filter((item) => item.completedGood < item.plannedQuantity);
+    });
 }
 
 // ============================================
@@ -1305,7 +1294,6 @@ export async function fetchJobItemsForStationSelection(
           isOccupied: false,
           isGracePeriod: false,
         },
-        jobItemStationId: jis.id,
         jobItemStepId: jis.id,
       }));
 

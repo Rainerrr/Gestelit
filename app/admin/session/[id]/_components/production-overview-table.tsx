@@ -1,9 +1,10 @@
 "use client";
 
 import { useMemo } from "react";
-import { Clock, Trash2 } from "lucide-react";
+import { Clock, Package, PackageX } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { JobProgressBar } from "@/components/work/job-progress-bar";
 import type { ProductionPeriod } from "@/app/api/admin/dashboard/session/[id]/route";
 
 type ProductionOverviewTableProps = {
@@ -29,72 +30,6 @@ const formatDuration = (startedAt: string, endedAt: string | null) => {
   return `${minutes} דק׳`;
 };
 
-/**
- * Dual-color progress bar matching the work page style.
- * Shows prior sessions (emerald) + this session (cyan).
- */
-function DualProgressBar({
-  totalCompleted,
-  sessionContribution,
-  plannedQuantity,
-}: {
-  totalCompleted: number;
-  sessionContribution: number;
-  plannedQuantity: number;
-}) {
-  const { priorPercent, sessionPercent } = useMemo(() => {
-    const safePlanned = Math.max(1, plannedQuantity);
-    const safeTotal = Math.min(totalCompleted, safePlanned);
-    const safeSession = Math.min(sessionContribution, safeTotal);
-
-    const prior = Math.max(0, safeTotal - safeSession);
-    const priorPct = (prior / safePlanned) * 100;
-    const sessionPct = (safeSession / safePlanned) * 100;
-
-    return {
-      priorPercent: priorPct,
-      sessionPercent: sessionPct,
-    };
-  }, [totalCompleted, sessionContribution, plannedQuantity]);
-
-  const isComplete = totalCompleted >= plannedQuantity;
-
-  return (
-    <div
-      className={cn(
-        "relative w-full h-3 overflow-hidden rounded-full",
-        "border border-border bg-muted/50"
-      )}
-    >
-      {/* Prior Sessions Segment - emerald - RTL: anchored to right */}
-      {priorPercent > 0 && (
-        <div
-          className="absolute inset-y-0 right-0 bg-gradient-to-l from-emerald-400 to-emerald-600 transition-all duration-500"
-          style={{ width: `${priorPercent}%` }}
-        />
-      )}
-
-      {/* This Session Segment - cyan with glow - RTL: positioned after prior from right */}
-      {sessionPercent > 0 && (
-        <div
-          className={cn(
-            "absolute inset-y-0 bg-gradient-to-l from-cyan-400 to-cyan-600",
-            "shadow-[0_0_8px_rgba(6,182,212,0.5)] transition-all duration-500"
-          )}
-          style={{
-            right: `${priorPercent}%`,
-            width: `${sessionPercent}%`,
-          }}
-        />
-      )}
-
-      {/* Completion shimmer */}
-      {isComplete && (
-        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer" />
-      )}
-    </div>
-  );
-}
 
 export const ProductionOverviewTable = ({
   productionPeriods,
@@ -119,18 +54,18 @@ export const ProductionOverviewTable = ({
               התקדמות
             </th>
             <th className="px-4 py-3 text-center text-xs font-medium text-muted-foreground">
-              זמנים
+              ייצור במשמרת
             </th>
             <th className="px-4 py-3 text-center text-xs font-medium text-muted-foreground">
-              פסולים
+              זמנים
             </th>
           </tr>
         </thead>
         <tbody>
           {productionPeriods.map((period, idx) => {
-            // Always use per-step totals (scoped to this pipeline step)
-            const displayTotal = period.stepTotalGood;
-            const isComplete = displayTotal >= period.plannedQuantity;
+            // Total produced = good + scrap at this step across all sessions
+            const totalProduced = period.stepTotalGood + (period.stepTotalScrap ?? 0);
+            const isComplete = totalProduced >= period.plannedQuantity;
 
             return (
               <tr
@@ -171,34 +106,64 @@ export const ProductionOverviewTable = ({
 
                 {/* Progress - dual bar with text overlay */}
                 <td className="px-4 py-3">
-                  <div className="flex flex-col items-center gap-2 min-w-[140px]">
-                    {/* Text: total / planned with (+session) */}
-                    <div className="flex items-baseline gap-1.5 flex-wrap justify-center">
+                  <div className="flex flex-col items-center gap-2 min-w-[200px] w-full">
+                    {/* Text: produced +scrap / required (LTR) */}
+                    <div dir="ltr" className="flex items-baseline gap-1.5 flex-wrap justify-center">
                       <span
                         className={cn(
                           "text-lg font-bold tabular-nums",
                           isComplete ? "text-emerald-400" : "text-foreground"
                         )}
                       >
-                        {displayTotal}
+                        {period.stepTotalGood.toLocaleString()}
                       </span>
-                      <span className="text-muted-foreground">/</span>
-                      <span className="text-sm text-muted-foreground tabular-nums">
-                        {period.plannedQuantity}
-                      </span>
-                      {period.quantityGood > 0 && (
-                        <span className="text-sm font-semibold text-cyan-400 tabular-nums">
-                          (+{period.quantityGood})
+                      {(period.stepTotalScrap ?? 0) > 0 && (
+                        <span className="text-sm font-semibold text-rose-400 tabular-nums">
+                          +{(period.stepTotalScrap ?? 0).toLocaleString()}
                         </span>
                       )}
+                      <span className="text-muted-foreground">/</span>
+                      <span className="text-sm text-muted-foreground tabular-nums">
+                        {period.plannedQuantity.toLocaleString()}
+                      </span>
                     </div>
 
-                    {/* Dual progress bar */}
-                    <DualProgressBar
-                      totalCompleted={displayTotal}
-                      sessionContribution={period.quantityGood}
-                      plannedQuantity={period.plannedQuantity}
-                    />
+                    <div className="w-full">
+                      <JobProgressBar
+                        plannedQuantity={period.plannedQuantity}
+                        totalGood={period.stepTotalGood}
+                        totalScrap={period.stepTotalScrap ?? 0}
+                        sessionGood={period.quantityGood}
+                        sessionScrap={period.quantityScrap}
+                        size="md"
+                        showOverlay={false}
+                      />
+                    </div>
+                  </div>
+                </td>
+
+                {/* Session production — matching dashboard "במשמרת זו" style */}
+                <td className="px-4 py-3">
+                  <div className="flex flex-col items-center gap-1">
+                    {period.quantityGood > 0 && (
+                      <div className="flex items-center gap-1.5" dir="ltr">
+                        <Package className="h-3.5 w-3.5 text-emerald-400" />
+                        <span className="text-sm font-semibold text-emerald-400 tabular-nums">
+                          +{period.quantityGood.toLocaleString()}
+                        </span>
+                      </div>
+                    )}
+                    {period.quantityScrap > 0 && (
+                      <div className="flex items-center gap-1.5" dir="ltr">
+                        <PackageX className="h-3.5 w-3.5 text-rose-400" />
+                        <span className="text-sm font-semibold text-rose-400 tabular-nums">
+                          +{period.quantityScrap.toLocaleString()}
+                        </span>
+                      </div>
+                    )}
+                    {period.quantityGood === 0 && period.quantityScrap === 0 && (
+                      <span className="text-xs text-muted-foreground">-</span>
+                    )}
                   </div>
                 </td>
 
@@ -219,18 +184,6 @@ export const ProductionOverviewTable = ({
                       ({formatDuration(period.startedAt, period.endedAt)})
                     </span>
                   </div>
-                </td>
-
-                {/* Scrap */}
-                <td className="px-4 py-3 text-center">
-                  {period.quantityScrap > 0 ? (
-                    <Badge className="bg-red-500/10 text-red-400 border-red-500/20">
-                      <Trash2 className="h-3 w-3 ml-1" />
-                      {period.quantityScrap}
-                    </Badge>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">-</span>
-                  )}
                 </td>
               </tr>
             );

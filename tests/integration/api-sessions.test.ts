@@ -176,33 +176,6 @@ describe("Session API Endpoints", () => {
         expect(updatedSession?.job_item_step_id).toBe(steps[0].id);
       });
 
-      it("should support deprecated jobItemStationId parameter", async () => {
-        const jobItem = await TestFactory.createJobItem(testJob.id, "bind_deprecated");
-        createdJobItemIds.push(jobItem.id);
-
-        const { steps } = await TestFactory.createPipeline(jobItem.id, [testStation.id]);
-
-        const session = await createSession({
-          worker_id: testWorker1.id,
-          station_id: testStation.id,
-          job_id: testJob.id,
-        });
-        createdSessionIds.push(session.id);
-
-        // Use deprecated parameter name
-        const { status, body } = await makeBindRequest(
-          {
-            sessionId: session.id,
-            jobId: testJob.id,
-            jobItemId: jobItem.id,
-            jobItemStationId: steps[0].id, // Deprecated name
-          },
-          testWorker1.worker_code,
-        );
-
-        expect(status).toBe(200);
-        expect((body as { session: { job_item_id: string } }).session.job_item_id).toBe(jobItem.id);
-      });
     });
 
     describe("Missing Required Fields", () => {

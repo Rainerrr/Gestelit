@@ -81,7 +81,8 @@ describe("First Product QA Gate", () => {
     await supabase.from("wip_balances").insert({
       job_item_id: testJobItem.id,
       job_item_step_id: jis.id,
-      good_available: 0,
+      good_reported: 0,
+      scrap_reported: 0,
     });
 
     // Create job_item_progress
@@ -125,7 +126,8 @@ describe("First Product QA Gate", () => {
     await supabase.from("wip_balances").insert({
       job_item_id: jobItem2.id,
       job_item_step_id: jisQA.id,
-      good_available: 0,
+      good_reported: 0,
+      scrap_reported: 0,
     });
 
     // Create job_item_progress for second item

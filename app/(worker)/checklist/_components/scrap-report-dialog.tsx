@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import { AlertTriangle, Trash2 } from "lucide-react";
+import { AlertTriangle, PackageX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -99,7 +99,7 @@ export const ScrapReportDialog = ({
         <div className="space-y-4">
           {/* Scrap count display */}
           <div className="flex items-center justify-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3">
-            <Trash2 className="h-5 w-5 text-amber-400" />
+            <PackageX className="h-5 w-5 text-amber-400" />
             <span className="text-2xl font-bold text-amber-400">{scrapCount}</span>
             <span className="text-sm text-muted-foreground">{t("checklist.scrap.dialog.count")}</span>
           </div>

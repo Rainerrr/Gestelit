@@ -302,12 +302,12 @@ export const ManagementDashboard = () => {
         is_active: payload.is_active ?? true,
         station_reasons: payload.station_reasons,
         maintenance_enabled: payload.maintenance_enabled,
-        maintenance_last_date: payload.maintenance_last_date,
-        maintenance_interval_days: payload.maintenance_interval_days,
+        maintenance_services: payload.maintenance_services,
       });
       await Promise.all([loadStations(), loadStationTypes()]);
     } catch (error) {
       friendlyError(error);
+      throw error;
     }
   };
 
@@ -320,13 +320,13 @@ export const ManagementDashboard = () => {
         is_active: payload.is_active,
         station_reasons: payload.station_reasons,
         maintenance_enabled: payload.maintenance_enabled,
-        maintenance_last_date: payload.maintenance_last_date,
-        maintenance_interval_days: payload.maintenance_interval_days,
+        maintenance_services: payload.maintenance_services,
       });
       // Don't refresh immediately - let the dialog show success message
       // Refresh will happen when dialog closes
     } catch (error) {
       friendlyError(error);
+      throw error;
     }
   };
 

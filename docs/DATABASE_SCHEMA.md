@@ -2,7 +2,7 @@
 
 > Complete database schema for Gestelit Work Monitor
 > Database: Supabase (PostgreSQL 17) with Row Level Security
-> Last updated: January 2026
+> Last updated: March 2026
 
 ---
 
@@ -10,7 +10,7 @@
 
 1. [Core Tables](#1-core-tables)
 2. [Session & Status Tables](#2-session--status-tables)
-3. [Production Line Tables](#3-production-line-tables)
+3. [Pipeline Tables](#3-pipeline-tables)
 4. [WIP Tracking Tables](#4-wip-tracking-tables)
 5. [Report System Tables](#5-report-system-tables)
 6. [Database Functions](#6-database-functions)
@@ -138,7 +138,7 @@ Worker session records tracking production work.
 | station_id | UUID | YES | - | FK -> stations.id (nullable for legacy) |
 | job_id | UUID | NO | - | FK -> jobs.id |
 | job_item_id | UUID | YES | - | FK -> job_items.id (production line) |
-| job_item_station_id | UUID | YES | - | FK -> job_item_stations.id (step) |
+| job_item_step_id | UUID | YES | - | FK -> job_item_steps.id (pipeline step) |
 | status | session_status | NO | `'active'` | `'active'`, `'completed'`, `'aborted'` |
 | current_status_id | UUID | NO | - | FK -> status_definitions.id (mirrored) |
 | started_at | TIMESTAMPTZ | NO | `now()` | Session start time |
@@ -162,7 +162,7 @@ Worker session records tracking production work.
 **Important Notes:**
 - `current_status_id` is a denormalized mirror of the latest status event for efficient queries
 - Snapshot columns capture historical values at session creation for audit trails
-- `job_item_id` and `job_item_station_id` enable production line tracking (NULL for legacy)
+- `job_item_id` and `job_item_step_id` enable pipeline tracking (NULL for legacy)
 - Only one active session allowed per worker (enforced by partial unique index)
 
 ---
@@ -242,74 +242,62 @@ Records of completed checklist items.
 
 ---
 
-## 3. Production Line Tables
+## 3. Pipeline Tables
 
-### production_lines
+### pipeline_presets
 
-Production line templates (ordered station sequences).
+Reusable pipeline templates for production flows.
 
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
 | id | UUID | NO | `gen_random_uuid()` | Primary key |
-| name | TEXT | NO | - | Line name |
-| code | TEXT | YES | - | Optional unique code |
+| name | TEXT | NO | - | Preset name |
+| description | TEXT | YES | - | Optional description |
 | is_active | BOOLEAN | NO | `true` | Available for use |
 | created_at | TIMESTAMPTZ | NO | `now()` | |
 | updated_at | TIMESTAMPTZ | NO | `now()` | |
 
-**Constraints:**
-- `production_lines_code_unique`: UNIQUE on `code` WHERE `code IS NOT NULL`
-
 ---
 
-### production_line_stations
+### pipeline_preset_steps
 
-Junction table linking stations to production lines with ordering.
+Steps within a pipeline preset (station + position).
 
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
 | id | UUID | NO | `gen_random_uuid()` | Primary key |
-| production_line_id | UUID | NO | - | FK -> production_lines.id (CASCADE) |
+| pipeline_preset_id | UUID | NO | - | FK -> pipeline_presets.id (CASCADE) |
 | station_id | UUID | NO | - | FK -> stations.id (RESTRICT) |
-| position | INTEGER | NO | - | Order in line (1-based) |
+| position | INTEGER | NO | - | Order in pipeline (1-based) |
 | created_at | TIMESTAMPTZ | NO | `now()` | |
 
-**Constraints:**
-- `uq_station_single_line`: UNIQUE on `station_id` (station can only be in ONE line)
-- `uq_line_position`: UNIQUE on `(production_line_id, position)`
-- `uq_line_station`: UNIQUE on `(production_line_id, station_id)`
-- CHECK: `position > 0`
-
-**Critical Rule:** Each station can belong to at most ONE production line.
+Note: Stations CAN participate in multiple presets (no exclusivity constraint).
 
 ---
 
 ### job_items
 
-Production requirements within a job (distinct "products").
+Production units within a job.
 
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
 | id | UUID | NO | `gen_random_uuid()` | Primary key |
 | job_id | UUID | NO | - | FK -> jobs.id (CASCADE) |
-| kind | TEXT | NO | - | `'station'` or `'line'` |
-| station_id | UUID | YES | - | FK -> stations.id (for kind='station') |
-| production_line_id | UUID | YES | - | FK -> production_lines.id (for kind='line') |
+| name | TEXT | NO | - | Product/item name |
 | planned_quantity | INTEGER | NO | - | Target quantity (> 0) |
+| pipeline_preset_id | UUID | YES | - | FK -> pipeline_presets.id (provenance) |
+| is_pipeline_locked | BOOLEAN | NO | `false` | True after first production event |
 | is_active | BOOLEAN | NO | `true` | Active item |
 | created_at | TIMESTAMPTZ | NO | `now()` | |
 | updated_at | TIMESTAMPTZ | NO | `now()` | |
 
-**Constraints:**
-- `chk_job_item_xor`: XOR constraint ensuring exactly one of station_id or production_line_id
-- CHECK: `kind IN ('station', 'line')`
-- CHECK: `planned_quantity > 0`
+Note: `is_pipeline_locked` becomes true after the first production session binds to this item, making the pipeline immutable.
 
 ---
 
-### job_item_stations
+### job_item_steps
 
-Frozen snapshot of production steps for each job item.
+Frozen snapshot of pipeline steps for each job item.
 
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
@@ -320,27 +308,18 @@ Frozen snapshot of production steps for each job item.
 | is_terminal | BOOLEAN | NO | `false` | True for last station |
 | created_at | TIMESTAMPTZ | NO | `now()` | |
 
-**Constraints:**
-- `uq_jis_position`: UNIQUE on `(job_item_id, position)`
-- `uq_jis_station`: UNIQUE on `(job_item_id, station_id)`
-- CHECK: `position > 0`
-
-**Important:** This is a SNAPSHOT of the production line at job item creation time. Changes to production lines do not affect existing job items.
+Note: This is a SNAPSHOT of the pipeline at job item creation time. Changes to pipeline presets do not affect existing job items.
 
 ---
 
 ### job_item_progress
 
-Tracks completed good count for each job item.
-
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
 | job_item_id | UUID | NO | - | PK, FK -> job_items.id (CASCADE) |
-| completed_good | INTEGER | NO | `0` | Terminal station output only |
+| completed_good | INTEGER | NO | `0` | Terminal station good output |
+| completed_scrap | INTEGER | NO | `0` | Terminal station scrap output |
 | updated_at | TIMESTAMPTZ | NO | `now()` | |
-
-**Constraints:**
-- CHECK: `completed_good >= 0`
 
 ---
 
@@ -348,46 +327,19 @@ Tracks completed good count for each job item.
 
 ### wip_balances
 
-GOOD-only WIP balance per step (balance-based model).
+Per-step reported totals (independent station reporting model).
 
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
 | id | UUID | NO | `gen_random_uuid()` | Primary key |
 | job_item_id | UUID | NO | - | FK -> job_items.id (CASCADE) |
-| job_item_station_id | UUID | NO | - | FK -> job_item_stations.id (CASCADE) |
-| good_available | INTEGER | NO | `0` | Units available for downstream |
+| job_item_step_id | UUID | NO | - | FK -> job_item_steps.id (CASCADE) |
+| good_reported | INTEGER | NO | `0` | Total good units reported at this step |
+| scrap_reported | INTEGER | NO | `0` | Total scrap units reported at this step |
 | updated_at | TIMESTAMPTZ | NO | `now()` | |
 
 **Constraints:**
-- `uq_wip_step`: UNIQUE on `(job_item_id, job_item_station_id)`
-- CHECK: `good_available >= 0`
-
-**Interpretation:** Value represents how many GOOD units are waiting after this step, available for the next step to consume.
-
----
-
-### wip_consumptions
-
-Ledger recording pulls from upstream WIP (enables LIFO reversal).
-
-| Column | Type | Nullable | Default | Description |
-|--------|------|----------|---------|-------------|
-| id | UUID | NO | `gen_random_uuid()` | Primary key |
-| job_item_id | UUID | NO | - | FK -> job_items.id (CASCADE) |
-| consuming_session_id | UUID | NO | - | FK -> sessions.id (RESTRICT) |
-| from_job_item_station_id | UUID | NO | - | FK -> job_item_stations.id (CASCADE) |
-| good_used | INTEGER | NO | - | Amount pulled (> 0) |
-| is_scrap | BOOLEAN | NO | `false` | True if consumed for scrap |
-| created_at | TIMESTAMPTZ | NO | `now()` | |
-
-**Constraints:**
-- CHECK: `good_used > 0`
-
-**Interpretation:**
-- Each row records how much a downstream session pulled from an upstream step
-- `is_scrap = false`: Good product consumption
-- `is_scrap = true`: Scrap consumption (consumes upstream but doesn't produce output)
-- Used for deterministic LIFO reversal during corrections
+- UNIQUE on `(job_item_id, job_item_step_id)`
 
 ---
 
@@ -464,62 +416,81 @@ create_status_event_atomic(
 
 ---
 
-### update_session_quantities_atomic_v2
+### update_session_quantities_v6
 
-Atomically updates session quantities with WIP balance management.
+Independent station reporting: increments good_reported/scrap_reported at the bound step.
 
 ```sql
-update_session_quantities_atomic_v2(
+update_session_quantities_v6(
   p_session_id UUID,
-  p_total_good INTEGER,
-  p_total_scrap INTEGER
-) RETURNS session_update_result
+  p_good_delta INTEGER,
+  p_scrap_delta INTEGER
+) RETURNS void
 ```
 
 **Behavior:**
-- **Legacy path (no job_item):** Simple update to session totals
-- **WIP path:** Full balance tracking with consumption/return logic
-
-**For GOOD increase:**
-1. Pull from upstream WIP balance (if available)
-2. Record consumption in ledger
-3. Add to current step balance
-4. If terminal, increment completed_good
-
-**For GOOD decrease:**
-1. Check current step has enough available (reject if not)
-2. Decrement current step balance
-3. Reduce originated first (no upstream change)
-4. Return pulled via LIFO reversal
-
-**For SCRAP increase:**
-1. Pull from upstream WIP balance (consumes but doesn't produce)
-2. Record consumption with `is_scrap = true`
-3. Does NOT add to current step balance
-
-**For SCRAP decrease:**
-1. Calculate originated vs pulled scrap
-2. Reduce originated first
-3. Return pulled via LIFO reversal
-
-**Error codes:**
-- `SESSION_NOT_FOUND`
-- `WIP_BALANCE_NOT_FOUND`
-- `WIP_DOWNSTREAM_CONSUMED`
+- Increments good_reported and scrap_reported on the wip_balances row for the session's bound step
+- If terminal station: also increments completed_good/completed_scrap in job_item_progress
+- No upstream/downstream consumption logic
 
 ---
 
-### rebuild_job_item_stations
+### end_production_status_atomic_v2
 
-Expands job item steps from production line configuration.
+Ends production status with quantity reporting in one transaction.
 
 ```sql
-rebuild_job_item_stations(p_job_item_id UUID)
+end_production_status_atomic_v2(
+  p_session_id UUID,
+  p_status_event_id UUID,
+  p_quantity_good INTEGER,
+  p_quantity_scrap INTEGER,
+  p_next_status_id UUID
+) RETURNS JSONB
 ```
 
 **Behavior:**
-- If `kind='station'`: Creates single step (position=1, is_terminal=true)
-- If `kind='line'`: Expands from production_line_stations with positions, last is_terminal
+- Calls update_session_quantities_v6 with the quantity deltas
+- Creates a new status event via create_status_event_atomic
+- Returns the new status event data
+
+---
+
+### setup_job_item_pipeline
+
+Creates job_item_steps from a station array.
+
+```sql
+setup_job_item_pipeline(
+  p_job_item_id UUID,
+  p_station_ids UUID[]
+) RETURNS void
+```
+
+**Behavior:**
+- Deletes existing steps for the job item
+- Creates new job_item_steps with positions (1-indexed)
+- Last station marked as is_terminal
+- Creates wip_balances and job_item_progress rows
+
+---
+
+### bind_job_item_atomic / unbind_job_item_atomic
+
+Binds/unbinds a job item step to a session atomically.
+
+---
+
+### rebuild_job_item_steps
+
+Expands job item steps from pipeline configuration.
+
+```sql
+rebuild_job_item_steps(p_job_item_id UUID)
+```
+
+**Behavior:**
+- Creates job_item_steps from the pipeline preset steps
 - Ensures wip_balances rows exist for each step
 - Ensures job_item_progress row exists
 
@@ -560,23 +531,7 @@ get_jobs_with_stats() RETURNS TABLE (
 
 ## 7. Views
 
-### v_session_wip_accounting
-
-Shows originated vs pulled breakdown for each session.
-
-```sql
-SELECT
-  session_id,
-  job_item_id,
-  job_item_station_id,
-  total_good,
-  pulled_good,      -- From upstream
-  originated_good,  -- Created at this step
-  total_scrap,
-  pulled_scrap,     -- Consumed from upstream as scrap
-  originated_scrap  -- Scrap created at this step
-FROM v_session_wip_accounting
-```
+No active views. The `v_session_wip_accounting` view was dropped as part of the independent station reporting refactor (March 2026).
 
 ---
 
@@ -587,7 +542,7 @@ FROM v_session_wip_accounting
 | `report_set_default_status` | reports | BEFORE INSERT | `set_report_default_status()` |
 | `report_state_transition_check` | reports | BEFORE UPDATE OF status | `validate_report_transition()` |
 | `status_definitions_set_updated_at` | status_definitions | BEFORE UPDATE | `set_updated_at()` |
-| `production_lines_set_updated_at` | production_lines | BEFORE UPDATE | `set_updated_at()` |
+| `pipeline_presets_set_updated_at` | pipeline_presets | BEFORE UPDATE | `set_updated_at()` |
 | `job_items_set_updated_at` | job_items | BEFORE UPDATE | `set_updated_at()` |
 | `job_item_progress_set_updated_at` | job_item_progress | BEFORE UPDATE | `set_updated_at()` |
 | `wip_balances_set_updated_at` | wip_balances | BEFORE UPDATE | `set_updated_at()` |
@@ -637,22 +592,17 @@ reports_type_status_idx ON (type, status)
 reports_status_event_id_idx ON (status_event_id)
 ```
 
-### Production Lines & WIP
+### Pipeline & WIP
 ```sql
-idx_production_lines_active ON production_lines(is_active)
-idx_pls_line ON production_line_stations(production_line_id)
-idx_pls_station ON production_line_stations(station_id)
+idx_pipeline_presets_active ON pipeline_presets(is_active)
+idx_pps_preset ON pipeline_preset_steps(pipeline_preset_id)
+idx_pps_station ON pipeline_preset_steps(station_id)
 idx_job_items_job ON job_items(job_id)
-idx_job_items_station ON job_items(station_id) WHERE station_id IS NOT NULL
-idx_job_items_line ON job_items(production_line_id) WHERE production_line_id IS NOT NULL
-idx_jis_job_item ON job_item_stations(job_item_id)
-idx_jis_station ON job_item_stations(station_id)
-idx_jis_terminal ON job_item_stations(job_item_id) WHERE is_terminal = true
+idx_jis_job_item ON job_item_steps(job_item_id)
+idx_jis_station ON job_item_steps(station_id)
+idx_jis_terminal ON job_item_steps(job_item_id) WHERE is_terminal = true
 idx_wip_balances_job_item ON wip_balances(job_item_id)
-idx_wip_balances_step ON wip_balances(job_item_station_id)
-idx_wip_balances_high_wip ON wip_balances(good_available DESC) WHERE good_available > 0
-idx_wip_consumptions_session_lifo ON wip_consumptions(consuming_session_id, created_at DESC)
-idx_wip_consumptions_step ON wip_consumptions(job_item_id, from_job_item_station_id)
+idx_wip_balances_step ON wip_balances(job_item_step_id)
 ```
 
 ---

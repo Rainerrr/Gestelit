@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { createSession, closeActiveSessionsForWorker } from "@/lib/data/sessions";
-import { bindJobItemToSession } from "@/lib/data/sessions";
+import { bindJobItemToSession, unbindJobItemFromSession, getJobItemAccumulatedTime } from "@/lib/data/sessions";
 import { getAvailableJobsForStation, getJobItemsForStationAndJob } from "@/lib/data/job-items";
 import { TestFactory, TestCleanup, getTestSupabase } from "../helpers";
 
@@ -62,7 +62,8 @@ describe("Worker Flow - Job Selection", () => {
     await supabase.from("wip_balances").insert({
       job_item_id: testJobItem.id,
       job_item_step_id: testJobItemStep.id,
-      good_available: 0,
+      good_reported: 0,
+      scrap_reported: 0,
     });
 
     // Create job_item_progress entry
@@ -219,5 +220,127 @@ describe("Worker Flow - Job Selection", () => {
       // Cleanup
       await supabase.from("jobs").delete().eq("id", emptyJob.id);
     }
+  });
+
+  describe("Independent job item binding", () => {
+    it("should set current_job_item_started_at when binding", async () => {
+      const session = await createSession({
+        worker_id: testWorker.id,
+        station_id: testStation.id,
+        job_id: null,
+      });
+      createdSessionIds.push(session.id);
+
+      const before = Date.now();
+      await bindJobItemToSession(
+        session.id,
+        testJob.id,
+        testJobItem.id,
+        testJobItemStep.id,
+      );
+
+      const supabase = getTestSupabase();
+      const { data: dbSession } = await supabase
+        .from("sessions")
+        .select("current_job_item_started_at, job_item_id")
+        .eq("id", session.id)
+        .single();
+
+      expect(dbSession?.job_item_id).toBe(testJobItem.id);
+      expect(dbSession?.current_job_item_started_at).toBeTruthy();
+      const startedAt = new Date(dbSession!.current_job_item_started_at!).getTime();
+      expect(startedAt).toBeGreaterThanOrEqual(before - 5000);
+      expect(startedAt).toBeLessThanOrEqual(Date.now() + 5000);
+    });
+
+    it("should unbind job item and clear timer fields", async () => {
+      const session = await createSession({
+        worker_id: testWorker.id,
+        station_id: testStation.id,
+        job_id: null,
+      });
+      createdSessionIds.push(session.id);
+
+      // Bind first
+      await bindJobItemToSession(
+        session.id,
+        testJob.id,
+        testJobItem.id,
+        testJobItemStep.id,
+      );
+
+      // Unbind
+      await unbindJobItemFromSession(session.id);
+
+      const supabase = getTestSupabase();
+      const { data: dbSession } = await supabase
+        .from("sessions")
+        .select("job_item_id, job_item_step_id, job_id, current_job_item_started_at")
+        .eq("id", session.id)
+        .single();
+
+      expect(dbSession?.job_item_id).toBeNull();
+      expect(dbSession?.job_item_step_id).toBeNull();
+      expect(dbSession?.current_job_item_started_at).toBeNull();
+    });
+
+    it("should return accumulated timer seconds", async () => {
+      const supabase = getTestSupabase();
+
+      const session = await createSession({
+        worker_id: testWorker.id,
+        station_id: testStation.id,
+        job_id: null,
+      });
+      createdSessionIds.push(session.id);
+
+      // Bind job item
+      await bindJobItemToSession(
+        session.id,
+        testJob.id,
+        testJobItem.id,
+        testJobItemStep.id,
+      );
+
+      // Get the default "ייצור" status definition for creating events
+      const { data: prodStatus } = await supabase
+        .from("status_definitions")
+        .select("id")
+        .eq("is_protected", true)
+        .eq("machine_state", "production")
+        .limit(1)
+        .single();
+
+      if (!prodStatus) throw new Error("No production status found");
+
+      // Create a completed status event (simulate some elapsed time)
+      const eventStart = new Date(Date.now() - 10_000).toISOString(); // 10 seconds ago
+      const eventEnd = new Date(Date.now() - 5_000).toISOString(); // 5 seconds ago
+
+      const { data: event } = await supabase
+        .from("status_events")
+        .insert({
+          session_id: session.id,
+          status_definition_id: prodStatus.id,
+          job_item_id: testJobItem.id,
+          started_at: eventStart,
+          ended_at: eventEnd,
+        })
+        .select("id")
+        .single();
+
+      try {
+        const timer = await getJobItemAccumulatedTime(session.id, testJobItem.id);
+
+        expect(timer.accumulatedSeconds).toBeGreaterThanOrEqual(4); // ~5 seconds, allow for rounding
+        expect(timer.accumulatedSeconds).toBeLessThanOrEqual(10);
+        expect(timer.segmentStart).toBeTruthy(); // Job item is still bound
+      } finally {
+        // Cleanup the status event
+        if (event?.id) {
+          await supabase.from("status_events").delete().eq("id", event.id);
+        }
+      }
+    });
   });
 });

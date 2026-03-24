@@ -29,7 +29,7 @@ export type PipelineStation = {
   code: string;
   position: number;
   isTerminal: boolean;
-  wipAvailable: number;
+  goodReported: number;
   occupiedBy?: string | null;
 };
 

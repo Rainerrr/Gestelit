@@ -16,7 +16,6 @@ import {
  * - jobId: string - The selected job
  * - jobItemId: string - The specific job item to work on
  * - jobItemStepId: string - The job_item_steps row linking item to station
- * - jobItemStationId: string - (deprecated) Alias for jobItemStepId
  */
 export async function POST(request: Request) {
   try {
@@ -24,10 +23,9 @@ export async function POST(request: Request) {
     await requireWorker(request);
 
     const body = await request.json();
-    const { sessionId, jobId, jobItemId, jobItemStepId, jobItemStationId } = body;
+    const { sessionId, jobId, jobItemId, jobItemStepId } = body;
 
-    // Support both new and deprecated parameter names
-    const stepId = jobItemStepId ?? jobItemStationId;
+    const stepId = jobItemStepId;
 
     // Validate required fields
     if (!sessionId || typeof sessionId !== "string") {

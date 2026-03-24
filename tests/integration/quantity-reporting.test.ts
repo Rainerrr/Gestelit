@@ -94,7 +94,7 @@ describe("Quantity Reporting", () => {
     const quantityGood = 50;
     const quantityScrap = 5;
 
-    const { data: result, error } = await supabase.rpc("end_production_status_atomic", {
+    const { data: result, error } = await supabase.rpc("end_production_status_atomic_v2", {
       p_session_id: session.id,
       p_status_event_id: productionEvent.id,
       p_quantity_good: quantityGood,
@@ -157,7 +157,7 @@ describe("Quantity Reporting", () => {
       status_definition_id: productionStatus.id,
     });
 
-    await supabase.rpc("end_production_status_atomic", {
+    await supabase.rpc("end_production_status_atomic_v2", {
       p_session_id: session.id,
       p_status_event_id: prod1.id,
       p_quantity_good: 30,
@@ -171,7 +171,7 @@ describe("Quantity Reporting", () => {
       status_definition_id: productionStatus.id,
     });
 
-    await supabase.rpc("end_production_status_atomic", {
+    await supabase.rpc("end_production_status_atomic_v2", {
       p_session_id: session.id,
       p_status_event_id: prod2.id,
       p_quantity_good: 20,
@@ -210,7 +210,7 @@ describe("Quantity Reporting", () => {
     });
 
     // End production first time
-    await supabase.rpc("end_production_status_atomic", {
+    await supabase.rpc("end_production_status_atomic_v2", {
       p_session_id: session.id,
       p_status_event_id: productionEvent.id,
       p_quantity_good: 10,
@@ -219,7 +219,7 @@ describe("Quantity Reporting", () => {
     });
 
     // Try to end the same event again
-    const { error } = await supabase.rpc("end_production_status_atomic", {
+    const { error } = await supabase.rpc("end_production_status_atomic_v2", {
       p_session_id: session.id,
       p_status_event_id: productionEvent.id,
       p_quantity_good: 20,
@@ -256,7 +256,7 @@ describe("Quantity Reporting", () => {
     });
 
     // Try to end with wrong session ID
-    const { error } = await supabase.rpc("end_production_status_atomic", {
+    const { error } = await supabase.rpc("end_production_status_atomic_v2", {
       p_session_id: session2.id, // Wrong session!
       p_status_event_id: productionEvent.id,
       p_quantity_good: 10,
@@ -347,7 +347,7 @@ describe("Quantity Reporting with WIP Integration", () => {
 
     // Verify WIP balance was updated
     const balance = await TestFactory.getWipBalance(jobItem.id, steps[0].id);
-    expect(balance?.good_available).toBe(quantityGood);
+    expect(balance?.good_reported).toBe(quantityGood);
 
     // Since it's a terminal station (single-station pipeline), verify progress
     const progress = await TestFactory.getJobItemProgress(jobItem.id);
@@ -438,7 +438,7 @@ describe("Quantity Reporting with WIP Integration", () => {
 
     // Verify WIP accumulated: 40 + 30 = 70
     const balance = await TestFactory.getWipBalance(jobItem.id, steps[0].id);
-    expect(balance?.good_available).toBe(70);
+    expect(balance?.good_reported).toBe(70);
 
     // Verify progress also accumulated (terminal station)
     const progress = await TestFactory.getJobItemProgress(jobItem.id);
@@ -469,7 +469,7 @@ describe("Quantity Reporting with WIP Integration", () => {
     });
 
     // Report quantities (should succeed but not modify WIP)
-    const { error } = await supabase.rpc("end_production_status_atomic", {
+    const { error } = await supabase.rpc("end_production_status_atomic_v2", {
       p_session_id: session.id,
       p_status_event_id: productionEvent.id,
       p_quantity_good: 100,
@@ -481,7 +481,7 @@ describe("Quantity Reporting with WIP Integration", () => {
 
     // Verify WIP was NOT modified (should still be 0)
     const balance = await TestFactory.getWipBalance(jobItem.id, steps[0].id);
-    expect(balance?.good_available).toBe(0);
+    expect(balance?.good_reported).toBe(0);
 
     // Verify progress was NOT modified
     const progress = await TestFactory.getJobItemProgress(jobItem.id);
@@ -527,14 +527,15 @@ describe("Quantity Reporting with WIP Integration", () => {
 
     await TestFactory.reportQuantities(s2.id, p2.id, 20, 15, stoppageStatus.id);
 
-    // Verify WIP:
-    // Station 1: 100 - 20 (good pull) - 15 (scrap pull) = 65
-    // Station 2: 20 (only good accumulates, scrap doesn't)
+    // Verify WIP (independent reporting - no consumption deduction):
+    // Station 1: 100 good reported independently
+    // Station 2: 20 good reported independently
     const balance1 = await TestFactory.getWipBalance(jobItem.id, steps[0].id);
     const balance2 = await TestFactory.getWipBalance(jobItem.id, steps[1].id);
 
-    expect(balance1?.good_available).toBe(65);
-    expect(balance2?.good_available).toBe(20);
+    expect(balance1?.good_reported).toBe(100);
+    expect(balance2?.good_reported).toBe(20);
+    expect(balance2?.scrap_reported).toBe(15);
 
     // Cleanup worker2
     await TestCleanup.cleanupWorkers([testWorker2.id]);
@@ -613,51 +614,4 @@ describe("Quantity Reporting with WIP Integration", () => {
     await TestCleanup.cleanupWorkers([w2.id, w3.id]);
   });
 
-  it("should create wip_consumptions records for audit trail", async () => {
-    const supabase = getTestSupabase();
-
-    // Create 2-station pipeline
-    const jobItem = await TestFactory.createJobItem(testJob.id, "qty_wip_audit");
-    createdJobItemIds.push(jobItem.id);
-
-    const { steps } = await TestFactory.createPipeline(jobItem.id, [
-      testStation.id,
-      testStation2.id,
-    ]);
-
-    const w2 = await TestFactory.createWorker("qty_wip_audit_w2");
-
-    // Station 1: produce 50
-    const { session: s1, productionEvent: p1 } = await TestFactory.createProductionSession(
-      testWorker.id,
-      testStation.id,
-      testJob.id,
-      jobItem.id,
-      steps[0].id,
-    );
-    createdSessionIds.push(s1.id);
-    await TestFactory.reportQuantities(s1.id, p1.id, 50, 0, stoppageStatus.id);
-
-    // Station 2: consume 30
-    const { session: s2, productionEvent: p2 } = await TestFactory.createProductionSession(
-      w2.id,
-      testStation2.id,
-      testJob.id,
-      jobItem.id,
-      steps[1].id,
-    );
-    createdSessionIds.push(s2.id);
-    await TestFactory.reportQuantities(s2.id, p2.id, 30, 0, stoppageStatus.id);
-
-    // Verify consumption record was created
-    const consumptions = await TestFactory.getWipConsumptions(jobItem.id);
-    expect(consumptions).toHaveLength(1);
-    expect(consumptions[0].from_job_item_step_id).toBe(steps[0].id);
-    expect(consumptions[0].consuming_session_id).toBe(s2.id);
-    expect(consumptions[0].good_used).toBe(30);
-    expect(consumptions[0].is_scrap).toBe(false);
-
-    // Cleanup
-    await TestCleanup.cleanupWorkers([w2.id]);
-  });
 });

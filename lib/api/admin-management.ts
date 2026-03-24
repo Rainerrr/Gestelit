@@ -27,8 +27,7 @@ type StationPayload = {
   start_checklist?: Station["start_checklist"];
   end_checklist?: Station["end_checklist"];
   maintenance_enabled?: boolean;
-  maintenance_last_date?: string | null;
-  maintenance_interval_days?: number | null;
+  maintenance_services?: unknown[];
 };
 
 type WorkerUpdatePayload = Partial<WorkerPayload>;

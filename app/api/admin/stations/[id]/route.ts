@@ -16,8 +16,7 @@ type StationPayload = {
   start_checklist?: StationChecklistItem[] | null;
   end_checklist?: StationChecklistItem[] | null;
   maintenance_enabled?: boolean;
-  maintenance_last_date?: string | null;
-  maintenance_interval_days?: number | null;
+  maintenance_services?: unknown[];
 };
 
 const respondWithError = (error: unknown) => {
@@ -66,8 +65,7 @@ export async function PUT(
       start_checklist: body.start_checklist,
       end_checklist: body.end_checklist,
       maintenance_enabled: body.maintenance_enabled,
-      maintenance_last_date: body.maintenance_last_date,
-      maintenance_interval_days: body.maintenance_interval_days,
+      maintenance_services: body.maintenance_services,
     });
 
     await invalidateStationsCache();

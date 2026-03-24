@@ -2,7 +2,7 @@
 
 import { useCallback, useState, useMemo, Suspense, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
-import { Trash2, RefreshCw, CheckCircle2, AlertTriangle, Package, X } from "lucide-react";
+import { Trash2, PackageX, RefreshCw, CheckCircle2, AlertTriangle, Package, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -191,7 +191,7 @@ const ScrapReportsDashboardInner = () => {
               </p>
             </div>
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/10 border border-amber-500/20">
-              <Trash2 className="h-5 w-5 text-amber-400" />
+              <PackageX className="h-5 w-5 text-amber-400" />
             </div>
           </div>
           {totalNew > 0 && (

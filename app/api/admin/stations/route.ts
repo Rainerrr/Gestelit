@@ -19,8 +19,7 @@ type StationPayload = {
   is_active?: boolean;
   station_reasons?: StationReason[] | null;
   maintenance_enabled?: boolean;
-  maintenance_last_date?: string | null;
-  maintenance_interval_days?: number | null;
+  maintenance_services?: unknown[];
 };
 
 const respondWithError = (error: unknown) => {
@@ -79,8 +78,7 @@ export async function POST(request: Request) {
       is_active: body.is_active ?? true,
       station_reasons: body.station_reasons ?? [],
       maintenance_enabled: body.maintenance_enabled ?? false,
-      maintenance_last_date: body.maintenance_last_date ?? null,
-      maintenance_interval_days: body.maintenance_interval_days ?? null,
+      maintenance_services: body.maintenance_services ?? [],
     });
 
     await invalidateStationsCache();

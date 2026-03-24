@@ -2,7 +2,7 @@
 
 > Complete API endpoint documentation for Gestelit Work Monitor
 > All routes are in `app/api/`
-> Last updated: January 2026
+> Last updated: March 2026
 
 ---
 
@@ -15,7 +15,7 @@
 5. [Report APIs](#5-report-apis)
 6. [Admin Dashboard APIs](#6-admin-dashboard-apis)
 7. [Admin Management APIs](#7-admin-management-apis)
-8. [Production Line APIs](#8-production-line-apis)
+8. [Pipeline APIs](#8-pipeline-apis)
 9. [Cron APIs](#9-cron-apis)
 10. [Stream (SSE) APIs](#10-stream-sse-apis)
 
@@ -329,7 +329,7 @@ Create new session (atomic, closes existing).
   "stationId": "uuid",
   "jobId": "uuid",
   "jobItemId": "uuid|null",
-  "jobItemStationId": "uuid|null",
+  "jobItemStepId": "uuid|null",
   "instanceId": "string"
 }
 ```
@@ -442,8 +442,8 @@ Reclaim session to new browser instance.
 
 ---
 
-### PATCH /api/sessions/quantities
-Update production quantities (atomic with WIP).
+### POST /api/sessions/bind-job-item
+Bind a job item step to the session when entering production.
 
 **Headers:** `X-Worker-Code`
 
@@ -451,36 +451,79 @@ Update production quantities (atomic with WIP).
 ```json
 {
   "sessionId": "uuid",
-  "totalGood": 100,
-  "totalScrap": 5
+  "jobItemId": "uuid",
+  "jobItemStepId": "uuid"
 }
 ```
-
-**Response (200):**
-```json
-{
-  "success": true,
-  "totalGood": 100,
-  "totalScrap": 5
-}
-```
-
-**Errors:**
-- `409 WIP_DOWNSTREAM_CONSUMED`: Cannot decrease, downstream already consumed
 
 ---
 
-### GET /api/sessions/quantities
-Get current session quantities.
+### POST /api/sessions/unbind-job-item
+Unbind job item from session (clear job context).
 
-**Query Parameters:**
-- `sessionId` (required): Session UUID
+**Headers:** `X-Worker-Code`
+
+**Request:**
+```json
+{
+  "sessionId": "uuid"
+}
+```
+
+---
+
+### GET /api/sessions/[id]/totals
+Get current session quantities for the bound job item.
 
 **Response (200):**
 ```json
 {
-  "totalGood": 100,
-  "totalScrap": 5
+  "good": 0,
+  "scrap": 0
+}
+```
+
+---
+
+### GET /api/sessions/[id]/first-product-approval
+Check first product QA approval status for the bound step.
+
+**Response (200):**
+```json
+{
+  "required": true,
+  "status": "needs_submission|pending|approved"
+}
+```
+
+---
+
+### GET /api/sessions/job-item-timer
+Get accumulated time for job item in current session.
+
+**Query Parameters:**
+- `sessionId` (required)
+- `jobItemStepId` (required)
+
+**Response (200):**
+```json
+{
+  "seconds": 3600
+}
+```
+
+---
+
+### GET /api/sessions/scrap-reports
+Get scrap reports for current session.
+
+**Query Parameters:**
+- `sessionId` (required)
+
+**Response (200):**
+```json
+{
+  "reports": [...]
 }
 ```
 
@@ -564,6 +607,32 @@ Create status event and linked report atomically.
 {
   "statusEvent": { ... },
   "report": { ... }
+}
+```
+
+---
+
+### POST /api/status-events/end-production
+End production status with quantity reporting (atomic).
+
+**Headers:** `X-Worker-Code`
+
+**Request:**
+```json
+{
+  "sessionId": "uuid",
+  "statusEventId": "uuid",
+  "quantityGood": 10,
+  "quantityScrap": 2,
+  "nextStatusId": "uuid"
+}
+```
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "newStatusEvent": { "id": "uuid", ... }
 }
 ```
 
@@ -733,7 +802,6 @@ Get live job progress with WIP distribution.
       "items": [
         {
           "id": "uuid",
-          "kind": "line",
           "planned_quantity": 1000,
           "completed_good": 500,
           "stations": [
@@ -742,7 +810,8 @@ Get live job progress with WIP distribution.
               "station_name": "string",
               "position": 1,
               "is_terminal": false,
-              "wip_available": 100
+              "good_reported": 100,
+              "scrap_reported": 5
             }
           ]
         }
@@ -782,6 +851,7 @@ Get live job progress with WIP distribution.
 **PUT /api/admin/jobs/[id]** - Update job
 **DELETE /api/admin/jobs/[id]** - Delete job
 **GET /api/admin/jobs/[id]/active-session** - Get job's active sessions
+**GET /api/admin/jobs/[id]/deletion-info** - Get info for safe job deletion
 
 ### Job Items
 
@@ -808,6 +878,7 @@ Get live job progress with WIP distribution.
 
 **GET /api/admin/reports** - List reports with filters
 **PATCH /api/admin/reports/[id]** - Update report status
+**DELETE /api/admin/reports/[id]** - Delete report
 
 Query parameters for GET:
 - `type`: `malfunction|general|scrap`
@@ -821,6 +892,20 @@ Query parameters for GET:
 **PUT /api/admin/reports/reasons/[id]** - Update reason
 **DELETE /api/admin/reports/reasons/[id]** - Delete reason
 
+### Maintenance
+
+**GET /api/admin/maintenance** - List maintenance records
+**POST /api/admin/maintenance** - Create maintenance entry
+**POST /api/admin/maintenance/[id]/complete** - Mark maintenance complete
+
+### Notifications
+
+**GET /api/admin/notifications** - Get notifications
+**POST /api/admin/notifications** - Create notification
+**PATCH /api/admin/notifications/[id]** - Update notification (mark read, dismiss)
+**POST /api/admin/notifications/check-due-jobs** - Scan for approaching deadlines
+**POST /api/admin/notifications/cleanup** - Remove expired notifications
+
 ### Other Admin
 
 **GET /api/admin/departments** - Get unique departments
@@ -830,22 +915,22 @@ Query parameters for GET:
 
 ---
 
-## 8. Production Line APIs
+## 8. Pipeline APIs
 
-### Production Lines
+### Pipeline Presets
 
-**GET /api/admin/production-lines** - List production lines
+**GET /api/admin/pipeline-presets** - List pipeline presets
 
 Response:
 ```json
 {
-  "productionLines": [
+  "presets": [
     {
       "id": "uuid",
       "name": "string",
-      "code": "string|null",
+      "description": "string|null",
       "is_active": true,
-      "stations": [
+      "steps": [
         { "station_id": "uuid", "station_name": "string", "position": 1 }
       ]
     }
@@ -853,22 +938,22 @@ Response:
 }
 ```
 
-**POST /api/admin/production-lines** - Create production line
+**POST /api/admin/pipeline-presets** - Create pipeline preset
 
 Request:
 ```json
 {
   "name": "string",
-  "code": "string|null",
+  "description": "string|null",
   "stationIds": ["uuid", "uuid", "uuid"]
 }
 ```
 
-**GET /api/admin/production-lines/[id]** - Get production line
-**PUT /api/admin/production-lines/[id]** - Update production line
-**DELETE /api/admin/production-lines/[id]** - Delete production line
+**GET /api/admin/pipeline-presets/[id]** - Get pipeline preset
+**PUT /api/admin/pipeline-presets/[id]** - Update pipeline preset
+**DELETE /api/admin/pipeline-presets/[id]** - Delete pipeline preset
 
-**PUT /api/admin/production-lines/[id]/stations** - Reorder stations
+**PUT /api/admin/pipeline-presets/[id]/steps** - Replace steps
 
 Request:
 ```json
@@ -877,7 +962,7 @@ Request:
 }
 ```
 
-**GET /api/admin/production-lines/available-stations** - Get stations not in any line
+**GET /api/admin/pipeline-presets/available-stations** - Get available stations
 
 ---
 
@@ -902,7 +987,6 @@ Response:
   "jobItems": [
     {
       "id": "uuid",
-      "kind": "line|station",
       "planned_quantity": 1000,
       "completed_good": 500
     }
@@ -910,12 +994,13 @@ Response:
   "stationOptions": [
     {
       "jobItemId": "uuid",
-      "jobItemStationId": "uuid",
+      "jobItemStepId": "uuid",
       "stationId": "uuid",
       "stationName": "string",
       "position": 1,
       "isTerminal": false,
-      "wipAvailable": 100,
+      "good_reported": 100,
+      "scrap_reported": 5,
       "isOccupied": false,
       "isAssignedToWorker": true
     }
@@ -1037,6 +1122,26 @@ data: {}
 
 ---
 
+### GET /api/admin/notifications/stream
+Real-time admin notification stream.
+
+**Event Types:**
+```
+event: initial
+data: {"notifications": [...]}
+
+event: insert
+data: {"notification": {...}}
+
+event: update
+data: {"notification": {...}}
+
+event: heartbeat
+data: {}
+```
+
+---
+
 ### GET /api/sessions/pipeline/stream
 Real-time pipeline options stream (for worker station selection).
 
@@ -1075,7 +1180,7 @@ Common error codes:
 - `NOT_FOUND`: Resource not found
 - `INVALID_REQUEST`: Bad request body
 - `INSTANCE_MISMATCH`: Session in different tab
-- `WIP_DOWNSTREAM_CONSUMED`: Cannot decrease quantities
+- `PRODUCTION_ACTIVE`: Cannot finish session while in production status
 - `PROTECTED_STATUS`: Cannot modify protected status
 
 ---

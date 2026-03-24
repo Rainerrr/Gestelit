@@ -20,6 +20,19 @@ export type PersistedSessionState = {
   jobNumber: string | null; // Optional - job binding deferred to production entry
   startedAt: string;
   totals: { good: number; scrap: number };
+  jobItemTimer?: {
+    accumulatedSeconds: number;
+    segmentStart: string | null;
+  };
+  activeJobItem?: {
+    id: string;
+    jobId: string;
+    name: string;
+    plannedQuantity: number;
+    jobItemStepId: string;
+    completedGood?: number;
+    completedScrap?: number;
+  } | null;
 };
 
 /**
@@ -44,6 +57,24 @@ export function updatePersistedTotals(totals: { good: number; scrap: number }): 
   const current = getPersistedSessionState();
   if (!current) return;
   persistSessionState({ ...current, totals });
+}
+
+/**
+ * Update only the activeJobItem in the persisted session state.
+ * Called when binding/unbinding a job item.
+ */
+export function updatePersistedActiveJobItem(
+  activeJobItem: PersistedSessionState["activeJobItem"],
+  jobItemTimer?: PersistedSessionState["jobItemTimer"],
+): void {
+  if (typeof window === "undefined") return;
+  const current = getPersistedSessionState();
+  if (!current) return;
+  persistSessionState({
+    ...current,
+    activeJobItem,
+    jobItemTimer: jobItemTimer ?? current.jobItemTimer,
+  });
 }
 
 /**

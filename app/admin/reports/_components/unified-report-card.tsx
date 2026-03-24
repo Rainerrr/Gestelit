@@ -16,6 +16,7 @@ import {
   FileText,
   Package,
   Trash2,
+  PackageX,
   ClipboardCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -403,7 +404,7 @@ export const UnifiedReportCard = ({
                 {isNew ? (
                   <>
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/30">
-                      <Trash2 className="h-3 w-3" />
+                      <PackageX className="h-3 w-3" />
                       ממתין
                     </span>
                     <Button

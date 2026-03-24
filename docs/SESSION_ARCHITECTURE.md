@@ -1,7 +1,7 @@
 # Session & Status Architecture
 
 > Comprehensive guide to sessions, status events, real-time updates, and malfunctions
-> Updated: December 2025
+> Updated: March 2026
 
 ---
 

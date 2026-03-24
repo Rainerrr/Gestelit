@@ -63,6 +63,8 @@ let retryCount = 0;
 let backoffTimeout: ReturnType<typeof setTimeout> | null = null;
 let pollInterval: ReturnType<typeof setInterval> | null = null;
 let isConnecting = false;
+// Track whether we've received at least one successful initial message
+let hasConnected = false;
 
 const stopPolling = () => {
   if (pollInterval) {
@@ -95,9 +97,10 @@ const handleStreamMessage = (event: MessageEvent<string>) => {
   try {
     const payload = JSON.parse(event.data) as StreamMessage;
     if (payload.type === "initial" || payload.type === "update") {
+      if (payload.type === "initial") hasConnected = true;
       updateStore(payload.data);
     } else if (payload.type === "error") {
-      console.error("[reports-realtime] SSE error event", payload.message);
+      console.warn("[reports-realtime] SSE channel event:", payload.message);
       // On channel closed error, force disconnect to trigger reconnection
       if (payload.message === "REPORTS_CHANNEL_CLOSED" || payload.message === "REFETCH_FAILED") {
         disconnectStream();
@@ -105,7 +108,7 @@ const handleStreamMessage = (event: MessageEvent<string>) => {
         if (reconnectFetchRef) {
           const delay = Math.min(MAX_BACKOFF_MS, 1000 * 2 ** Math.max(0, retryCount));
           retryCount += 1;
-          setConnectionState("disconnected");
+          if (hasConnected) setConnectionState("disconnected");
           if (backoffTimeout) clearTimeout(backoffTimeout);
           backoffTimeout = setTimeout(() => {
             backoffTimeout = null;
@@ -185,7 +188,7 @@ const connectToStream = (fetchData: () => Promise<ReportsData>) => {
 
     const delay = Math.min(MAX_BACKOFF_MS, 1000 * 2 ** Math.max(0, retryCount));
     retryCount += 1;
-    setConnectionState("disconnected");
+    if (hasConnected) setConnectionState("disconnected");
 
     if (backoffTimeout) clearTimeout(backoffTimeout);
     backoffTimeout = setTimeout(() => {

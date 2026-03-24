@@ -2,7 +2,7 @@
 
 > System architecture, data flow, and key patterns
 > Manufacturing floor real-time worker session tracking system
-> Last updated: January 2026
+> Last updated: March 2026
 
 ---
 
@@ -91,7 +91,7 @@ app/
   (worker)/           # Worker flow pages
     login/            # Worker authentication
     job/              # Job entry
-    station/          # Station selection (with production lines)
+    station/          # Station selection (with pipeline presets)
     checklist/        # Start/end checklists
     work/             # Active session
   admin/              # Admin dashboard and management
@@ -106,8 +106,8 @@ lib/
   data/               # Server-side Supabase queries
     sessions.ts       # Session lifecycle
     jobs.ts           # Job operations
-    job-items.ts      # Production line items
-    production-lines.ts
+    job-items.ts      # Job items and pipeline steps
+    pipeline-presets.ts
     stations.ts
     status-definitions.ts
     reports.ts
@@ -215,21 +215,16 @@ SELECT create_status_event_atomic(session_id, status_id, ...);
 
 Snapshot columns: `worker_full_name_snapshot`, `worker_code_snapshot`, `station_name_snapshot`, `station_code_snapshot`
 
-### Production Line WIP
+### Independent Station Reporting
 
-Balance-based tracking with LIFO corrections:
+Each station reports its own production quantities independently (no upstream/downstream consumption):
 
 ```
-Session reports +10 good
-  → Pull from upstream WIP (if available)
-  → Record consumption in ledger
-  → Add to current step balance
-  → If terminal, increment completion
-
-Session decreases -5 good
-  → Check downstream hasn't consumed
-  → Reduce originated first (no return)
-  → Return pulled via LIFO
+Session reports good/scrap
+  → Increment good_reported/scrap_reported at current step via update_session_quantities_v6()
+  → If terminal station, totals feed job_item_progress (completed_good, completed_scrap)
+  → Completion when completed_good + completed_scrap >= planned_quantity
+  → Overproduction allowed - no caps on reported quantities
 ```
 
 ### Instance Tracking
@@ -259,9 +254,9 @@ Worker ─────────┬────────── Session ─�
                 │                            │
 Station ────────┤                            └────────── ChecklistResponse
                 │
-Job ────────────┴────────── JobItem ─────────┬────────── JobItemStation
+Job ────────────┴────────── JobItem ─────────┬────────── JobItemStep
                                              │
-ProductionLine ──────────────────────────────┤
+PipelinePreset ──────────────────────────────┤
                                              │
                                              └────────── WipBalance
 ```
@@ -280,9 +275,6 @@ type StatusScope = "global" | "station"
 type ReportType = "malfunction" | "general" | "scrap"
 type MalfunctionStatus = "open" | "known" | "solved"
 type SimpleStatus = "new" | "approved"
-
-// Production lines
-type JobItemKind = "station" | "line"
 
 // Checklists
 type ChecklistKind = "start" | "end"
@@ -307,15 +299,15 @@ Login → Job Entry → Station Selection → Start Checklist → Work → End C
 | Heartbeat | 15-second interval, updates `last_seen_at` |
 | Idle detection | 5-minute threshold, cron-based cleanup |
 | Status changes | Atomic via `create_status_event_atomic()` |
-| Quantity updates | Atomic via `update_session_quantities_atomic_v2()` |
+| Quantity updates | Atomic via `update_session_quantities_v6()` |
 
-### Production Line Flow
+### Pipeline Flow
 
 When job has job items:
-1. Show pipeline view with WIP distribution
-2. Worker selects station within line
-3. Session links to `job_item_id` and `job_item_station_id`
-4. Quantities update WIP balances atomically
+1. Show pipeline view with reported quantities per step
+2. Worker selects station within pipeline
+3. Session links to `job_item_id` and `job_item_step_id`
+4. Quantities update WIP balances via independent station reporting
 
 ---
 
@@ -337,7 +329,7 @@ When job has job items:
 - Stations (CRUD + checklists + reasons)
 - Jobs (CRUD + job items)
 - Status definitions (protected + custom)
-- Production lines (station sequences)
+- Pipeline presets (station sequences)
 - Report reasons (for general reports)
 
 ### Report Types
@@ -386,7 +378,7 @@ npx supabase migration new X   # Create migration
 | [API_REFERENCE.md](./API_REFERENCE.md) | All API endpoints |
 | [WORKER_FLOW.md](./WORKER_FLOW.md) | Worker application guide |
 | [ADMIN_SYSTEM.md](./ADMIN_SYSTEM.md) | Admin dashboard guide |
-| [PRODUCTION_LINES.md](./PRODUCTION_LINES.md) | WIP tracking system |
+| [PRODUCTION_LINES.md](./PRODUCTION_LINES.md) | Pipeline system |
 | [REALTIME_STREAMING.md](./REALTIME_STREAMING.md) | Real-time features |
 | [AUTHENTICATION.md](./AUTHENTICATION.md) | Security patterns |
 | [COMPONENTS.md](./COMPONENTS.md) | React components |

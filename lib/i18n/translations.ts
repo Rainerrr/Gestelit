@@ -587,13 +587,17 @@ export const translations = {
     he: "שמירת דיווח",
     ru: "Сохранить отчёт",
   },
+  "work.dialog.fault.statusTransition": {
+    he: "למעבר ל",
+    ru: "переход на",
+  },
   "work.dialog.fault.submitAndChangeStatus": {
     he: "דווח והחלף סטטוס",
     ru: "Отправить и изменить статус",
   },
   "work.dialog.report.title": {
-    he: "דיווח מצב",
-    ru: "Отчёт о состоянии",
+    he: "דיווח כללי",
+    ru: "Общий отчёт",
   },
   "work.dialog.report.reason": {
     he: "סיבת הדיווח",
@@ -614,6 +618,10 @@ export const translations = {
   "work.dialog.report.submit": {
     he: "שמירת דיווח",
     ru: "Сохранить отчёт",
+  },
+  "work.dialog.report.statusTransition": {
+    he: "למעבר ל",
+    ru: "переход на",
   },
   "work.dialog.report.submitAndChangeStatus": {
     he: "דווח והחלף סטטוס",
@@ -891,12 +899,12 @@ export const translations = {
     ru: "Готовые изделия",
   },
   "pipeline.waitingForUs": {
-    he: "ממתינים לנו",
-    ru: "Ждут нас",
+    he: "דווח בתחנה",
+    ru: "Отчитано на станции",
   },
   "pipeline.goingOut": {
-    he: "יוצאים הלאה",
-    ru: "Выходят дальше",
+    he: "דווח בתחנה",
+    ru: "Отчитано на станции",
   },
   "pipeline.free": {
     he: "פנוי",
@@ -1035,6 +1043,14 @@ export const translations = {
   "work.selectJobForProduction": {
     he: "בחר עבודה לייצור",
     ru: "Выберите заказ для производства",
+  },
+  "work.unsetJob": {
+    he: "ביטול בחירה",
+    ru: "Отменить выбор",
+  },
+  "work.jobItemTimer": {
+    he: "זמן פריט",
+    ru: "Время элемента",
   },
   "work.error.generic": {
     he: "אירעה שגיאה",
@@ -1198,6 +1214,49 @@ export const translations = {
   "progress.thisSession": {
     he: "במשמרת זו",
     ru: "В этой смене",
+  },
+  // ============================================
+  // UNIFIED SESSION CARD translations
+  // ============================================
+  "work.shiftDuration": {
+    he: "משך זמן במשמרת",
+    ru: "Длительность смены",
+  },
+  "work.reportQuantity": {
+    he: "דווח כמות",
+    ru: "Сообщить количество",
+  },
+  "work.switchJobItem": {
+    he: "החלף פק\"ע",
+    ru: "Сменить задание",
+  },
+  "work.jobLabel": {
+    he: "הזמנה",
+    ru: "Заказ",
+  },
+  "work.productLabel": {
+    he: "מוצר",
+    ru: "Продукт",
+  },
+  "work.clientLabel": {
+    he: "לקוח",
+    ru: "Клиент",
+  },
+  "work.jobItemTimeLabel": {
+    he: "זמן בפק\"ע",
+    ru: "Время на задании",
+  },
+  "work.toast.mustBeInProduction": {
+    he: "יש להחליף לסטטוס ייצור לפני דיווח כמות",
+    ru: "Переключитесь на статус производства перед отчётом о количестве",
+  },
+  "work.toast.mustApproveFirstProduct": {
+    he: "יש לדווח מוצר ראשון לפני התחלת ייצור",
+    ru: "Необходимо утвердить первое изделие перед началом производства",
+  },
+  "work.toast.selectJobFirst": {
+    he: "יש לבחור פק\"ע לפני דיווח כמות",
+    ru: "Выберите задание перед отчётом о количестве",
   },
 } satisfies Record<string, TranslationRecord>;
 

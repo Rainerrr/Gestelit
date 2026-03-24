@@ -105,12 +105,12 @@ export async function GET(request: Request) {
       ): boolean => {
         if (!prev) return true;
         return (
-          prev.upstreamWip !== next.upstreamWip ||
-          prev.waitingOutput !== next.waitingOutput ||
           prev.currentPosition !== next.currentPosition ||
           prev.isTerminal !== next.isTerminal ||
-          prev.prevStation?.wipAvailable !== next.prevStation?.wipAvailable ||
-          prev.nextStation?.wipAvailable !== next.nextStation?.wipAvailable
+          prev.prevStation?.goodReported !== next.prevStation?.goodReported ||
+          prev.prevStation?.scrapReported !== next.prevStation?.scrapReported ||
+          prev.nextStation?.goodReported !== next.nextStation?.goodReported ||
+          prev.nextStation?.scrapReported !== next.nextStation?.scrapReported
         );
       };
 

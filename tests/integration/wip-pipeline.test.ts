@@ -92,9 +92,10 @@ describe("Pipeline Setup (setup_job_item_pipeline RPC)", () => {
     expect(error).toBeNull();
     expect(balances).toHaveLength(2);
 
-    // Each balance should have good_available = 0 initially
+    // Each balance should have good_reported = 0 initially
     for (const balance of balances ?? []) {
-      expect(balance.good_available).toBe(0);
+      expect(balance.good_reported).toBe(0);
+      expect(balance.scrap_reported).toBe(0);
     }
 
     // Verify each step has a corresponding balance

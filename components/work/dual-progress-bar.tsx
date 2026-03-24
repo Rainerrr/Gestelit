@@ -8,12 +8,16 @@ import { cn } from "@/lib/utils";
 // ============================================
 
 export type DualProgressBarProps = {
-  /** Total completed quantity (all sessions combined) */
-  totalCompleted: number;
-  /** This session's contribution to the total */
-  sessionContribution: number;
+  /** Total good quantity (all sessions combined) */
+  totalGood: number;
+  /** Total scrap quantity (all sessions combined) */
+  totalScrap: number;
   /** Planned/target quantity */
   plannedQuantity: number;
+  /** This session's good contribution */
+  sessionGoodContribution: number;
+  /** This session's scrap contribution */
+  sessionScrapContribution: number;
   /** Display mode - percentage or absolute numbers */
   displayMode: "percentage" | "numbers";
   /** Optional class names */
@@ -27,50 +31,81 @@ export type DualProgressBarProps = {
 // ============================================
 
 /**
- * Industrial-style dual-color progress bar.
- * Shows total job item progress with session contribution highlighted.
+ * Industrial-style multi-segment progress bar.
+ * Shows total job item progress with good/scrap and session contribution highlighted.
  *
- * Visual segments:
- * - Emerald: Prior sessions' contribution
- * - Cyan: This session's contribution (with glow)
- * - Gray: Remaining quantity
+ * Visual segments (RTL, fill from right):
+ * 1. Prior good (dark emerald) → Session good (cyan with glow)
+ * 2. Prior scrap (dark rose) → Session scrap (lighter rose)
+ * 3. Remaining (gray)
+ * 4. Overflow (>100%): Scale all proportionally, show actual %, badge "ייצור עודף"
  *
  * Heavy borders, bold typography, high contrast for shop floor visibility.
  */
 export function DualProgressBar({
-  totalCompleted,
-  sessionContribution,
+  totalGood,
+  totalScrap,
   plannedQuantity,
+  sessionGoodContribution,
+  sessionScrapContribution,
   displayMode,
   className,
   compact = false,
 }: DualProgressBarProps) {
-  // Calculate percentages
-  const { priorPercent, sessionPercent, remainingPercent, remaining } = useMemo(() => {
+  const {
+    priorGoodPct,
+    sessionGoodPct,
+    priorScrapPct,
+    sessionScrapPct,
+    remainingPct,
+    remaining,
+    totalPct,
+    isOverflow,
+  } = useMemo(() => {
     const safePlanned = Math.max(1, plannedQuantity);
-    const safeTotal = Math.min(totalCompleted, safePlanned);
-    const safeSession = Math.min(sessionContribution, safeTotal);
+    const totalProduced = totalGood + totalScrap;
 
-    const prior = Math.max(0, safeTotal - safeSession);
-    const priorPct = (prior / safePlanned) * 100;
-    const sessionPct = (safeSession / safePlanned) * 100;
-    const remainingPct = Math.max(0, 100 - priorPct - sessionPct);
-    const rem = Math.max(0, safePlanned - safeTotal);
+    const priorGood = Math.max(0, totalGood - sessionGoodContribution);
+    const priorScrap = Math.max(0, totalScrap - sessionScrapContribution);
+
+    // Calculate raw percentages
+    const rawPriorGood = (priorGood / safePlanned) * 100;
+    const rawSessionGood = (sessionGoodContribution / safePlanned) * 100;
+    const rawPriorScrap = (priorScrap / safePlanned) * 100;
+    const rawSessionScrap = (sessionScrapContribution / safePlanned) * 100;
+    const rawTotal = rawPriorGood + rawSessionGood + rawPriorScrap + rawSessionScrap;
+
+    const overflow = rawTotal > 100;
+    // Scale factor: if overflow, scale down to fit in 100% bar width
+    const scale = overflow ? 100 / rawTotal : 1;
+
+    const pGood = rawPriorGood * scale;
+    const sGood = rawSessionGood * scale;
+    const pScrap = rawPriorScrap * scale;
+    const sScrap = rawSessionScrap * scale;
+    const rem = overflow ? 0 : Math.max(0, 100 - pGood - sGood - pScrap - sScrap);
+    const actualRem = Math.max(0, safePlanned - totalProduced);
 
     return {
-      priorPercent: priorPct,
-      sessionPercent: sessionPct,
-      remainingPercent: remainingPct,
-      remaining: rem,
+      priorGoodPct: pGood,
+      sessionGoodPct: sGood,
+      priorScrapPct: pScrap,
+      sessionScrapPct: sScrap,
+      remainingPct: rem,
+      remaining: actualRem,
+      totalPct: Math.round((totalProduced / safePlanned) * 100),
+      isOverflow: overflow,
     };
-  }, [totalCompleted, sessionContribution, plannedQuantity]);
+  }, [totalGood, totalScrap, plannedQuantity, sessionGoodContribution, sessionScrapContribution]);
 
-  const totalPercent = Math.min(100, priorPercent + sessionPercent);
   const isComplete = remaining === 0;
+
+  // Minimum width for non-zero segments so they're always visible
+  const minWidth = (pct: number) => (pct > 0 ? Math.max(pct, 0.5) : 0);
 
   return (
     <div className={cn("space-y-2", className)}>
-      {/* Progress Bar Container - thick industrial border */}
+      {/* Progress Bar Container */}
       <div
         className={cn(
           "relative w-full overflow-hidden rounded-lg",
@@ -78,32 +113,49 @@ export function DualProgressBar({
           compact ? "h-6" : "h-8"
         )}
       >
-        {/* Prior Sessions Segment - emerald - RTL: anchored to right */}
-        {priorPercent > 0 && (
+        {/* Prior Good Segment - dark emerald - RTL: anchored to right */}
+        {priorGoodPct > 0 && (
           <div
-            className={cn(
-              "absolute inset-y-0 right-0",
-              "bg-gradient-to-l from-emerald-400 to-emerald-600",
-              "transition-all duration-500 ease-out"
-            )}
-            style={{ width: `${priorPercent}%` }}
+            className="absolute inset-y-0 right-0 bg-emerald-600 transition-all duration-500 ease-out"
+            style={{ width: `${minWidth(priorGoodPct)}%` }}
           />
         )}
 
-        {/* This Session Segment - cyan with glow - RTL: positioned after prior from right */}
-        {sessionPercent > 0 && (
+        {/* Session Good Segment - cyan with glow */}
+        {sessionGoodPct > 0 && (
           <div
             className={cn(
               "absolute inset-y-0",
-              "bg-gradient-to-l from-cyan-400 to-cyan-600",
+              "bg-cyan-500",
               "shadow-[0_0_12px_rgba(6,182,212,0.5)]",
-              "transition-all duration-500 ease-out",
-              // Slower pulse animation (3s) for less jarring effect
               "animate-pulse-slow"
             )}
             style={{
-              right: `${priorPercent}%`,
-              width: `${sessionPercent}%`,
+              right: `${priorGoodPct}%`,
+              width: `${minWidth(sessionGoodPct)}%`,
+              transition: "width 500ms ease-out, right 500ms ease-out",
+            }}
+          />
+        )}
+
+        {/* Prior Scrap Segment - dark rose */}
+        {priorScrapPct > 0 && (
+          <div
+            className="absolute inset-y-0 bg-rose-700 transition-all duration-500 ease-out"
+            style={{
+              right: `${priorGoodPct + sessionGoodPct}%`,
+              width: `${minWidth(priorScrapPct)}%`,
+            }}
+          />
+        )}
+
+        {/* Session Scrap Segment - lighter rose */}
+        {sessionScrapPct > 0 && (
+          <div
+            className="absolute inset-y-0 bg-rose-500 animate-pulse-slow transition-all duration-500 ease-out"
+            style={{
+              right: `${priorGoodPct + sessionGoodPct + priorScrapPct}%`,
+              width: `${minWidth(sessionScrapPct)}%`,
             }}
           />
         )}
@@ -111,61 +163,81 @@ export function DualProgressBar({
         {/* Percentage Overlay - centered text */}
         <div
           className={cn(
-            "absolute inset-0 flex items-center justify-center",
+            "absolute inset-0 flex items-center justify-center gap-2",
             compact ? "text-sm" : "text-base",
             "font-bold tabular-nums tracking-tight",
-            // Text shadow for readability
             "drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]",
-            totalPercent > 50 ? "text-white" : "text-foreground"
+            (priorGoodPct + sessionGoodPct) > 50 ? "text-white" : "text-foreground"
           )}
         >
           {displayMode === "percentage" ? (
-            <span>{Math.round(totalPercent)}%</span>
+            <span>{totalPct}%</span>
           ) : (
-            <span>
-              {totalCompleted.toLocaleString()} / {plannedQuantity.toLocaleString()}
+            <span dir="ltr">
+              {totalGood.toLocaleString()} / {plannedQuantity.toLocaleString()}
+            </span>
+          )}
+          {isOverflow && (
+            <span className="text-[10px] font-bold bg-amber-500/90 text-amber-950 px-1.5 py-0.5 rounded">
+              ייצור עודף
             </span>
           )}
         </div>
 
         {/* Completion flash effect */}
-        {isComplete && (
+        {isComplete && !isOverflow && (
           <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer" />
         )}
       </div>
 
       {/* Legend - shows breakdown */}
       {!compact && (
-        <div className="flex items-center justify-between gap-4 text-xs">
-          {/* Prior Progress Legend */}
+        <div className="flex items-center justify-between gap-2 text-xs flex-wrap">
+          {/* Good */}
           <div className="flex items-center gap-1.5">
-            <span className="h-3 w-3 rounded-sm bg-gradient-to-b from-emerald-400 to-emerald-600 border border-emerald-300" />
+            <span className="h-3 w-3 rounded-sm bg-emerald-600 border border-emerald-500" />
             <span className="text-muted-foreground">
               {displayMode === "percentage"
-                ? `קודם: ${Math.round(priorPercent)}%`
-                : `קודם: ${Math.max(0, totalCompleted - sessionContribution).toLocaleString()}`}
+                ? `תקין: ${Math.round((totalGood / Math.max(1, plannedQuantity)) * 100)}%`
+                : `תקין: ${totalGood.toLocaleString()}`}
             </span>
           </div>
 
-          {/* Session Contribution Legend */}
-          <div className="flex items-center gap-1.5">
-            <span className="h-3 w-3 rounded-sm bg-gradient-to-b from-cyan-400 to-cyan-600 border border-cyan-300 shadow-[0_0_6px_rgba(6,182,212,0.4)]" />
-            <span className="text-foreground font-medium">
-              {displayMode === "percentage"
-                ? `משמרת: +${Math.round(sessionPercent)}%`
-                : `משמרת: +${sessionContribution.toLocaleString()}`}
-            </span>
-          </div>
+          {/* Session Good */}
+          {sessionGoodContribution > 0 && (
+            <div className="flex items-center gap-1.5">
+              <span className="h-3 w-3 rounded-sm bg-cyan-500 border border-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.4)]" />
+              <span className="text-foreground font-medium">
+                {displayMode === "percentage"
+                  ? `משמרת: +${Math.round((sessionGoodContribution / Math.max(1, plannedQuantity)) * 100)}%`
+                  : `משמרת: +${sessionGoodContribution.toLocaleString()}`}
+              </span>
+            </div>
+          )}
 
-          {/* Remaining Legend */}
-          <div className="flex items-center gap-1.5">
-            <span className="h-3 w-3 rounded-sm bg-muted border border-border" />
-            <span className="text-muted-foreground/70">
-              {displayMode === "percentage"
-                ? `נותר: ${Math.round(remainingPercent)}%`
-                : `נותר: ${remaining.toLocaleString()}`}
-            </span>
-          </div>
+          {/* Scrap */}
+          {totalScrap > 0 && (
+            <div className="flex items-center gap-1.5">
+              <span className="h-3 w-3 rounded-sm bg-rose-600 border border-rose-500" />
+              <span className="text-rose-400">
+                {displayMode === "percentage"
+                  ? `פסול: ${Math.round((totalScrap / Math.max(1, plannedQuantity)) * 100)}%`
+                  : `פסול: ${totalScrap.toLocaleString()}`}
+              </span>
+            </div>
+          )}
+
+          {/* Remaining */}
+          {remaining > 0 && (
+            <div className="flex items-center gap-1.5">
+              <span className="h-3 w-3 rounded-sm bg-muted border border-border" />
+              <span className="text-muted-foreground/70">
+                {displayMode === "percentage"
+                  ? `נותר: ${Math.round((remaining / Math.max(1, plannedQuantity)) * 100)}%`
+                  : `נותר: ${remaining.toLocaleString()}`}
+              </span>
+            </div>
+          )}
         </div>
       )}
     </div>

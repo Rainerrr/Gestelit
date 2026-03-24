@@ -14,7 +14,7 @@ import {
   Package,
   ExternalLink,
   AlertTriangle,
-  Trash2,
+  PackageX,
   TrendingDown,
   AlertOctagon,
   Settings,
@@ -159,7 +159,7 @@ const SessionFlagIcons = ({ session, showPlaceholder = false }: { session: Compl
           <Tooltip>
             <TooltipTrigger asChild>
               <span className="shrink-0">
-                <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                <PackageX className="h-3.5 w-3.5 text-red-500" />
               </span>
             </TooltipTrigger>
             <TooltipContent side="top" className="text-xs">

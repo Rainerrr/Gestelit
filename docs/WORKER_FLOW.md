@@ -2,7 +2,7 @@
 
 > Complete guide to the worker-facing application
 > Routes: `app/(worker)/`
-> Last updated: January 2026
+> Last updated: March 2026
 
 ---
 
@@ -77,7 +77,7 @@ Worker authentication and session recovery detection.
    - Show recovery dialog
    - Options: Resume or Discard
 5. If no session or discarded:
-   - Navigate to /job (with production lines) or /station (legacy)
+   - Navigate to /job (with pipeline presets) or /station (legacy)
 ```
 
 ### Recovery Dialog
@@ -125,30 +125,30 @@ Job number entry and validation.
 **File:** `app/(worker)/station/page.tsx`
 
 ### Purpose
-Select workstation for the session. Supports both legacy (simple) and production line modes.
+Select workstation for the session. Supports both legacy (simple) and pipeline preset modes.
 
 ### Legacy Mode
 - Shows stations assigned to worker via `worker_stations`
 - Displays occupancy status
 - Single selection
 
-### Production Line Mode
-- Shows job items (station or line type)
-- Shows stations within production line steps
-- Shows WIP availability at each step
+### Pipeline Preset Mode
+- Shows job items with pipeline steps
+- Shows stations within pipeline steps
+- Shows reported quantities at each step
 - Filtered by worker assignment
 
 ### UI Elements
 - Station cards with:
   - Station name/code
   - Occupancy indicator (occupied/available/grace period)
-  - WIP available (production line mode)
-  - Position in line (production line mode)
-- Job item grouping (production line mode)
+  - Reported quantities (pipeline mode)
+  - Position in pipeline (pipeline mode)
+- Job item grouping (pipeline mode)
 
 ### API Calls
 - `GET /api/stations/with-occupancy` - Legacy mode
-- `POST /api/jobs/[jobId]/station-selection` - Production line mode
+- `POST /api/jobs/[jobId]/station-selection` - Pipeline mode
 
 ### Occupancy States
 ```typescript
@@ -399,7 +399,7 @@ interface WorkerSessionContextValue {
   station: Station | null;
   job: Job | null;
   jobItem: JobItem | null;
-  jobItemStation: JobItemStation | null;
+  jobItemStation: JobItemStep | null;
   currentStatus: StatusDefinition | null;
   totalGood: number;
   totalScrap: number;
@@ -409,7 +409,7 @@ interface WorkerSessionContextValue {
   setStation: (station: Station | null) => void;
   setJob: (job: Job | null) => void;
   setJobItem: (item: JobItem | null) => void;
-  setJobItemStation: (station: JobItemStation | null) => void;
+  setJobItemStep: (station: JobItemStep | null) => void;
   setCurrentStatus: (status: StatusDefinition | null) => void;
   setTotalGood: (count: number) => void;
   setTotalScrap: (count: number) => void;
@@ -422,7 +422,7 @@ interface WorkerSessionContextValue {
 
 **File:** `contexts/PipelineContext.tsx`
 
-For production line station selection:
+For pipeline station selection:
 ```typescript
 interface PipelineContextValue {
   jobItems: JobItem[];
@@ -443,7 +443,7 @@ saveSessionToStorage({
   stationId,
   jobId,
   jobItemId,
-  jobItemStationId
+  jobItemStepId
 });
 
 loadSessionFromStorage();
@@ -471,7 +471,7 @@ clearSessionStorage();
 | `components/worker/station-block.tsx` | Station card |
 | `components/worker/occupancy-indicator.tsx` | Occupancy status |
 | `components/worker/job-item-card.tsx` | Job item display |
-| `components/worker/production-line-stepper.tsx` | Line progress |
+| `components/worker/pipeline-stepper.tsx` | Pipeline progress |
 | `components/work/production-pipeline.tsx` | Pipeline view |
 | `components/checklists/checklist-items.tsx` | Checklist UI |
 

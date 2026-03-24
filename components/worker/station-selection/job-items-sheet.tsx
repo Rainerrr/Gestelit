@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import {
   Sheet,
   SheetContent,
+  SheetDescription,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
@@ -25,6 +26,7 @@ export type JobItemForSelection = {
   name: string;
   plannedQuantity: number;
   completedGood: number;
+  completedScrap: number;
   jobItemStepId: string;
 };
 
@@ -60,7 +62,7 @@ function ProgressBar({ completed, planned, className }: ProgressBarProps) {
       {/* Progress fill */}
       <div
         className={cn(
-          "absolute inset-y-0 left-0 rounded-full transition-all duration-500 ease-out",
+          "absolute inset-y-0 right-0 rounded-full transition-all duration-500 ease-out",
           isComplete
             ? "bg-gradient-to-r from-emerald-500 to-emerald-400"
             : "bg-gradient-to-r from-cyan-600 to-cyan-400"
@@ -87,10 +89,11 @@ type JobItemCardProps = {
 
 function JobItemCard({ jobItem, onSelect, animationDelay }: JobItemCardProps) {
   const { t } = useTranslation();
+  const totalCompleted = jobItem.completedGood + (jobItem.completedScrap ?? 0);
   const percentage = jobItem.plannedQuantity > 0
-    ? Math.round((jobItem.completedGood / jobItem.plannedQuantity) * 100)
+    ? Math.round((totalCompleted / jobItem.plannedQuantity) * 100)
     : 0;
-  const remaining = Math.max(0, jobItem.plannedQuantity - jobItem.completedGood);
+  const remaining = Math.max(0, jobItem.plannedQuantity - totalCompleted);
   const isComplete = remaining === 0;
 
   return (
@@ -148,14 +151,14 @@ function JobItemCard({ jobItem, onSelect, animationDelay }: JobItemCardProps) {
       <div className="flex items-center gap-3 mb-3">
         <div className="flex-1">
           <ProgressBar
-            completed={jobItem.completedGood}
+            completed={totalCompleted}
             planned={jobItem.plannedQuantity}
             className="h-2"
           />
         </div>
         <span className="text-xs text-muted-foreground flex-shrink-0">
           <span className="font-semibold text-foreground tabular-nums">
-            {jobItem.completedGood.toLocaleString()}
+            {totalCompleted.toLocaleString()}
           </span>
           /{jobItem.plannedQuantity.toLocaleString()}
         </span>
@@ -168,13 +171,10 @@ function JobItemCard({ jobItem, onSelect, animationDelay }: JobItemCardProps) {
       {/* Select button - compact */}
       <Button
         onClick={onSelect}
-        disabled={isComplete}
         className={cn(
           "w-full h-10 text-sm font-bold",
           "transition-all duration-200",
-          isComplete
-            ? "bg-muted text-muted-foreground cursor-not-allowed"
-            : [
+          [
                 "bg-gradient-to-r from-cyan-600 to-cyan-500",
                 "hover:from-cyan-500 hover:to-cyan-400",
                 "text-slate-900",
@@ -214,8 +214,8 @@ export function JobItemsSheet({
   // Sort: incomplete items first, then by remaining quantity descending
   const sortedJobItems = useMemo(() => {
     return [...jobItems].sort((a, b) => {
-      const aRemaining = a.plannedQuantity - a.completedGood;
-      const bRemaining = b.plannedQuantity - b.completedGood;
+      const aRemaining = a.plannedQuantity - a.completedGood - (a.completedScrap ?? 0);
+      const bRemaining = b.plannedQuantity - b.completedGood - (b.completedScrap ?? 0);
       const aComplete = aRemaining <= 0;
       const bComplete = bRemaining <= 0;
 
@@ -240,9 +240,7 @@ export function JobItemsSheet({
     );
   }, [sortedJobItems, searchQuery]);
 
-  const availableCount = jobItems.filter(
-    (j) => j.completedGood < j.plannedQuantity
-  ).length;
+  const availableCount = jobItems.length;
 
   const handleSelect = useCallback(
     (jobItem: JobItemForSelection) => {
@@ -281,9 +279,9 @@ export function JobItemsSheet({
               <SheetTitle className="text-xl font-black text-foreground truncate">
                 {t("jobItems.sheet.title", { code: stationCode })}
               </SheetTitle>
-              <p className="mt-1 text-sm text-muted-foreground truncate">
+              <SheetDescription className="mt-1 truncate">
                 {stationName} • {t("jobItems.sheet.activeJobs", { count: availableCount })}
-              </p>
+              </SheetDescription>
             </div>
 
             <Button

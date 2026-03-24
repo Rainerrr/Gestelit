@@ -48,6 +48,8 @@ export type QuantityReportDialogProps = {
   plannedQuantity?: number;
   /** Total completed good (all sessions combined, before this session's contribution) */
   totalCompletedBefore?: number;
+  /** Total completed scrap (all sessions combined, before this session's contribution) */
+  totalCompletedScrapBefore?: number;
   /** Callback when quantities are submitted */
   onSubmit: (result: QuantityReportResult) => void;
   /** Callback when dialog is cancelled (only if not required) */
@@ -63,6 +65,191 @@ export type QuantityReportDialogProps = {
 // ============================================
 // COMPONENT
 // ============================================
+
+/**
+ * 4-segment progress bar preview matching the DualProgressBar standard:
+ * Prior Scrap (dark rose) | Session Scrap (light rose) | Prior Good (dark emerald) | Session Good (cyan) + 100% tick
+ */
+const QuantityReportProgressPreview = ({
+  plannedQuantity,
+  totalCompletedBefore,
+  totalCompletedScrapBefore,
+  sessionTotals,
+  previewValues,
+}: {
+  plannedQuantity: number;
+  totalCompletedBefore: number;
+  totalCompletedScrapBefore: number;
+  sessionTotals: { good: number; scrap: number };
+  previewValues: {
+    additionalGood: number;
+    additionalScrap: number;
+    totalCompletedAfter: number;
+    totalGoodAfter: number;
+    totalScrapAfter: number;
+    remaining?: number;
+    progressPercent?: number;
+    isComplete: boolean;
+  };
+}) => {
+  const safePlanned = Math.max(1, plannedQuantity);
+
+  // Calculate all 4 segments
+  const priorGood = totalCompletedBefore;
+  const sessionGood = sessionTotals.good + previewValues.additionalGood;
+  const priorScrap = totalCompletedScrapBefore;
+  const sessionScrap = sessionTotals.scrap + previewValues.additionalScrap;
+
+  // Raw percentages
+  const rawPriorGood = (priorGood / safePlanned) * 100;
+  const rawSessionGood = (sessionGood / safePlanned) * 100;
+  const rawPriorScrap = (priorScrap / safePlanned) * 100;
+  const rawSessionScrap = (sessionScrap / safePlanned) * 100;
+  const rawTotal = rawPriorGood + rawSessionGood + rawPriorScrap + rawSessionScrap;
+
+  const isOverflow = rawTotal > 100;
+  const scale = isOverflow ? 100 / rawTotal : 1;
+
+  const priorGoodPct = rawPriorGood * scale;
+  const sessionGoodPct = rawSessionGood * scale;
+  const priorScrapPct = rawPriorScrap * scale;
+  const sessionScrapPct = rawSessionScrap * scale;
+
+  const minW = (pct: number) => (pct > 0 ? Math.max(pct, 0.5) : 0);
+
+  // Cumulative offsets from right for RTL positioning
+  const pGoodW = minW(priorGoodPct);
+  const sGoodW = minW(sessionGoodPct);
+  const pScrapW = minW(priorScrapPct);
+  const sScrapW = minW(sessionScrapPct);
+
+  const sGoodRight = pGoodW;
+  const pScrapRight = pGoodW + sGoodW;
+  const sScrapRight = pGoodW + sGoodW + pScrapW;
+
+  // 100% tick position for overflow
+  const tickPosition = isOverflow ? (100 / rawTotal) * 100 : 100;
+
+  // Before values (current state before this report)
+  const beforeGood = totalCompletedBefore + sessionTotals.good;
+  const beforeScrap = totalCompletedScrapBefore + sessionTotals.scrap;
+
+  return (
+    <div className="space-y-1.5 rounded-lg border border-border bg-card/80 p-2">
+      {/* Header: label + overflow badge */}
+      <div className="flex items-center justify-between text-xs">
+        <div className="flex items-center gap-2">
+          <span className="text-muted-foreground">מצב עבודה</span>
+          {isOverflow && (
+            <span className="text-[9px] font-bold bg-amber-500/90 text-amber-950 px-1.5 py-0.5 rounded">
+              ייצור עודף
+            </span>
+          )}
+        </div>
+        <span dir="ltr" className="font-bold tabular-nums text-foreground">
+          {(previewValues.totalGoodAfter + previewValues.totalScrapAfter).toLocaleString()} / {plannedQuantity.toLocaleString()}
+        </span>
+      </div>
+
+      {/* Progress Bar - 4 segments */}
+      <div className="relative">
+        <div className="relative h-5 overflow-hidden rounded-md border border-border bg-muted/50">
+          {/* Prior Good - dark emerald - anchored to right */}
+          {priorGoodPct > 0 && (
+            <div
+              className="absolute inset-y-0 right-0 bg-emerald-600 transition-all duration-300"
+              style={{ width: `${pGoodW}%` }}
+            />
+          )}
+
+          {/* Session Good - light emerald with pulse */}
+          {sessionGoodPct > 0 && (
+            <div
+              className="absolute inset-y-0 bg-emerald-400 shadow-[inset_0_0_8px_rgba(255,255,255,0.2)] animate-pulse-slow"
+              style={{ right: `${sGoodRight}%`, width: `${sGoodW}%`, transition: "width 300ms, right 300ms" }}
+            />
+          )}
+
+          {/* Prior Scrap - dark rose */}
+          {priorScrapPct > 0 && (
+            <div
+              className="absolute inset-y-0 bg-rose-700"
+              style={{ right: `${pScrapRight}%`, width: `${pScrapW}%`, transition: "width 300ms, right 300ms" }}
+            />
+          )}
+
+          {/* Session Scrap - lighter rose */}
+          {sessionScrapPct > 0 && (
+            <div
+              className="absolute inset-y-0 bg-rose-400 animate-pulse-slow"
+              style={{ right: `${sScrapRight}%`, width: `${sScrapW}%`, transition: "width 300ms, right 300ms" }}
+            />
+          )}
+
+          {/* 100% tick mark for overflow */}
+          {isOverflow && (
+            <div
+              className="absolute inset-y-0 z-20 w-[3px] bg-amber-400"
+              style={{ right: `${tickPosition}%`, transform: "translateX(50%)" }}
+            />
+          )}
+
+          {/* Units overlay */}
+          <div dir="ltr" className="absolute inset-0 flex items-center justify-center text-xs font-bold drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] text-white tabular-nums">
+            {(previewValues.totalGoodAfter + previewValues.totalScrapAfter).toLocaleString()} / {plannedQuantity.toLocaleString()}
+          </div>
+        </div>
+
+        {/* 100% tick below bar */}
+        <div className="relative w-full h-4">
+          <div
+            className="absolute top-0 flex flex-col items-center"
+            style={isOverflow
+              ? { right: `${tickPosition}%`, transform: "translateX(50%)" }
+              : { left: 0, transform: "translateX(-50%)" }
+            }
+          >
+            <div className={cn("h-1.5", isOverflow ? "w-[2px] bg-amber-400" : "w-[2px] bg-amber-500/70")} />
+            <span className={cn("text-[9px] font-mono font-semibold leading-none", isOverflow ? "text-amber-400" : "text-amber-500/80")}>
+              100%
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Before / After row — dashboard format: good +scrap / planned */}
+      <div className="flex items-center justify-between text-[11px]">
+        {/* Before */}
+        <div className="flex items-center gap-1">
+          <span className="text-muted-foreground">לפני:</span>
+          <div dir="ltr" className="flex items-baseline gap-1 tabular-nums">
+            <span className="font-semibold text-foreground">{beforeGood.toLocaleString()}</span>
+            {beforeScrap > 0 && (
+              <span className="text-rose-400 font-semibold">+{beforeScrap.toLocaleString()}</span>
+            )}
+            <span className="text-muted-foreground/70">/</span>
+            <span className="text-muted-foreground/70">{plannedQuantity.toLocaleString()}</span>
+          </div>
+        </div>
+
+        {/* After */}
+        <div className="flex items-center gap-1">
+          <span className="text-muted-foreground">אחרי:</span>
+          <div dir="ltr" className="flex items-baseline gap-1 tabular-nums">
+            <span className={cn("font-bold", previewValues.isComplete ? "text-emerald-400" : "text-foreground")}>
+              {previewValues.totalGoodAfter.toLocaleString()}
+            </span>
+            {previewValues.totalScrapAfter > 0 && (
+              <span className="text-rose-400 font-bold">+{previewValues.totalScrapAfter.toLocaleString()}</span>
+            )}
+            <span className="text-muted-foreground/70">/</span>
+            <span className="text-muted-foreground/70">{plannedQuantity.toLocaleString()}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 /**
  * Industrial-style quantity reporting dialog - Redesigned v2.
@@ -83,14 +270,15 @@ export function QuantityReportDialog({
   sessionTotals,
   plannedQuantity,
   totalCompletedBefore = 0,
+  totalCompletedScrapBefore = 0,
   onSubmit,
   onCancel,
   required = false,
   isSubmitting = false,
   jobItemName,
 }: QuantityReportDialogProps) {
-  // State - default to "total" mode
-  const [mode, setMode] = useState<QuantityReportMode>("total");
+  // Mode is fixed to "additional" (legacy modes "total"/"totalJob" kept in QuantityReportMode type)
+  const mode: QuantityReportMode = "additional";
   const [goodInput, setGoodInput] = useState("");
   const [scrapInput, setScrapInput] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -104,7 +292,6 @@ export function QuantityReportDialog({
   // Reset state when dialog opens
   useEffect(() => {
     if (open) {
-      setMode("total");
       setGoodInput("");
       setScrapInput("");
       setError(null);
@@ -132,112 +319,42 @@ export function QuantityReportDialog({
   const goodNumeric = goodInput === "" ? 0 : parseInt(goodInput, 10) || 0;
   const scrapNumeric = scrapInput === "" ? 0 : parseInt(scrapInput, 10) || 0;
 
-  // Current total reported (what shows as placeholder in total mode)
-  const currentReportedTotal = totalCompletedBefore + sessionTotals.good;
-
-  // Calculate preview values
+  // Calculate preview values (additional mode: input is direct additional amount)
   const previewValues = useMemo(() => {
-    // Calculate additional good based on mode:
-    // - totalJob: input is total for job, subtract what's already done (totalCompletedBefore + sessionTotals.good)
-    // - total: input is total for session, subtract what's already done this session (sessionTotals.good)
-    // - additional: input is direct additional amount
-    let additionalGood: number;
-    if (mode === "totalJob") {
-      additionalGood = Math.max(0, goodNumeric - (totalCompletedBefore + sessionTotals.good));
-    } else if (mode === "total") {
-      additionalGood = Math.max(0, goodNumeric - sessionTotals.good);
-    } else {
-      additionalGood = goodNumeric;
-    }
-
-    // Same logic for scrap (but scrap is session-only for totalJob mode too, as job-level scrap isn't tracked the same way)
-    let additionalScrap: number;
-    if (mode === "totalJob" || mode === "total") {
-      additionalScrap = Math.max(0, scrapNumeric - sessionTotals.scrap);
-    } else {
-      additionalScrap = scrapNumeric;
-    }
+    const additionalGood = goodNumeric;
+    const additionalScrap = scrapNumeric;
 
     // Total completed after this report (including this session's contribution)
-    const totalCompletedAfter = totalCompletedBefore + sessionTotals.good + additionalGood;
+    const totalGoodAfter = totalCompletedBefore + sessionTotals.good + additionalGood;
+    const totalScrapAfter = totalCompletedScrapBefore + sessionTotals.scrap + additionalScrap;
+    const totalCompletedAfter = totalGoodAfter + totalScrapAfter;
 
-    // Remaining after this report
+    // Remaining after this report (good + scrap count toward completion)
     const remaining = plannedQuantity
       ? Math.max(0, plannedQuantity - totalCompletedAfter)
       : undefined;
 
-    // Progress percentage
+    // Progress percentage (allow >100% for overproduction)
     const progressPercent = plannedQuantity && plannedQuantity > 0
-      ? Math.min(100, (totalCompletedAfter / plannedQuantity) * 100)
+      ? (totalCompletedAfter / plannedQuantity) * 100
       : undefined;
 
     return {
       additionalGood,
       additionalScrap,
       totalCompletedAfter,
+      totalGoodAfter,
+      totalScrapAfter,
       remaining,
       progressPercent,
       isComplete: remaining === 0,
     };
-  }, [mode, goodNumeric, scrapNumeric, sessionTotals, plannedQuantity, totalCompletedBefore]);
+  }, [goodNumeric, scrapNumeric, sessionTotals, plannedQuantity, totalCompletedBefore, totalCompletedScrapBefore]);
 
-  // Calculate maximum allowed input to prevent overflow
-  const maxAllowedGood = useMemo(() => {
-    if (!plannedQuantity) return undefined;
-    const currentJobTotal = totalCompletedBefore + sessionTotals.good;
-    const maxAdditional = Math.max(0, plannedQuantity - currentJobTotal);
-
-    if (mode === "totalJob") {
-      // In totalJob mode, max is the planned quantity
-      return plannedQuantity;
-    } else if (mode === "total") {
-      // In total session mode, max is current session + remaining
-      return sessionTotals.good + maxAdditional;
-    } else {
-      // In additional mode, max is the remaining amount
-      return maxAdditional;
-    }
-  }, [plannedQuantity, totalCompletedBefore, sessionTotals.good, mode]);
-
-  // Check if current input exceeds max
-  const isOverflow = maxAllowedGood !== undefined && goodNumeric > maxAllowedGood;
-
-  // Calculate minimum allowed input (can't go backwards from what's already reported)
-  const minAllowedGood = useMemo(() => {
-    if (mode === "totalJob") {
-      // In totalJob mode, min is the current total for the job (can't reduce)
-      return totalCompletedBefore + sessionTotals.good;
-    } else if (mode === "total") {
-      // In total session mode, min is current session total
-      return sessionTotals.good;
-    } else {
-      // In additional mode, min is 0
-      return 0;
-    }
-  }, [mode, totalCompletedBefore, sessionTotals.good]);
-
-  const minAllowedScrap = useMemo(() => {
-    // Scrap is always session-based, so min is current session scrap for total modes
-    if (mode === "totalJob" || mode === "total") {
-      return sessionTotals.scrap;
-    }
-    return 0;
-  }, [mode, sessionTotals.scrap]);
-
-  // Check if input is below minimum
-  const isBelowMinGood = goodInput !== "" && goodNumeric < minAllowedGood;
-  const isBelowMinScrap = scrapInput !== "" && scrapNumeric < minAllowedScrap;
+  // Overproduction is now allowed - no cap on good input
 
   // Check if scrap note is required but missing
   const isScrapNoteRequired = previewValues.additionalScrap > 0 && !scrapNote.trim();
-
-  // Handlers
-  const handleModeChange = useCallback((newMode: QuantityReportMode) => {
-    setMode(newMode);
-    setGoodInput("");
-    setScrapInput("");
-    setError(null);
-  }, []);
 
   const handleGoodInputChange = useCallback((value: string) => {
     setGoodInput(value);
@@ -264,30 +381,15 @@ export function QuantityReportDialog({
   // Calculate the value needed in the input box to complete the job item
   const fillToCompleteValue = useMemo(() => {
     if (!plannedQuantity) return 0;
-    const currentJobTotal = totalCompletedBefore + sessionTotals.good;
-    const remaining = Math.max(0, plannedQuantity - currentJobTotal);
+    const totalDone = totalCompletedBefore + totalCompletedScrapBefore + sessionTotals.good + sessionTotals.scrap;
+    return Math.max(0, plannedQuantity - totalDone);
+  }, [plannedQuantity, totalCompletedBefore, totalCompletedScrapBefore, sessionTotals.good, sessionTotals.scrap]);
 
-    if (mode === "totalJob") {
-      // In totalJob mode, input is total for job = planned quantity
-      return plannedQuantity;
-    } else if (mode === "total") {
-      // In total session mode, input is session total = current + remaining
-      return sessionTotals.good + remaining;
-    } else {
-      // In additional mode, input is the additional amount = remaining
-      return remaining;
-    }
-  }, [plannedQuantity, totalCompletedBefore, sessionTotals.good, mode]);
-
-  // Calculate the scrap value needed to fill remaining as scrap (mode-aware)
+  // Calculate the scrap value needed to fill remaining as scrap
   const scrapFillValue = useMemo(() => {
     if (!plannedQuantity || previewValues.remaining === undefined) return 0;
-    const scrapFill = previewValues.remaining;
-    if (mode === "totalJob" || mode === "total") {
-      return sessionTotals.scrap + scrapFill;
-    }
-    return scrapFill;
-  }, [plannedQuantity, previewValues.remaining, mode, sessionTotals.scrap]);
+    return previewValues.remaining;
+  }, [plannedQuantity, previewValues.remaining]);
 
   // Fill remaining to complete job item
   const handleFillRemaining = useCallback(() => {
@@ -299,15 +401,10 @@ export function QuantityReportDialog({
   // Fill scrap to complete job item (remaining as scrap)
   const handleFillScrapToComplete = useCallback(() => {
     if (!plannedQuantity || previewValues.remaining === undefined || previewValues.remaining <= 0) return;
-    const scrapFill = previewValues.remaining;
-    if (mode === "totalJob" || mode === "total") {
-      setScrapInput(String(sessionTotals.scrap + scrapFill));
-    } else {
-      setScrapInput(String(scrapFill));
-    }
+    setScrapInput(String(previewValues.remaining));
     setIsScrapExpanded(true);
     setError(null);
-  }, [plannedQuantity, previewValues.remaining, mode, sessionTotals.scrap]);
+  }, [plannedQuantity, previewValues.remaining]);
 
   // Image handling
   const handleScrapImageChange = useCallback((file: File | null) => {
@@ -323,22 +420,6 @@ export function QuantityReportDialog({
   }, [scrapImagePreview]);
 
   const handleSubmit = useCallback(() => {
-    if (isOverflow) {
-      setError(`לא ניתן לדווח יותר מ-${maxAllowedGood} יחידות`);
-      return;
-    }
-
-    // Validate input doesn't go below what's already reported
-    if (isBelowMinGood) {
-      const minLabel = mode === "totalJob" ? "סה״כ לפק״ע" : "סה״כ למשמרת";
-      setError(`לא ניתן לדווח ${minLabel} פחות מ-${minAllowedGood} (כבר דווח)`);
-      return;
-    }
-    if (isBelowMinScrap) {
-      setError(`לא ניתן לדווח סה״כ פסול פחות מ-${minAllowedScrap} (כבר דווח)`);
-      return;
-    }
-
     const { additionalGood, additionalScrap, isComplete } = previewValues;
 
     // Validate inputs
@@ -361,7 +442,7 @@ export function QuantityReportDialog({
       scrapNote: additionalScrap > 0 ? scrapNote.trim() : undefined,
       scrapImage: additionalScrap > 0 ? scrapImage : undefined,
     });
-  }, [isOverflow, maxAllowedGood, isBelowMinGood, isBelowMinScrap, minAllowedGood, minAllowedScrap, mode, previewValues, scrapNote, scrapImage, onSubmit]);
+  }, [previewValues, scrapNote, scrapImage, onSubmit]);
 
   const handleDialogChange = useCallback((isOpen: boolean) => {
     if (!isOpen && !required) {
@@ -386,80 +467,28 @@ export function QuantityReportDialog({
           ) : null}
         </DialogHeader>
 
+        {/* ============================================ */}
+        {/* PROGRESS BAR - TOP OF DIALOG */}
+        {/* ============================================ */}
+        {plannedQuantity && (
+          <QuantityReportProgressPreview
+            plannedQuantity={plannedQuantity}
+            totalCompletedBefore={totalCompletedBefore}
+            totalCompletedScrapBefore={totalCompletedScrapBefore}
+            sessionTotals={sessionTotals}
+            previewValues={previewValues}
+          />
+        )}
+
         <div className="space-y-4 py-2">
           {/* ============================================ */}
-          {/* TAB-STYLE MODE TOGGLE (3 tabs) */}
-          {/* RTL layout: first DOM element appears on RIGHT */}
-          {/* Visual order (right to left): totalJob, total, additional */}
-          {/* ============================================ */}
-          <div className="relative flex rounded-xl border-2 border-border bg-muted/50 p-1">
-            {/* Sliding background indicator - positions for 3 tabs */}
-            {/* In RTL flex: first item is at right-1, second at 33.333%, third at left-1 */}
-            <div
-              className={cn(
-                "absolute top-1 bottom-1 w-[calc(33.333%-3px)] rounded-lg bg-cyan-500/30 border border-cyan-500/50 transition-all duration-300 ease-out",
-                mode === "totalJob" && "right-1",
-                mode === "total" && "left-[calc(33.333%+1px)] right-[calc(33.333%+1px)]",
-                mode === "additional" && "left-1"
-              )}
-              style={mode === "total" ? { left: "calc(33.333% + 2px)", right: "calc(33.333% + 2px)" } : undefined}
-            />
-
-            {/* DOM order: totalJob (first=right), total (middle), additional (last=left) */}
-
-            {/* Total per Job Tab (rightmost in visual RTL) */}
-            <button
-              type="button"
-              onClick={() => handleModeChange("totalJob")}
-              className={cn(
-                "relative flex-1 py-2.5 rounded-lg font-bold text-sm transition-colors z-10",
-                mode === "totalJob"
-                  ? "text-cyan-300"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              סה״כ לפק״ע
-            </button>
-
-            {/* Total per Session Tab (middle) */}
-            <button
-              type="button"
-              onClick={() => handleModeChange("total")}
-              className={cn(
-                "relative flex-1 py-2.5 rounded-lg font-bold text-sm transition-colors z-10",
-                mode === "total"
-                  ? "text-cyan-300"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              סה״כ למשמרת
-            </button>
-
-            {/* Additional Tab (leftmost in visual RTL) */}
-            <button
-              type="button"
-              onClick={() => handleModeChange("additional")}
-              className={cn(
-                "relative flex-1 py-2.5 rounded-lg font-bold text-sm transition-colors z-10",
-                mode === "additional"
-                  ? "text-cyan-300"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              כמות נוספת
-            </button>
-          </div>
-
-          {/* ============================================ */}
-          {/* GOOD QUANTITY - IMPROVED LAYOUT */}
+          {/* GOOD QUANTITY */}
           {/* ============================================ */}
           <div className="space-y-3">
             {/* Header row with label and total required */}
             <div className="flex items-center justify-between">
               <Label className="text-lg font-bold text-emerald-400">
-                {mode === "totalJob" && "סה״כ לפק״ע"}
-                {mode === "total" && "סה״כ למשמרת"}
-                {mode === "additional" && "כמות נוספת"}
+                כמות נוספת
               </Label>
               {plannedQuantity && (
                 <span className="text-sm text-muted-foreground">
@@ -484,44 +513,28 @@ export function QuantityReportDialog({
               ))}
             </div>
 
-            {/* Large input with + on LEFT side (RTL) in additive mode */}
+            {/* Large input with + on LEFT side (RTL) */}
             <div className="relative">
-              {/* Plus symbol on the LEFT (appears after the number in RTL) - always visible in additive mode */}
-              {mode === "additional" && (
-                <span className={cn(
-                  "absolute left-4 top-1/2 -translate-y-1/2 text-[3rem] font-bold pointer-events-none leading-none transition-colors",
-                  goodInput ? "text-emerald-400/60" : "text-muted-foreground"
-                )}>
-                  +
-                </span>
-              )}
+              <span className={cn(
+                "absolute left-4 top-1/2 -translate-y-1/2 text-[3rem] font-bold pointer-events-none leading-none transition-colors",
+                goodInput ? "text-emerald-400/60" : "text-muted-foreground"
+              )}>
+                +
+              </span>
               <Input
                 type="number"
                 inputMode="numeric"
-                min={minAllowedGood}
-                max={maxAllowedGood}
-                placeholder={
-                  mode === "totalJob"
-                    ? currentReportedTotal.toLocaleString()
-                    : mode === "total"
-                      ? sessionTotals.good.toLocaleString()
-                      : "0"
-                }
+                min={0}
+                placeholder="0"
                 value={goodInput}
                 onChange={(e) => handleGoodInputChange(e.target.value)}
-                onFocus={(e) => {
-                  // In total modes, select all on focus so user can replace
-                  if (mode === "totalJob" || mode === "total") e.target.select();
-                }}
                 style={{ fontSize: "3.5rem", lineHeight: "1", height: "7rem" }}
                 className={cn(
                   "!h-28 text-center font-bold tabular-nums !py-4",
                   "border-2 bg-card/50",
                   "[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
                   "placeholder:text-muted-foreground placeholder:opacity-100",
-                  isOverflow || isBelowMinGood
-                    ? "border-red-500 text-red-400 focus-visible:ring-red-500/50"
-                    : "border-emerald-500/50 text-emerald-400 focus-visible:ring-emerald-500/50"
+                  "border-emerald-500/50 text-emerald-400 focus-visible:ring-emerald-500/50"
                 )}
               />
             </div>
@@ -560,9 +573,7 @@ export function QuantityReportDialog({
                   )}
                 />
                 <span className="text-base font-bold text-rose-400">
-                  {mode === "totalJob" && "סה״כ פסול למשמרת"}
-                  {mode === "total" && "סה״כ פסול למשמרת"}
-                  {mode === "additional" && "פסול נוסף"}
+                  פסול נוסף
                 </span>
               </div>
 
@@ -583,41 +594,28 @@ export function QuantityReportDialog({
             >
               <div className="overflow-hidden">
                 <div className="p-4 pt-0 space-y-4">
-                  {/* Scrap quantity input - matching good input style but smaller */}
+                  {/* Scrap quantity input */}
                   <div className="relative">
-                    {/* Plus symbol on the LEFT (appears after the number in RTL) - always visible in additive mode */}
-                    {mode === "additional" && (
-                      <span className={cn(
-                        "absolute left-4 top-1/2 -translate-y-1/2 text-[2rem] font-bold pointer-events-none leading-none transition-colors",
-                        scrapInput ? "text-rose-400/60" : "text-muted-foreground"
-                      )}>
-                        +
-                      </span>
-                    )}
+                    <span className={cn(
+                      "absolute left-4 top-1/2 -translate-y-1/2 text-[2rem] font-bold pointer-events-none leading-none transition-colors",
+                      scrapInput ? "text-rose-400/60" : "text-muted-foreground"
+                    )}>
+                      +
+                    </span>
                     <Input
                       type="number"
                       inputMode="numeric"
-                      min={minAllowedScrap}
-                      placeholder={
-                        mode === "totalJob" || mode === "total"
-                          ? sessionTotals.scrap.toLocaleString()
-                          : "0"
-                      }
+                      min={0}
+                      placeholder="0"
                       value={scrapInput}
                       onChange={(e) => handleScrapInputChange(e.target.value)}
-                      onFocus={(e) => {
-                        // In total modes, select all on focus so user can replace
-                        if (mode === "totalJob" || mode === "total") e.target.select();
-                      }}
                       style={{ fontSize: "2.5rem", lineHeight: "1" }}
                       className={cn(
                         "h-[4.5rem] text-center font-bold tabular-nums",
                         "border-2 bg-card/50",
                         "[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
                         "placeholder:text-rose-400/40 placeholder:opacity-100",
-                        isBelowMinScrap
-                          ? "border-red-500 text-red-400 focus-visible:ring-red-500/50"
-                          : "border-rose-500/50 text-rose-400 focus-visible:ring-rose-500/50"
+                        "border-rose-500/50 text-rose-400 focus-visible:ring-rose-500/50"
                       )}
                     />
                   </div>
@@ -691,63 +689,6 @@ export function QuantityReportDialog({
           </div>
 
           {/* ============================================ */}
-          {/* PROGRESS BAR - RTL + SLOW PULSE */}
-          {/* ============================================ */}
-          {plannedQuantity && (
-            <div className="space-y-1.5 rounded-lg border border-border bg-card/80 p-2">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">מצב עבודה</span>
-                <span className="font-bold tabular-nums text-foreground">
-                  {previewValues.totalCompletedAfter.toLocaleString()} / {plannedQuantity.toLocaleString()}
-                </span>
-              </div>
-
-              {/* Progress Bar - RTL: fills from RIGHT to LEFT */}
-              <div className="relative h-5 overflow-hidden rounded-md border border-border bg-muted/50">
-                {/* Previous progress (before input) - anchored to right */}
-                <div
-                  className="absolute inset-y-0 right-0 bg-gradient-to-l from-emerald-600 to-emerald-500 transition-all duration-300"
-                  style={{
-                    width: `${Math.min(100, ((totalCompletedBefore + sessionTotals.good) / plannedQuantity) * 100)}%`,
-                  }}
-                />
-                {/* New contribution (live preview) - slower pulse animation */}
-                {previewValues.additionalGood > 0 && (
-                  <div
-                    className="absolute inset-y-0 bg-gradient-to-l from-cyan-500 to-cyan-400 animate-pulse-slow transition-all duration-300"
-                    style={{
-                      right: `${Math.min(100, ((totalCompletedBefore + sessionTotals.good) / plannedQuantity) * 100)}%`,
-                      width: `${Math.min(100 - ((totalCompletedBefore + sessionTotals.good) / plannedQuantity) * 100, (previewValues.additionalGood / plannedQuantity) * 100)}%`,
-                    }}
-                  />
-                )}
-                {/* Percentage overlay */}
-                <div className="absolute inset-0 flex items-center justify-center text-xs font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
-                  {Math.round(previewValues.progressPercent ?? 0)}%
-                </div>
-              </div>
-
-              {/* Stats row */}
-              <div className="flex items-center justify-between text-[11px]">
-                <span className={cn(
-                  "font-semibold",
-                  previewValues.isComplete ? "text-emerald-400" : "text-muted-foreground"
-                )}>
-                  נותר: {(previewValues.remaining ?? 0).toLocaleString()}
-                </span>
-                {previewValues.additionalGood > 0 && (
-                  <span className="text-cyan-400 font-semibold">
-                    +{previewValues.additionalGood.toLocaleString()}
-                  </span>
-                )}
-                <span className="text-muted-foreground/70">
-                  נוכחי: {(totalCompletedBefore + sessionTotals.good).toLocaleString()}
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* ============================================ */}
           {/* ERROR MESSAGE */}
           {/* ============================================ */}
           {error && (
@@ -761,7 +702,7 @@ export function QuantityReportDialog({
           {/* Submit button only - no cancel when required */}
           <Button
             onClick={handleSubmit}
-            disabled={isSubmitting || isOverflow || isBelowMinGood || isBelowMinScrap || isScrapNoteRequired}
+            disabled={isSubmitting || isScrapNoteRequired}
             className={cn(
               "w-full min-w-36 font-bold text-lg h-12",
               previewValues.isComplete

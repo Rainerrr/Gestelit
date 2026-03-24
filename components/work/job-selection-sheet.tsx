@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import {
   Sheet,
   SheetContent,
+  SheetDescription,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
@@ -34,6 +35,7 @@ export type JobSelectionResult = {
     name: string;
     plannedQuantity: number;
     completedGood: number;
+    completedScrap: number;
     remaining: number;
     jobItemStepId: string;
   };
@@ -77,7 +79,7 @@ function ProgressBar({ completed, planned, className }: ProgressBarProps) {
       {/* Progress fill */}
       <div
         className={cn(
-          "absolute inset-y-0 left-0 rounded-full transition-all duration-500 ease-out",
+          "absolute inset-y-0 right-0 rounded-full transition-all duration-500 ease-out",
           isComplete
             ? "bg-gradient-to-r from-emerald-500 to-emerald-400"
             : "bg-gradient-to-r from-cyan-600 to-cyan-400"
@@ -105,10 +107,11 @@ type CompactJobItemCardProps = {
 
 function CompactJobItemCard({ jobItem, onSelect, animationDelay, disabled }: CompactJobItemCardProps) {
   const { t } = useTranslation();
+  const totalCompleted = jobItem.completedGood + (jobItem.completedScrap ?? 0);
   const percentage = jobItem.plannedQuantity > 0
-    ? Math.round((jobItem.completedGood / jobItem.plannedQuantity) * 100)
+    ? Math.round((totalCompleted / jobItem.plannedQuantity) * 100)
     : 0;
-  const remaining = Math.max(0, jobItem.plannedQuantity - jobItem.completedGood);
+  const remaining = Math.max(0, jobItem.plannedQuantity - totalCompleted);
   const isComplete = remaining === 0;
 
   return (
@@ -166,13 +169,13 @@ function CompactJobItemCard({ jobItem, onSelect, animationDelay, disabled }: Com
       <div className="flex items-center gap-3 mb-3">
         <div className="flex-1">
           <ProgressBar
-            completed={jobItem.completedGood}
+            completed={totalCompleted}
             planned={jobItem.plannedQuantity}
           />
         </div>
         <span className="text-xs text-muted-foreground flex-shrink-0">
           <span className="font-semibold text-foreground tabular-nums">
-            {jobItem.completedGood.toLocaleString()}
+            {totalCompleted.toLocaleString()}
           </span>
           /{jobItem.plannedQuantity.toLocaleString()}
         </span>
@@ -296,7 +299,8 @@ export function JobSelectionSheet({
     // Calculate total remaining per job for sorting jobs
     const jobTotals = new Map<string, number>();
     for (const item of items) {
-      const remaining = Math.max(0, item.plannedQuantity - item.completedGood);
+      const totalDone = item.completedGood + (item.completedScrap ?? 0);
+      const remaining = Math.max(0, item.plannedQuantity - totalDone);
       jobTotals.set(item.jobId, (jobTotals.get(item.jobId) ?? 0) + remaining);
     }
 
@@ -316,22 +320,21 @@ export function JobSelectionSheet({
       if (a.jobNumber !== b.jobNumber) return a.jobNumber.localeCompare(b.jobNumber);
 
       // Within same job, sort by item remaining
-      const aRemaining = a.plannedQuantity - a.completedGood;
-      const bRemaining = b.plannedQuantity - b.completedGood;
+      const aRemaining = a.plannedQuantity - a.completedGood - (a.completedScrap ?? 0);
+      const bRemaining = b.plannedQuantity - b.completedGood - (b.completedScrap ?? 0);
       return bRemaining - aRemaining;
     });
 
     return items;
   }, [jobItems, searchQuery, excludeJobItemId]);
 
-  const availableCount = jobItems.filter(
-    (j) => j.completedGood < j.plannedQuantity
-  ).length;
+  const availableCount = jobItems.length;
 
   // Handlers
   const handleSelect = useCallback(
     (jobItem: JobItemAtStation) => {
-      const remaining = Math.max(0, jobItem.plannedQuantity - jobItem.completedGood);
+      const totalDone = jobItem.completedGood + (jobItem.completedScrap ?? 0);
+      const remaining = Math.max(0, jobItem.plannedQuantity - totalDone);
       const result: JobSelectionResult = {
         job: {
           id: jobItem.jobId,
@@ -345,6 +348,7 @@ export function JobSelectionSheet({
           name: jobItem.name,
           plannedQuantity: jobItem.plannedQuantity,
           completedGood: jobItem.completedGood,
+          completedScrap: jobItem.completedScrap ?? 0,
           remaining,
           jobItemStepId: jobItem.jobItemStepId,
         },
@@ -390,9 +394,9 @@ export function JobSelectionSheet({
               <SheetTitle className="text-xl font-black text-foreground truncate">
                 {displayTitle}
               </SheetTitle>
-              <p className="mt-1 text-sm text-muted-foreground truncate">
+              <SheetDescription className="mt-1 truncate">
                 {displaySubtitle}
-              </p>
+              </SheetDescription>
             </div>
 
             {/* Single close button - only show if not required */}

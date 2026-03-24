@@ -36,7 +36,7 @@ export type PipelinePositionIndicatorProps = {
   waitingOutput: number;
   /** Current station name for simplified display */
   currentStationName?: string;
-  /** This session's good count (pending product amount) */
+  /** Total good reported at this station (all sessions) */
   sessionGoodCount?: number;
   /** Optional compact mode */
   compact?: boolean;
@@ -101,7 +101,7 @@ export function PipelinePositionIndicator({
             isOccupied={!!prevStation.occupiedBy}
             occupiedBy={prevStation.occupiedBy}
             wipCount={upstreamWip}
-            wipLabel="ממתינים לנו"
+            wipLabel="דווח בתחנה"
             variant="previous"
             compact={compact}
           />
@@ -123,7 +123,7 @@ export function PipelinePositionIndicator({
           )}
         >
           <span className="text-[10px] font-medium text-cyan-400/70 uppercase tracking-wider">
-            את כאן
+            אתה כאן
           </span>
           {currentStationName && (
             <span className="text-xs font-bold text-cyan-300 line-clamp-1 text-center mt-0.5 max-w-full truncate px-1">
@@ -134,7 +134,7 @@ export function PipelinePositionIndicator({
             <span className="text-sm font-bold tabular-nums text-cyan-400">
               {formatCompactNumber(sessionGoodCount)}
             </span>
-            <span className="text-[9px] text-cyan-400/60">דווח במשמרת</span>
+            <span className="text-[9px] text-cyan-400/60">דווח בתחנה</span>
           </div>
           {isTerminal && (
             <span className="text-[9px] font-medium text-emerald-400 mt-0.5">סיום</span>
@@ -153,7 +153,7 @@ export function PipelinePositionIndicator({
             isOccupied={!!nextStation.occupiedBy}
             occupiedBy={nextStation.occupiedBy}
             wipCount={waitingOutput}
-            wipLabel="יוצאים הלאה"
+            wipLabel="דווח בתחנה"
             variant="next"
             compact={compact}
           />
@@ -169,14 +169,14 @@ export function PipelinePositionIndicator({
         <div className="flex items-center gap-1">
           {waitingOutput > 0 && (
             <span className="rounded bg-rose-500/20 px-1.5 py-0.5 font-semibold text-rose-400 tabular-nums">
-              {formatCompactNumber(waitingOutput)} יוצא →
+              {formatCompactNumber(waitingOutput)} דווח בתחנה
             </span>
           )}
         </div>
         <div className="flex items-center gap-1">
           {upstreamWip > 0 && (
             <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 font-semibold text-emerald-400 tabular-nums">
-              ← {formatCompactNumber(upstreamWip)} ממתין
+              דווח בתחנה {formatCompactNumber(upstreamWip)}
             </span>
           )}
         </div>

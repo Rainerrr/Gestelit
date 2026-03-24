@@ -1,4 +1,4 @@
-import type { StationMaintenanceInfo } from "@/lib/types";
+import type { StationMaintenanceDetail, Worker } from "@/lib/types";
 import { clearAdminLoggedIn } from "./auth-helpers";
 
 async function handleResponse<T>(response: Response): Promise<T> {
@@ -38,7 +38,7 @@ function createAdminRequestInit(init?: RequestInit): RequestInit {
 }
 
 export async function fetchMaintenanceStationsApi(): Promise<{
-  stations: StationMaintenanceInfo[];
+  stations: StationMaintenanceDetail[];
 }> {
   const response = await fetch("/api/admin/maintenance", createAdminRequestInit());
   return handleResponse(response);
@@ -46,19 +46,37 @@ export async function fetchMaintenanceStationsApi(): Promise<{
 
 export async function completeMaintenanceApi(
   stationId: string,
-  completionDate?: string
+  serviceId: string,
+  completionDate?: string,
+  workerId?: string | null
 ): Promise<{
   success: boolean;
-  last_maintenance_date?: string;
-  next_maintenance_date?: string;
+  last_serviced?: string;
+  next_service_date?: string;
 }> {
   const response = await fetch(
     `/api/admin/maintenance/${stationId}/complete`,
     createAdminRequestInit({
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ completion_date: completionDate }),
+      body: JSON.stringify({
+        service_id: serviceId,
+        completion_date: completionDate,
+        worker_id: workerId,
+      }),
     })
+  );
+  return handleResponse(response);
+}
+
+export async function fetchStationWorkersApi(
+  stationId: string
+): Promise<{
+  workers: Pick<Worker, "id" | "full_name" | "worker_code">[];
+}> {
+  const response = await fetch(
+    `/api/admin/maintenance/${stationId}/workers`,
+    createAdminRequestInit()
   );
   return handleResponse(response);
 }

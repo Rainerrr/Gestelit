@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 const ADMIN_SESSION_COOKIE = "admin_session";
-const ADMIN_SESSION_MAX_AGE = 15 * 60; // 15 minutes in seconds
+const ADMIN_SESSION_MAX_AGE = 60 * 60; // 60 minutes in seconds
 
 /**
  * Create a simple session token

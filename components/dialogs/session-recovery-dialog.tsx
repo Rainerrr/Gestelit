@@ -78,17 +78,14 @@ export function SessionRecoveryDialog({
     [countdownMs]
   );
 
-  // Compute elapsed time label based on countdown
-  // countdownMs is updated every second so this will recalculate
+  // Compute elapsed time since session started
+  // countdownMs changes every second, triggering recalculation
   const elapsedLabel = useMemo(() => {
     if (!session?.sessionStartedAt) return "00:00:00";
     const sessionStartMs = new Date(session.sessionStartedAt).getTime();
-    // Use countdown to calculate current time indirectly
-    // This avoids calling Date.now() during render
-    const graceEndMs = sessionStartMs + 5 * 60 * 1000; // 5 min grace period
-    const currentTimeMs = graceEndMs - countdownMs;
-    const elapsedMs = currentTimeMs - sessionStartMs;
+    const elapsedMs = Date.now() - sessionStartMs;
     return formatDuration(Math.max(0, Math.floor(elapsedMs / 1000)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, countdownMs]);
 
   const handleOpenChange = (newOpen: boolean) => {

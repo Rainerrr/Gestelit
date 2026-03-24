@@ -2,7 +2,7 @@
 
 > Cheat sheet for working with Gestelit Work Monitor codebase
 > Use this as a fast lookup when implementing features or fixing bugs
-> Last updated: January 2026
+> Last updated: March 2026
 
 ---
 
@@ -50,14 +50,12 @@ const { data } = await supabase.rpc('create_status_event_atomic', {
 ### Quantity Updates (ATOMIC)
 
 ```typescript
-// For sessions with production line tracking
-const { data } = await supabase.rpc('update_session_quantities_atomic_v2', {
+// Independent station reporting - increments good/scrap at bound step
+const { data } = await supabase.rpc('update_session_quantities_v6', {
   p_session_id: sessionId,
-  p_total_good: newGood,
-  p_total_scrap: newScrap
+  p_good_delta: goodDelta,
+  p_scrap_delta: scrapDelta
 });
-
-// Returns: { success, error_code, session_id, total_good, total_scrap }
 ```
 
 ---
@@ -84,7 +82,6 @@ type ReportType = "malfunction" | "general" | "scrap"
 type ChecklistKind = "start" | "end"
 
 // Job items
-type JobItemKind = "station" | "line"
 ```
 
 ---
@@ -292,7 +289,7 @@ const { data } = await supabase
   .select(`
     *,
     progress:job_item_progress(*),
-    stations:job_item_stations(*)
+    steps:job_item_steps(*)
   `)
   .eq('job_id', jobId);
 ```
@@ -304,7 +301,7 @@ const { data } = await supabase
   .from('wip_balances')
   .select(`
     *,
-    station:job_item_stations(
+    step:job_item_steps(
       station_id,
       position,
       is_terminal,
@@ -330,9 +327,6 @@ try {
   if (error.message === 'INSTANCE_MISMATCH') {
     return Response.json({ error: 'Session transferred', code: 'INSTANCE_MISMATCH' }, { status: 409 });
   }
-  if (error.message === 'WIP_DOWNSTREAM_CONSUMED') {
-    return Response.json({ error: 'Cannot decrease', code: 'WIP_DOWNSTREAM_CONSUMED' }, { status: 409 });
-  }
   return Response.json({ error: error.message }, { status: 500 });
 }
 ```
@@ -353,10 +347,10 @@ try {
 
 | Type | Convention | Example |
 |------|------------|---------|
-| Component | PascalCase | `StatusCard.tsx` |
+| Component | kebab-case | `job-progress-panel.tsx` |
 | Utility | camelCase | `formatTime.ts` |
 | API route | `route.ts` | `app/api/sessions/route.ts` |
-| Data layer | camelCase | `lib/data/sessions.ts` |
+| Data layer | kebab-case | `lib/data/job-items.ts` |
 | Migration | YYYYMMDDHHMMSS | `20260113_add_feature.sql` |
 
 ---
@@ -413,9 +407,9 @@ From CLAUDE.md:
 3. Grace period is 5 minutes
 
 **Quantities not saving?**
-1. Using `update_session_quantities_atomic_v2`?
-2. Check `WIP_DOWNSTREAM_CONSUMED` error
-3. Check session has `job_item_id` set
+1. Using `update_session_quantities_v6`?
+2. Check session has `job_item_step_id` set
+3. Check wip_balances row exists for the step
 
 **Worker can't select station?**
 1. Check `worker_stations` assignment
@@ -436,5 +430,5 @@ From CLAUDE.md:
 | Status colors | `lib/status.ts` |
 | Session operations | `lib/data/sessions.ts` |
 | Job items | `lib/data/job-items.ts` |
-| WIP logic | RPC `update_session_quantities_atomic_v2` |
+| WIP logic | RPC `update_session_quantities_v6` |
 | Status logic | RPC `create_status_event_atomic` |

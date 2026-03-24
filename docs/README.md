@@ -1,7 +1,7 @@
 # Gestelit Work Monitor - Documentation Index
 
 > Comprehensive documentation for AI agents working with this codebase.
-> Last updated: January 2026
+> Last updated: March 2026
 
 ## Project Overview
 
@@ -35,7 +35,7 @@ npx supabase db push # Apply migrations to remote
 | [API_REFERENCE.md](./API_REFERENCE.md) | All API endpoints with request/response formats |
 | [WORKER_FLOW.md](./WORKER_FLOW.md) | Worker application flow and session lifecycle |
 | [ADMIN_SYSTEM.md](./ADMIN_SYSTEM.md) | Admin dashboard, management, reports |
-| [PRODUCTION_LINES.md](./PRODUCTION_LINES.md) | Production lines, job items, WIP tracking |
+| [PRODUCTION_LINES.md](./PRODUCTION_LINES.md) | Pipeline system, job items, independent station reporting |
 | [REALTIME_STREAMING.md](./REALTIME_STREAMING.md) | Real-time updates, SSE streams, subscriptions |
 | [AUTHENTICATION.md](./AUTHENTICATION.md) | Auth patterns, security, RLS policies |
 | [COMPONENTS.md](./COMPONENTS.md) | React components, contexts, hooks |
@@ -65,7 +65,7 @@ components/
   forms/              # Form components
   layout/             # Layout components
 
-contexts/             # React contexts (WorkerSession, Language, Pipeline)
+contexts/             # React contexts (WorkerSession, Language, Pipeline, Toast)
 hooks/                # Page-level React hooks
 tests/integration/    # Vitest integration tests
 supabase/migrations/  # Database migrations (YYYYMMDDHHMMSS_name.sql)
@@ -94,9 +94,6 @@ type SimpleReportStatus = "new" | "approved"                 // one-way
 
 // Checklist timing
 type ChecklistKind = "start" | "end"
-
-// Job item types
-type JobItemKind = "station" | "line"
 
 // Worker roles
 type WorkerRole = "worker" | "admin"

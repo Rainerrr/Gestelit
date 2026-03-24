@@ -25,15 +25,15 @@ import {
   Package,
   AlertTriangle,
   Plus,
-  Cpu,
-  GitBranch,
   RefreshCw,
   Calendar,
 } from "lucide-react";
+import { JobItemProgressCard, type StationProgressData } from "@/components/work/job-item-progress-card";
 import { JobCreationWizard } from "./job-creation-wizard";
 import { JobFormDialog } from "./job-form-dialog";
 import { JobItemsDialog } from "./job-items-dialog";
 import { JobFilters, type JobFiltersState } from "./job-filters";
+import { JobProgressBar } from "@/components/work/job-progress-bar";
 import {
   getJobDeletionInfoAdminApi,
   fetchJobItemsAdminApi,
@@ -97,6 +97,19 @@ export const JobsManagement = ({
   const [loadingItems, setLoadingItems] = useState<Record<string, boolean>>({});
   const [showWizard, setShowWizard] = useState(false);
   const [showPercentages, setShowPercentages] = useState(true);
+  const [collapsedJobItems, setCollapsedJobItems] = useState<Set<string>>(new Set());
+
+  const toggleJobItemCollapsed = useCallback((itemId: string) => {
+    setCollapsedJobItems((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemId)) {
+        next.delete(itemId);
+      } else {
+        next.add(itemId);
+      }
+      return next;
+    });
+  }, []);
 
   // Filters
   const [filters, setFilters] = useState<JobFiltersState>({
@@ -147,6 +160,23 @@ export const JobsManagement = ({
     void Promise.all(jobsToFetch.map((job) => loadJobItems(job.job.id)));
   }, [jobs, loadJobItems]);
 
+  // Seed collapsed state: completed items start collapsed
+  useEffect(() => {
+    const completedIds = new Set<string>();
+    for (const items of Object.values(jobItems)) {
+      for (const item of items) {
+        const good = item.progress?.completed_good ?? 0;
+        const scrap = item.progress?.completed_scrap ?? 0;
+        if (item.planned_quantity > 0 && good + scrap >= item.planned_quantity) {
+          completedIds.add(item.id);
+        }
+      }
+    }
+    if (completedIds.size > 0) {
+      setCollapsedJobItems((prev) => (prev.size === 0 ? completedIds : prev));
+    }
+  }, [jobItems]);
+
   // Extract unique values for filters
   const { jobItemNames, clientNames } = useMemo(() => {
     const itemNames = new Set<string>();
@@ -168,7 +198,8 @@ export const JobsManagement = ({
 
   const getProgressPercent = useCallback((job: JobWithStats) => {
     if (!job.plannedQuantity || job.plannedQuantity <= 0) return null;
-    return Math.min(100, Math.round((job.totalGood / job.plannedQuantity) * 100));
+    const totalDone = job.totalGood + (job.totalScrap ?? 0);
+    return Math.round((totalDone / job.plannedQuantity) * 100);
   }, []);
 
   const isJobBlocked = useCallback((jobId: string) => {
@@ -382,19 +413,15 @@ export const JobsManagement = ({
           {/* Progress Bar */}
           <div className="hidden md:flex items-center gap-2 w-full">
             {progressPercent !== null ? (
-              <div className="flex-1 flex items-center gap-2">
-                <div className="h-7 rounded-lg overflow-hidden bg-muted/50 flex flex-1 min-w-0">
-                  <div
-                    className="h-full bg-emerald-500 transition-all"
-                    style={{ width: `${progressPercent}%` }}
-                  />
-                </div>
-                <span className="text-xs font-bold font-mono tabular-nums text-foreground/80 whitespace-nowrap">
-                  {showPercentages
-                    ? `${progressPercent}%`
-                    : `${jobWithStats.totalGood.toLocaleString()}/${(jobWithStats.plannedQuantity || 0).toLocaleString()}`
-                  }
-                </span>
+              <div className="flex-1">
+                <JobProgressBar
+                  plannedQuantity={jobWithStats.plannedQuantity || 0}
+                  totalGood={jobWithStats.totalGood}
+                  totalScrap={jobWithStats.totalScrap ?? 0}
+                  displayMode={showPercentages ? "percentage" : "numbers"}
+                  size="sm"
+                  showOverlay={false}
+                />
               </div>
             ) : (
               <span className="text-muted-foreground/60 text-xs">ללא יעד</span>
@@ -570,31 +597,14 @@ export const JobsManagement = ({
 
           {/* Progress Bar */}
           {progressPercent !== null && (
-            <div className="h-8 rounded-lg overflow-hidden bg-muted/50 flex">
-              <div
-                className="h-full bg-emerald-500 flex items-center justify-center transition-all"
-                style={{ width: `${progressPercent}%`, minWidth: progressPercent > 0 ? "48px" : "0" }}
-              >
-                {progressPercent > 0 && (
-                  <span className="text-xs font-bold font-mono tabular-nums text-white drop-shadow-sm">
-                    {showPercentages
-                      ? `${progressPercent}%`
-                      : `${jobWithStats.totalGood.toLocaleString()}/${(jobWithStats.plannedQuantity || 0).toLocaleString()}`
-                    }
-                  </span>
-                )}
-              </div>
-              {progressPercent < 100 && (
-                <div className="flex-1 flex items-center justify-center">
-                  <span className="text-[10px] text-muted-foreground/60 font-mono tabular-nums">
-                    {showPercentages
-                      ? `${((jobWithStats.plannedQuantity || 0) - jobWithStats.totalGood).toLocaleString()} נותרו`
-                      : `(${progressPercent}%)`
-                    }
-                  </span>
-                </div>
-              )}
-            </div>
+            <JobProgressBar
+              plannedQuantity={jobWithStats.plannedQuantity || 0}
+              totalGood={jobWithStats.totalGood}
+              totalScrap={jobWithStats.totalScrap ?? 0}
+              displayMode={showPercentages ? "percentage" : "numbers"}
+              size="md"
+              showOverlay
+            />
           )}
 
           {/* Expand Button Row */}
@@ -670,227 +680,47 @@ export const JobsManagement = ({
                   מוצרים ({items.length})
                 </h4>
 
-                {/* Items Grid */}
+                {/* Items Grid — uses same card component as dashboard */}
                 <div className="space-y-4">
                   {items.map((item) => {
-                    const completed = item.progress?.completed_good ?? 0;
-                    const planned = item.planned_quantity;
-                    const percent = Math.min(100, Math.round((completed / planned) * 100));
+                    const completedGood = item.progress?.completed_good ?? 0;
+                    const completedScrap = item.progress?.completed_scrap ?? 0;
                     const stages = item.job_item_steps ?? item.job_item_stations ?? [];
                     const wipBalances = item.wip_balances ?? [];
-                    const isMultiStation = stages.length > 1;
 
-                    const wipByStationId = new Map(
-                      wipBalances.map((wb) => [wb.job_item_step_id, wb.good_available])
-                    );
+                    const wipByStepId = new Map<string, { good: number; scrap: number }>();
+                    for (const wb of wipBalances) {
+                      wipByStepId.set(wb.job_item_step_id, {
+                        good: wb.good_reported ?? 0,
+                        scrap: wb.scrap_reported ?? 0,
+                      });
+                    }
 
-                    const wipDistribution = stages.map((stage) => wipByStationId.get(stage.id) ?? 0);
-                    const wipSum = wipDistribution.reduce((a, b) => a + b, 0);
-                    // totalInSystem = max of WIP sum or completed (handles data where WIP wasn't synced with completed_good)
-                    const totalInSystem = Math.max(wipSum, completed);
-                    const totalPercent = planned > 0 ? Math.min(100, (totalInSystem / planned) * 100) : 0;
-
-                    const getSegmentStyle = (idx: number, total: number, isTerminal: boolean) => {
-                      if (isTerminal || total <= 1) {
-                        return { bg: "bg-emerald-500", color: "#10b981" };
-                      }
-                      const ratio = idx / Math.max(1, total - 1);
-                      if (ratio <= 0.2) return { bg: "bg-red-500", color: "#ef4444" };
-                      if (ratio <= 0.4) return { bg: "bg-orange-500", color: "#f97316" };
-                      if (ratio <= 0.6) return { bg: "bg-amber-500", color: "#f59e0b" };
-                      if (ratio <= 0.8) return { bg: "bg-lime-500", color: "#84cc16" };
-                      return { bg: "bg-green-500", color: "#22c55e" };
-                    };
-
-                    const nonTerminalWip = stages.length > 1 ? wipDistribution.slice(0, -1) : [];
-                    const maxWip = Math.max(0, ...nonTerminalWip);
-                    const bottleneckIdx = maxWip > 0 ? nonTerminalWip.indexOf(maxWip) : -1;
+                    const stationData: StationProgressData[] = stages.map((stage) => {
+                      const wip = wipByStepId.get(stage.id) ?? { good: 0, scrap: 0 };
+                      return {
+                        stepId: stage.id,
+                        stationName: stage.station?.name ?? `שלב ${stage.position}`,
+                        position: stage.position,
+                        isTerminal: stage.is_terminal,
+                        goodReported: wip.good,
+                        scrapReported: wip.scrap,
+                      };
+                    });
 
                     return (
-                      <div
+                      <JobItemProgressCard
                         key={item.id}
-                        className="p-4 rounded-xl bg-secondary/30 border border-input/60"
-                      >
-                        {/* Item Header */}
-                        <div className="flex items-center justify-between mb-4">
-                          <div className="flex items-center gap-2">
-                            <div
-                              className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                                isMultiStation
-                                  ? "bg-blue-500/20 border border-blue-500/30"
-                                  : "bg-cyan-500/20 border border-cyan-500/30"
-                              }`}
-                            >
-                              {isMultiStation ? (
-                                <GitBranch className="h-4 w-4 text-blue-400" />
-                              ) : (
-                                <Cpu className="h-4 w-4 text-cyan-400" />
-                              )}
-                            </div>
-                            <div>
-                              <span className="font-medium text-foreground text-sm">
-                                {item.name || item.pipeline_preset?.name || "מוצר"}
-                              </span>
-                              <Badge
-                                variant="secondary"
-                                className="mr-2 text-[9px] bg-secondary/80 text-muted-foreground border-input"
-                              >
-                                {stages.length} שלבים
-                              </Badge>
-                            </div>
-                          </div>
-                          <div className="text-left">
-                            <div className="text-lg font-bold font-mono tabular-nums text-emerald-400">
-                              {showPercentages ? `${percent}%` : completed.toLocaleString()}
-                            </div>
-                            <div className="text-[10px] text-muted-foreground font-mono tabular-nums">
-                              הושלם מתוך {planned.toLocaleString()}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Single-step Pipeline - Simple Progress Bar */}
-                        {!isMultiStation && stages.length === 1 && (
-                          <div className="space-y-2">
-                            <div className="h-10 rounded-xl overflow-hidden bg-secondary flex items-center">
-                              <div
-                                className="h-full bg-emerald-500 flex items-center justify-center transition-all relative"
-                                style={{ width: `${percent}%`, minWidth: percent > 0 ? "60px" : "0" }}
-                              >
-                                {percent > 0 && (
-                                  <span className="text-xs font-bold font-mono text-white drop-shadow-md">
-                                    {showPercentages ? `${percent}%` : completed.toLocaleString()}
-                                  </span>
-                                )}
-                              </div>
-                              {percent < 100 && (
-                                <div className="flex-1 h-full flex items-center justify-center">
-                                  <span className="text-[10px] text-muted-foreground/60 font-mono">
-                                    {(planned - completed).toLocaleString()} נותרו
-                                  </span>
-                                </div>
-                              )}
-                            </div>
-                            {/* Single Station Legend */}
-                            <div className="bg-muted/50 rounded-lg p-2">
-                              <div className="flex items-center gap-2">
-                                <span
-                                  className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-emerald-500"
-                                />
-                                <span className="text-xs font-medium text-muted-foreground">
-                                  {stages[0]?.station?.name ?? "תחנה"}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Multi-step Pipeline - Segmented Bar */}
-                        {isMultiStation && (
-                          <div className="space-y-2">
-                            <div className="h-12 rounded-xl overflow-hidden bg-secondary flex">
-                              {/* Show completed segment when WIP is empty but completed > 0 */}
-                              {wipSum === 0 && completed > 0 && (
-                                <div
-                                  className="h-full flex items-center justify-center relative transition-all bg-emerald-500"
-                                  style={{
-                                    width: `${percent}%`,
-                                    minWidth: "50px"
-                                  }}
-                                >
-                                  <div className="flex flex-col items-center justify-center px-1">
-                                    <span className="text-[10px] font-medium text-white/90 truncate max-w-full drop-shadow-sm">
-                                      הושלם
-                                    </span>
-                                    <span className="text-sm font-bold font-mono text-white drop-shadow-md">
-                                      {showPercentages
-                                        ? `${percent}%`
-                                        : completed.toLocaleString()}
-                                    </span>
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* Show WIP at each stage when there is WIP */}
-                              {wipSum > 0 && stages.map((stage, idx) => {
-                                const stageWip = wipDistribution[idx] ?? 0;
-                                const stagePercent = planned > 0 ? (stageWip / planned) * 100 : 0;
-                                const segmentStyle = getSegmentStyle(idx, stages.length, stage.is_terminal);
-                                const isBottleneck = idx === bottleneckIdx && maxWip > 0;
-
-                                if (stageWip === 0) return null;
-
-                                return (
-                                  <div
-                                    key={stage.id}
-                                    className={`h-full flex items-center justify-center relative transition-all ${segmentStyle.bg} ${
-                                      isBottleneck ? "ring-2 ring-white/50 ring-inset" : ""
-                                    }`}
-                                    style={{
-                                      width: `${stagePercent}%`,
-                                      minWidth: stageWip > 0 ? "50px" : "0"
-                                    }}
-                                  >
-                                    <div className="flex flex-col items-center justify-center px-1">
-                                      <span className="text-[10px] font-medium text-white/90 truncate max-w-full drop-shadow-sm">
-                                        {stage.station?.name ?? `שלב ${stage.position}`}
-                                      </span>
-                                      <span className="text-sm font-bold font-mono text-white drop-shadow-md">
-                                        {showPercentages
-                                          ? `${Math.round(stagePercent)}%`
-                                          : stageWip.toLocaleString()}
-                                      </span>
-                                    </div>
-                                    {isBottleneck && (
-                                      <div className="absolute top-1 right-1 w-2 h-2 rounded-full bg-white animate-pulse" />
-                                    )}
-                                    {idx < stages.length - 1 && stageWip > 0 && (
-                                      <div className="absolute left-0 top-0 bottom-0 w-px bg-black/20" />
-                                    )}
-                                  </div>
-                                );
-                              })}
-
-                              {totalPercent < 100 && (
-                                <div
-                                  className="h-full flex items-center justify-center flex-1"
-                                  style={{ minWidth: "40px" }}
-                                >
-                                  <span className="text-[10px] text-muted-foreground/60 font-mono">
-                                    {(planned - totalInSystem).toLocaleString()} נותרו
-                                  </span>
-                                </div>
-                              )}
-                            </div>
-
-                            {/* Stage Legend */}
-                            <div className="bg-muted/50 rounded-lg p-3 mt-3">
-                              <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
-                                {stages.map((stage, idx) => {
-                                  const segmentStyle = getSegmentStyle(idx, stages.length, stage.is_terminal);
-                                  return (
-                                    <div key={stage.id} className="flex items-center gap-2">
-                                      {/* Color dot */}
-                                      <span
-                                        className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                                        style={{ backgroundColor: segmentStyle.color }}
-                                      />
-                                      {/* Station name */}
-                                      <span className="text-xs font-medium text-muted-foreground">
-                                        {stage.station?.name ?? `שלב ${stage.position}`}
-                                      </span>
-                                      {/* Arrow separator (RTL) */}
-                                      {idx < stages.length - 1 && (
-                                        <ChevronLeft className="h-3 w-3 text-muted-foreground/50" />
-                                      )}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
+                        id={item.id}
+                        name={item.name || item.pipeline_preset?.name || "מוצר"}
+                        plannedQuantity={item.planned_quantity}
+                        completedGood={completedGood}
+                        completedScrap={completedScrap}
+                        stations={stationData}
+                        showPercentages={showPercentages}
+                        isCollapsed={collapsedJobItems.has(item.id)}
+                        onToggleCollapsed={toggleJobItemCollapsed}
+                      />
                     );
                   })}
                 </div>
@@ -1027,6 +857,8 @@ export const JobsManagement = ({
     handleDelete,
     handleDeleteDialogOpenChange,
     onRefresh,
+    collapsedJobItems,
+    toggleJobItemCollapsed,
     readOnly,
   ]);
 

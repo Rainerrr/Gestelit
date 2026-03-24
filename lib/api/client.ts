@@ -137,6 +137,7 @@ export type JobItemAtStation = {
   name: string;
   plannedQuantity: number;
   completedGood: number;
+  completedScrap: number;
   jobItemStepId: string;
 };
 
@@ -153,16 +154,7 @@ export async function fetchJobItemsAtStationApi(
       headers: createWorkerHeaders(),
     },
   );
-  const data = await handleResponse<{ jobItems: {
-    id: string;
-    jobId: string;
-    jobNumber: string;
-    customerName: string | null;
-    name: string;
-    plannedQuantity: number;
-    completedGood: number;
-    jobItemStepId: string;
-  }[] }>(response);
+  const data = await handleResponse<{ jobItems: JobItemAtStation[] }>(response);
   return data.jobItems;
 }
 
@@ -495,7 +487,8 @@ export type PipelineNeighborStation = {
   code: string;
   position: number;
   isTerminal: boolean;
-  wipAvailable: number;
+  goodReported: number;
+  scrapReported: number;
   occupiedBy: string | null;
 };
 
@@ -507,8 +500,6 @@ export type SessionPipelineContext = {
   isTerminal: boolean;
   prevStation: PipelineNeighborStation | null;
   nextStation: PipelineNeighborStation | null;
-  upstreamWip: number;
-  waitingOutput: number;
   jobItem: {
     id: string;
     name: string;
@@ -577,9 +568,8 @@ export type AvailableJobItem = {
   name: string;
   plannedQuantity: number;
   completedGood: number;
+  completedScrap: number;
   remaining: number;
-  /** @deprecated Use jobItemStepId */
-  jobItemStationId?: string;
   jobItemStepId: string;
 };
 
@@ -640,6 +630,37 @@ export async function bindJobItemToSessionApi(
   });
   const data = await handleResponse<{ session: Session }>(response);
   return data.session;
+}
+
+/**
+ * Unbind the current job item from a session.
+ * Clears all job item context and stops the timer.
+ */
+export async function unbindJobItemFromSessionApi(
+  sessionId: string,
+): Promise<void> {
+  const response = await fetch("/api/sessions/unbind-job-item", {
+    method: "POST",
+    headers: createWorkerHeaders(),
+    body: JSON.stringify({ sessionId }),
+  });
+  await handleResponse(response);
+}
+
+/**
+ * Fetch accumulated time for a job item within a session.
+ * Returns accumulated seconds from completed status events
+ * plus the current segment start for live timer calculation.
+ */
+export async function fetchJobItemTimerApi(
+  sessionId: string,
+  jobItemId: string,
+): Promise<{ accumulatedSeconds: number; segmentStart: string | null }> {
+  const params = new URLSearchParams({ sessionId, jobItemId });
+  const response = await fetch(`/api/sessions/job-item-timer?${params}`, {
+    headers: createWorkerHeaders(),
+  });
+  return handleResponse<{ accumulatedSeconds: number; segmentStart: string | null }>(response);
 }
 
 // ============================================

@@ -1,7 +1,7 @@
 # Authentication & Security
 
 > Authentication patterns, authorization, and security considerations
-> Last updated: January 2026
+> Last updated: March 2026
 
 ---
 
@@ -301,13 +301,12 @@ CREATE POLICY "Allow anon read sessions"
 - reports
 - report_reasons
 - checklist_responses
-- production_lines
-- production_line_stations
+- pipeline_presets
+- pipeline_preset_steps
 - job_items
-- job_item_stations
+- job_item_steps
 - job_item_progress
 - wip_balances
-- wip_consumptions
 
 ---
 

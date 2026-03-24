@@ -1,7 +1,7 @@
 # Real-Time & Streaming
 
 > Real-time updates, Server-Sent Events (SSE), and Supabase subscriptions
-> Last updated: January 2026
+> Last updated: March 2026
 
 ---
 
@@ -139,6 +139,31 @@ eventSource.addEventListener('initial', (e) => {
 eventSource.addEventListener('update', (e) => {
   const data = JSON.parse(e.data);
   // data.stationOptions - Updated occupancy/WIP
+});
+```
+
+### Notifications Stream (Admin)
+
+**Endpoint:** `GET /api/admin/notifications/stream`
+
+```typescript
+const eventSource = new EventSource(
+  '/api/admin/notifications/stream'
+);
+
+eventSource.addEventListener('initial', (e) => {
+  const data = JSON.parse(e.data);
+  // data.notifications - Initial notification list
+});
+
+eventSource.addEventListener('insert', (e) => {
+  const data = JSON.parse(e.data);
+  // data.notification - New notification
+});
+
+eventSource.addEventListener('update', (e) => {
+  const data = JSON.parse(e.data);
+  // data.notification - Updated notification (read/dismissed)
 });
 ```
 
@@ -602,4 +627,5 @@ export function useReconnectingSSE<T>(url: string) {
 | `app/api/admin/dashboard/active-sessions/stream/route.ts` | Sessions SSE |
 | `app/api/admin/dashboard/session/[id]/stream/route.ts` | Session detail SSE |
 | `app/api/admin/reports/stream/route.ts` | Reports SSE |
+| `app/api/admin/notifications/stream/route.ts` | Notifications SSE |
 | `app/api/sessions/pipeline/stream/route.ts` | Pipeline SSE |

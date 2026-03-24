@@ -1,470 +1,429 @@
-# Gestelit – Production Lines + Job Items + WIP (GOOD-only, BALANCE-based)
-**Implementation Spec (for Claude Code / AI agent)**  
-Version: **3.0 (Balance WIP model)**  
-Date: **2026-01-08**  
-Owner: Rene / Gestelit team
+# Pipeline System - Implementation Specification
 
-> This spec describes the full feature: **Production Lines**, **Job Items (no SKU)**, **WIP continuation**, **GOOD-only upstream consumption**, **scrap analytics**, **corrections that return input**, and **bottleneck detection**.  
-> This version replaces *lot-based* WIP with a **balance-per-step** model while preserving core functionality.
+> Technical specification for the pipeline preset and independent station reporting system
+> Originally authored: January 2026
+> Last updated: March 2026
 
 ---
 
-## 0) Agent rules (read first)
+## Table of Contents
 
-### 0.1 Do not rebuild existing systems
-Keep the project’s layering and patterns:
-- **Client** `lib/api` → **API routes** `app/api` → **DB access** `lib/data` → **Postgres RPC for atomic logic**.
-Keep existing session concepts:
-- session lifecycle, heartbeat, takeover, forced close, recovery window, status events, checklists.
-Keep existing **quantities update endpoint** concept (session totals). Extend it to call new atomic logic.
-
-### 0.2 Authoritative worker flow
-Worker flow is:
-1) **Worker ID**
-2) **Job**
-3) **Station selection (only stations assigned to the chosen job)**
-4) Start checklist (optional)
-5) Work (active session: statuses, quantities)
-6) End checklist (optional)
-7) Complete
-
-Important: station list is **filtered**, not “disabled”.
-
-### 0.3 Atomicity requirement
-All WIP movement and job completion math must be executed in **one atomic database function** (transaction + locks), because:
-- sessions update in real time
-- multiple sessions can run across different stations of the same line/job
-- corrections must be safe and deterministic
+1. [Overview](#1-overview)
+2. [Business Rules](#2-business-rules)
+3. [Database Schema](#3-database-schema)
+4. [RPC Functions](#4-rpc-functions)
+5. [API Endpoints](#5-api-endpoints)
+6. [Worker Flow](#6-worker-flow)
+7. [Admin Management](#7-admin-management)
+8. [Real-Time Updates](#8-real-time-updates)
+9. [Acceptance Tests](#9-acceptance-tests)
 
 ---
 
-## 1) Goals / Non-goals
+## 1. Overview
 
-### 1.1 Goals
-- Define **production lines** as ordered station sequences.
-- Allow admin to assign a **planned quantity** to a job item that is either:
-  - a **single station** (station-defined “product”), or
-  - a **production line** (line-defined “product”).
-- Track live production from station sessions:
-  - stations report `total_good` and `total_scrap` for their session
-  - system updates job progress in real-time
-- Persist **WIP (GOOD-only)** between stations and across sessions using **balances**.
-- Support **corrections**:
-  - decreasing reported GOOD reduces downstream WIP first (must be available)
-  - decreasing GOOD reverses **originated** first (no upstream changes)
-  - then reverses **pulled** by returning GOOD to upstream WIP (LIFO by consumption ledger)
-  - reject reductions that would undo downstream reality
-- Track scrap for analytics:
-  - scrap percentage per session and per job/station can be computed later
+The pipeline system enables structured production tracking across multiple stations. It replaces the earlier consumption-based WIP model with **independent station reporting** -- each station reports its own good and scrap quantities independently, with no upstream/downstream consumption dependencies.
 
-### 1.2 Non-goals
-- Scrap rework: **scrap is not usable input** and never becomes WIP.
-- Per-unit serial tracking.
-- Station belonging to multiple production lines (**not allowed**).
-- Supervisor roles (admin only for line/job item management).
+### Core Entities
 
----
+| Entity | Purpose |
+|--------|---------|
+| Pipeline Preset | Reusable template defining an ordered station sequence |
+| Pipeline Preset Step | Station + position within a preset |
+| Job Item | Named production unit with planned quantity and optional preset |
+| Job Item Step | Station position in a job item's pipeline (frozen copy of preset) |
+| WIP Balance | Per-step reported totals (`good_reported`, `scrap_reported`) |
+| Job Item Progress | Aggregated completion from terminal station |
 
-## 2) Definitions
+### Design Principles
 
-- **Production line**: ordered list of stations (template).
-- **Job item**: one requirement inside a job. Each job item is a distinct “product”.
-  - `kind=station`: produced at a single station.
-  - `kind=line`: produced across a line; **only terminal station GOOD** counts as completed.
-- **WIP (Work in progress)**: GOOD inventory waiting between steps.
-- **WIP balance**: the single number of GOOD units currently available after a given step.
-- **Pulled GOOD**: amount of GOOD consumed from upstream WIP by a downstream station.
-- **Originated GOOD**: GOOD that a station adds when upstream WIP is insufficient.
-- **Terminal station**: last station in a line. Only its GOOD increments job item completion.
+- **Independent reporting**: Each station reports its own quantities -- no consumption tracking
+- **Terminal-only completion**: Only the terminal station's totals feed job item progress
+- **Pipeline immutability**: Steps lock after first production event
+- **Overproduction allowed**: No caps on reported quantities
+- **Always selectable**: Job items remain selectable regardless of completion percentage
+- **Atomicity**: All WIP and progress updates happen in PostgreSQL RPC functions
 
 ---
 
-## 3) Locked business rules (must not change)
+## 2. Business Rules
 
-### 3.1 Scrap
-- Scrap is tracked per session (`sessions.total_scrap`).
-- Scrap is analytics-only:
-  - never becomes input
-  - never becomes WIP
-  - never reduces remaining planned quantity
+### 2.1 Scrap
 
-### 3.2 Consumption and origination
-- For a station that has an upstream station (line step > 1):
-  - it may consume upstream **GOOD-only** from the upstream step’s **WIP balance**.
-  - if upstream GOOD is insufficient, it may still report GOOD (originated allowed).
-- For step 1 (or a single-station item): no upstream consumption.
+- Scrap is tracked per station (`wip_balances.scrap_reported`) and per session
+- Scrap at the terminal station feeds `job_item_progress.completed_scrap`
+- Scrap counts toward completion: `completed_good + completed_scrap >= planned_quantity`
 
-### 3.3 Job completion
-- Only the terminal station’s GOOD counts toward job completion for a line job item.
-- For a single-station job item, that station is terminal by definition.
+### 2.2 Quantity Reporting
 
-### 3.4 Corrections (decrease GOOD)
-When a worker reduces `total_good` for a session:
-1) **First ensure the session’s step output WIP can be reduced**:
-   - you cannot reduce output that has already been consumed by downstream steps.
-2) reduce **originated_good** first (no upstream changes)
-3) if still reducing, reverse **pulled_good** by returning GOOD to upstream WIP (LIFO by consumption ledger)
-4) reject the reduction if it would reduce output below amounts already consumed downstream
+- Workers report incremental quantities (good/scrap) at their bound station
+- `update_session_quantities_v6()` increments `wip_balances` for the bound `job_item_step`
+- If the step is terminal, also increments `job_item_progress`
+- Session totals are per-job-item -- they reset when the worker switches job items
 
----
+### 2.3 Job Completion
 
-## 4) Database changes (Postgres / Supabase)
+- Only the terminal station's totals determine completion
+- Formula: `completed_good + completed_scrap >= planned_quantity`
+- Completed job items remain selectable (overproduction allowed)
 
-### 4.1 Existing tables (additive changes only)
+### 2.4 Pipeline Immutability
 
-#### 4.1.1 `sessions` (add columns; keep existing totals)
-Add:
-- `job_item_id UUID NULL REFERENCES job_items(id)`
-- `job_item_station_id UUID NULL REFERENCES job_item_stations(id)`
+- `job_items.is_pipeline_locked` defaults to `false`
+- Set to `true` after the first production event on any step
+- Once locked: steps cannot be added, removed, or reordered
+- The `pipeline_preset_id` on job items records provenance but steps are independent copies
 
-Keep existing:
-- `total_good INTEGER DEFAULT 0`
-- `total_scrap INTEGER DEFAULT 0`
+### 2.5 Station Participation
 
-Notes:
-- These columns let each session be tied to a specific job item and step.
-- For legacy sessions/jobs, these can remain NULL.
+- Stations can participate in multiple pipeline presets (no exclusivity constraint)
+- Station availability for workers is filtered by which job items have steps at that station
 
 ---
 
-### 4.2 New tables (full column list)
+## 3. Database Schema
 
-#### 4.2.1 `production_lines`
-| Column | Type | Notes |
-|---|---|---|
-| id | UUID PK | |
-| name | TEXT NOT NULL | |
-| code | TEXT NULL | optional; unique if used |
-| is_active | BOOLEAN NOT NULL DEFAULT true | |
-| created_at | TIMESTAMPTZ NOT NULL DEFAULT now() | |
-| updated_at | TIMESTAMPTZ NOT NULL DEFAULT now() | |
+### 3.1 Pipeline Presets
 
-#### 4.2.2 `production_line_stations`
-| Column | Type | Notes |
-|---|---|---|
-| id | UUID PK | |
-| production_line_id | UUID NOT NULL FK → production_lines.id | |
-| station_id | UUID NOT NULL FK → stations.id | |
-| position | INTEGER NOT NULL | 1..N |
-| created_at | TIMESTAMPTZ NOT NULL DEFAULT now() | |
+```sql
+CREATE TABLE pipeline_presets (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  description TEXT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
-Constraints:
-- `UNIQUE(production_line_id, position)`
-- `UNIQUE(production_line_id, station_id)`
-- `UNIQUE(station_id)` (station belongs to only one line)
+CREATE TABLE pipeline_preset_steps (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  pipeline_preset_id UUID NOT NULL REFERENCES pipeline_presets(id),
+  station_id UUID NOT NULL REFERENCES stations(id),
+  position INTEGER NOT NULL CHECK (position > 0),
+  UNIQUE(pipeline_preset_id, position)
+  -- No UNIQUE(station_id): stations can be in multiple presets
+);
+```
 
-#### 4.2.3 `job_items`
-| Column | Type | Notes |
-|---|---|---|
-| id | UUID PK | |
-| job_id | UUID NOT NULL FK → jobs.id | |
-| kind | TEXT NOT NULL | 'station' or 'line' |
-| station_id | UUID NULL FK → stations.id | kind='station' |
-| production_line_id | UUID NULL FK → production_lines.id | kind='line' |
-| planned_quantity | INTEGER NOT NULL | editable |
-| is_active | BOOLEAN NOT NULL DEFAULT true | |
-| created_at | TIMESTAMPTZ NOT NULL DEFAULT now() | |
-| updated_at | TIMESTAMPTZ NOT NULL DEFAULT now() | |
+### 3.2 Job Items
 
-Checks:
-- `CHECK (kind IN ('station','line'))`
-- `CHECK ((kind='station') = (station_id IS NOT NULL))`
-- `CHECK ((kind='line') = (production_line_id IS NOT NULL))`
+```sql
+CREATE TABLE job_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  job_id UUID NOT NULL REFERENCES jobs(id),
+  name TEXT NOT NULL,
+  planned_quantity INTEGER NOT NULL CHECK (planned_quantity > 0),
+  pipeline_preset_id UUID NULL REFERENCES pipeline_presets(id),
+  is_pipeline_locked BOOLEAN NOT NULL DEFAULT false,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
 
-#### 4.2.4 `job_item_stations`
-Expanded steps for each job item (frozen snapshot of steps).
-| Column | Type | Notes |
-|---|---|---|
-| id | UUID PK | |
-| job_item_id | UUID NOT NULL FK → job_items.id | |
-| station_id | UUID NOT NULL FK → stations.id | |
-| position | INTEGER NOT NULL | 1..N |
-| is_terminal | BOOLEAN NOT NULL | |
-| created_at | TIMESTAMPTZ NOT NULL DEFAULT now() | |
+### 3.3 Job Item Steps
 
-Constraints:
-- `UNIQUE(job_item_id, position)`
-- `UNIQUE(job_item_id, station_id)`
+```sql
+CREATE TABLE job_item_steps (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  job_item_id UUID NOT NULL REFERENCES job_items(id),
+  station_id UUID NOT NULL REFERENCES stations(id),
+  position INTEGER NOT NULL,
+  is_terminal BOOLEAN NOT NULL DEFAULT false,
+  UNIQUE(job_item_id, position),
+  UNIQUE(job_item_id, station_id)
+);
+```
 
-#### 4.2.5 `job_item_progress`
-| Column | Type | Notes |
-|---|---|---|
-| job_item_id | UUID PK FK → job_items.id | |
-| completed_good | INTEGER NOT NULL DEFAULT 0 | terminal GOOD only |
-| updated_at | TIMESTAMPTZ NOT NULL DEFAULT now() | |
+### 3.4 WIP Balances
 
----
+```sql
+CREATE TABLE wip_balances (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  job_item_id UUID NOT NULL REFERENCES job_items(id),
+  job_item_step_id UUID NOT NULL REFERENCES job_item_steps(id),
+  good_reported INTEGER NOT NULL DEFAULT 0 CHECK (good_reported >= 0),
+  scrap_reported INTEGER NOT NULL DEFAULT 0 CHECK (scrap_reported >= 0),
+  UNIQUE(job_item_id, job_item_step_id)
+);
+```
 
-## 4.3 WIP tables (BALANCE model)
+### 3.5 Job Item Progress
 
-### 4.3.1 `wip_balances` (GOOD-only, per-step)
-This replaces lot rows with one “bucket” per job_item + step.
+```sql
+CREATE TABLE job_item_progress (
+  job_item_id UUID PRIMARY KEY REFERENCES job_items(id),
+  completed_good INTEGER NOT NULL DEFAULT 0 CHECK (completed_good >= 0),
+  completed_scrap INTEGER NOT NULL DEFAULT 0 CHECK (completed_scrap >= 0),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
 
-| Column | Type | Notes |
-|---|---|---|
-| id | UUID PK | |
-| job_item_id | UUID NOT NULL FK → job_items.id | |
-| job_item_station_id | UUID NOT NULL FK → job_item_stations.id | producing step |
-| good_available | INTEGER NOT NULL DEFAULT 0 | GOOD only, must be >=0 |
-| updated_at | TIMESTAMPTZ NOT NULL DEFAULT now() | |
+### 3.6 Session Binding
 
-Constraints:
-- `UNIQUE(job_item_id, job_item_station_id)`
-- `CHECK (good_available >= 0)`
+Sessions bind to job item steps via:
 
-Interpretation:
-- The value represents “how many GOOD units are currently waiting after this step, available for the next step”.
+```sql
+-- Column on sessions table
+sessions.job_item_step_id UUID NULL REFERENCES job_item_steps(id)
+```
 
-### 4.3.2 `wip_consumptions` (ledger, per-session pulls)
-Records how much a downstream session pulled from an upstream step balance.
+### 3.7 Entity Relationships
 
-| Column | Type | Notes |
-|---|---|---|
-| id | UUID PK | |
-| job_item_id | UUID NOT NULL FK → job_items.id | |
-| consuming_session_id | UUID NOT NULL FK → sessions.id | downstream session |
-| from_job_item_station_id | UUID NOT NULL FK → job_item_stations.id | upstream step |
-| good_used | INTEGER NOT NULL | >0 |
-| created_at | TIMESTAMPTZ NOT NULL DEFAULT now() | |
+```
+pipeline_presets          job_items                  job_item_steps
++- id                     +- id                      +- id
++- name                   +- job_id                  +- job_item_id
++- description            +- name (required)         +- station_id
++- is_active              +- planned_quantity        +- position
++- pipeline_preset_steps  +- pipeline_preset_id?     +- is_terminal
+   +- station_id          +- is_pipeline_locked      +- wip_balances
+   +- position            +- is_active                  +- good_reported
+                                                        +- scrap_reported
 
-Constraints:
-- `CHECK (good_used > 0)`
-
-Indexes (recommended):
-- `wip_consumptions(consuming_session_id, created_at DESC)`
-- `wip_consumptions(job_item_id, from_job_item_station_id)`
-
-Interpretation:
-- This ledger is the authoritative record of “pulled GOOD” per session.
-- It enables deterministic LIFO reversal during corrections.
-
-### 4.3.3 Derived accounting (no table required)
-The system must be able to compute for any session:
-- `pulled_good(session) = SUM(wip_consumptions.good_used WHERE consuming_session_id=session_id)`
-- `originated_good(session) = sessions.total_good - pulled_good(session)`
-
-Optionally provide a view:
-- `v_session_wip_accounting(session_id, pulled_good, originated_good)`
+job_item_progress
++- job_item_id (PK)
++- completed_good
++- completed_scrap
+```
 
 ---
 
-## 5) Required RPCs
+## 4. RPC Functions
 
-### 5.1 `rebuild_job_item_stations(job_item_id UUID)`
-Behavior:
-- if job_item.kind = 'station': create one step (position=1, is_terminal=true)
-- if job_item.kind = 'line': expand ordered steps from `production_line_stations`; last step is_terminal=true
+### 4.1 `setup_job_item_pipeline(p_job_item_id UUID, p_station_ids UUID[])`
 
-Additionally:
-- ensure `wip_balances` rows exist for each step:
-  - create `(job_item_id, job_item_station_id)` rows with `good_available=0` if missing
-- ensure `job_item_progress` row exists (upsert)
+Creates `job_item_steps` from a station array:
+- Creates one step per station with sequential positions
+- Marks the last step as `is_terminal = true`
+- Creates corresponding `wip_balances` rows (initialized to 0)
+- Creates `job_item_progress` row if missing
 
-Notes:
-- This keeps setup idempotent and safe to rerun.
+### 4.2 `update_session_quantities_v6(p_session_id UUID, p_good_increment INT, p_scrap_increment INT)`
 
----
+Independent quantity reporting:
+1. Locks the session row (`SELECT ... FOR UPDATE`)
+2. Increments `wip_balances.good_reported` and `scrap_reported` for the bound step
+3. If the step is terminal: also increments `job_item_progress.completed_good` and `completed_scrap`
+4. Updates session totals
 
-## 6) Atomic quantities RPC (balance model)
+Error conditions:
+- `INVALID_SESSION_STEP`: session has no `job_item_step_id` bound
 
-### 6.1 `update_session_quantities_atomic_v2(session_id UUID, total_good INT, total_scrap INT)`
-Responsibilities:
-- Updates `sessions.total_good/total_scrap`
-- Moves WIP / progress atomically (single transaction + locks)
-- Enforces rules:
-  - GOOD-only upstream consumption from WIP balance
-  - origination allowed when upstream insufficient
-  - terminal-only completion
-  - corrections: originated-first, then return pulled (LIFO), reject if downstream-consumed
+### 4.3 `end_production_status_atomic_v2(p_session_id UUID, p_good_increment INT, p_scrap_increment INT)`
 
-### 6.2 Inputs/assumptions
-- The session must have:
-  - `sessions.job_item_id` set
-  - `sessions.job_item_station_id` set (current step)
-- The function compares new totals with stored totals:
-  - `delta_good = total_good - sessions.total_good`
-  - `delta_scrap = total_scrap - sessions.total_scrap`
+Combines ending production status with a final quantity report:
+1. Calls `update_session_quantities_v6()` internally
+2. Closes the current production status event
+3. Updates session status mirroring
 
-### 6.3 Locks and concurrency
-The RPC must lock:
-- the `sessions` row
-- the current step’s `wip_balances` row (for output reduction checks)
-- the upstream step’s `wip_balances` row (if pulling)
-- optionally the `job_item_progress` row (terminal step)
-Use `SELECT ... FOR UPDATE` to guarantee determinism.
+### 4.4 `bind_job_item_atomic(p_session_id UUID, p_job_item_step_id UUID)`
 
-### 6.4 Behavior when `delta_scrap != 0`
-- Always update `sessions.total_scrap = total_scrap`
-- Scrap does not change WIP balances, progress, or planned quantity.
+Binds a session to a specific job item step:
+- Sets `sessions.job_item_step_id`
+- Sets `is_pipeline_locked = true` on the job item (first production event)
 
-### 6.5 Behavior when `delta_good > 0` (increase)
-Let:
-- `step_id = sessions.job_item_station_id`
-- `job_item_id = sessions.job_item_id`
-- Determine upstream step:
-  - if this is position=1: no upstream
-  - else upstream is position-1 step_id (lookup in job_item_stations)
+### 4.5 `unbind_job_item_atomic(p_session_id UUID)`
 
-Algorithm:
-1) **Compute pulled vs originated**
-   - If no upstream: `pulled = 0`, `originated = delta_good`
-   - Else:
-     - read upstream balance `up_avail`
-     - `pulled = min(delta_good, up_avail)`
-     - `originated = delta_good - pulled`
-2) **Apply upstream consumption**
-   - If pulled > 0:
-     - decrement upstream `wip_balances.good_available -= pulled`
-     - insert ledger row in `wip_consumptions` with `good_used=pulled`
-3) **Add output to current step balance**
-   - increment current step `wip_balances.good_available += delta_good`
-   - Rationale: step output becomes input available to downstream.
-4) **If terminal step**
-   - If `is_terminal=true` for this step:
-     - increment `job_item_progress.completed_good += delta_good`
-5) Update session totals to match inputs.
+Unbinds a session from its current job item:
+- Clears `sessions.job_item_step_id`
+- Resets session totals for the job item context
 
-Notes:
-- This keeps “WIP continuation” across sessions: balances persist independent of session lifecycle.
+### 4.6 `get_jobs_with_stats()`
 
-### 6.6 Behavior when `delta_good < 0` (decrease/correction)
-Let `reduce = abs(delta_good)`.
-
-**Hard invariant (downstream reality protection)**
-Before any accounting reversals:
-- Ensure current step’s output WIP has enough available to remove:
-  - `current_out_avail = wip_balances(step_id).good_available`
-  - If `current_out_avail < reduce`, **REJECT** with a deterministic error
-    - because the missing units have already been pulled by downstream sessions.
-This is the balance-model equivalent of “don’t undo consumed downstream reality”.
-
-If allowed, proceed:
-
-1) **Reduce the current step output balance**
-   - decrement current step `wip_balances.good_available -= reduce`
-   - If terminal step: decrement `job_item_progress.completed_good -= reduce`
-     - (also must enforce `completed_good >= 0`)
-
-2) **Compute current pulled/originated totals for this session**
-   - `pulled_total = SUM(ledger.good_used for this session)`
-   - `originated_total = sessions.total_good - pulled_total`
-   - (these are totals BEFORE applying the decrease)
-
-3) **Apply decrease to originated first**
-   - `use_from_originated = min(reduce, originated_total)`
-   - Remaining `need_from_pulled = reduce - use_from_originated`
-   - Reducing originated does not affect upstream balances.
-
-4) **If need_from_pulled > 0, reverse pulls LIFO**
-   - Fetch session’s ledger rows ordered by `created_at DESC`
-   - For each ledger row:
-     - `take = min(need_from_pulled, row.good_used)`
-     - decrement `row.good_used -= take` (delete row if becomes 0)
-     - increment upstream balance `wip_balances(from_job_item_station_id).good_available += take`
-     - `need_from_pulled -= take`
-     - stop when `need_from_pulled = 0`
-   - If you run out of ledger rows before satisfying `need_from_pulled`, REJECT (data integrity violation).
-
-5) Update `sessions.total_good = total_good`
-
-Notes:
-- This exactly implements:
-  - “originated first”
-  - “then return pulled upstream”
-  - “reject if output already consumed downstream”
-- LIFO reversal is implemented via ledger order, not by lots.
-
-### 6.7 Error contract
-RPC must raise structured errors suitable for API mapping:
-- `WIP_DOWNSTREAM_CONSUMED`: cannot decrease because downstream already pulled output
-- `INVALID_SESSION_STEP`: job_item_id / job_item_station_id missing or inconsistent
-- `NEGATIVE_PROGRESS`: attempted to reduce completed below 0 (should not happen if invariant checks correct)
+Aggregates job data for admin views:
+- Returns jobs with item counts, session totals
+- Includes `completed_good`, `completed_scrap` from progress
+- Scrap counts toward completion percentage
 
 ---
 
-## 7) API endpoints
+## 5. API Endpoints
 
-### 7.1 Worker
-- `GET /api/jobs/by-number/:jobNumber`
-- `GET /api/jobs/:jobId/allowed-stations`
-  - Must return only stations relevant to the job’s job_items/steps
-  - Must be filtered (not disabled)
-- `POST /api/sessions/start`
-  - Must require station is allowed for the selected job
-  - Must set `sessions.job_item_id` and `sessions.job_item_station_id` for the chosen job item/step
-- `PATCH /api/sessions/quantities`
-  - Must call `update_session_quantities_atomic_v2`
-  - Must preserve legacy behavior if session has NULL job_item_id/station_id
+### 5.1 Worker APIs
 
-### 7.2 Admin
-- `GET/POST /api/admin/production-lines`
-- `GET/PUT/DELETE /api/admin/production-lines/:id`
-- `PUT /api/admin/production-lines/:id/stations` (reorder/assign)
-- `GET/POST /api/admin/jobs/:jobId/items`
-- `PUT/DELETE /api/admin/jobs/:jobId/items/:itemId`
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/sessions/available-jobs` | GET | Job items with steps at a station |
+| `/api/sessions` | POST | Create session |
+| `/api/sessions/bind-job-item` | POST | Bind session to job item step |
+| `/api/sessions/unbind-job-item` | POST | Unbind session from job item |
+| `/api/sessions/pipeline/stream` | GET | SSE: real-time pipeline WIP updates |
+| `/api/status-events/end-production` | POST | End production with final quantities |
 
----
+### 5.2 Admin APIs
 
-## 8) UI changes
-
-### 8.1 Worker
-- Flow: ID → Job → Station (filtered by job)
-- Work screen continues as today, but quantity updates drive WIP/progress
-- Optional display (read-only):
-  - upstream WIP available (from upstream `wip_balances`)
-  - derived pulled/originated for this session
-
-### 8.2 Admin
-- Manage production lines (create/edit/reorder)
-- Manage job items (add station/line items + planned qty)
-- Show job item progress and scrap analytics
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/admin/manage/pipeline-presets` | GET/POST | List/create pipeline presets |
+| `/api/admin/manage/jobs` | GET/POST | List/create jobs with items |
+| `/api/admin/dashboard/job-progress` | GET | Job progress data |
+| `/api/admin/dashboard/job-progress/stream` | GET | SSE: live job progress updates |
 
 ---
 
-## 9) Analytics (balance-based)
+## 6. Worker Flow
 
-### 9.1 Bottlenecks
-Bottleneck = amount of WIP waiting (not age).
-- For each step: `wip_balances.good_available`
-- For each job item: sum across non-terminal steps if desired
-- “Most bottlenecked step” = max good_available
+### 6.1 Sequence
 
-### 9.2 Scrap %
-- Per session: `total_scrap / (total_good + total_scrap)` (guard division by zero)
-- Aggregate by:
-  - job
-  - station
-  - job item
-  - job item step (station)
+```
+1. Worker ID (login)
+2. Station selection
+3. Job item selection (items with steps at chosen station)
+4. Start checklist (optional)
+5. Active work: status events, quantity reporting
+6. End checklist (optional)
+7. Session complete
+```
 
-Scrap never affects WIP balances or completion.
+### 6.2 Station Filtering
+
+The station list shows only stations that have job item steps. Workers see job items filtered to those with a step at their selected station.
+
+### 6.3 Job Item Binding
+
+```typescript
+// Worker selects job item -> system binds to the step at their station
+POST /api/sessions/bind-job-item
+{ sessionId: "uuid", jobItemStepId: "uuid" }
+
+// Session now tracks: sessions.job_item_step_id
+```
+
+### 6.4 Quantity Reporting
+
+Workers report incremental quantities during production:
+
+```typescript
+// Via quantity report dialog or end-production
+POST /api/status-events/end-production
+{
+  sessionId: "uuid",
+  good: 10,    // increment
+  scrap: 1     // increment
+}
+```
+
+### 6.5 Job Item Switching
+
+Workers can switch job items during a session:
+1. Unbind current job item (session totals reset)
+2. Bind new job item step
+3. Continue reporting on the new item
 
 ---
 
-## 10) Acceptance tests
+## 7. Admin Management
 
-### Worker + permissions
-1) allowed-stations endpoint returns only job-relevant stations
-2) session start rejects station not allowed for job
-3) legacy sessions without job_item fields still work as before
+### 7.1 Pipeline Presets
 
-### WIP increase path
-4) step 1 increases add to step 1 balance only
-5) step >1 increases consume from upstream balance up to available
-6) origination allowed when upstream insufficient (no rejection)
-7) output always increases current step balance by delta_good
-8) terminal step increases job_item_progress.completed_good only
+Managed via `/admin/manage` in the Pipeline Presets tab:
 
-### Corrections
-9) decrease rejected if current step balance lacks enough available (downstream already consumed)
-10) originated reduced first (no upstream balance change)
-11) then pulled reversed LIFO (ledger newest-first) returning upstream balance
-12) terminal decreases reduce completed_good consistently
-13) scrap updates never change WIP/progress
+```typescript
+POST /api/admin/manage/pipeline-presets
+{
+  name: "Book Binding",
+  description: "Full book binding workflow",
+  steps: [
+    { stationId: "uuid", position: 1 },
+    { stationId: "uuid", position: 2 },
+    { stationId: "uuid", position: 3 }
+  ]
+}
+```
 
-### Data integrity
-14) balances never go negative
-15) ledger rows never have non-positive good_used
-16) derived pulled/originated remain consistent with session totals
+### 7.2 Jobs with Items
+
+```typescript
+POST /api/admin/manage/jobs
+{
+  jobNumber: "JOB-123",
+  items: [
+    {
+      name: "Cover Plates",
+      plannedQuantity: 1000,
+      pipelinePresetId: "uuid"  // optional
+    }
+  ]
+}
+```
+
+When `pipelinePresetId` is provided, the system calls `setup_job_item_pipeline()` to create steps.
 
 ---
+
+## 8. Real-Time Updates
+
+### 8.1 Worker Pipeline Stream
+
+```typescript
+GET /api/sessions/pipeline/stream?sessionId=uuid
+
+// Emits events when wip_balances change for the current job item
+// Used by PipelineContext to update pipeline display
+```
+
+### 8.2 Admin Job Progress Stream
+
+```typescript
+GET /api/admin/dashboard/job-progress/stream
+
+// Emits events when job_item_progress or wip_balances change
+// Used by LiveJobProgress component on admin dashboard
+```
+
+Both streams use Supabase Realtime subscriptions server-side, emitting typed SSE events (`initial`, `update`, `insert`, `delete`).
+
+---
+
+## 9. Acceptance Tests
+
+### Station Selection & Permissions
+1. Available-jobs endpoint returns only items with steps at the requested station
+2. Session binding rejects steps not at the worker's station
+3. Sessions without job item bindings continue to work (legacy support)
+
+### Quantity Reporting
+4. Reporting increments `wip_balances.good_reported` and `scrap_reported`
+5. Terminal station reporting also increments `job_item_progress`
+6. Non-terminal station reporting does not affect `job_item_progress`
+7. Overproduction beyond `planned_quantity` is allowed
+
+### Pipeline Immutability
+8. First bind sets `is_pipeline_locked = true`
+9. Locked pipelines reject step modifications
+10. Unlocked pipelines allow step rebuilds
+
+### Job Completion
+11. Completion calculated as `(completed_good + completed_scrap) / planned_quantity`
+12. Completed job items remain selectable
+13. Scrap at terminal station counts toward completion
+
+### Session Totals
+14. Session totals track quantities per job item
+15. Switching job items resets session totals
+16. Unbinding clears session's job item step reference
+
+### Data Integrity
+17. WIP balances never go negative (`CHECK` constraints)
+18. Job item progress never goes negative (`CHECK` constraints)
+19. Pipeline preset steps allow same station in multiple presets
+
+---
+
+## Data Layer
+
+| File | Purpose |
+|------|---------|
+| `lib/data/pipeline-presets.ts` | Pipeline preset CRUD, step management |
+| `lib/data/job-items.ts` | Job item queries, available jobs for station, WIP balances |
+| `lib/data/jobs.ts` | Job CRUD, aggregation with stats |
+| `lib/data/sessions.ts` | Session lifecycle, binding operations |
+
+## Related Documentation
+
+- [PRODUCTION_LINES.md](./PRODUCTION_LINES.md) - Feature overview and concepts
+- [DATABASE_SCHEMA.md](./DATABASE_SCHEMA.md) - Complete database tables and functions
+- [API_REFERENCE.md](./API_REFERENCE.md) - Full API endpoint reference
+- [WORKER_FLOW.md](./WORKER_FLOW.md) - Worker application flow details
+- [REALTIME_STREAMING.md](./REALTIME_STREAMING.md) - SSE stream architecture

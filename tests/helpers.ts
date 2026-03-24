@@ -241,7 +241,7 @@ export const TestFactory = {
     quantityScrap: number,
     nextStatusId: string,
   ): Promise<{ newStatusEvent: StatusEvent }> {
-    const { data, error } = await supabase.rpc("end_production_status_atomic", {
+    const { data, error } = await supabase.rpc("end_production_status_atomic_v2", {
       p_session_id: sessionId,
       p_status_event_id: statusEventId,
       p_quantity_good: quantityGood,
@@ -269,10 +269,10 @@ export const TestFactory = {
   async getWipBalance(
     jobItemId: string,
     jobItemStepId: string,
-  ): Promise<{ good_available: number } | null> {
+  ): Promise<{ good_reported: number; scrap_reported: number } | null> {
     const { data, error } = await supabase
       .from("wip_balances")
-      .select("good_available")
+      .select("good_reported, scrap_reported")
       .eq("job_item_id", jobItemId)
       .eq("job_item_step_id", jobItemStepId)
       .maybeSingle();
@@ -293,27 +293,6 @@ export const TestFactory = {
 
     if (error) throw new Error(`Failed to fetch job item progress: ${error.message}`);
     return data;
-  },
-
-  /**
-   * Get WIP consumptions for a job item
-   */
-  async getWipConsumptions(jobItemId: string): Promise<
-    {
-      from_job_item_step_id: string;
-      consuming_session_id: string;
-      good_used: number;
-      is_scrap: boolean;
-    }[]
-  > {
-    const { data, error } = await supabase
-      .from("wip_consumptions")
-      .select("from_job_item_step_id, consuming_session_id, good_used, is_scrap")
-      .eq("job_item_id", jobItemId)
-      .order("created_at", { ascending: true });
-
-    if (error) throw new Error(`Failed to fetch WIP consumptions: ${error.message}`);
-    return data ?? [];
   },
 
   /**
@@ -426,13 +405,7 @@ export const TestCleanup = {
   async cleanupJobItems(jobItemIds: string[]) {
     if (jobItemIds.length === 0) return;
 
-    // Delete in order: consumptions -> progress -> balances -> steps -> items
-    // Note: CASCADE should handle most of this, but being explicit
-    await supabase
-      .from("wip_consumptions")
-      .delete()
-      .in("job_item_id", jobItemIds);
-
+    // Delete in order: progress -> items (CASCADE handles balances, steps)
     await supabase
       .from("job_item_progress")
       .delete()

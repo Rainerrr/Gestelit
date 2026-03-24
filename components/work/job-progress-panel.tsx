@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/hooks/useTranslation";
-import { DualProgressBar } from "./dual-progress-bar";
+import { JobProgressBar } from "./job-progress-bar";
 import { ChevronLeft, User, Package, CheckCircle2 } from "lucide-react";
 import type { ActiveJobItemContext } from "@/contexts/WorkerSessionContext";
 import type { Job } from "@/lib/types";
@@ -70,6 +70,8 @@ export type JobProgressPanelProps = {
   pipelineContext?: PipelineContext;
   /** Additional class names */
   className?: string;
+  /** When true, skip outer wrapper + header, render body only (for embedding in parent card) */
+  embedded?: boolean;
 };
 
 // ============================================
@@ -96,26 +98,25 @@ export function JobProgressPanel({
   currentStationName,
   pipelineContext,
   className,
+  embedded = false,
 }: JobProgressPanelProps) {
   const { t } = useTranslation();
-  const [displayMode, setDisplayMode] = useState<"percentage" | "numbers">("percentage");
+  const displayMode = "numbers" as const;
 
-  // Total completed is the authoritative value from the database (completedGood).
-  // DO NOT add sessionTotals.good - the DB value already includes this session's reports.
+  // Total completed values from the database.
+  // DO NOT add sessionTotals - the DB values already include this session's reports.
   // sessionTotals is only used for the dual-color bar to show "this session's contribution".
-  const totalCompleted = activeJobItem?.completedGood ?? 0;
-
-  const toggleDisplayMode = () => {
-    setDisplayMode((prev) => (prev === "percentage" ? "numbers" : "percentage"));
-  };
+  const totalCompletedGood = activeJobItem?.completedGood ?? 0;
+  const totalCompletedScrap = activeJobItem?.completedScrap ?? 0;
+  const totalCompleted = totalCompletedGood + totalCompletedScrap;
 
   // Check if we should show pipeline (multi-station production line)
   const showPipeline = pipelineContext?.isProductionLine &&
     !pipelineContext?.isSingleStation &&
     (pipelineContext?.prevStation || pipelineContext?.nextStation);
 
-  // Empty state - no job selected
-  if (!activeJobItem) {
+  // Empty state - no job selected (parent handles this in embedded mode)
+  if (!activeJobItem && !embedded) {
     return (
       <div
         className={cn(
@@ -152,7 +153,85 @@ export function JobProgressPanel({
     );
   }
 
-  // Active state - job selected
+  // In embedded mode with no active job item, render nothing (parent handles empty state)
+  if (!activeJobItem) {
+    return null;
+  }
+
+  // Embedded mode: render only the body (progress bar, stats, pipeline) — no outer wrapper or header
+  if (embedded) {
+    return (
+      <div className={cn("space-y-4", className)}>
+        <JobProgressBar
+          plannedQuantity={activeJobItem.plannedQuantity}
+          totalGood={totalCompletedGood}
+          totalScrap={totalCompletedScrap}
+          sessionGood={sessionTotals.good}
+          sessionScrap={sessionTotals.scrap}
+          displayMode={displayMode}
+          showLegend
+          showOverlay
+        />
+
+        {/* This Session Stats - 3 tiles */}
+        <div className="space-y-1.5">
+          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider text-right">
+            משמרת זו
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="rounded-lg bg-card/80 border border-border px-3 py-3 text-center">
+              <div className="text-xs font-medium text-muted-foreground">תקין במשמרת</div>
+              <div className="text-2xl font-bold tabular-nums text-emerald-700 dark:text-emerald-400">
+                {formatCompactNumber(sessionTotals.good)}
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-card/80 border border-border px-3 py-3 text-center">
+              <div className="text-xs font-medium text-muted-foreground">פסול במשמרת</div>
+              <div className={cn(
+                "text-2xl font-bold tabular-nums",
+                sessionTotals.scrap > 0
+                  ? "text-rose-600 dark:text-rose-400"
+                  : "text-muted-foreground/50"
+              )}>
+                {formatCompactNumber(sessionTotals.scrap)}
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-card/80 border border-border px-3 py-3 text-center">
+              <div className="text-xs font-medium text-muted-foreground">נותרו</div>
+              <div className={cn(
+                "text-2xl font-bold tabular-nums",
+                Math.max(0, activeJobItem.plannedQuantity - totalCompleted) === 0
+                  ? "text-emerald-700 dark:text-emerald-400"
+                  : "text-foreground"
+              )}>
+                {formatCompactNumber(Math.max(0, activeJobItem.plannedQuantity - totalCompleted))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Pipeline Visualization - only for multi-station jobs */}
+        {showPipeline && pipelineContext && currentStationName && (
+          <PipelineFlowDisplay
+            upstreamWip={pipelineContext.upstreamWip}
+            waitingOutput={pipelineContext.waitingOutput}
+            prevStation={pipelineContext.prevStation}
+            nextStation={pipelineContext.nextStation}
+            currentStationName={currentStationName}
+            isTerminal={pipelineContext.isTerminal}
+            totalGoodReported={totalCompletedGood}
+            totalScrapReported={totalCompletedScrap}
+            totalStages={pipelineContext.totalStages}
+            currentStageIndex={pipelineContext.currentStageIndex}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // Active state - job selected (standalone mode with full wrapper)
   return (
     <div
       className={cn(
@@ -190,15 +269,6 @@ export function JobProgressPanel({
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={toggleDisplayMode}
-            className="h-8 px-2 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-accent"
-          >
-            {displayMode === "percentage" ? "#" : "%"}
-          </Button>
-
           {/* Switch Job */}
           {onSwitchJob ? (
             <Button
@@ -225,31 +295,52 @@ export function JobProgressPanel({
           <span className="text-lg font-bold text-foreground">{activeJobItem.name}</span>
         </div>
 
-        <DualProgressBar
-          totalCompleted={totalCompleted}
-          sessionContribution={sessionTotals.good}
+        <JobProgressBar
           plannedQuantity={activeJobItem.plannedQuantity}
+          totalGood={totalCompletedGood}
+          totalScrap={totalCompletedScrap}
+          sessionGood={sessionTotals.good}
+          sessionScrap={sessionTotals.scrap}
           displayMode={displayMode}
+          showLegend
+          showOverlay
         />
 
-        {/* Stats Grid - 2 tiles */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-lg bg-card/80 border border-border px-4 py-3 text-center">
-            <div className="text-xs font-medium text-muted-foreground">{t("jobProgress.totalReported")}</div>
-            <div className="text-2xl font-bold tabular-nums text-emerald-700 dark:text-emerald-400">
-              {formatCompactNumber(totalCompleted)}
-            </div>
+        {/* This Session Stats - 3 tiles */}
+        <div className="space-y-1.5">
+          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider text-right">
+            משמרת זו
           </div>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="rounded-lg bg-card/80 border border-border px-3 py-3 text-center">
+              <div className="text-xs font-medium text-muted-foreground">תקין במשמרת</div>
+              <div className="text-2xl font-bold tabular-nums text-emerald-700 dark:text-emerald-400">
+                {formatCompactNumber(sessionTotals.good)}
+              </div>
+            </div>
 
-          <div className="rounded-lg bg-card/80 border border-border px-4 py-3 text-center">
-            <div className="text-xs font-medium text-muted-foreground">{t("jobProgress.remaining")}</div>
-            <div className={cn(
-              "text-2xl font-bold tabular-nums",
-              Math.max(0, activeJobItem.plannedQuantity - totalCompleted) === 0
-                ? "text-emerald-700 dark:text-emerald-400"
-                : "text-foreground"
-            )}>
-              {formatCompactNumber(Math.max(0, activeJobItem.plannedQuantity - totalCompleted))}
+            <div className="rounded-lg bg-card/80 border border-border px-3 py-3 text-center">
+              <div className="text-xs font-medium text-muted-foreground">פסול במשמרת</div>
+              <div className={cn(
+                "text-2xl font-bold tabular-nums",
+                sessionTotals.scrap > 0
+                  ? "text-rose-600 dark:text-rose-400"
+                  : "text-muted-foreground/50"
+              )}>
+                {formatCompactNumber(sessionTotals.scrap)}
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-card/80 border border-border px-3 py-3 text-center">
+              <div className="text-xs font-medium text-muted-foreground">נותרו</div>
+              <div className={cn(
+                "text-2xl font-bold tabular-nums",
+                Math.max(0, activeJobItem.plannedQuantity - totalCompleted) === 0
+                  ? "text-emerald-700 dark:text-emerald-400"
+                  : "text-foreground"
+              )}>
+                {formatCompactNumber(Math.max(0, activeJobItem.plannedQuantity - totalCompleted))}
+              </div>
             </div>
           </div>
         </div>
@@ -263,7 +354,8 @@ export function JobProgressPanel({
             nextStation={pipelineContext.nextStation}
             currentStationName={currentStationName}
             isTerminal={pipelineContext.isTerminal}
-            sessionGoodCount={sessionTotals.good}
+            totalGoodReported={totalCompletedGood}
+            totalScrapReported={totalCompletedScrap}
             totalStages={pipelineContext.totalStages}
             currentStageIndex={pipelineContext.currentStageIndex}
           />
@@ -277,8 +369,8 @@ export function JobProgressPanel({
 // PIPELINE FLOW DISPLAY - Refined Original Style
 // ============================================
 
-// Color scheme matching the live dashboard job progress (red → orange → amber → lime → green → emerald)
-// Uses dark: prefix for light/dark mode contrast support
+// Color scheme matching the live dashboard pipeline dots (blue gradient → emerald terminal)
+// Blue: #0661D0 → #06B6D4 (cyan) interpolated by position, terminal = emerald
 const getPipelineStageStyle = (stageIndex: number, totalStages: number, isTerminal: boolean) => {
   // Terminal stage always emerald
   if (isTerminal) {
@@ -293,62 +385,29 @@ const getPipelineStageStyle = (stageIndex: number, totalStages: number, isTermin
     };
   }
 
-  // Calculate position ratio (0 = start, 1 = end)
-  const ratio = totalStages <= 1 ? 1 : stageIndex / (totalStages - 1);
+  // Calculate position ratio (0 = start/blue, 1 = end/cyan)
+  const ratio = totalStages <= 1 ? 0 : stageIndex / (totalStages - 1);
 
-  // Red → Orange → Amber → Lime → Green gradient based on position
-  if (ratio <= 0.2) {
+  // Blue → Cyan gradient based on position
+  if (ratio <= 0.5) {
     return {
-      border: "border-red-500/50",
-      bg: "bg-red-500/10",
-      text: "text-red-700 dark:text-red-400",
-      accent: "text-red-800 dark:text-red-300",
-      glow: "shadow-[0_0_10px_rgba(239,68,68,0.15)]",
-      wipBorder: "border-red-500/40",
-      wipBg: "bg-red-500/15",
-    };
-  }
-  if (ratio <= 0.4) {
-    return {
-      border: "border-orange-500/50",
-      bg: "bg-orange-500/10",
-      text: "text-orange-700 dark:text-orange-400",
-      accent: "text-orange-800 dark:text-orange-300",
-      glow: "shadow-[0_0_10px_rgba(249,115,22,0.15)]",
-      wipBorder: "border-orange-500/40",
-      wipBg: "bg-orange-500/15",
-    };
-  }
-  if (ratio <= 0.6) {
-    return {
-      border: "border-amber-500/50",
-      bg: "bg-amber-500/10",
-      text: "text-amber-700 dark:text-amber-400",
-      accent: "text-amber-800 dark:text-amber-300",
-      glow: "shadow-[0_0_10px_rgba(245,158,11,0.15)]",
-      wipBorder: "border-amber-500/40",
-      wipBg: "bg-amber-500/15",
-    };
-  }
-  if (ratio <= 0.8) {
-    return {
-      border: "border-lime-500/50",
-      bg: "bg-lime-500/10",
-      text: "text-lime-700 dark:text-lime-400",
-      accent: "text-lime-800 dark:text-lime-300",
-      glow: "shadow-[0_0_10px_rgba(132,204,22,0.15)]",
-      wipBorder: "border-lime-500/40",
-      wipBg: "bg-lime-500/15",
+      border: "border-blue-500/50",
+      bg: "bg-blue-500/10",
+      text: "text-blue-700 dark:text-blue-400",
+      accent: "text-blue-800 dark:text-blue-300",
+      glow: "shadow-[0_0_10px_rgba(6,97,208,0.15)]",
+      wipBorder: "border-blue-500/40",
+      wipBg: "bg-blue-500/15",
     };
   }
   return {
-    border: "border-green-500/50",
-    bg: "bg-green-500/10",
-    text: "text-green-700 dark:text-green-400",
-    accent: "text-green-800 dark:text-green-300",
-    glow: "shadow-[0_0_10px_rgba(34,197,94,0.15)]",
-    wipBorder: "border-green-500/40",
-    wipBg: "bg-green-500/15",
+    border: "border-cyan-500/50",
+    bg: "bg-cyan-500/10",
+    text: "text-cyan-700 dark:text-cyan-400",
+    accent: "text-cyan-800 dark:text-cyan-300",
+    glow: "shadow-[0_0_10px_rgba(6,182,212,0.15)]",
+    wipBorder: "border-cyan-500/40",
+    wipBg: "bg-cyan-500/15",
   };
 };
 
@@ -359,7 +418,10 @@ type PipelineFlowDisplayProps = {
   nextStation: PipelineNeighborStation | null;
   currentStationName: string;
   isTerminal: boolean;
-  sessionGoodCount: number;
+  /** Total good reported at current station (all sessions) */
+  totalGoodReported: number;
+  /** Total scrap reported at current station (all sessions) */
+  totalScrapReported: number;
   /** Total number of stages in the pipeline (for color calculation) */
   totalStages?: number;
   /** Current station's position in the pipeline (0-indexed) */
@@ -378,7 +440,8 @@ function PipelineFlowDisplay({
   nextStation,
   currentStationName,
   isTerminal,
-  sessionGoodCount,
+  totalGoodReported,
+  totalScrapReported,
   totalStages = 3,
   currentStageIndex = 1,
 }: PipelineFlowDisplayProps) {
@@ -426,8 +489,8 @@ function PipelineFlowDisplay({
           <NeighborStationTile
             name={prevStation.name}
             occupiedBy={prevStation.occupiedBy}
-            wipCount={upstreamWip}
-            wipLabel={t("pipeline.waitingForUs")}
+            goodReported={prevStation.goodReported}
+            scrapReported={prevStation.scrapReported}
             isAnimating={animatingUpstream}
             stageIndex={currentStageIndex - 1}
             totalStages={totalStages}
@@ -435,19 +498,20 @@ function PipelineFlowDisplay({
         )}
 
         {/* Flow Arrow */}
-        <FlowArrow hasFlow={!isFirstStation && upstreamWip > 0} stageIndex={currentStageIndex - 1} totalStages={totalStages} />
+        <FlowArrow hasFlow={!isFirstStation && (prevStation?.goodReported ?? 0) > 0} stageIndex={currentStageIndex - 1} totalStages={totalStages} />
 
         {/* Current Station - Emphasized */}
         <CurrentStationTile
           name={currentStationName}
-          sessionCount={sessionGoodCount}
+          totalGoodReported={totalGoodReported}
+          totalScrapReported={totalScrapReported}
           isTerminal={isTerminal}
           stageIndex={currentStageIndex}
           totalStages={totalStages}
         />
 
         {/* Flow Arrow */}
-        <FlowArrow hasFlow={waitingOutput > 0} stageIndex={currentStageIndex} totalStages={totalStages} />
+        <FlowArrow hasFlow={totalGoodReported > 0 || totalScrapReported > 0} stageIndex={currentStageIndex} totalStages={totalStages} />
 
         {/* Next Station / End */}
         {isTerminal ? (
@@ -456,8 +520,8 @@ function PipelineFlowDisplay({
           <NeighborStationTile
             name={nextStation?.name ?? ""}
             occupiedBy={nextStation?.occupiedBy}
-            wipCount={waitingOutput}
-            wipLabel={t("pipeline.goingOut")}
+            goodReported={nextStation?.goodReported ?? 0}
+            scrapReported={nextStation?.scrapReported ?? 0}
             isAnimating={animatingDownstream}
             stageIndex={currentStageIndex + 1}
             totalStages={totalStages}
@@ -517,12 +581,12 @@ function EndStationTile({ completedCount, isAnimating }: EndStationTileProps) {
   );
 }
 
-/** Neighbor station tile with integrated WIP counter */
+/** Neighbor station tile with good/scrap reported counts */
 type NeighborStationTileProps = {
   name: string;
   occupiedBy?: string | null;
-  wipCount: number;
-  wipLabel: string;
+  goodReported: number;
+  scrapReported: number;
   isAnimating: boolean;
   /** Stage index for color calculation */
   stageIndex: number;
@@ -535,8 +599,8 @@ type NeighborStationTileProps = {
 function NeighborStationTile({
   name,
   occupiedBy,
-  wipCount,
-  wipLabel,
+  goodReported,
+  scrapReported,
   isAnimating,
   stageIndex,
   totalStages,
@@ -574,7 +638,7 @@ function NeighborStationTile({
         )}
       </div>
 
-      {/* WIP Counter - integrated into tile */}
+      {/* Reported Counter - good + scrap */}
       <div
         className={cn(
           "mt-1.5 flex flex-col items-center rounded-lg py-1.5 px-1.5 transition-all duration-300 border",
@@ -584,17 +648,24 @@ function NeighborStationTile({
         )}
       >
         <span className={cn("text-[9px] font-medium opacity-70", style.text)}>
-          {wipLabel}
+          דווח בתחנה
         </span>
-        <span
-          className={cn(
-            "text-lg font-bold tabular-nums transition-all duration-300",
-            style.accent,
-            isAnimating && "animate-pulse"
+        <div className="flex items-center gap-1">
+          <span
+            className={cn(
+              "text-lg font-bold tabular-nums transition-all duration-300",
+              style.accent,
+              isAnimating && "animate-pulse"
+            )}
+          >
+            {formatCompactNumber(goodReported)}
+          </span>
+          {scrapReported > 0 && (
+            <span className="text-xs font-bold tabular-nums text-rose-400">
+              +{formatCompactNumber(scrapReported)}
+            </span>
           )}
-        >
-          {formatCompactNumber(wipCount)}
-        </span>
+        </div>
       </div>
     </div>
   );
@@ -603,7 +674,8 @@ function NeighborStationTile({
 /** Current station tile - emphasized */
 type CurrentStationTileProps = {
   name: string;
-  sessionCount: number;
+  totalGoodReported: number;
+  totalScrapReported: number;
   isTerminal: boolean;
   /** Stage index for color calculation */
   stageIndex: number;
@@ -613,7 +685,8 @@ type CurrentStationTileProps = {
 
 function CurrentStationTile({
   name,
-  sessionCount,
+  totalGoodReported,
+  totalScrapReported,
   isTerminal,
   stageIndex,
   totalStages,
@@ -646,18 +719,25 @@ function CurrentStationTile({
         </span>
       </div>
 
-      {/* Session Count - what we reported this session */}
+      {/* Total reported at this station (good + scrap) — same format as neighbor stations */}
       <div className={cn(
         "mt-1.5 flex flex-col items-center rounded-lg py-1.5 px-1.5 border",
         style.wipBg,
         style.wipBorder
       )}>
         <span className={cn("text-[9px] font-medium opacity-70", style.text)}>
-          {t("pipeline.reportedInShift")}
+          דווח בתחנה
         </span>
-        <span className={cn("text-lg font-bold tabular-nums", style.accent)}>
-          {sessionCount.toLocaleString()}
-        </span>
+        <div className="flex items-center gap-1">
+          <span className={cn("text-lg font-bold tabular-nums", style.accent)}>
+            {totalGoodReported.toLocaleString()}
+          </span>
+          {totalScrapReported > 0 && (
+            <span className="text-xs font-bold tabular-nums text-rose-400">
+              +{totalScrapReported.toLocaleString()}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Terminal indicator */}
@@ -679,15 +759,11 @@ type FlowArrowProps = {
   totalStages: number;
 };
 
-// Get arrow color based on stage (simpler version of full style)
-// Uses dark: prefix for light/dark mode contrast support
+// Get arrow color based on stage — blue gradient matching pipeline dots
 const getArrowColor = (stageIndex: number, totalStages: number) => {
-  const ratio = totalStages <= 1 ? 1 : stageIndex / (totalStages - 1);
-  if (ratio <= 0.2) return { text: "text-red-600 dark:text-red-400", ping: "bg-red-400/30", glow: "drop-shadow-[0_0_4px_rgba(239,68,68,0.6)]" };
-  if (ratio <= 0.4) return { text: "text-orange-600 dark:text-orange-400", ping: "bg-orange-400/30", glow: "drop-shadow-[0_0_4px_rgba(249,115,22,0.6)]" };
-  if (ratio <= 0.6) return { text: "text-amber-600 dark:text-amber-400", ping: "bg-amber-400/30", glow: "drop-shadow-[0_0_4px_rgba(245,158,11,0.6)]" };
-  if (ratio <= 0.8) return { text: "text-lime-600 dark:text-lime-400", ping: "bg-lime-400/30", glow: "drop-shadow-[0_0_4px_rgba(132,204,22,0.6)]" };
-  return { text: "text-green-600 dark:text-green-400", ping: "bg-green-400/30", glow: "drop-shadow-[0_0_4px_rgba(34,197,94,0.6)]" };
+  const ratio = totalStages <= 1 ? 0 : stageIndex / (totalStages - 1);
+  if (ratio <= 0.5) return { text: "text-blue-600 dark:text-blue-400", ping: "bg-blue-400/30", glow: "drop-shadow-[0_0_4px_rgba(6,97,208,0.6)]" };
+  return { text: "text-cyan-600 dark:text-cyan-400", ping: "bg-cyan-400/30", glow: "drop-shadow-[0_0_4px_rgba(6,182,212,0.6)]" };
 };
 
 function FlowArrow({ hasFlow, stageIndex, totalStages }: FlowArrowProps) {

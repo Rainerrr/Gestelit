@@ -5,7 +5,7 @@ import { createServiceSupabase } from "@/lib/supabase/client";
 import type { Worker } from "@/lib/types";
 
 const ADMIN_SESSION_COOKIE = "admin_session";
-const ADMIN_SESSION_MAX_AGE = 15 * 60; // 15 minutes
+const ADMIN_SESSION_MAX_AGE = 60 * 60; // 60 minutes
 
 export class UnauthorizedError extends Error {
   constructor(message: string) {

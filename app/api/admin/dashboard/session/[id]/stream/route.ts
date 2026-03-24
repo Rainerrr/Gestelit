@@ -10,11 +10,14 @@ import {
 } from "@/lib/auth/permissions";
 import { createServiceSupabase } from "@/lib/supabase/client";
 import type {
+  JobItemDistribution,
   SessionStatus,
   StationType,
   StatusEventState,
   MalfunctionReportStatus,
 } from "@/lib/types";
+import { computeJobItemDistribution } from "@/lib/data/admin-dashboard";
+import type { DistributionEvent } from "@/lib/data/admin-dashboard";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -110,8 +113,10 @@ export type ProductionPeriod = {
   jobItemStepId: string | null;
   stepPosition: number | null;
   isTerminal: boolean;
-  /** Total at THIS step across ALL sessions */
+  /** Total good at THIS step across ALL sessions */
   stepTotalGood: number;
+  /** Total scrap at THIS step across ALL sessions */
+  stepTotalScrap: number;
 };
 
 export type SessionDetailStream = {
@@ -141,6 +146,7 @@ export type SessionDetailStream = {
   generalReports: SessionGeneralReport[];
   scrapReports: SessionScrapReport[];
   productionPeriods: ProductionPeriod[];
+  jobItemDistribution: JobItemDistribution | null;
 };
 
 type StreamEvent =
@@ -481,19 +487,24 @@ async function fetchSessionDetail(sessionId: string): Promise<SessionDetailStrea
     }
   }
 
-  // Query step totals across ALL sessions
-  const stepTotalsMap = new Map<string, number>();
+  // Query step totals across ALL sessions (good + scrap)
+  const stepGoodTotalsMap = new Map<string, number>();
+  const stepScrapTotalsMap = new Map<string, number>();
   if (stepIds.size > 0) {
     const { data: stepTotals } = await supabase
       .from("status_events")
-      .select("job_item_step_id, quantity_good")
-      .in("job_item_step_id", Array.from(stepIds))
-      .gt("quantity_good", 0);
+      .select("job_item_step_id, quantity_good, quantity_scrap")
+      .in("job_item_step_id", Array.from(stepIds));
 
     for (const row of stepTotals ?? []) {
-      if (row.job_item_step_id && row.quantity_good) {
-        const current = stepTotalsMap.get(row.job_item_step_id) ?? 0;
-        stepTotalsMap.set(row.job_item_step_id, current + row.quantity_good);
+      if (!row.job_item_step_id) continue;
+      const good = row.quantity_good ?? 0;
+      const scrap = row.quantity_scrap ?? 0;
+      if (good > 0) {
+        stepGoodTotalsMap.set(row.job_item_step_id, (stepGoodTotalsMap.get(row.job_item_step_id) ?? 0) + good);
+      }
+      if (scrap > 0) {
+        stepScrapTotalsMap.set(row.job_item_step_id, (stepScrapTotalsMap.get(row.job_item_step_id) ?? 0) + scrap);
       }
     }
   }
@@ -514,6 +525,7 @@ async function fetchSessionDetail(sessionId: string): Promise<SessionDetailStrea
     stepPosition: number | null;
     isTerminal: boolean;
     stepTotalGood: number;
+    stepTotalScrap: number;
   }>();
 
   for (const event of productionEvents) {
@@ -543,13 +555,16 @@ async function fetchSessionDetail(sessionId: string): Promise<SessionDetailStrea
         quantityGood: event.quantity_good ?? 0,
         quantityScrap: event.quantity_scrap ?? 0,
         totalCompletedGood: event.job_item_step_id
-          ? (stepTotalsMap.get(event.job_item_step_id) ?? 0)
+          ? (stepGoodTotalsMap.get(event.job_item_step_id) ?? 0)
           : 0,
         jobItemStepId: event.job_item_step_id,
         stepPosition: event.job_item_steps?.position ?? null,
         isTerminal: event.job_item_steps?.is_terminal ?? true,
         stepTotalGood: event.job_item_step_id
-          ? (stepTotalsMap.get(event.job_item_step_id) ?? 0)
+          ? (stepGoodTotalsMap.get(event.job_item_step_id) ?? 0)
+          : 0,
+        stepTotalScrap: event.job_item_step_id
+          ? (stepScrapTotalsMap.get(event.job_item_step_id) ?? 0)
           : 0,
       });
     }
@@ -561,6 +576,23 @@ async function fetchSessionDetail(sessionId: string): Promise<SessionDetailStrea
   // This replaces the dropped sessions.total_good/total_scrap columns
   const totalGood = productionPeriods.reduce((sum, p) => sum + p.quantityGood, 0);
   const totalScrap = productionPeriods.reduce((sum, p) => sum + p.quantityScrap, 0);
+
+  // Fetch all status events for job item distribution (all types, ordered by time)
+  const { data: allEventsData } = await supabase
+    .from("status_events")
+    .select(`
+      job_item_id,
+      started_at,
+      ended_at,
+      job_items:job_item_id(name, jobs(job_number))
+    `)
+    .eq("session_id", sessionId)
+    .order("started_at", { ascending: true });
+
+  const jobItemDistribution = computeJobItemDistribution(
+    sessionId,
+    (allEventsData as unknown as DistributionEvent[]) ?? [],
+  );
 
   return {
     id: row.id,
@@ -589,6 +621,7 @@ async function fetchSessionDetail(sessionId: string): Promise<SessionDetailStrea
     generalReports,
     scrapReports,
     productionPeriods,
+    jobItemDistribution: jobItemDistribution.periods.length > 0 ? jobItemDistribution : null,
   };
 }
 

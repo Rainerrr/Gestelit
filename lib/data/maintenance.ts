@@ -1,31 +1,37 @@
 import { createServiceSupabase } from "@/lib/supabase/client";
-import type { Station, StationMaintenanceInfo, MaintenanceStatus } from "@/lib/types";
+import type {
+  MaintenanceService,
+  ServiceMaintenanceInfo,
+  StationMaintenanceDetail,
+  MaintenanceStatus,
+  Worker,
+} from "@/lib/types";
+
+const STATUS_ORDER: Record<MaintenanceStatus, number> = {
+  overdue: 0,
+  due_soon: 1,
+  ok: 2,
+  not_tracked: 3,
+};
 
 /**
- * Calculate maintenance status from station data
+ * Calculate maintenance status for a single service.
  */
-function calculateMaintenanceInfo(station: Station): StationMaintenanceInfo {
-  const { maintenance_last_date, maintenance_interval_days, maintenance_enabled } = station;
-
-  // Not tracked if maintenance not enabled or missing data
-  if (!maintenance_enabled || !maintenance_last_date || !maintenance_interval_days) {
+export function calculateServiceInfo(
+  service: MaintenanceService
+): ServiceMaintenanceInfo {
+  if (!service.last_serviced) {
     return {
-      id: station.id,
-      name: station.name,
-      code: station.code,
-      maintenance_enabled: maintenance_enabled ?? false,
-      maintenance_last_date: maintenance_last_date ?? null,
-      maintenance_interval_days: maintenance_interval_days ?? null,
-      next_maintenance_date: null,
+      ...service,
+      next_service_date: null,
       days_until_due: null,
       maintenance_status: "not_tracked",
     };
   }
 
-  // Calculate next maintenance date
-  const lastDate = new Date(maintenance_last_date);
+  const lastDate = new Date(service.last_serviced);
   const nextDate = new Date(lastDate);
-  nextDate.setDate(nextDate.getDate() + maintenance_interval_days);
+  nextDate.setDate(nextDate.getDate() + service.interval_days);
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -44,28 +50,41 @@ function calculateMaintenanceInfo(station: Station): StationMaintenanceInfo {
   }
 
   return {
-    id: station.id,
-    name: station.name,
-    code: station.code,
-    maintenance_enabled: true,
-    maintenance_last_date,
-    maintenance_interval_days,
-    next_maintenance_date: nextDate.toISOString().split("T")[0],
+    ...service,
+    next_service_date: nextDate.toISOString().split("T")[0],
     days_until_due: daysUntilDue,
     maintenance_status: status,
   };
 }
 
 /**
- * Fetch all stations with maintenance tracking enabled, sorted by urgency.
- * Overdue stations first, then due_soon, then ok.
+ * Determine the worst (most urgent) status across services.
  */
-export async function fetchMaintenanceStations(): Promise<StationMaintenanceInfo[]> {
+function worstStatus(services: ServiceMaintenanceInfo[]): MaintenanceStatus {
+  if (services.length === 0) return "not_tracked";
+  let worst: MaintenanceStatus = "not_tracked";
+  for (const s of services) {
+    if (STATUS_ORDER[s.maintenance_status] < STATUS_ORDER[worst]) {
+      worst = s.maintenance_status;
+    }
+  }
+  return worst;
+}
+
+/**
+ * Fetch all stations with maintenance tracking enabled, returning multi-service detail.
+ * Sorted by worst_status (most urgent first), then by station name.
+ */
+export async function fetchMaintenanceStations(): Promise<
+  StationMaintenanceDetail[]
+> {
   const supabase = createServiceSupabase();
 
   const { data, error } = await supabase
     .from("stations")
-    .select("id, name, code, maintenance_enabled, maintenance_last_date, maintenance_interval_days")
+    .select(
+      "id, name, code, station_type, maintenance_enabled, maintenance_services"
+    )
     .eq("maintenance_enabled", true)
     .eq("is_active", true)
     .order("name", { ascending: true });
@@ -74,50 +93,52 @@ export async function fetchMaintenanceStations(): Promise<StationMaintenanceInfo
     throw new Error(`Failed to fetch maintenance stations: ${error.message}`);
   }
 
-  const stations = (data ?? []) as Station[];
-  const maintenanceInfos = stations.map(calculateMaintenanceInfo);
-
-  // Sort by urgency: overdue first (most negative days), then due_soon, then ok
-  maintenanceInfos.sort((a, b) => {
-    const statusOrder: Record<MaintenanceStatus, number> = {
-      overdue: 0,
-      due_soon: 1,
-      ok: 2,
-      not_tracked: 3,
+  const results: StationMaintenanceDetail[] = (data ?? []).map((row) => {
+    const rawServices = (row.maintenance_services ?? []) as MaintenanceService[];
+    const services = rawServices.map(calculateServiceInfo);
+    return {
+      id: row.id as string,
+      name: row.name as string,
+      code: row.code as string,
+      station_type: row.station_type as string,
+      maintenance_enabled: true,
+      services,
+      worst_status: worstStatus(services),
     };
-
-    const statusDiff = statusOrder[a.maintenance_status] - statusOrder[b.maintenance_status];
-    if (statusDiff !== 0) return statusDiff;
-
-    // Within same status, sort by days until due (ascending - most urgent first)
-    const aDays = a.days_until_due ?? Infinity;
-    const bDays = b.days_until_due ?? Infinity;
-    return aDays - bDays;
   });
 
-  return maintenanceInfos;
+  // Sort by worst_status urgency, then name
+  results.sort((a, b) => {
+    const diff = STATUS_ORDER[a.worst_status] - STATUS_ORDER[b.worst_status];
+    if (diff !== 0) return diff;
+    return a.name.localeCompare(b.name);
+  });
+
+  return results;
 }
 
 /**
- * Mark maintenance as completed for a station.
- * Updates last_maintenance_date to the specified date (defaults to today).
+ * Mark a specific service as completed for a station.
+ * Updates the service entry in the JSONB array.
  */
 export async function completeStationMaintenance(
   stationId: string,
-  completionDate?: string
+  serviceId: string,
+  completionDate?: string,
+  workerId?: string | null
 ): Promise<{
   success: boolean;
-  last_maintenance_date: string;
-  next_maintenance_date: string | null;
+  last_serviced: string;
+  next_service_date: string | null;
 }> {
   const supabase = createServiceSupabase();
+  const dateToUse =
+    completionDate ?? new Date().toISOString().split("T")[0];
 
-  const dateToUse = completionDate ?? new Date().toISOString().split("T")[0];
-
-  // First fetch the station to get the interval
+  // Fetch current station
   const { data: station, error: fetchError } = await supabase
     .from("stations")
-    .select("maintenance_enabled, maintenance_interval_days")
+    .select("maintenance_enabled, maintenance_services")
     .eq("id", stationId)
     .single();
 
@@ -129,11 +150,24 @@ export async function completeStationMaintenance(
     throw new Error("Maintenance tracking not enabled for this station");
   }
 
-  // Update the last maintenance date
+  const services = (station.maintenance_services ?? []) as MaintenanceService[];
+  const serviceIndex = services.findIndex((s) => s.id === serviceId);
+
+  if (serviceIndex === -1) {
+    throw new Error("Service not found");
+  }
+
+  // Update the specific service
+  services[serviceIndex] = {
+    ...services[serviceIndex],
+    last_serviced: dateToUse,
+    last_service_worker_id: workerId ?? null,
+  };
+
   const { error: updateError } = await supabase
     .from("stations")
     .update({
-      maintenance_last_date: dateToUse,
+      maintenance_services: services,
       updated_at: new Date().toISOString(),
     })
     .eq("id", stationId);
@@ -142,19 +176,49 @@ export async function completeStationMaintenance(
     throw new Error(`Failed to update maintenance: ${updateError.message}`);
   }
 
-  // Calculate next maintenance date
+  // Calculate next service date
   let nextDate: string | null = null;
-  if (station.maintenance_interval_days) {
+  const intervalDays = services[serviceIndex].interval_days;
+  if (intervalDays) {
     const next = new Date(dateToUse);
-    next.setDate(next.getDate() + station.maintenance_interval_days);
+    next.setDate(next.getDate() + intervalDays);
     nextDate = next.toISOString().split("T")[0];
   }
 
   return {
     success: true,
-    last_maintenance_date: dateToUse,
-    next_maintenance_date: nextDate,
+    last_serviced: dateToUse,
+    next_service_date: nextDate,
   };
+}
+
+/**
+ * Fetch workers permitted for a specific station.
+ */
+export async function fetchStationWorkers(
+  stationId: string
+): Promise<Pick<Worker, "id" | "full_name" | "worker_code">[]> {
+  const supabase = createServiceSupabase();
+
+  const { data, error } = await supabase
+    .from("worker_stations")
+    .select("workers:worker_id(id, full_name, worker_code)")
+    .eq("station_id", stationId);
+
+  if (error) {
+    throw new Error(`Failed to fetch station workers: ${error.message}`);
+  }
+
+  // Supabase returns nested join; flatten and filter active workers
+  const workers = (data ?? [])
+    .map((row) => row.workers as unknown as { id: string; full_name: string; worker_code: string; is_active?: boolean })
+    .filter((w) => w != null);
+
+  return workers.map((w) => ({
+    id: w.id,
+    full_name: w.full_name,
+    worker_code: w.worker_code,
+  }));
 }
 
 /**
@@ -166,6 +230,8 @@ export async function checkMaintenanceDueNotifications(): Promise<void> {
   const { error } = await supabase.rpc("check_maintenance_due_and_notify");
 
   if (error) {
-    throw new Error(`Failed to check maintenance notifications: ${error.message}`);
+    throw new Error(
+      `Failed to check maintenance notifications: ${error.message}`
+    );
   }
 }

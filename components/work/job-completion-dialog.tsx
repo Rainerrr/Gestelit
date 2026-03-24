@@ -24,6 +24,7 @@ export type AvailableJobItemForCompletion = {
   name: string;
   plannedQuantity: number;
   completedGood: number;
+  completedScrap: number;
   jobItemStepId: string;
 };
 
@@ -136,10 +137,11 @@ export function JobCompletionDialog({
               </h4>
               <div className="max-h-[280px] space-y-2 overflow-y-auto pe-1">
                 {availableJobItems.map((item) => {
+                  const totalCompleted = item.completedGood + (item.completedScrap ?? 0);
                   const progress = item.plannedQuantity > 0
-                    ? Math.round((item.completedGood / item.plannedQuantity) * 100)
+                    ? Math.round((totalCompleted / item.plannedQuantity) * 100)
                     : 0;
-                  const remaining = Math.max(0, item.plannedQuantity - item.completedGood);
+                  const remaining = Math.max(0, item.plannedQuantity - totalCompleted);
                   const isSelected = selectedJobItemId === item.id;
 
                   return (
@@ -202,7 +204,7 @@ export function JobCompletionDialog({
                       {/* Stats */}
                       <div className="mt-2 flex items-center justify-between text-xs">
                         <span className="text-muted-foreground">
-                          {item.completedGood.toLocaleString()} / {item.plannedQuantity.toLocaleString()}
+                          {totalCompleted.toLocaleString()} / {item.plannedQuantity.toLocaleString()}
                         </span>
                         <span className="text-muted-foreground">
                           נותר: {remaining.toLocaleString()}

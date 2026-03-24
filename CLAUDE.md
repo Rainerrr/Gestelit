@@ -58,7 +58,7 @@ Migrations are in `supabase/migrations/` with timestamp prefixes (YYYYMMDDHHMMSS
 - `app/api/` - Backend API routes (all use service role Supabase client)
 - `lib/data/` - Server-side Supabase query functions (reusable across routes)
 - `lib/api/` - Client-side API wrappers (auto-add auth headers)
-- `lib/hooks/` - Real-time subscription hooks (`useRealtimeSession`, `useRealtimeReports`, `useRealtimeJobProgress`, `useLiveDuration`)
+- `lib/hooks/` - Real-time subscription hooks (`useRealtimeSession`, `useRealtimeReports`, `useRealtimeJobProgress`, `useLiveDuration`, `useJobItemTimer`)
 - `lib/constants.ts` - Session timeouts, heartbeat intervals, grace periods
 - `lib/types.ts` - All TypeScript types for domain entities
 - `hooks/` - Page-level hooks (`useTranslation`, `useSessionHeartbeat`, `useIdleSessionCleanup`, `useAdminGuard`, `useSessionBroadcast`)
@@ -73,7 +73,7 @@ Migrations are in `supabase/migrations/` with timestamp prefixes (YYYYMMDDHHMMSS
 
 ### Authentication Pattern
 - **Workers**: `X-Worker-Code` header validated server-side via `lib/auth/permissions.ts`
-- **Admin**: Session cookie (`admin_session`, 15-min TTL) or `X-Admin-Password` header
+- **Admin**: Session cookie (`admin_session`, 60-min TTL) or `X-Admin-Password` header
 - **Supabase**: API routes use `createServiceSupabase()` (service role bypasses RLS)
 
 ### Session Lifecycle
@@ -81,7 +81,7 @@ Migrations are in `supabase/migrations/` with timestamp prefixes (YYYYMMDDHHMMSS
 2. Job items bound to sessions via `job_item_step_id` (pipeline position)
 3. Worker can resume within 5-minute grace period if session still active
 4. Heartbeat pings every 15 seconds; idle sessions auto-closed after 5 minutes
-5. Quantity reporting triggers WIP updates via `update_session_quantities_atomic_v3()`
+5. Quantity reporting triggers WIP updates via `update_session_quantities_v6()`
 
 ### Status Event System
 - `status_definitions` table (configurable, not hardcoded enum)
@@ -100,9 +100,9 @@ Migrations are in `supabase/migrations/` with timestamp prefixes (YYYYMMDDHHMMSS
 **PostgreSQL RPC Functions:**
 - `create_status_event_atomic()` - Atomically closes previous event, inserts new event, mirrors to sessions
 - `create_session_atomic()` - Creates session with job item binding in single transaction
-- `update_session_quantities_atomic_v3()` - Updates WIP balances and job progress atomically
-- `end_production_status_atomic_v4()` - Ends production status with quantity reporting
-- `get_jobs_with_stats()` - Aggregates job data with session totals (good/scrap counts)
+- `update_session_quantities_v6()` - Independent station reporting: increments good_reported/scrap_reported
+- `end_production_status_atomic_v2()` - Ends production status with quantity reporting (calls v6)
+- `get_jobs_with_stats()` - Aggregates job data with session totals (good/scrap counts, scrap toward completion)
 - `setup_job_item_pipeline()` - Creates job_item_steps from station array
 
 **Key Data Modules:**
@@ -117,6 +117,10 @@ Migrations are in `supabase/migrations/` with timestamp prefixes (YYYYMMDDHHMMSS
 - `lib/data/workers.ts` - Worker CRUD operations
 - `lib/data/stations.ts` - Station configuration and queries
 - `lib/data/checklists.ts` - Start/end checklist management
+- `lib/data/maintenance.ts` - Station maintenance tracking and interval checks
+- `lib/data/notifications.ts` - Admin notification management and due job scanning
+- `lib/data/report-reasons.ts` - Report reason label CRUD
+- `lib/data/station-reasons.ts` - Station-scoped malfunction reason queries
 
 ## Cursor Rules (Important Conventions)
 
@@ -161,18 +165,18 @@ The system uses a pipeline-based architecture for production tracking. Each job 
 - `is_terminal` marks the final station (where completed products are counted)
 - Sessions bind to specific steps via `job_item_step_id`
 
-### WIP (Work In Progress) Tracking
+### Independent Station Reporting
 
-WIP flows through the pipeline:
-1. **First station**: All GOOD products are "originated" (new inventory)
-2. **Subsequent stations**: Products consumed from upstream `wip_balances`
-3. **Terminal station**: GOOD increments `job_item_progress.completed_good`
-4. **Corrections**: LIFO reversal via `wip_consumptions` ledger
+Each station reports its own production quantities independently (no upstream/downstream consumption):
+1. **All stations**: Report `good_reported` and `scrap_reported` independently
+2. **Terminal station**: Totals feed `job_item_progress.completed_good` and `completed_scrap`
+3. **Completion**: `completed_good + completed_scrap >= planned_quantity`
+4. **Overproduction**: Allowed - no caps on reported quantities
+5. **Job items**: Always selectable regardless of completion percentage
 
 **Key Tables:**
-- `wip_balances` - Current inventory at each step
-- `wip_consumptions` - Ledger of products consumed between steps
-- `job_item_progress` - Aggregated completion stats per job item
+- `wip_balances` - Per-step reported totals (`good_reported`, `scrap_reported`)
+- `job_item_progress` - Aggregated completion stats per job item (`completed_good`, `completed_scrap`)
 
 ### Session Totals vs Job Progress
 - **Session totals**: Per-session quantities tracked in context (`good`, `scrap`)
@@ -189,7 +193,8 @@ pipeline_presets          job_items                  job_item_steps
 ├─ is_active              ├─ planned_quantity        ├─ position
 └─ pipeline_preset_steps  ├─ pipeline_preset_id?     ├─ is_terminal
    ├─ station_id          ├─ is_pipeline_locked      └─ wip_balances
-   └─ position            └─ is_active                  └─ balance (integer)
+   └─ position            └─ is_active                  ├─ good_reported
+                                                        └─ scrap_reported
 ```
 
 ## Key Patterns
@@ -281,7 +286,7 @@ Key types to understand:
 - `JobItem` - Production unit with `name`, `planned_quantity`, optional `pipeline_preset_id`
 - `JobItemStep` - Station in a job item's pipeline (renamed from JobItemStation)
 - `JobItemWithSteps` - Job item with embedded steps
-- `WipBalance` - Current inventory at a job_item_step
+- `WipBalance` - Reported totals at a job_item_step (`good_reported`, `scrap_reported`)
 - `ActiveJobItemContext` - Worker context for bound job item (includes `jobItemStepId`)
 
 ## Environment Variables
@@ -323,6 +328,16 @@ Migration `20251215112227_enable_rls_policies.sql` enables Row Level Security on
 - Provides admin notification state and actions (mark read, dismiss, clear all)
 - Connects to notification SSE stream
 
+**ToastContext (`contexts/ToastContext.tsx`):**
+- Provides toast notification feedback (success/error/warning/info)
+- Auto-dismiss after 3.5 seconds
+- Portal rendering for consistent overlay positioning
+
+**LanguageContext (`contexts/LanguageContext.tsx`):**
+- Manages UI language selection (Hebrew primary, Russian secondary)
+- Persists language preference
+- Used by useTranslation hook
+
 ## Key Worker Components
 
 **Job Progress Panel (`components/work/job-progress-panel.tsx`):**
@@ -361,7 +376,7 @@ Migration `20251215112227_enable_rls_policies.sql` enables Row Level Security on
 
 - **HTTPS Required**: Authentication headers (`X-Worker-Code`, `X-Admin-Password`) transmitted in plaintext
 - **Workers**: Identified by worker code (not secret), assumes trusted internal network
-- **Admin**: Password-based with session cookies (15-min TTL)
+- **Admin**: Password-based with session cookies (60-min TTL, refreshed on activity)
 - **Service Role**: API routes use service role key to bypass RLS - never expose to clients
 - **Session heartbeat**: 15s intervals, 5-minute grace period for recovery
 

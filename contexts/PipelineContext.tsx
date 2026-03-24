@@ -41,6 +41,10 @@ type PipelineContextValue = {
   nextStation: PipelineNeighborStation | null;
   upstreamWip: number;
   waitingOutput: number;
+  prevStationGoodReported: number;
+  prevStationScrapReported: number;
+  nextStationGoodReported: number;
+  nextStationScrapReported: number;
   jobItem: SessionPipelineContext["jobItem"];
   // Connection state
   connectionState: ConnectionState;
@@ -96,12 +100,12 @@ const createStore = () => {
     const prev = state.context;
     if (
       prev &&
-      prev.upstreamWip === context.upstreamWip &&
-      prev.waitingOutput === context.waitingOutput &&
       prev.currentPosition === context.currentPosition &&
       prev.isTerminal === context.isTerminal &&
-      prev.prevStation?.wipAvailable === context.prevStation?.wipAvailable &&
-      prev.nextStation?.wipAvailable === context.nextStation?.wipAvailable
+      prev.prevStation?.goodReported === context.prevStation?.goodReported &&
+      prev.prevStation?.scrapReported === context.prevStation?.scrapReported &&
+      prev.nextStation?.goodReported === context.nextStation?.goodReported &&
+      prev.nextStation?.scrapReported === context.nextStation?.scrapReported
     ) {
       return; // No meaningful change
     }
@@ -155,6 +159,10 @@ const defaultPipelineValue: PipelineContextValue = {
   nextStation: null,
   upstreamWip: 0,
   waitingOutput: 0,
+  prevStationGoodReported: 0,
+  prevStationScrapReported: 0,
+  nextStationGoodReported: 0,
+  nextStationScrapReported: 0,
   jobItem: null,
   connectionState: "disconnected",
   error: null,
@@ -186,8 +194,12 @@ export const usePipelineContext = (): PipelineContextValue => {
       isTerminal: ctx?.isTerminal ?? true,
       prevStation: ctx?.prevStation ?? null,
       nextStation: ctx?.nextStation ?? null,
-      upstreamWip: ctx?.upstreamWip ?? 0,
-      waitingOutput: ctx?.waitingOutput ?? 0,
+      upstreamWip: ctx?.prevStation?.goodReported ?? 0,
+      waitingOutput: ctx?.nextStation?.goodReported ?? 0,
+      prevStationGoodReported: ctx?.prevStation?.goodReported ?? 0,
+      prevStationScrapReported: ctx?.prevStation?.scrapReported ?? 0,
+      nextStationGoodReported: ctx?.nextStation?.goodReported ?? 0,
+      nextStationScrapReported: ctx?.nextStation?.scrapReported ?? 0,
       jobItem: ctx?.jobItem ?? null,
       connectionState: state.connectionState,
       error: state.error,

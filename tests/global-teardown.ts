@@ -122,7 +122,6 @@ export default async function globalTeardown() {
 
       if (jobItemIds.length > 0) {
         // Delete WIP data
-        await supabase.from("wip_consumptions").delete().in("job_item_id", jobItemIds);
         await supabase.from("job_item_progress").delete().in("job_item_id", jobItemIds);
 
         // Delete job items (cascades to steps, wip_balances)

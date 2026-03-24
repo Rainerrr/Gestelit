@@ -2,7 +2,7 @@
 
 > Admin dashboard, management, and reporting system
 > Routes: `app/admin/`
-> Last updated: January 2026
+> Last updated: March 2026
 
 ---
 
@@ -26,7 +26,8 @@ The admin system provides:
 - Historical analytics and BI
 - Report management (malfunctions, general, scrap)
 - Entity management (workers, stations, jobs, statuses)
-- Production line configuration
+- Pipeline preset configuration
+- Maintenance tracking and admin notification system
 
 ### Routes
 
@@ -229,6 +230,13 @@ UI Features:
 - Session quantities display
 - Linked session info
 
+### Report Deletion
+
+Admins can delete reports that are no longer relevant:
+```typescript
+DELETE /api/admin/reports/[id]
+```
+
 ### API Endpoints
 ```typescript
 // List reports
@@ -241,8 +249,14 @@ PATCH /api/admin/reports/[id]
   adminNotes: "Investigating"
 }
 
+// Delete report
+DELETE /api/admin/reports/[id]
+
 // Real-time stream
 GET /api/admin/reports/stream?type=malfunction
+
+// Notifications stream
+GET /api/admin/notifications/stream
 ```
 
 ---
@@ -292,7 +306,7 @@ DELETE /api/admin/stations/[id]
 CRUD operations for jobs:
 - Create/edit jobs
 - View job statistics
-- Manage job items (production line)
+- Manage job items (pipeline)
 
 ```typescript
 // API
@@ -325,21 +339,21 @@ DELETE /api/admin/status-definitions/[id]
 POST /api/admin/status-definitions/purge  // Remove unused
 ```
 
-### Production Lines
+### Pipeline Presets
 
-CRUD operations for production lines:
-- Create line with ordered stations
+CRUD operations for pipeline presets:
+- Create preset with ordered station steps
 - Reorder station sequence
-- View stations in line
+- View stations in preset
 
 ```typescript
 // API
-GET /api/admin/production-lines
-POST /api/admin/production-lines
-PUT /api/admin/production-lines/[id]
-DELETE /api/admin/production-lines/[id]
-PUT /api/admin/production-lines/[id]/stations
-GET /api/admin/production-lines/available-stations
+GET /api/admin/pipeline-presets
+POST /api/admin/pipeline-presets
+PUT /api/admin/pipeline-presets/[id]
+DELETE /api/admin/pipeline-presets/[id]
+PUT /api/admin/pipeline-presets/[id]/steps
+GET /api/admin/pipeline-presets/available-stations
 ```
 
 ### Worker-Station Assignments
@@ -492,7 +506,7 @@ lib/data/
   admin-dashboard.ts    # Dashboard queries
   admin-management.ts   # CRUD operations
   reports.ts            # Report queries
-  production-lines.ts   # Line management
+  pipeline-presets.ts   # Pipeline preset management
 ```
 
 ### Contexts

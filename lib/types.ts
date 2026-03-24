@@ -63,8 +63,7 @@ export interface Station {
   station_statuses?: StatusDefinition[] | null;
   // Maintenance tracking fields
   maintenance_enabled?: boolean;
-  maintenance_last_date?: string | null; // YYYY-MM-DD
-  maintenance_interval_days?: number | null;
+  maintenance_services?: MaintenanceService[];
   created_at?: string;
   updated_at?: string;
 }
@@ -72,16 +71,28 @@ export interface Station {
 // Maintenance tracking types
 export type MaintenanceStatus = "overdue" | "due_soon" | "ok" | "not_tracked";
 
-export interface StationMaintenanceInfo {
+export interface MaintenanceService {
+  id: string;
+  name: string;
+  last_serviced: string | null; // YYYY-MM-DD
+  interval_days: number;
+  last_service_worker_id: string | null;
+}
+
+export interface ServiceMaintenanceInfo extends MaintenanceService {
+  next_service_date: string | null;
+  days_until_due: number | null;
+  maintenance_status: MaintenanceStatus;
+}
+
+export interface StationMaintenanceDetail {
   id: string;
   name: string;
   code: string;
+  station_type: string;
   maintenance_enabled: boolean;
-  maintenance_last_date: string | null;
-  maintenance_interval_days: number | null;
-  next_maintenance_date: string | null;
-  days_until_due: number | null;
-  maintenance_status: MaintenanceStatus;
+  services: ServiceMaintenanceInfo[];
+  worst_status: MaintenanceStatus;
 }
 
 export interface WorkerStation {
@@ -121,6 +132,8 @@ export interface Session {
   /** @deprecated Use job_item_step_id */
   job_item_station_id?: string | null;
   job_item_step_id?: string | null;
+  /** Timestamp when the current job item was bound (for timer calculation) */
+  current_job_item_started_at?: string | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -136,6 +149,20 @@ export interface WorkerResumeSession {
     scrap: number;
     jobItemId: string | null;
   };
+  /** When the current job item was bound (for timer calculation) */
+  currentJobItemStartedAt?: string | null;
+  /** Pre-computed accumulated seconds for current job item timer */
+  jobItemAccumulatedSeconds?: number;
+  /** Active job item context for recovery (null if no job item bound) */
+  activeJobItem?: {
+    id: string;
+    jobId: string;
+    name: string;
+    plannedQuantity: number;
+    jobItemStepId: string;
+    completedGood?: number;
+    completedScrap?: number;
+  } | null;
 }
 
 export interface StatusEvent {
@@ -324,6 +351,7 @@ export type JobItemStation = JobItemStep;
 export interface JobItemProgress {
   job_item_id: string;
   completed_good: number;
+  completed_scrap: number;
   updated_at?: string;
 }
 
@@ -338,38 +366,10 @@ export interface JobItemWithDetails extends JobItem {
 export interface WipBalance {
   id: string;
   job_item_id: string;
-  /** @deprecated Use job_item_step_id */
-  job_item_station_id?: string;
   job_item_step_id: string;
-  good_available: number;
+  good_reported: number;
+  scrap_reported: number;
   updated_at?: string;
-}
-
-export interface WipConsumption {
-  id: string;
-  job_item_id: string;
-  consuming_session_id: string;
-  /** @deprecated Use from_job_item_step_id */
-  from_job_item_station_id?: string;
-  from_job_item_step_id: string;
-  good_used: number;
-  created_at?: string;
-}
-
-export interface SessionWipAccounting {
-  session_id: string;
-  job_item_id: string;
-  /** @deprecated Use job_item_step_id */
-  job_item_station_id?: string;
-  job_item_step_id: string;
-  // Good accounting
-  total_good: number;
-  pulled_good: number;
-  originated_good: number;
-  // Scrap accounting (symmetric with good)
-  total_scrap: number;
-  pulled_scrap: number;
-  originated_scrap: number;
 }
 
 export interface SessionUpdateResult {
@@ -385,14 +385,13 @@ export interface SessionUpdateResult {
 // ============================================
 
 export interface WipStationData {
-  /** @deprecated Use jobItemStepId */
-  jobItemStationId?: string;
   jobItemStepId: string;
   stationId: string;
   stationName: string;
   position: number;
   isTerminal: boolean;
-  goodAvailable: number;
+  goodReported: number;
+  scrapReported: number;
   hasActiveSession: boolean;
 }
 
@@ -400,6 +399,7 @@ export interface LiveJobItemAssignment {
   jobItem: JobItemWithDetails;
   wipDistribution: WipStationData[];
   completedGood: number;
+  completedScrap: number;
   plannedQuantity: number;
 }
 
@@ -434,8 +434,6 @@ export interface PipelineStationOption {
   isTerminal: boolean;
   isWorkerAssigned: boolean;
   occupancy: StationOccupancy;
-  /** @deprecated Use jobItemStepId */
-  jobItemStationId?: string;
   jobItemStepId: string;
 }
 
@@ -445,3 +443,19 @@ export interface StationSelectionJobItem {
   plannedQuantity: number;
   pipelineStations: PipelineStationOption[];
 }
+
+/** A contiguous time period where a specific job item was bound to a session */
+export type JobItemDistributionPeriod = {
+  jobItemId: string;
+  jobItemName: string;
+  jobNumber: string;
+  startedAt: string;
+  endedAt: string | null;
+  durationSeconds: number;
+};
+
+/** Job item time distribution for a session — reusable for BI/analytics */
+export type JobItemDistribution = {
+  sessionId: string;
+  periods: JobItemDistributionPeriod[];
+};

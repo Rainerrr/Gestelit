@@ -252,7 +252,6 @@ export async function deleteJob(id: string): Promise<void> {
   // - job_items → CASCADE (deleted)
   // - job_item_steps → CASCADE (deleted)
   // - wip_balances → CASCADE (deleted)
-  // - wip_consumptions → CASCADE (deleted)
   // - job_item_progress → CASCADE (deleted)
   // - sessions.job_id → SET NULL (preserved with total_good/total_scrap)
   // - sessions.job_item_id/job_item_step_id → SET NULL (preserved)

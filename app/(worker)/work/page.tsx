@@ -45,6 +45,7 @@ import {
   createStatusEventWithReportApi,
   endProductionStatusApi,
   fetchJobItemsAtStationApi,
+  fetchJobItemTimerApi,
   fetchReportReasonsApi,
   fetchSessionScrapReportsApi,
   fetchSessionTotalsApi,
@@ -52,6 +53,7 @@ import {
   submitChecklistResponsesApi,
   submitFirstProductApprovalApi,
   takeoverSessionApi,
+  unbindJobItemFromSessionApi,
   type FirstProductApprovalStatus,
 } from "@/lib/api/client";
 import {
@@ -75,6 +77,7 @@ import {
   type JobCompletionResult,
 } from "@/components/work/job-completion-dialog";
 import { getActiveStationReasons } from "@/lib/data/station-reasons";
+import { AlertTriangle, FileText } from "lucide-react";
 import {
   buildStatusDictionary,
   getStatusHex,
@@ -87,8 +90,11 @@ import type { ReportReason, StationReason, StatusDefinition } from "@/lib/types"
 import { useSessionHeartbeat } from "@/hooks/useSessionHeartbeat";
 import { useSessionBroadcast } from "@/hooks/useSessionBroadcast";
 import { fetchStationStatusesApi } from "@/lib/api/client";
-import { persistSessionState } from "@/lib/utils/session-storage";
+import { persistSessionState, updatePersistedActiveJobItem } from "@/lib/utils/session-storage";
 import { Spinner, FullPageSpinner } from "@/components/ui/spinner";
+import { useJobItemTimer } from "@/lib/hooks/useJobItemTimer";
+import { formatDurationHMS } from "@/lib/hooks/useLiveDuration";
+import { useToast } from "@/contexts/ToastContext";
 
 type StatusVisual = {
   dotColor: string;
@@ -354,13 +360,16 @@ function WorkPageContent() {
     setJob,
     currentStatusEventId,
     setCurrentStatusEventId,
+    jobItemTimer,
+    setJobItemTimer,
+    resetJobItemTimer,
   } = useWorkerSession();
   const [isStatusesLoading, setStatusesLoading] = useState(false);
   const dictionary = useMemo(
     () => buildStatusDictionary(statuses),
     [statuses],
   );
-  const [faultReason, setFaultReason] = useState<string>();
+  const [faultReason, setFaultReason] = useState<string>("");
   const [faultNote, setFaultNote] = useState("");
   const [faultImage, setFaultImage] = useState<File | null>(null);
   const [faultImagePreview, setFaultImagePreview] = useState<string | null>(null);
@@ -375,7 +384,7 @@ function WorkPageContent() {
   // General report dialog state
   const [isGeneralReportDialogOpen, setGeneralReportDialogOpen] = useState(false);
   const [generalReportReasons, setGeneralReportReasons] = useState<ReportReason[]>([]);
-  const [generalReportReason, setGeneralReportReason] = useState<string>();
+  const [generalReportReason, setGeneralReportReason] = useState<string>("");
   const [generalReportNote, setGeneralReportNote] = useState("");
   const [generalReportImage, setGeneralReportImage] = useState<File | null>(null);
   const [generalReportImagePreview, setGeneralReportImagePreview] = useState<string | null>(null);
@@ -448,6 +457,12 @@ function WorkPageContent() {
 
   // Pipeline context from real-time SSE provider (now inside PipelineProvider)
   const pipelineContext = usePipelineContext();
+
+  // Job item timer (accumulated + live segment)
+  const { totalSeconds: jobItemTimerSeconds } = useJobItemTimer(
+    jobItemTimer.accumulatedSeconds,
+    jobItemTimer.segmentStart,
+  );
 
   // DEBUG: Log pipeline context to trace the issue
   useEffect(() => {
@@ -560,6 +575,27 @@ function WorkPageContent() {
         console.warn("[work] Failed to sync session totals:", err);
       });
   }, [sessionId, updateTotals]);
+
+  // Seed job item timer from database when work page loads (or after recovery)
+  const hasSyncedTimerRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!sessionId || !activeJobItem?.id) {
+      return;
+    }
+    const timerKey = `${sessionId}:${activeJobItem.id}`;
+    if (hasSyncedTimerRef.current === timerKey) {
+      return;
+    }
+    hasSyncedTimerRef.current = timerKey;
+
+    fetchJobItemTimerApi(sessionId, activeJobItem.id)
+      .then((timer) => {
+        setJobItemTimer(timer.accumulatedSeconds, timer.segmentStart);
+      })
+      .catch((err) => {
+        console.warn("[work] Failed to fetch job item timer:", err);
+      });
+  }, [sessionId, activeJobItem?.id, setJobItemTimer]);
 
   // Force job selection when in production without an active job item
   // This can happen if:
@@ -778,6 +814,7 @@ function WorkPageContent() {
         name: result.jobItem.name,
         plannedQuantity: result.jobItem.plannedQuantity,
         completedGood: result.jobItem.completedGood,
+        completedScrap: result.jobItem.completedScrap ?? 0,
         jobItemStepId: result.jobItem.jobItemStepId,
       });
 
@@ -789,6 +826,21 @@ function WorkPageContent() {
         description: result.job.description,
         created_at: new Date().toISOString(),
       });
+
+      // Fetch and set timer for the newly bound job item (awaited to prevent desync)
+      let timerData: { accumulatedSeconds: number; segmentStart: string | null } | undefined;
+      try {
+        timerData = await fetchJobItemTimerApi(sessionId, result.jobItem.id);
+        setJobItemTimer(timerData.accumulatedSeconds, timerData.segmentStart);
+      } catch (err) {
+        console.warn("[work] Failed to fetch job item timer:", err);
+      }
+
+      // Persist active job item to session storage for recovery
+      updatePersistedActiveJobItem(
+        { id: result.jobItem.id, jobId: result.job.id, name: result.jobItem.name, plannedQuantity: result.jobItem.plannedQuantity, jobItemStepId: result.jobItem.jobItemStepId },
+        timerData ? { accumulatedSeconds: timerData.accumulatedSeconds, segmentStart: timerData.segmentStart } : undefined,
+      );
 
       // Check if first product approval is required for the new job item's step
       const newApprovalStatus = await checkFirstProductApprovalApi(sessionId);
@@ -805,6 +857,24 @@ function WorkPageContent() {
       setStatusError("שגיאה בקישור עבודה לתפק\"ע");
     } finally {
       setIsJobSelectionSubmitting(false);
+    }
+  };
+
+  // Handle unsetting job item (only when not in production)
+  const handleJobItemUnset = async () => {
+    if (isInProduction || !sessionId) return;
+
+    try {
+      await unbindJobItemFromSessionApi(sessionId);
+      setActiveJobItem(null);
+      setJob(undefined);
+      resetJobItemTimer();
+      updateTotals({ good: 0, scrap: 0 });
+      // Persist cleared job item to session storage
+      updatePersistedActiveJobItem(null, undefined);
+    } catch (error) {
+      console.error("[work] Failed to unbind job item:", error);
+      setStatusError("שגיאה בביטול בחירת עבודה");
     }
   };
 
@@ -929,13 +999,14 @@ function WorkPageContent() {
         result.jobItem.jobItemStepId,
       );
 
-      // 2. Update context with active job item (including completedGood for progress tracking)
+      // 2. Update context with active job item (including completedGood/Scrap for progress tracking)
       setActiveJobItem({
         id: result.jobItem.id,
         jobId: result.job.id,
         name: result.jobItem.name,
         plannedQuantity: result.jobItem.plannedQuantity,
         completedGood: result.jobItem.completedGood,
+        completedScrap: result.jobItem.completedScrap ?? 0,
         jobItemStepId: result.jobItem.jobItemStepId,
       });
 
@@ -948,12 +1019,25 @@ function WorkPageContent() {
         created_at: new Date().toISOString(),
       });
 
-      // 4. Check if first product approval is required for this step
+      // 4. Fetch and set timer for the newly bound job item (awaited to prevent desync)
+      try {
+        const timer = await fetchJobItemTimerApi(sessionId, result.jobItem.id);
+        setJobItemTimer(timer.accumulatedSeconds, timer.segmentStart);
+      } catch (err) {
+        console.warn("[work] Failed to fetch job item timer:", err);
+      }
+
+      // Persist active job item to session storage for recovery
+      updatePersistedActiveJobItem(
+        { id: result.jobItem.id, jobId: result.job.id, name: result.jobItem.name, plannedQuantity: result.jobItem.plannedQuantity, jobItemStepId: result.jobItem.jobItemStepId },
+      );
+
+      // 5. Check if first product approval is required for this step
       // This must be checked AFTER binding the job item, as the API uses session's bound step
       const newApprovalStatus = await checkFirstProductApprovalApi(sessionId);
       setApprovalStatus(newApprovalStatus);
 
-      // 5. If first product approval is required and not yet approved, switch to setup status
+      // 6. If first product approval is required and not yet approved, switch to setup status
       // Don't switch to production - the worker must submit and get approval first
       const isApprovalBlocking = newApprovalStatus.required && newApprovalStatus.status !== "approved";
 
@@ -1112,6 +1196,7 @@ function WorkPageContent() {
         setActiveJobItem({
           ...activeJobItem,
           completedGood: (activeJobItem.completedGood ?? 0) + result.additionalGood,
+          completedScrap: (activeJobItem.completedScrap ?? 0) + result.additionalScrap,
         });
       }
 
@@ -1139,7 +1224,6 @@ function WorkPageContent() {
           // (in case DB hasn't updated yet or item is at 100%)
           const available: AvailableJobItemForCompletion[] = items
             .filter((item) =>
-              item.completedGood < item.plannedQuantity &&
               item.id !== excludeJobItemId
             )
             .map((item) => ({
@@ -1150,6 +1234,7 @@ function WorkPageContent() {
               name: item.name,
               plannedQuantity: item.plannedQuantity,
               completedGood: item.completedGood,
+              completedScrap: item.completedScrap ?? 0,
               jobItemStepId: item.jobItemStepId,
             }));
           setAvailableJobItemsForCompletion(available);
@@ -1173,6 +1258,7 @@ function WorkPageContent() {
 
         // Clear active job item - it's completed
         setActiveJobItem(null);
+        resetJobItemTimer();
 
         // Check if target status requires a report BEFORE opening completion dialog
         if (pendingReportAfterQuantity && response.newStatusEvent?.id) {
@@ -1215,6 +1301,7 @@ function WorkPageContent() {
         setIsPendingJobSwitch(false);
         // Clear active job item since we're switching
         setActiveJobItem(null);
+        resetJobItemTimer();
         // Open job selection for the production status we were in
         setPendingProductionStatusId(currentStatus ?? null);
         setJobSelectionDialogOpen(true);
@@ -1291,8 +1378,22 @@ function WorkPageContent() {
           name: jobItem.name,
           plannedQuantity: jobItem.plannedQuantity,
           completedGood: jobItem.completedGood,
+          completedScrap: jobItem.completedScrap ?? 0,
           jobItemStepId: jobItem.jobItemStepId,
         });
+
+        // 2b. Fetch and set timer for the newly bound job item (awaited to prevent desync)
+        try {
+          const timer = await fetchJobItemTimerApi(sessionId, jobItem.id);
+          setJobItemTimer(timer.accumulatedSeconds, timer.segmentStart);
+        } catch (err) {
+          console.warn("[work] Failed to fetch job item timer:", err);
+        }
+
+        // Persist active job item to session storage for recovery
+        updatePersistedActiveJobItem(
+          { id: jobItem.id, jobId: jobItem.jobId, name: jobItem.name, plannedQuantity: jobItem.plannedQuantity, jobItemStepId: jobItem.jobItemStepId },
+        );
 
         // 3. Update job context
         setJob({
@@ -1336,7 +1437,9 @@ function WorkPageContent() {
         // Clear active job item and job since we're in setup
         setActiveJobItem(null);
         setJob(undefined);
+        resetJobItemTimer();
         updateTotals({ good: 0, scrap: 0 });
+        updatePersistedActiveJobItem(null, undefined);
       }
 
       // Close completion dialog and clean up state
@@ -1461,11 +1564,12 @@ function WorkPageContent() {
           setCurrentStatusEventId(response.newStatusEvent.id);
         }
 
-        // Update activeJobItem.completedGood to keep in sync
+        // Update activeJobItem.completedGood/Scrap to keep in sync
         if (activeJobItem) {
           setActiveJobItem({
             ...activeJobItem,
             completedGood: (activeJobItem.completedGood ?? 0) + quantities.good,
+            completedScrap: (activeJobItem.completedScrap ?? 0) + quantities.scrap,
           });
         }
 
@@ -1478,6 +1582,7 @@ function WorkPageContent() {
 
           // Clear active job item - it's completed
           setActiveJobItem(null);
+          resetJobItemTimer();
 
           // Open completion dialog
           setCompletionLoading(true);
@@ -1486,7 +1591,6 @@ function WorkPageContent() {
             const items = await fetchJobItemsAtStationApi(station.id);
             const available: AvailableJobItemForCompletion[] = items
               .filter((item) =>
-                item.completedGood < item.plannedQuantity &&
                 item.id !== jobItemIdToExclude
               )
               .map((item) => ({
@@ -1497,6 +1601,7 @@ function WorkPageContent() {
                 name: item.name,
                 plannedQuantity: item.plannedQuantity,
                 completedGood: item.completedGood,
+                completedScrap: item.completedScrap ?? 0,
                 jobItemStepId: item.jobItemStepId,
               }));
             setAvailableJobItemsForCompletion(available);
@@ -1535,7 +1640,6 @@ function WorkPageContent() {
             const items = await fetchJobItemsAtStationApi(station.id);
             const available: AvailableJobItemForCompletion[] = items
               .filter((item) =>
-                item.completedGood < item.plannedQuantity &&
                 item.id !== completedJobItemId
               )
               .map((item) => ({
@@ -1546,6 +1650,7 @@ function WorkPageContent() {
                 name: item.name,
                 plannedQuantity: item.plannedQuantity,
                 completedGood: item.completedGood,
+                completedScrap: item.completedScrap ?? 0,
                 jobItemStepId: item.jobItemStepId,
               }));
             setAvailableJobItemsForCompletion(available);
@@ -1585,7 +1690,7 @@ function WorkPageContent() {
       }
 
       setGeneralReportDialogOpen(false);
-      setGeneralReportReason(undefined);
+      setGeneralReportReason("");
       setGeneralReportNote("");
       handleGeneralReportImageChange(null);
       setPendingGeneralStatusId(null);
@@ -1605,7 +1710,7 @@ function WorkPageContent() {
         subtitle={
           job
             ? `${t("common.job")} ${job.job_number}`
-            : "לא נבחרה עבודה"
+            : t("work.noJobSelected")
         }
         actions={
           <Badge variant="secondary" className="border-border bg-secondary text-base text-foreground/80">
@@ -1614,135 +1719,65 @@ function WorkPageContent() {
         }
       />
 
-      <section className="grid gap-6 lg:grid-cols-[2fr,1fr]">
-        <div className="space-y-6">
-          <WorkTimer
-            key={sessionId}
-            title={t("work.timer")}
-            sessionId={sessionId}
-            badgeLabel={t("work.section.status")}
-            statusLabel={statusLabel}
-            visual={activeVisual}
-            startedAt={sessionStartedAt}
+      <section className="space-y-6">
+        {/* ====== UNIFIED SESSION CARD ====== */}
+        <SessionCard
+          sessionId={sessionId}
+          sessionStartedAt={sessionStartedAt}
+          activeVisual={activeVisual}
+          statusLabel={statusLabel}
+          job={job}
+          activeJobItem={activeJobItem}
+          jobItemTimerSeconds={jobItemTimerSeconds}
+          totals={totals}
+          isInProduction={isInProduction}
+          pipelineContext={pipelineContext}
+          stationName={station.name}
+          isJobSelectionSubmitting={isJobSelectionSubmitting}
+          handleSwitchJob={handleSwitchJob}
+          handleManualQuantityReport={() => {
+            if (!isInProduction || !activeJobItem || !currentStatusEventId || !currentStatus) return;
+            setPendingExitStatusId(currentStatus);
+            setIsPendingJobSwitch(false);
+            setPendingReportAfterQuantity(null);
+            setQuantityReportDialogOpen(true);
+          }}
+          onSelectJob={() => {
+            setExcludeJobItemId(activeJobItem?.id ?? null);
+            setJobSelectionDialogOpen(true);
+          }}
+          onUnsetJob={() => void handleJobItemUnset()}
+          orderedStatuses={orderedStatuses}
+          currentStatus={currentStatus}
+          dictionary={dictionary}
+          stationId={station.id}
+          isStatusesLoading={isStatusesLoading}
+          statusError={statusError}
+          handleStatusChange={handleStatusChange}
+          approvalStatus={approvalStatus}
+        />
+
+        {/* First Product Approval Banner - shows when step requires approval */}
+        {activeJobItem && approvalStatus?.required && (
+          <FirstProductApprovalBanner
+            status={approvalStatus.status as FirstProductApprovalBannerStatus}
+            onSubmit={handleApprovalSubmit}
+            jobItemName={activeJobItem.name}
+            stationName={station.name}
+            isSubmitting={isApprovalSubmitting}
           />
+        )}
 
-          {/* Job Progress Panel - always visible, shows empty state when no job */}
-          {/* Pipeline visualization is now integrated into the panel */}
-          <JobProgressPanel
-            job={job}
-            activeJobItem={activeJobItem}
-            sessionTotals={totals}
-            isInProduction={isInProduction}
-            onSwitchJob={handleSwitchJob}
-            switchJobDisabled={isJobSelectionSubmitting}
-            currentStationName={station.name}
-            pipelineContext={activeJobItem ? {
-              upstreamWip: pipelineContext.upstreamWip,
-              waitingOutput: pipelineContext.waitingOutput,
-              prevStation: pipelineContext.prevStation,
-              nextStation: pipelineContext.nextStation,
-              isTerminal: pipelineContext.isTerminal,
-              isProductionLine: pipelineContext.isProductionLine,
-              isSingleStation: pipelineContext.isSingleStation,
-              // For color gradient calculation (currentPosition is 1-indexed, convert to 0-indexed)
-              totalStages: pipelineContext.totalSteps,
-              currentStageIndex: pipelineContext.currentPosition - 1,
-            } : undefined}
-          />
+        {/* Scrap Section - only when scrap > 0 */}
+        <ScrapSection
+          sessionScrapCount={totals.scrap}
+          scrapReports={scrapReports}
+          onAddScrap={handleAddScrap}
+          onEditReport={handleEditScrapReport}
+        />
 
-          {/* First Product Approval Banner - shows when step requires approval */}
-          {activeJobItem && approvalStatus?.required && (
-            <FirstProductApprovalBanner
-              status={approvalStatus.status as FirstProductApprovalBannerStatus}
-              onSubmit={handleApprovalSubmit}
-              jobItemName={activeJobItem.name}
-              stationName={station.name}
-              isSubmitting={isApprovalSubmitting}
-            />
-          )}
-
-          {/* Scrap Section - only when scrap > 0 */}
-          <ScrapSection
-            sessionScrapCount={totals.scrap}
-            scrapReports={scrapReports}
-            onAddScrap={handleAddScrap}
-            onEditReport={handleEditScrapReport}
-          />
-
-          <Card className="rounded-xl border border-border bg-card/50 backdrop-blur-sm">
-            <CardHeader>
-              <CardTitle className="text-right text-foreground">
-                {t("work.section.status")}
-              </CardTitle>
-              <CardDescription className="text-right text-muted-foreground">
-                {t("work.status.instructions")}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-3 md:grid-cols-3">
-                {orderedStatuses.map((status) => {
-                  const isActive = currentStatus === status.id;
-                  const colorHex = getStatusHex(status.id, dictionary, station.id);
-                  const visual = buildStatusVisual(colorHex);
-                  // Check if this is a production status and approval is pending
-                  const isProductionStatusButton = status.machine_state === "production";
-                  const isApprovalPending = approvalStatus?.required && approvalStatus?.status !== "approved";
-                  const isProductionBlocked = isProductionStatusButton && isApprovalPending && !isActive;
-                  return (
-                    <Button
-                      key={status.id}
-                      type="button"
-                      variant="outline"
-                      disabled={isProductionBlocked}
-                      className={cn(
-                        "h-auto w-full justify-between rounded-xl border p-4 text-base font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
-                        isActive
-                          ? "shadow"
-                          : "border-border bg-white text-foreground hover:border-primary/40 hover:bg-primary/5 dark:bg-secondary dark:text-foreground/80 dark:hover:bg-accent",
-                        isProductionBlocked && "opacity-50 cursor-not-allowed",
-                      )}
-                      aria-pressed={isActive}
-                      style={
-                        isActive
-                          ? {
-                              borderColor: visual.highlightBorder,
-                              backgroundColor: visual.highlightBg,
-                              color: visual.textColor,
-                              boxShadow: visual.shadow,
-                            }
-                          : undefined
-                      }
-                      onClick={() => handleStatusChange(status.id)}
-                    >
-                      <div className="flex w-full items-center justify-between gap-3 text-right">
-                        <span>
-                          {getStatusLabel(status.id, dictionary, station.id)}
-                        </span>
-                        <span
-                          aria-hidden
-                          className="inline-flex h-2.5 w-2.5 rounded-full"
-                          style={{
-                            backgroundColor: isActive
-                              ? visual.dotColor
-                              : neutralVisual.dotColor,
-                          }}
-                        />
-                      </div>
-                    </Button>
-                  );
-                })}
-                {isStatusesLoading ? (
-                  <p className="text-sm text-muted-foreground">טוען סטטוסים...</p>
-                ) : null}
-              </div>
-              {statusError ? (
-                <p className="mt-3 text-sm text-rose-600 dark:text-rose-400">{statusError}</p>
-              ) : null}
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="space-y-6">
+        {/* ── Actions + End Session: side by side on desktop ── */}
+        <div className="grid gap-4 lg:grid-cols-2">
           <Card className="rounded-xl border border-border bg-card/50 backdrop-blur-sm">
             <CardHeader className="text-right">
               <CardTitle className="text-right text-foreground">
@@ -1805,9 +1840,35 @@ function WorkPageContent() {
         setFaultDialogOpen(open);
         if (!open) setPendingStatusId(null);
       }}>
-        <DialogContent dir="rtl" className="border-border bg-card">
+        <DialogContent dir="rtl" className="border-red-500/30 bg-card">
           <DialogHeader>
-            <DialogTitle className="text-foreground">{t("work.dialog.fault.title")}</DialogTitle>
+            <DialogTitle className="flex flex-wrap items-center gap-2 text-foreground">
+              <AlertTriangle className="h-5 w-5 shrink-0 text-red-500" />
+              <span>{t("work.dialog.fault.title")}</span>
+              {(() => {
+                const targetId = pendingStatusId ?? pendingProductionExit?.targetStatusId;
+                if (!targetId || !station) return null;
+                const label = getStatusLabel(targetId, dictionary, station.id);
+                const hex = getStatusHex(targetId, dictionary, station.id);
+                return (
+                  <span className="flex items-center gap-1.5 text-sm font-normal text-muted-foreground">
+                    {t("work.dialog.fault.statusTransition")}
+                    <span
+                      className="inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-xs font-semibold"
+                      style={{
+                        backgroundColor: `${hex}26`,
+                        borderWidth: "1px",
+                        borderColor: `${hex}66`,
+                        color: hex,
+                      }}
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: hex }} />
+                      {label}
+                    </span>
+                  </span>
+                );
+              })()}
+            </DialogTitle>
             <DialogDescription className="sr-only">דיווח תקלה</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 text-right">
@@ -1873,7 +1934,7 @@ function WorkPageContent() {
                     />
                   </div>
                 ) : (
-                  <div className="rounded-xl border border-dashed border-input p-4 text-right text-sm text-muted-foreground">
+                  <div className="rounded-xl border border-dashed border-red-500/20 p-4 text-right text-sm text-muted-foreground">
                     {t("work.dialog.fault.imagePlaceholder")}
                   </div>
                 )}
@@ -1902,7 +1963,7 @@ function WorkPageContent() {
             )}
             <Button
               type="button"
-              className="bg-primary font-medium text-primary-foreground hover:bg-primary/90"
+              className="bg-red-600 font-medium text-white hover:bg-red-700"
               disabled={isFaultSubmitting || !faultReason}
               onClick={async () => {
                 if (!station || !faultReason) return;
@@ -1963,11 +2024,12 @@ function WorkPageContent() {
                       setCurrentStatusEventId(response.newStatusEvent.id);
                     }
 
-                    // Update activeJobItem.completedGood to keep in sync
+                    // Update activeJobItem.completedGood/Scrap to keep in sync
                     if (activeJobItem) {
                       setActiveJobItem({
                         ...activeJobItem,
                         completedGood: (activeJobItem.completedGood ?? 0) + quantities.good,
+                        completedScrap: (activeJobItem.completedScrap ?? 0) + quantities.scrap,
                       });
                     }
 
@@ -1980,6 +2042,7 @@ function WorkPageContent() {
 
                       // Clear active job item - it's completed
                       setActiveJobItem(null);
+                      resetJobItemTimer();
 
                       // Open completion dialog
                       setCompletionLoading(true);
@@ -1988,7 +2051,6 @@ function WorkPageContent() {
                         const items = await fetchJobItemsAtStationApi(station.id);
                         const available: AvailableJobItemForCompletion[] = items
                           .filter((item) =>
-                            item.completedGood < item.plannedQuantity &&
                             item.id !== jobItemIdToExclude
                           )
                           .map((item) => ({
@@ -1999,6 +2061,7 @@ function WorkPageContent() {
                             name: item.name,
                             plannedQuantity: item.plannedQuantity,
                             completedGood: item.completedGood,
+                            completedScrap: item.completedScrap ?? 0,
                             jobItemStepId: item.jobItemStepId,
                           }));
                         setAvailableJobItemsForCompletion(available);
@@ -2037,7 +2100,6 @@ function WorkPageContent() {
                         const items = await fetchJobItemsAtStationApi(station.id);
                         const available: AvailableJobItemForCompletion[] = items
                           .filter((item) =>
-                            item.completedGood < item.plannedQuantity &&
                             item.id !== completedJobItemId
                           )
                           .map((item) => ({
@@ -2048,6 +2110,7 @@ function WorkPageContent() {
                             name: item.name,
                             plannedQuantity: item.plannedQuantity,
                             completedGood: item.completedGood,
+                            completedScrap: item.completedScrap ?? 0,
                             jobItemStepId: item.jobItemStepId,
                           }));
                         setAvailableJobItemsForCompletion(available);
@@ -2088,7 +2151,7 @@ function WorkPageContent() {
                   }
 
                   setFaultDialogOpen(false);
-                  setFaultReason(undefined);
+                  setFaultReason("");
                   setFaultNote("");
                   handleFaultImageChange(null);
                   setPendingStatusId(null);
@@ -2121,9 +2184,35 @@ function WorkPageContent() {
         setGeneralReportDialogOpen(open);
         if (!open) setPendingGeneralStatusId(null);
       }}>
-        <DialogContent dir="rtl" className="border-border bg-card">
+        <DialogContent dir="rtl" className="border-blue-500/30 bg-card">
           <DialogHeader>
-            <DialogTitle className="text-foreground">{t("work.dialog.report.title")}</DialogTitle>
+            <DialogTitle className="flex flex-wrap items-center gap-2 text-foreground">
+              <FileText className="h-5 w-5 shrink-0 text-blue-500" />
+              <span>{t("work.dialog.report.title")}</span>
+              {(() => {
+                const targetId = pendingGeneralStatusId ?? pendingProductionExit?.targetStatusId;
+                if (!targetId || !station) return null;
+                const label = getStatusLabel(targetId, dictionary, station.id);
+                const hex = getStatusHex(targetId, dictionary, station.id);
+                return (
+                  <span className="flex items-center gap-1.5 text-sm font-normal text-muted-foreground">
+                    {t("work.dialog.report.statusTransition")}
+                    <span
+                      className="inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-xs font-semibold"
+                      style={{
+                        backgroundColor: `${hex}26`,
+                        borderWidth: "1px",
+                        borderColor: `${hex}66`,
+                        color: hex,
+                      }}
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: hex }} />
+                      {label}
+                    </span>
+                  </span>
+                );
+              })()}
+            </DialogTitle>
             <DialogDescription className="sr-only">דיווח כללי</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 text-right">
@@ -2189,7 +2278,7 @@ function WorkPageContent() {
                     />
                   </div>
                 ) : (
-                  <div className="rounded-xl border border-dashed border-input p-4 text-right text-sm text-muted-foreground">
+                  <div className="rounded-xl border border-dashed border-blue-500/20 p-4 text-right text-sm text-muted-foreground">
                     {t("work.dialog.report.imagePlaceholder")}
                   </div>
                 )}
@@ -2218,7 +2307,7 @@ function WorkPageContent() {
             )}
             <Button
               type="button"
-              className="bg-primary font-medium text-primary-foreground hover:bg-primary/90"
+              className="bg-blue-600 font-medium text-white hover:bg-blue-700"
               disabled={isGeneralReportSubmitting || !generalReportReason}
               onClick={() => void handleGeneralReportSubmit()}
             >
@@ -2284,10 +2373,10 @@ function WorkPageContent() {
         required={isForceJobSelection}
         title={
           isPendingJobSwitch
-            ? "החלף עבודה"
+            ? t("work.switchJob")
             : !isInProduction && !pendingProductionStatusId
-              ? "בחר עבודה"
-              : "בחר עבודה לייצור"
+              ? t("work.selectJob")
+              : t("work.selectJobForProduction")
         }
         excludeJobItemId={excludeJobItemId ?? undefined}
       />
@@ -2301,6 +2390,7 @@ function WorkPageContent() {
         sessionTotals={totals}
         plannedQuantity={activeJobItem?.plannedQuantity}
         totalCompletedBefore={Math.max(0, (activeJobItem?.completedGood ?? 0) - totals.good)}
+        totalCompletedScrapBefore={Math.max(0, (activeJobItem?.completedScrap ?? 0) - totals.scrap)}
         onSubmit={handleQuantityReportSubmit}
         onCancel={handleQuantityReportCancel}
         isSubmitting={isQuantityReportSubmitting}
@@ -2321,76 +2411,323 @@ function WorkPageContent() {
   );
 }
 
-type WorkTimerProps = {
-  title: string;
+// ============================================
+// UNIFIED SESSION CARD
+// ============================================
+
+type SessionCardProps = {
   sessionId: string;
-  badgeLabel: string;
+  sessionStartedAt?: string | null;
+  activeVisual: StatusVisual;
   statusLabel: string;
-  visual: StatusVisual;
-  startedAt?: string | null;
+  job: ReturnType<typeof useWorkerSession>["job"];
+  activeJobItem: ReturnType<typeof useWorkerSession>["activeJobItem"];
+  jobItemTimerSeconds: number;
+  totals: { good: number; scrap: number };
+  isInProduction: boolean;
+  pipelineContext: ReturnType<typeof usePipelineContext>;
+  stationName: string;
+  isJobSelectionSubmitting: boolean;
+  handleSwitchJob: () => void;
+  handleManualQuantityReport: () => void;
+  onSelectJob: () => void;
+  onUnsetJob: () => void;
+  orderedStatuses: StatusDefinition[];
+  currentStatus: string | null | undefined;
+  dictionary: ReturnType<typeof buildStatusDictionary>;
+  stationId: string;
+  isStatusesLoading: boolean;
+  statusError: string | null;
+  handleStatusChange: (statusId: string) => void;
+  approvalStatus: FirstProductApprovalStatus | null;
 };
 
-function WorkTimer({
-  title,
+function SessionCard({
   sessionId,
-  badgeLabel,
+  sessionStartedAt,
+  activeVisual,
   statusLabel,
-  visual,
-  startedAt,
-}: WorkTimerProps) {
+  job,
+  activeJobItem,
+  jobItemTimerSeconds,
+  totals,
+  isInProduction,
+  pipelineContext,
+  stationName,
+  isJobSelectionSubmitting,
+  handleSwitchJob,
+  handleManualQuantityReport,
+  onSelectJob,
+  onUnsetJob,
+  orderedStatuses,
+  currentStatus,
+  dictionary,
+  stationId,
+  isStatusesLoading,
+  statusError,
+  handleStatusChange,
+  approvalStatus,
+}: SessionCardProps) {
+  const { t } = useTranslation();
+  const { toast } = useToast();
+
+  // Session elapsed timer
   const [now, setNow] = useState(() => Date.now());
-
   useEffect(() => {
-    const interval = setInterval(() => {
-      setNow(Date.now());
-    }, 1000);
+    const interval = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(interval);
-  }, [sessionId, startedAt]);
+  }, [sessionId, sessionStartedAt]);
 
-  const elapsed = startedAt
-    ? Math.max(0, Math.floor((now - new Date(startedAt).getTime()) / 1000))
+  const elapsed = sessionStartedAt
+    ? Math.max(0, Math.floor((now - new Date(sessionStartedAt).getTime()) / 1000))
     : 0;
+
+  // Determine why "report quantity" is locked (for toast messages)
+  const isReportQuantityDisabled = !isInProduction || !activeJobItem;
+  const handleReportQuantityClick = () => {
+    if (!activeJobItem) {
+      toast({ title: t("work.reportQuantity"), message: t("work.toast.selectJobFirst"), variant: "warning" });
+      return;
+    }
+    if (!isInProduction) {
+      toast({ title: t("work.reportQuantity"), message: t("work.toast.mustBeInProduction"), variant: "warning" });
+      return;
+    }
+    handleManualQuantityReport();
+  };
 
   return (
     <Card
-      className={cn(
-        "rounded-xl border-2 bg-card/50 backdrop-blur-sm",
-      )}
+      className="rounded-xl border-2 bg-card/50 backdrop-blur-sm"
       style={{
-        borderColor: visual?.timerBorder ?? neutralVisual.timerBorder,
-        boxShadow: visual?.shadow ?? neutralVisual.shadow,
+        borderColor: activeVisual.timerBorder,
+        boxShadow: activeVisual.shadow,
       }}
     >
-      <CardHeader className="space-y-2 text-right">
-        <CardTitle className="text-foreground">{title}</CardTitle>
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <CardDescription className="text-xs text-muted-foreground">
-            {sessionId}
-          </CardDescription>
-          <div className="flex items-center gap-2">
-            <span
-              className={cn(
-                "inline-flex h-2.5 w-2.5 rounded-full",
-              )}
-              style={{ backgroundColor: visual?.dotColor ?? neutralVisual.dotColor }}
-            />
-            <Badge
-              variant="outline"
-              className={cn(
-                "border-none bg-transparent px-2 py-1 text-xs font-semibold",
-              )}
-              style={{ color: visual?.textColor ?? neutralVisual.textColor }}
-            >
-              {statusLabel}
-            </Badge>
+      <CardContent className="p-5 space-y-5">
+        {/* ── Session Header: shift duration + status ── */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="text-right">
+            <p className="text-sm font-medium text-muted-foreground">
+              {t("work.shiftDuration")}
+            </p>
+            <p className="text-5xl font-semibold tabular-nums text-foreground mt-1">
+              {formatDuration(elapsed)}
+            </p>
           </div>
+          <span
+            className="inline-flex shrink-0 items-center gap-1.5 rounded px-2 py-0.5 text-xs font-semibold"
+            style={{
+              backgroundColor: `${activeVisual.dotColor}26`,
+              borderWidth: "1px",
+              borderColor: `${activeVisual.dotColor}66`,
+              color: activeVisual.textColor,
+            }}
+          >
+            <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: activeVisual.dotColor }} />
+            {statusLabel}
+          </span>
         </div>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-2 text-right">
-        <p className="text-sm text-muted-foreground">{badgeLabel}</p>
-        <p className="text-5xl font-semibold text-foreground">
-          {formatDuration(elapsed)}
-        </p>
+
+        {/* ── Action Buttons (above inner card) ── */}
+        <div className="flex items-center gap-3">
+          {/* Report Quantity - primary CTA */}
+          <button
+            type="button"
+            className={cn(
+              "flex-1 h-14 text-lg font-bold rounded-xl shadow-lg transition-all duration-200 inline-flex items-center justify-center touch-manipulation select-none active:scale-[0.98]",
+              isReportQuantityDisabled
+                ? "bg-emerald-800/40 text-emerald-300/50 cursor-not-allowed shadow-none"
+                : "bg-emerald-600 hover:bg-emerald-500/90 active:bg-emerald-700 text-white shadow-emerald-600/25 hover:shadow-emerald-600/35 hover:shadow-xl",
+            )}
+            onClick={handleReportQuantityClick}
+          >
+            {t("work.reportQuantity")}
+          </button>
+
+          {/* Switch Job Item - secondary, compact */}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="shrink-0 h-9 px-3 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent/60 rounded-lg"
+            disabled={isJobSelectionSubmitting}
+            onClick={() => {
+              if (isInProduction && activeJobItem) {
+                handleSwitchJob();
+              } else {
+                onSelectJob();
+              }
+            }}
+          >
+            {activeJobItem ? t("work.switchJobItem") : t("work.selectJob")}
+          </Button>
+
+          {/* Unset job (only when not in production and job is selected) */}
+          {activeJobItem && !isInProduction && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="shrink-0 h-9 px-3 text-xs font-medium text-muted-foreground/60 hover:text-foreground hover:bg-accent/60 rounded-lg"
+              onClick={onUnsetJob}
+            >
+              {t("work.unsetJob")}
+            </Button>
+          )}
+        </div>
+
+        {/* ── Inner Job Item Card ── */}
+        {activeJobItem ? (
+          <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
+            {/* Job number */}
+            {job ? (
+              <div className="flex items-baseline gap-1.5 text-right">
+                <span className="text-xs font-medium text-muted-foreground">{t("work.jobLabel")}:</span>
+                <span className="text-sm font-bold text-foreground">{job.job_number}</span>
+              </div>
+            ) : null}
+
+            {/* Product name + job item timer (same row) */}
+            <div className="flex items-baseline justify-between gap-3">
+              <div className="flex items-baseline gap-1.5 min-w-0">
+                <span className="text-xs font-medium text-muted-foreground shrink-0">{t("work.productLabel")}:</span>
+                <span className="text-sm font-bold text-foreground truncate">{activeJobItem.name}</span>
+              </div>
+              <div className="flex items-baseline gap-1.5 shrink-0">
+                <span className="text-xs font-medium text-muted-foreground">{t("work.jobItemTimeLabel")}:</span>
+                <span className="text-sm font-bold tabular-nums text-foreground">{formatDurationHMS(jobItemTimerSeconds)}</span>
+              </div>
+            </div>
+
+            {/* Customer name */}
+            {job?.customer_name ? (
+              <div className="flex items-baseline gap-1.5 text-right">
+                <span className="text-xs font-medium text-muted-foreground">{t("work.clientLabel")}:</span>
+                <span className="text-sm text-foreground">{job.customer_name}</span>
+              </div>
+            ) : null}
+
+            {/* Embedded progress panel (bar + stats + pipeline) */}
+            <JobProgressPanel
+              embedded
+              job={job}
+              activeJobItem={activeJobItem}
+              sessionTotals={totals}
+              isInProduction={isInProduction}
+              currentStationName={stationName}
+              pipelineContext={{
+                upstreamWip: pipelineContext.upstreamWip,
+                waitingOutput: pipelineContext.waitingOutput,
+                prevStation: pipelineContext.prevStation,
+                nextStation: pipelineContext.nextStation,
+                isTerminal: pipelineContext.isTerminal,
+                isProductionLine: pipelineContext.isProductionLine,
+                isSingleStation: pipelineContext.isSingleStation,
+                totalStages: pipelineContext.totalSteps,
+                currentStageIndex: pipelineContext.currentPosition - 1,
+              }}
+            />
+          </div>
+        ) : (
+          /* Empty state - no job item selected */
+          <div className="rounded-lg border-2 border-dashed border-border bg-muted/20 p-6">
+            <div className="flex flex-col items-center justify-center gap-3 py-2">
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted border-2 border-border">
+                <svg
+                  className="h-7 w-7 text-muted-foreground"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={1.5}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"
+                  />
+                </svg>
+              </div>
+              <div className="text-center">
+                <h3 className="text-base font-bold text-muted-foreground">{t("jobProgress.noJobSelected")}</h3>
+                <p className="mt-1 text-sm text-muted-foreground/70">{t("jobProgress.selectJobToStart")}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Status Buttons (inside outer card) ── */}
+        <div className="pt-2 border-t border-border space-y-3">
+          <div className="text-right">
+            <p className="text-sm font-semibold text-foreground">{t("work.section.status")}</p>
+            <p className="text-xs text-muted-foreground">{t("work.status.instructions")}</p>
+          </div>
+          <div className="grid gap-3 grid-cols-3">
+            {orderedStatuses.map((status) => {
+              const isActive = currentStatus === status.id;
+              const colorHex = getStatusHex(status.id, dictionary, stationId);
+              const visual = buildStatusVisual(colorHex);
+              const isProductionStatusButton = status.machine_state === "production";
+              const isApprovalPending = approvalStatus?.required && approvalStatus?.status !== "approved";
+              const isProductionBlocked = isProductionStatusButton && isApprovalPending && !isActive;
+              return (
+                <Button
+                  key={status.id}
+                  type="button"
+                  variant="outline"
+                  className={cn(
+                    "h-auto w-full justify-between rounded-xl border p-4 text-base font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
+                    isActive
+                      ? "shadow"
+                      : "border-border bg-white text-foreground hover:border-primary/40 hover:bg-primary/5 dark:bg-secondary dark:text-foreground/80 dark:hover:bg-accent",
+                    isProductionBlocked && "opacity-50",
+                  )}
+                  aria-pressed={isActive}
+                  style={
+                    isActive
+                      ? {
+                          borderColor: visual.highlightBorder,
+                          backgroundColor: visual.highlightBg,
+                          color: visual.textColor,
+                          boxShadow: visual.shadow,
+                        }
+                      : undefined
+                  }
+                  onClick={() => {
+                    if (isProductionBlocked) {
+                      toast({
+                        title: getStatusLabel(status.id, dictionary, stationId),
+                        message: t("work.toast.mustApproveFirstProduct"),
+                        variant: "warning",
+                      });
+                      return;
+                    }
+                    handleStatusChange(status.id);
+                  }}
+                >
+                  <div className="flex w-full items-center justify-between gap-3 text-right">
+                    <span>
+                      {getStatusLabel(status.id, dictionary, stationId)}
+                    </span>
+                    <span
+                      aria-hidden
+                      className="inline-flex h-2.5 w-2.5 rounded-full"
+                      style={{
+                        backgroundColor: isActive
+                          ? visual.dotColor
+                          : neutralVisual.dotColor,
+                      }}
+                    />
+                  </div>
+                </Button>
+              );
+            })}
+            {isStatusesLoading ? (
+              <p className="text-sm text-muted-foreground">טוען סטטוסים...</p>
+            ) : null}
+          </div>
+          {statusError ? (
+            <p className="mt-1 text-sm text-rose-600 dark:text-rose-400">{statusError}</p>
+          ) : null}
+        </div>
       </CardContent>
     </Card>
   );

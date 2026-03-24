@@ -18,19 +18,27 @@ export async function POST(request: Request, context: RouteContext) {
 
   const { id: stationId } = await context.params;
   const body = (await request.json().catch(() => ({}))) as {
+    service_id?: string;
     completion_date?: string;
+    worker_id?: string | null;
   };
+
+  if (!body.service_id) {
+    return NextResponse.json({ error: "MISSING_SERVICE_ID" }, { status: 400 });
+  }
 
   try {
     const result = await completeStationMaintenance(
       stationId,
-      body.completion_date
+      body.service_id,
+      body.completion_date,
+      body.worker_id
     );
 
     return NextResponse.json({
       success: result.success,
-      last_maintenance_date: result.last_maintenance_date,
-      next_maintenance_date: result.next_maintenance_date,
+      last_serviced: result.last_serviced,
+      next_service_date: result.next_service_date,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "COMPLETION_FAILED";

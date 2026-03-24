@@ -151,7 +151,7 @@ export const useRealtimeSession = ({
           setSession(payload.data);
           setIsLoading(false);
         } else if (payload.type === "error") {
-          console.error("[useRealtimeSession] SSE error event", payload.message);
+          console.warn("[useRealtimeSession] SSE channel event:", payload.message);
           if (payload.message === "SESSION_NOT_FOUND") {
             setError("SESSION_NOT_FOUND");
             setIsLoading(false);

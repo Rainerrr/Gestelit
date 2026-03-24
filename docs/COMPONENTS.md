@@ -1,7 +1,7 @@
 # React Components & Contexts
 
 > Component library, contexts, and hooks reference
-> Last updated: January 2026
+> Last updated: March 2026
 
 ---
 
@@ -117,7 +117,19 @@ Components used in the worker-facing application.
 
 | Component | File | Purpose |
 |-----------|------|---------|
-| ProductionPipeline | `work/production-pipeline.tsx` | Pipeline view |
+| JobProgressPanel | `work/job-progress-panel.tsx` | Reported vs remaining quantities with dual progress bar |
+| JobProgressBar | `work/job-progress-bar.tsx` | Single-job progress visualization |
+| JobItemProgressCard | `work/job-item-progress-card.tsx` | Progress card per job item |
+| QuantityReportDialog | `work/quantity-report-dialog.tsx` | Modal for reporting good/scrap quantities |
+| JobCompletionDialog | `work/job-completion-dialog.tsx` | Job item completion workflow dialog |
+| JobSelectionSheet | `work/job-selection-sheet.tsx` | Bottom sheet for selecting job items |
+| ProductionPipeline | `work/production-pipeline.tsx` | Multi-station pipeline visualization |
+| PipelinePositionIndicator | `work/pipeline-position-indicator.tsx` | Current station with upstream/downstream WIP |
+| PipelineFlowLayout | `work/pipeline-flow-layout.tsx` | Layout container for pipeline display |
+| ScrapSection | `work/scrap-section.tsx` | Scrap reporting UI section |
+| FirstProductApprovalBanner | `work/first-product-approval-banner.tsx` | QA approval status banner |
+| DualProgressBar | `work/dual-progress-bar.tsx` | Side-by-side progress bars |
+| MiniPieChart | `work/mini-pie-chart.tsx` | Small pie chart for distribution |
 
 ### Checklist Components
 
@@ -328,72 +340,49 @@ export function BackButton({ href }: { href: string }) {
 
 **File:** `contexts/WorkerSessionContext.tsx`
 
+Manages active session state including worker, station, job item binding, and production totals.
+
 ```typescript
-interface WorkerSessionContextValue {
-  // Core state
+interface WorkerSessionState {
   worker: Worker | null;
-  session: Session | null;
   station: Station | null;
+  sessionId: string | null;
   job: Job | null;
+  activeJobItem: ActiveJobItemContext | null;
+  currentStatus: string | null;
+  sessionTotals: { good: number; scrap: number };
 
-  // Production line state
-  jobItem: JobItem | null;
-  jobItemStation: JobItemStation | null;
-
-  // Session state
-  currentStatus: StatusDefinition | null;
-  totalGood: number;
-  totalScrap: number;
-
-  // Setters
-  setWorker: (worker: Worker | null) => void;
-  setSession: (session: Session | null) => void;
-  setStation: (station: Station | null) => void;
-  setJob: (job: Job | null) => void;
-  setJobItem: (item: JobItem | null) => void;
-  setJobItemStation: (station: JobItemStation | null) => void;
-  setCurrentStatus: (status: StatusDefinition | null) => void;
-  setTotalGood: (count: number) => void;
-  setTotalScrap: (count: number) => void;
-
-  // Actions
-  clearAll: () => void;
-}
-
-export const WorkerSessionContext = createContext<WorkerSessionContextValue | null>(null);
-
-export function useWorkerSession() {
-  const context = useContext(WorkerSessionContext);
-  if (!context) {
-    throw new Error('useWorkerSession must be used within WorkerSessionProvider');
-  }
-  return context;
+  // Key actions
+  setActiveJobItem: (item: ActiveJobItemContext | null) => void;
+  updateTotals: (totals: { good: number; scrap: number }) => void;
+  setCurrentStatus: (statusId: string | null) => void;
+  clearSession: () => void;
 }
 ```
+
+Key behaviors:
+- `activeJobItem` includes `jobItemStepId` for pipeline position tracking
+- `sessionTotals` reset when switching job items (totals are per-job-item)
+- `updateTotals()` used by quantity reporting flow
 
 ### PipelineContext
 
 **File:** `contexts/PipelineContext.tsx`
 
+Provides pipeline data for the current job item, including step positions and WIP balances.
+
 ```typescript
 interface PipelineContextValue {
-  jobItems: JobItem[];
-  stationOptions: PipelineStationOption[];
-  selectedStation: PipelineStationOption | null;
-  loading: boolean;
-
-  setSelectedStation: (station: PipelineStationOption | null) => void;
-  refresh: () => void;
-}
-
-export const PipelineContext = createContext<PipelineContextValue | null>(null);
-
-export function usePipeline() {
-  const context = useContext(PipelineContext);
-  if (!context) {
-    throw new Error('usePipeline must be used within PipelineProvider');
-  }
-  return context;
+  steps: JobItemStep[];
+  currentPosition: number;
+  totalSteps: number;
+  isTerminal: boolean;
+  isProductionLine: boolean;
+  isSingleStation: boolean;
+  upstreamWip: number;
+  waitingOutput: number;
+  prevStation: string | null;
+  nextStation: string | null;
 }
 ```
 
@@ -433,6 +422,20 @@ export function useLanguage() {
 }
 ```
 
+### ToastContext
+
+**File:** `contexts/ToastContext.tsx`
+
+Provides toast notification feedback for user actions.
+
+```typescript
+interface ToastContextValue {
+  toast: (options: { title: string; message: string; variant: "success" | "error" | "warning" | "info" }) => void;
+}
+```
+
+Features: auto-dismiss (3.5s), portal rendering, stacked display.
+
 ---
 
 ## 8. Custom Hooks
@@ -459,7 +462,9 @@ export function useLanguage() {
 |------|------|---------|
 | useRealtimeSession | `lib/hooks/useRealtimeSession.ts` | Session subscription |
 | useRealtimeReports | `lib/hooks/useRealtimeReports.ts` | Report subscription |
+| useRealtimeJobProgress | `lib/hooks/useRealtimeJobProgress.ts` | Job progress subscription |
 | useLiveDuration | `lib/hooks/useLiveDuration.ts` | Timer display |
+| useJobItemTimer | `lib/hooks/useJobItemTimer.ts` | Track time on job item |
 | useViewToggle | `lib/hooks/useViewToggle.ts` | Tab switching |
 
 ### Translation Hook

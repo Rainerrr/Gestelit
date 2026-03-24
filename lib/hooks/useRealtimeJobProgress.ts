@@ -40,6 +40,9 @@ export const useRealtimeJobProgress = ({
   const backoffTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isClosingRef = useRef(false);
+  // Track whether we've received at least one successful initial message.
+  // Suppress "disconnected" state until the stream has been established at least once.
+  const hasConnectedRef = useRef(false);
 
   // Fetch job progress data via API (for polling fallback)
   const fetchJobs = useCallback(async (): Promise<LiveJobProgress[]> => {
@@ -139,10 +142,11 @@ export const useRealtimeJobProgress = ({
       try {
         const payload = JSON.parse(event.data) as StreamMessage;
         if (payload.type === "initial" || payload.type === "update") {
+          if (payload.type === "initial") hasConnectedRef.current = true;
           setJobs(payload.jobs);
           setIsLoading(false);
         } else if (payload.type === "error") {
-          console.error("[useRealtimeJobProgress] SSE error event", payload.message);
+          console.warn("[useRealtimeJobProgress] SSE channel event:", payload.message);
           if (
             payload.message === "CHANNEL_CLOSED" ||
             payload.message === "REFETCH_FAILED"
@@ -151,7 +155,7 @@ export const useRealtimeJobProgress = ({
             disconnectStream();
             const delay = Math.min(MAX_BACKOFF_MS, 1000 * 2 ** Math.max(0, retryCountRef.current));
             retryCountRef.current += 1;
-            setConnectionState("disconnected");
+            if (hasConnectedRef.current) setConnectionState("disconnected");
             backoffTimeoutRef.current = setTimeout(connectToStream, delay);
           }
         }
@@ -183,7 +187,7 @@ export const useRealtimeJobProgress = ({
 
       const delay = Math.min(MAX_BACKOFF_MS, 1000 * 2 ** Math.max(0, retryCountRef.current));
       retryCountRef.current += 1;
-      setConnectionState("disconnected");
+      if (hasConnectedRef.current) setConnectionState("disconnected");
 
       if (backoffTimeoutRef.current) clearTimeout(backoffTimeoutRef.current);
       backoffTimeoutRef.current = setTimeout(connectToStream, delay);

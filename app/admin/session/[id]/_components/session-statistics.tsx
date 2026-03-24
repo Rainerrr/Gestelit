@@ -3,7 +3,7 @@
 import {
   LayoutList,
   Package,
-  Trash2,
+  PackageX,
   Play,
   Wrench,
   Timer,
@@ -113,7 +113,7 @@ export const SessionStatistics = ({
               valueColor="text-emerald-500"
             />
             <StatRow
-              icon={<Trash2 className="h-4 w-4 text-rose-500" />}
+              icon={<PackageX className="h-4 w-4 text-rose-500" />}
               iconColor="bg-rose-500/10"
               label="פסולים"
               value={formatNumber(totalScrap)}

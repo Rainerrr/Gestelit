@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { getStatusBadgeClass } from "@/lib/status";
 import type { TimelineSegment } from "@/hooks/useSessionTimeline";
 import type { StatusDictionary } from "@/lib/status";
+import type { JobItemDistribution } from "@/lib/types";
 
 type VisSessionTimelineProps = {
   segments: TimelineSegment[];
@@ -15,6 +16,7 @@ type VisSessionTimelineProps = {
   isActive: boolean;
   dictionary?: StatusDictionary;
   stationId?: string | null;
+  jobItemDistribution?: JobItemDistribution | null;
 };
 
 const formatTime = (ts: number) =>
@@ -122,6 +124,49 @@ const CustomTooltip = ({ segment }: { segment: TimelineSegment }) => {
   );
 };
 
+// Alternating color palette for job item distribution segments
+const JOB_ITEM_COLORS = [
+  { bg: "rgba(59, 130, 246, 0.5)", border: "rgba(59, 130, 246, 0.7)", stripe: "rgba(59, 130, 246, 0.25)" },   // blue
+  { bg: "rgba(99, 102, 241, 0.5)", border: "rgba(99, 102, 241, 0.7)", stripe: "rgba(99, 102, 241, 0.25)" },   // indigo
+  { bg: "rgba(14, 165, 233, 0.5)", border: "rgba(14, 165, 233, 0.7)", stripe: "rgba(14, 165, 233, 0.25)" },   // sky
+  { bg: "rgba(168, 85, 247, 0.5)", border: "rgba(168, 85, 247, 0.7)", stripe: "rgba(168, 85, 247, 0.25)" },   // purple
+];
+
+type DistributionTooltipData = {
+  jobItemId: string;
+  jobItemName: string;
+  jobNumber: string;
+  startedAt: string;
+  endedAt: string | null;
+  x: number;
+  containerWidth: number;
+};
+
+const DistributionTooltip = ({ data }: { data: DistributionTooltipData }) => {
+  const startTime = formatTime(new Date(data.startedAt).getTime());
+  const endTime = data.endedAt ? formatTime(new Date(data.endedAt).getTime()) : "עכשיו";
+
+  return (
+    <div
+      className="pointer-events-none rounded-lg bg-popover overflow-hidden border border-border shadow-lg"
+      style={{ minWidth: 160, direction: "rtl" }}
+    >
+      <div className="px-3 py-2 bg-blue-500/20 border-b border-border">
+        <p className="text-xs font-medium text-foreground truncate text-center">
+          #{data.jobNumber} ({data.jobItemName})
+        </p>
+      </div>
+      <div className="px-3 py-2">
+        <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+          <span className="tabular-nums">{startTime}</span>
+          <span>-</span>
+          <span className="tabular-nums">{endTime}</span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export const VisSessionTimeline = ({
   segments,
   startTs,
@@ -130,8 +175,10 @@ export const VisSessionTimeline = ({
   isActive,
   dictionary,
   stationId,
+  jobItemDistribution,
 }: VisSessionTimelineProps) => {
   const [tooltip, setTooltip] = useState<TooltipData | null>(null);
+  const [distTooltip, setDistTooltip] = useState<DistributionTooltipData | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const hasBounds = Boolean(startTs && endTs);
@@ -194,8 +241,130 @@ export const VisSessionTimeline = ({
     );
   }
 
+  // Build color map for unique job items
+  const jobItemColorMap = useMemo(() => {
+    const map = new Map<string, typeof JOB_ITEM_COLORS[0]>();
+    if (!jobItemDistribution?.periods) return map;
+    let colorIdx = 0;
+    for (const period of jobItemDistribution.periods) {
+      if (!map.has(period.jobItemId)) {
+        map.set(period.jobItemId, JOB_ITEM_COLORS[colorIdx % JOB_ITEM_COLORS.length]);
+        colorIdx++;
+      }
+    }
+    return map;
+  }, [jobItemDistribution]);
+
+  const handleDistSegmentHover = (
+    period: { jobItemId: string; jobItemName: string; jobNumber: string; startedAt: string; endedAt: string | null },
+    e: React.MouseEvent<HTMLDivElement>,
+  ) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const containerRect = containerRef.current?.getBoundingClientRect();
+    if (containerRect) {
+      const x = rect.left + rect.width / 2 - containerRect.left;
+      setDistTooltip({ ...period, x, containerWidth: containerRect.width });
+    }
+  };
+
   return (
     <div ref={containerRef} className="relative" dir="ltr">
+      {/* Job Item Distribution — DNA Lane */}
+      {jobItemDistribution && jobItemDistribution.periods.length > 0 && (
+        <div className="mb-1">
+          <p className="text-[10px] text-muted-foreground/60 mb-1.5 text-right tracking-wider uppercase" dir="rtl">פריטי עבודה</p>
+          <div className="relative" style={{ height: 24 }}>
+            {/* Top rail */}
+            <div
+              className="absolute top-0 left-0 right-0"
+              style={{ height: 2, background: "rgba(255,255,255,0.1)" }}
+            />
+            {/* Bottom rail */}
+            <div
+              className="absolute bottom-0 left-0 right-0"
+              style={{ height: 2, background: "rgba(255,255,255,0.1)" }}
+            />
+
+            {/* Colored fills between rails */}
+            {jobItemDistribution.periods.map((period) => {
+              const periodStart = new Date(period.startedAt).getTime();
+              const periodEnd = period.endedAt ? new Date(period.endedAt).getTime() : nowTs;
+              const left = getPosition(periodStart);
+              const width = getPosition(periodEnd) - left;
+              const colors = jobItemColorMap.get(period.jobItemId) ?? JOB_ITEM_COLORS[0];
+              const isHovered = distTooltip?.startedAt === period.startedAt && distTooltip?.jobItemId === period.jobItemId;
+
+              return (
+                <div
+                  key={`dna-${period.jobItemId}-${period.startedAt}`}
+                  className="absolute cursor-pointer transition-all duration-150"
+                  style={{
+                    top: 2,
+                    bottom: 2,
+                    left: `${left}%`,
+                    width: `${Math.max(width, 0.3)}%`,
+                    background: `linear-gradient(180deg, ${colors.border} 0%, ${colors.bg} 40%, ${colors.bg} 60%, ${colors.border} 100%)`,
+                    boxShadow: isHovered
+                      ? `0 0 8px ${colors.border}, inset 0 0 4px ${colors.stripe}`
+                      : `inset 0 1px 2px ${colors.stripe}`,
+                    opacity: isHovered ? 1 : 0.85,
+                    zIndex: isHovered ? 10 : 1,
+                  }}
+                  onMouseEnter={(e) => handleDistSegmentHover(period, e)}
+                  onMouseLeave={() => setDistTooltip(null)}
+                >
+                  {/* Hovered rail thickening effect — top */}
+                  {isHovered && (
+                    <>
+                      <div
+                        className="absolute left-0 right-0 pointer-events-none"
+                        style={{ top: -3, height: 4, background: colors.border, borderRadius: 2 }}
+                      />
+                      <div
+                        className="absolute left-0 right-0 pointer-events-none"
+                        style={{ bottom: -3, height: 4, background: colors.border, borderRadius: 2 }}
+                      />
+                    </>
+                  )}
+                  {/* Label inside fill */}
+                  {width > 10 && (
+                    <div className="absolute inset-0 flex items-center justify-center px-1 pointer-events-none" dir="rtl">
+                      <span
+                        className="text-[11px] font-semibold truncate leading-none"
+                        style={{ color: "rgba(255,255,255,0.95)", textShadow: `0 1px 3px ${colors.border}`, unicodeBidi: "plaintext" }}
+                      >
+                        {`#${period.jobNumber} (${period.jobItemName})`}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Drop-line connectors — dashed vertical ticks at segment boundaries */}
+          <div className="relative" style={{ height: 6 }}>
+            {jobItemDistribution.periods.map((period, idx) => {
+              const periodStart = new Date(period.startedAt).getTime();
+              const pos = getPosition(periodStart);
+              if (idx === 0 && pos < 1) return null;
+              return (
+                <div
+                  key={`drop-${period.jobItemId}-${period.startedAt}`}
+                  className="absolute top-0 pointer-events-none"
+                  style={{
+                    left: `${pos}%`,
+                    width: 0,
+                    height: "100%",
+                    borderLeft: "1px dashed rgba(255,255,255,0.1)",
+                  }}
+                />
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Timeline bar - pill shaped */}
       <div className="relative h-10 bg-muted rounded-full overflow-hidden shadow-inner">
         {/* Segments */}
@@ -307,7 +476,7 @@ export const VisSessionTimeline = ({
         })}
       </div>
 
-      {/* Tooltip */}
+      {/* Status Tooltip */}
       {tooltip && (
         <div
           className="absolute z-50 pointer-events-none"
@@ -318,6 +487,20 @@ export const VisSessionTimeline = ({
           }}
         >
           <CustomTooltip segment={tooltip.segment} />
+        </div>
+      )}
+
+      {/* Distribution Tooltip */}
+      {distTooltip && (
+        <div
+          className="absolute z-50 pointer-events-none"
+          style={{
+            left: Math.max(80, Math.min(distTooltip.x, distTooltip.containerWidth ? distTooltip.containerWidth - 80 : distTooltip.x)),
+            top: -8,
+            transform: "translate(-50%, -100%)",
+          }}
+        >
+          <DistributionTooltip data={distTooltip} />
         </div>
       )}
 

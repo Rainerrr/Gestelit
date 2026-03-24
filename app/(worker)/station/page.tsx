@@ -364,7 +364,13 @@ export default function StationPage() {
         jobId: pendingRecovery.job?.id ?? null,
         jobNumber: pendingRecovery.job?.job_number ?? null,
         startedAt: pendingRecovery.session.started_at,
-        totals: { good: 0, scrap: 0 },
+        totals: pendingRecovery.sessionTotals
+          ? { good: pendingRecovery.sessionTotals.good, scrap: pendingRecovery.sessionTotals.scrap }
+          : { good: 0, scrap: 0 },
+        jobItemTimer: pendingRecovery.currentJobItemStartedAt
+          ? { accumulatedSeconds: pendingRecovery.jobItemAccumulatedSeconds ?? 0, segmentStart: pendingRecovery.currentJobItemStartedAt }
+          : undefined,
+        activeJobItem: pendingRecovery.activeJobItem ?? null,
       });
     }
 

@@ -230,7 +230,18 @@ export const NotificationProvider = ({ children }: NotificationProviderProps) =>
       }
 
       if (payload.type === "error") {
-        console.error("[NotificationContext] SSE error event:", payload.message);
+        console.warn("[NotificationContext] SSE channel event:", payload.message);
+        if (payload.message === "CHANNEL_CLOSED") {
+          // Force reconnection on channel closure
+          es.close();
+          eventSourceRef.current = null;
+          if (!mountedRef.current) return;
+          const delay = Math.min(MAX_BACKOFF_MS, 1000 * 2 ** retryRef.current);
+          retryRef.current += 1;
+          backoffTimeoutRef.current = setTimeout(() => {
+            if (mountedRef.current) connect();
+          }, delay);
+        }
       }
     };
 

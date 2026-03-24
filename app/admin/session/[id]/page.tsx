@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef, use } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Clock, Package, AlertTriangle, Trash2, TrendingDown, Settings, Building, User, Calendar, RefreshCw, XCircle } from "lucide-react";
+import { ArrowRight, Clock, Package, PackageX, AlertTriangle, TrendingDown, Settings, Building, User, Calendar, RefreshCw, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -472,7 +472,7 @@ export default function SessionDetailPage({ params }: Props) {
                       )}
                       {flags.highScrap && (
                         <div className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2">
-                          <Trash2 className="h-4 w-4 text-red-500" />
+                          <PackageX className="h-4 w-4 text-red-500" />
                           <div className="text-xs">
                             <p className="font-medium text-red-400">{SESSION_FLAG_LABELS.high_scrap}</p>
                             <p className="text-muted-foreground">
@@ -646,6 +646,7 @@ export default function SessionDetailPage({ params }: Props) {
                 isActive={timeline.isActive}
                 dictionary={dictionary}
                 stationId={session?.stationId}
+                jobItemDistribution={session?.jobItemDistribution ?? null}
               />
             )}
           </CardContent>

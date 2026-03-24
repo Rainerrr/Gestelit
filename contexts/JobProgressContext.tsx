@@ -17,8 +17,11 @@ const POLL_INTERVAL_MS = 3000;
 type StationProgressInfo = {
   jobItemName: string;
   plannedQuantity: number;
-  completedAtStation: number; // WIP at this station (goodAvailable)
-  totalCompleted: number; // Completed good for the entire job item
+  completedAtStation: number; // goodReported at this station
+  totalCompletedGood: number;
+  totalCompletedScrap: number;
+  /** @deprecated Use totalCompletedGood + totalCompletedScrap */
+  totalCompleted: number;
   isTerminal: boolean;
 };
 
@@ -69,13 +72,17 @@ export const JobProgressProvider = ({ children }: { children: ReactNode }) => {
           assignment.jobItem.pipeline_preset?.name ||
           "מוצר";
         const plannedQuantity = assignment.plannedQuantity || 0;
-        const totalCompleted = assignment.completedGood || 0;
+        const totalCompletedGood = assignment.completedGood || 0;
+        const totalCompletedScrap = assignment.completedScrap || 0;
+        const totalCompleted = totalCompletedGood + totalCompletedScrap;
 
         for (const wip of assignment.wipDistribution) {
           const info: StationProgressInfo = {
             jobItemName,
             plannedQuantity,
-            completedAtStation: wip.goodAvailable,
+            completedAtStation: wip.goodReported,
+            totalCompletedGood,
+            totalCompletedScrap,
             totalCompleted,
             isTerminal: wip.isTerminal,
           };
@@ -104,11 +111,15 @@ export const JobProgressProvider = ({ children }: { children: ReactNode }) => {
       }
 
       // Aggregate multiple job items at same station
+      const totalCompletedGood = progressList.reduce((sum, p) => sum + p.totalCompletedGood, 0);
+      const totalCompletedScrap = progressList.reduce((sum, p) => sum + p.totalCompletedScrap, 0);
       const aggregated: StationProgressInfo = {
         jobItemName: progressList.map((p) => p.jobItemName).join(", "),
         plannedQuantity: progressList.reduce((sum, p) => sum + p.plannedQuantity, 0),
         completedAtStation: progressList.reduce((sum, p) => sum + p.completedAtStation, 0),
-        totalCompleted: progressList.reduce((sum, p) => sum + p.totalCompleted, 0),
+        totalCompletedGood,
+        totalCompletedScrap,
+        totalCompleted: totalCompletedGood + totalCompletedScrap,
         isTerminal: progressList.some((p) => p.isTerminal),
       };
 

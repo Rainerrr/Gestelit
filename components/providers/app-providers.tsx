@@ -3,6 +3,7 @@
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { LanguageProvider } from "@/contexts/LanguageContext";
 import { WorkerSessionProvider } from "@/contexts/WorkerSessionContext";
+import { ToastProvider } from "@/contexts/ToastContext";
 import type { ReactNode } from "react";
 
 type AppProvidersProps = {
@@ -18,7 +19,9 @@ export function AppProviders({ children }: AppProvidersProps) {
       disableTransitionOnChange
     >
       <LanguageProvider>
-        <WorkerSessionProvider>{children}</WorkerSessionProvider>
+        <WorkerSessionProvider>
+          <ToastProvider>{children}</ToastProvider>
+        </WorkerSessionProvider>
       </LanguageProvider>
     </ThemeProvider>
   );

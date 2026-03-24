@@ -13,47 +13,76 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { DatePicker } from "@/components/ui/date-picker";
-import { Calendar } from "lucide-react";
-import type { StationMaintenanceInfo } from "@/lib/types";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Calendar, Loader2 } from "lucide-react";
+import { fetchStationWorkersApi } from "@/lib/api/maintenance";
+import type { ServiceMaintenanceInfo, Worker } from "@/lib/types";
 
 type CompleteMaintenanceDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  station: StationMaintenanceInfo | null;
-  onConfirm: (completionDate: string) => Promise<void>;
+  service: ServiceMaintenanceInfo | null;
+  stationId: string | null;
+  stationName: string | null;
+  onConfirm: (serviceId: string, completionDate: string, workerId?: string | null) => Promise<void>;
 };
 
 export const CompleteMaintenanceDialog = ({
   open,
   onOpenChange,
-  station,
+  service,
+  stationId,
+  stationName,
   onConfirm,
 }: CompleteMaintenanceDialogProps) => {
   const [completionDate, setCompletionDate] = useState<Date | undefined>(undefined);
+  const [selectedWorkerId, setSelectedWorkerId] = useState<string>("");
+  const [workers, setWorkers] = useState<Pick<Worker, "id" | "full_name" | "worker_code">[]>([]);
+  const [isLoadingWorkers, setIsLoadingWorkers] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Set today's date when dialog opens
+  // Set today's date and load workers when dialog opens
   useEffect(() => {
     if (open) {
       setCompletionDate(new Date());
+      setSelectedWorkerId("");
+
+      if (stationId) {
+        setIsLoadingWorkers(true);
+        fetchStationWorkersApi(stationId)
+          .then(({ workers: w }) => setWorkers(w))
+          .catch(() => setWorkers([]))
+          .finally(() => setIsLoadingWorkers(false));
+      }
     }
-  }, [open]);
+  }, [open, stationId]);
 
   const handleConfirm = async () => {
-    if (!completionDate || !station) return;
+    if (!completionDate || !service) return;
 
     setIsSubmitting(true);
     try {
-      await onConfirm(format(completionDate, "yyyy-MM-dd"));
+      const workerId = selectedWorkerId && selectedWorkerId !== "none" ? selectedWorkerId : null;
+      await onConfirm(
+        service.id,
+        format(completionDate, "yyyy-MM-dd"),
+        workerId
+      );
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const computeNextDate = () => {
-    if (!completionDate || !station?.maintenance_interval_days) return null;
+    if (!completionDate || !service?.interval_days) return null;
     const next = new Date(completionDate);
-    next.setDate(next.getDate() + station.maintenance_interval_days);
+    next.setDate(next.getDate() + service.interval_days);
     return next.toLocaleDateString("he-IL");
   };
 
@@ -63,7 +92,7 @@ export const CompleteMaintenanceDialog = ({
         <DialogHeader>
           <DialogTitle className="text-foreground">סימון טיפול כהושלם</DialogTitle>
           <DialogDescription className="text-right">
-            {station && `תחנה: ${station.name}`}
+            {stationName && service && `תחנה: ${stationName} — ${service.name}`}
           </DialogDescription>
         </DialogHeader>
 
@@ -81,6 +110,32 @@ export const CompleteMaintenanceDialog = ({
               className="w-full"
               allowFuture={false}
             />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-foreground/80 text-sm">
+              עובד מבצע
+            </Label>
+            {isLoadingWorkers ? (
+              <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                טוען עובדים...
+              </div>
+            ) : (
+              <Select value={selectedWorkerId} onValueChange={setSelectedWorkerId}>
+                <SelectTrigger className="w-full border-input bg-secondary text-foreground">
+                  <SelectValue placeholder="לא צוין" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">לא צוין</SelectItem>
+                  {workers.map((worker) => (
+                    <SelectItem key={worker.id} value={worker.id}>
+                      {worker.full_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
 
           {computeNextDate() && (

@@ -9,7 +9,7 @@ import {
   Cpu,
   CheckCircle2,
   FileText,
-  Trash2,
+  PackageX,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -163,7 +163,7 @@ export const StationAccordionCard = ({
             <>
               {counts.new > 0 && (
                 <Badge className="bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500/20 gap-1.5 font-medium">
-                  <Trash2 className="h-3 w-3" />
+                  <PackageX className="h-3 w-3" />
                   {counts.new} ממתינים
                 </Badge>
               )}

@@ -15,7 +15,7 @@ import {
   CheckCircle2,
   AlertOctagon,
   Inbox,
-  Trash2,
+  PackageX,
   ClipboardCheck,
   Package,
   MapPin,
@@ -160,7 +160,7 @@ const ReportTypeToggleComponent = ({
       onClick={() => onChange("scrap")}
       className="h-7 gap-1.5 px-2.5 text-xs"
     >
-      <Trash2 className="h-3.5 w-3.5" />
+      <PackageX className="h-3.5 w-3.5" />
       <span>פסולים</span>
       {scrapCount > 0 && (
         <span className="font-mono text-[10px] bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded-full">
@@ -604,7 +604,7 @@ const ScrapReportCard = ({
       >
         {/* Icon */}
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-500/10 border border-red-500/20 shrink-0">
-          <Trash2 className="h-4 w-4 text-red-400" />
+          <PackageX className="h-4 w-4 text-red-400" />
         </div>
 
         {/* Job item name */}
@@ -619,7 +619,7 @@ const ScrapReportCard = ({
         {/* Status badge */}
         {isNew ? (
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 shrink-0">
-            <Trash2 className="h-3 w-3" />
+            <PackageX className="h-3 w-3" />
             ממתין
           </span>
         ) : (

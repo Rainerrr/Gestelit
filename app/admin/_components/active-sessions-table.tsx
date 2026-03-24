@@ -6,15 +6,15 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   ChevronLeft,
-  Clock,
   Package,
-  Trash2,
+  PackageX,
   CirclePause,
   AlertOctagon,
   AlertTriangle,
   TrendingDown,
   Settings,
   User,
+  Timer,
   XCircle,
 } from "lucide-react";
 import type { StatusDictionary } from "@/lib/status";
@@ -47,6 +47,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { JobProgressBar } from "@/components/work/job-progress-bar";
 
 type ActiveSessionsTableProps = {
   dictionary: StatusDictionary;
@@ -103,6 +104,25 @@ const subscribeNow = (callback: () => void) => {
 const useNow = () =>
   useSyncExternalStore(subscribeNow, getNow, () => Date.now());
 
+const getJobItemDurationLabel = (
+  accumulatedSeconds: number,
+  segmentStart: string | null,
+  now: number,
+): string => {
+  let totalSeconds = accumulatedSeconds;
+  if (segmentStart) {
+    const segmentStartMs = new Date(segmentStart).getTime();
+    if (!Number.isNaN(segmentStartMs)) {
+      totalSeconds += Math.max(0, Math.floor((now - segmentStartMs) / 1000));
+    }
+  }
+
+  const hours = Math.floor(totalSeconds / 3600).toString().padStart(2, "0");
+  const minutes = Math.floor((totalSeconds % 3600) / 60).toString().padStart(2, "0");
+  const seconds = Math.floor(totalSeconds % 60).toString().padStart(2, "0");
+  return `${hours}:${minutes}:${seconds}`;
+};
+
 // Idle threshold: 2 minutes (sessions auto-close at 5 min, so show idle indicator early)
 const IDLE_THRESHOLD_MS = 2 * 60 * 1000;
 
@@ -140,131 +160,111 @@ const getStatusStyle = (hex: string) => {
   };
 };
 
+
 /**
- * Dual-color progress bar matching the work page style.
- * Shows prior sessions (emerald) + this session (cyan).
+ * Job info cell — פק״ע, מוצר name, and job item timer
  */
-function DualProgressBar({
-  totalCompleted,
-  sessionContribution,
-  plannedQuantity,
-}: {
-  totalCompleted: number;
-  sessionContribution: number;
-  plannedQuantity: number;
+function JobInfoCell({ jobItem, jobNumber, jobItemDuration }: {
+  jobItem: CurrentJobItemInfo | null;
+  jobNumber: string;
+  jobItemDuration: string | null;
 }) {
-  const safePlanned = Math.max(1, plannedQuantity);
-  const safeTotal = Math.min(totalCompleted, safePlanned);
-  const safeSession = Math.min(sessionContribution, safeTotal);
-
-  const prior = Math.max(0, safeTotal - safeSession);
-  const priorPercent = (prior / safePlanned) * 100;
-  const sessionPercent = (safeSession / safePlanned) * 100;
-
-  const isComplete = totalCompleted >= plannedQuantity;
+  if (!jobItem) {
+    return (
+      <div className="flex items-center justify-center min-w-[130px]">
+        <span className="text-sm text-muted-foreground/50">לא נבחרה עבודה</span>
+      </div>
+    );
+  }
 
   return (
-    <div
-      className={cn(
-        "relative w-full h-3 overflow-hidden rounded-full",
-        "border border-border bg-muted/50"
-      )}
-    >
-      {/* Prior Sessions Segment - emerald - RTL: anchored to right */}
-      {priorPercent > 0 && (
-        <div
-          className="absolute inset-y-0 right-0 bg-gradient-to-l from-emerald-400 to-emerald-600 transition-all duration-500"
-          style={{ width: `${priorPercent}%` }}
-        />
-      )}
-
-      {/* This Session Segment - cyan with glow - RTL: positioned after prior from right */}
-      {sessionPercent > 0 && (
-        <div
-          className={cn(
-            "absolute inset-y-0 bg-gradient-to-l from-cyan-400 to-cyan-600",
-            "shadow-[0_0_8px_rgba(6,182,212,0.5)] transition-all duration-500"
-          )}
-          style={{
-            right: `${priorPercent}%`,
-            width: `${sessionPercent}%`,
-          }}
-        />
-      )}
-
-      {/* Completion shimmer */}
-      {isComplete && (
-        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer" />
+    <div className="flex flex-col items-center gap-1 shrink-0 min-w-[130px]">
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground">פק״ע:</span>
+        <span className="font-mono text-sm text-primary font-semibold">{jobNumber}</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground">מוצר:</span>
+        <span
+          className="text-sm text-foreground/90 font-medium truncate max-w-[100px]"
+          title={jobItem.jobItemName}
+        >
+          {jobItem.jobItemName}
+        </span>
+      </div>
+      {jobItemDuration && (
+        <div className="flex items-center gap-1.5 text-muted-foreground/70">
+          <Timer className="h-3.5 w-3.5" />
+          <span className="font-mono text-xs tabular-nums">{jobItemDuration}</span>
+        </div>
       )}
     </div>
   );
 }
 
 /**
- * Progress cell component for displaying job item progress with dual bar
+ * Progress cell — totals label above bar, session contribution beside bar
  */
-function ProgressCell({ jobItem, totalGood, jobNumber }: { jobItem: CurrentJobItemInfo | null; totalGood: number; jobNumber: string }) {
+function ProgressCell({ jobItem }: { jobItem: CurrentJobItemInfo | null }) {
   if (!jobItem) {
-    // No job selected - simplified display
-    return (
-      <div className="flex items-center justify-center min-w-[280px]">
-        <span className="text-xs text-muted-foreground/50">לא נבחרה עבודה</span>
-      </div>
-    );
+    return null;
   }
 
-  const isComplete = jobItem.totalCompletedGood >= jobItem.plannedQuantity;
+  const totalGood = jobItem.totalCompletedGood;
+  const totalScrap = jobItem.totalCompletedScrap ?? 0;
+  const planned = jobItem.plannedQuantity;
+  const hasSessionContribution = jobItem.sessionGood > 0 || (jobItem.sessionScrap ?? 0) > 0;
 
   return (
-    <div className="flex items-center gap-3 min-w-[280px]">
-      {/* Job number + Job item name stacked */}
-      <div className="flex flex-col items-start gap-0.5 shrink-0 min-w-[80px]">
-        <div className="flex items-center gap-1">
-          <span className="text-[10px] text-muted-foreground">פק״ע:</span>
-          <span className="font-mono text-xs text-primary">{jobNumber}</span>
-        </div>
-        <span
-          className="text-xs text-muted-foreground truncate max-w-[80px]"
-          title={jobItem.jobItemName}
-        >
-          {jobItem.jobItemName}
-        </span>
-      </div>
-
-      {/* Divider */}
-      <div className="w-px h-8 bg-border shrink-0" />
-
-      {/* Progress section */}
-      <div className="flex flex-col gap-1 flex-1 min-w-[130px]">
-        {/* Text: total / planned with (+session) */}
-        <div className="flex items-center gap-1 justify-center">
-          <Package className="h-3.5 w-3.5 text-emerald-500" />
-          <span
-            className={cn(
-              "text-sm font-bold tabular-nums",
-              isComplete ? "text-emerald-400" : "text-foreground"
-            )}
-          >
-            {jobItem.totalCompletedGood}
-          </span>
-          <span className="text-muted-foreground text-xs">/</span>
-          <span className="text-xs text-muted-foreground tabular-nums">
-            {jobItem.plannedQuantity}
-          </span>
-          {jobItem.sessionGood > 0 && (
-            <span className="text-xs font-semibold text-cyan-400 tabular-nums">
-              (+{jobItem.sessionGood})
-            </span>
+    <div className="flex items-center gap-3 min-w-[260px]">
+      {/* Bar + totals label */}
+      <div className="flex flex-col gap-0.5 flex-1 min-w-[150px]">
+        {/* Totals above bar: good + scrap / required */}
+        <div className="flex items-center gap-1.5 justify-center text-sm tabular-nums" dir="ltr">
+          <span className="font-bold text-emerald-400">{totalGood.toLocaleString()}</span>
+          {totalScrap > 0 && (
+            <>
+              <span className="text-muted-foreground">+</span>
+              <span className="font-bold text-rose-400">{totalScrap.toLocaleString()}</span>
+            </>
           )}
+          <span className="text-muted-foreground/60">/</span>
+          <span className="text-muted-foreground">{planned.toLocaleString()}</span>
         </div>
 
-        {/* Dual progress bar */}
-        <DualProgressBar
-          totalCompleted={jobItem.totalCompletedGood}
-          sessionContribution={jobItem.sessionGood}
-          plannedQuantity={jobItem.plannedQuantity}
+        <JobProgressBar
+          plannedQuantity={planned}
+          totalGood={totalGood}
+          totalScrap={totalScrap}
+          sessionGood={jobItem.sessionGood}
+          sessionScrap={jobItem.sessionScrap ?? 0}
+          size="sm"
+          showOverlay={false}
         />
       </div>
+
+      {/* Session contribution — with "במשמרת זו" label */}
+      {hasSessionContribution && (
+        <div className="flex flex-col items-center gap-0.5 shrink-0 border-r border-border/50 pr-2.5">
+          <span className="text-[10px] text-muted-foreground/60">במשמרת זו</span>
+          {jobItem.sessionGood > 0 && (
+            <div className="flex items-center gap-1" dir="ltr">
+              <Package className="h-3.5 w-3.5 text-emerald-400" />
+              <span className="text-sm font-semibold text-emerald-400 tabular-nums">
+                +{jobItem.sessionGood.toLocaleString()}
+              </span>
+            </div>
+          )}
+          {(jobItem.sessionScrap ?? 0) > 0 && (
+            <div className="flex items-center gap-1" dir="ltr">
+              <PackageX className="h-3.5 w-3.5 text-rose-400" />
+              <span className="text-sm font-semibold text-rose-400 tabular-nums">
+                +{(jobItem.sessionScrap ?? 0).toLocaleString()}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -283,6 +283,14 @@ const SessionRow = memo(
       const start = new Date(session.startedAt).getTime();
       if (Number.isNaN(start)) return 0;
       return Math.max(0, Math.floor((now - start) / 1000));
+    }, [session, now]);
+    const jobItemDuration = useMemo(() => {
+      if (!session?.currentJobItem) return null;
+      return getJobItemDurationLabel(
+        session.jobItemTimerAccumulatedSeconds,
+        session.currentJobItemStartedAt,
+        now,
+      );
     }, [session, now]);
     const isIdle = useMemo(
       () => (session ? isSessionIdle(session.lastSeenAt, now) : false),
@@ -328,154 +336,122 @@ const SessionRow = memo(
       <div
         role="button"
         tabIndex={0}
-        className="group flex items-center gap-4 px-4 py-3 border-b border-border cursor-pointer transition-all duration-150 hover:bg-accent"
+        className="group flex items-center px-4 py-3 border-b border-border cursor-pointer transition-all duration-150 hover:bg-accent"
         aria-label={`תחנה פעילה עבור עבודה ${session.jobNumber}`}
         onClick={() => onNavigate(session.id)}
         onKeyDown={(event) => handleKeyOpen(session.id, event)}
       >
-        {/* Station + Status */}
-        <div className="flex-1 min-w-0">
-          <div className="mb-1">
+        {/* RIGHT GROUP: Station, Worker, Flags */}
+        <div className="flex items-center gap-3 shrink-0">
+          {/* Station + Status */}
+          <div className="flex flex-col items-center gap-1 min-w-[100px]">
             <span className="text-sm font-bold text-foreground">{session.stationName}</span>
+            <div
+              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-semibold"
+              style={{
+                backgroundColor: statusStyle.bg,
+                borderWidth: '1px',
+                borderColor: statusStyle.border,
+              }}
+            >
+              <span
+                className="w-1.5 h-1.5 rounded-full"
+                style={{ backgroundColor: statusStyle.dot }}
+              />
+              <span style={{ color: statusStyle.text }}>{statusLabel}</span>
+            </div>
           </div>
-          <div
-            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-semibold"
-            style={{
-              backgroundColor: statusStyle.bg,
-              borderWidth: '1px',
-              borderColor: statusStyle.border,
-            }}
-          >
-            <span
-              className="w-1.5 h-1.5 rounded-full"
-              style={{ backgroundColor: statusStyle.dot }}
-            />
-            <span style={{ color: statusStyle.text }}>{statusLabel}</span>
+
+          <div className="w-px h-10 bg-border" />
+
+          {/* Worker + Session Duration */}
+          <div className="flex flex-col items-center gap-0.5 min-w-[100px]">
+            <div className="flex items-center gap-1.5">
+              <User className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-sm text-foreground/80">{session.workerName}</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-muted-foreground">
+              <Timer className="h-3.5 w-3.5" />
+              <span className="font-mono text-sm tabular-nums">{duration}</span>
+            </div>
           </div>
+
+          <div className="w-px h-10 bg-border" />
+
+          {/* Flags */}
+          <TooltipProvider delayDuration={200}>
+            <div className="flex items-center justify-center gap-1.5 min-w-[40px] flex-wrap">
+              {hasMalfunctions && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="cursor-default shrink-0" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                      <AlertOctagon className="h-3.5 w-3.5 text-red-500" />
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">{session.malfunctionCount} דיווחי תקלה</TooltipContent>
+                </Tooltip>
+              )}
+              {isIdle && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="cursor-default shrink-0" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                      <CirclePause className="h-3.5 w-3.5 text-amber-500" />
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">נראה לאחרונה: {lastSeenFormatted}</TooltipContent>
+                </Tooltip>
+              )}
+              {flags?.highStoppage && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="cursor-default shrink-0" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                      <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">{SESSION_FLAG_LABELS.high_stoppage}</TooltipContent>
+                </Tooltip>
+              )}
+              {flags?.highSetup && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="cursor-default shrink-0" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                      <Settings className="h-3.5 w-3.5 text-blue-500" />
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">{SESSION_FLAG_LABELS.high_setup}</TooltipContent>
+                </Tooltip>
+              )}
+              {flags?.lowProduction && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="cursor-default shrink-0" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                      <TrendingDown className="h-3.5 w-3.5 text-amber-500" />
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">{SESSION_FLAG_LABELS.low_production}</TooltipContent>
+                </Tooltip>
+              )}
+              {!hasAnyFlags && <span className="text-muted-foreground/30">—</span>}
+            </div>
+          </TooltipProvider>
         </div>
 
-        {/* Worker + Duration */}
-        <div className="flex flex-col items-end gap-0.5 min-w-[100px]">
-          <div className="flex items-center gap-1.5">
-            <User className="h-3.5 w-3.5 text-muted-foreground" />
-            <span className="text-sm text-foreground/80">{session.workerName}</span>
-          </div>
-          <div className="flex items-center gap-1.5 text-muted-foreground">
-            <Clock className="h-3.5 w-3.5" />
-            <span className="font-mono text-sm tabular-nums">{duration}</span>
-          </div>
+        {/* Spacer pushes left group to the left */}
+        <div className="flex-1" />
+
+        {/* LEFT GROUP: Job info, Progress, Session contribution, Arrow */}
+        <div className="flex items-center gap-3 shrink-0">
+          {/* Job info */}
+          <JobInfoCell jobItem={session.currentJobItem} jobNumber={session.jobNumber} jobItemDuration={jobItemDuration} />
+
+          <div className="w-px h-10 bg-border" />
+
+          {/* Progress bar + session contribution */}
+          <ProgressCell jobItem={session.currentJobItem} />
+
+          {/* Navigation arrow */}
+          <ChevronLeft className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
         </div>
-
-        {/* Divider before flags */}
-        <div className="w-px h-8 bg-border" />
-
-        {/* Flags section */}
-        <TooltipProvider delayDuration={200}>
-          <div className="flex items-center justify-center gap-1.5 min-w-[80px] flex-wrap">
-            {hasMalfunctions && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span
-                    className="cursor-default shrink-0"
-                    onClick={(e) => e.stopPropagation()}
-                    onKeyDown={(e) => e.stopPropagation()}
-                  >
-                    <AlertOctagon className="h-3.5 w-3.5 text-red-500" />
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">
-                  {session.malfunctionCount} דיווחי תקלה
-                </TooltipContent>
-              </Tooltip>
-            )}
-            {isIdle && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span
-                    className="cursor-default shrink-0"
-                    onClick={(e) => e.stopPropagation()}
-                    onKeyDown={(e) => e.stopPropagation()}
-                  >
-                    <CirclePause className="h-3.5 w-3.5 text-amber-500" />
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">
-                  נראה לאחרונה: {lastSeenFormatted}
-                </TooltipContent>
-              </Tooltip>
-            )}
-            {flags?.highStoppage && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span
-                    className="cursor-default shrink-0"
-                    onClick={(e) => e.stopPropagation()}
-                    onKeyDown={(e) => e.stopPropagation()}
-                  >
-                    <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">
-                  {SESSION_FLAG_LABELS.high_stoppage}
-                </TooltipContent>
-              </Tooltip>
-            )}
-            {flags?.highSetup && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span
-                    className="cursor-default shrink-0"
-                    onClick={(e) => e.stopPropagation()}
-                    onKeyDown={(e) => e.stopPropagation()}
-                  >
-                    <Settings className="h-3.5 w-3.5 text-blue-500" />
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">
-                  {SESSION_FLAG_LABELS.high_setup}
-                </TooltipContent>
-              </Tooltip>
-            )}
-            {flags?.lowProduction && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span
-                    className="cursor-default shrink-0"
-                    onClick={(e) => e.stopPropagation()}
-                    onKeyDown={(e) => e.stopPropagation()}
-                  >
-                    <TrendingDown className="h-3.5 w-3.5 text-amber-500" />
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">
-                  {SESSION_FLAG_LABELS.low_production}
-                </TooltipContent>
-              </Tooltip>
-            )}
-            {!hasAnyFlags && <span className="text-muted-foreground/30">—</span>}
-          </div>
-        </TooltipProvider>
-
-        {/* Divider after flags */}
-        <div className="w-px h-8 bg-border" />
-
-        {/* Progress: job number | job item name | progress bar with dual colors */}
-        <ProgressCell jobItem={session.currentJobItem} totalGood={session.totalGood} jobNumber={session.jobNumber} />
-
-        {/* Scrap - only show if there's scrap, with link to reports */}
-        {session.totalScrap > 0 && (
-          <Link
-            href={`/admin/reports/scrap?sessionId=${session.id}`}
-            onClick={(e) => e.stopPropagation()}
-            className="flex items-center gap-1.5 hover:bg-red-500/10 px-1.5 py-0.5 rounded transition-colors shrink-0"
-          >
-            <Trash2 className="h-3.5 w-3.5 text-red-500" />
-            <span className="font-mono text-sm tabular-nums text-red-400">{session.totalScrap.toLocaleString()}</span>
-          </Link>
-        )}
-
-        {/* Navigation arrow */}
-        <ChevronLeft className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
       </div>
     );
   },
@@ -499,6 +475,14 @@ const MobileSessionCard = memo(
       const start = new Date(session.startedAt).getTime();
       if (Number.isNaN(start)) return 0;
       return Math.max(0, Math.floor((now - start) / 1000));
+    }, [session, now]);
+    const jobItemDuration = useMemo(() => {
+      if (!session?.currentJobItem) return null;
+      return getJobItemDurationLabel(
+        session.jobItemTimerAccumulatedSeconds,
+        session.currentJobItemStartedAt,
+        now,
+      );
     }, [session, now]);
     const isIdle = useMemo(
       () => (session ? isSessionIdle(session.lastSeenAt, now) : false),
@@ -531,6 +515,9 @@ const MobileSessionCard = memo(
 
     const hasMalfunctions = session.malfunctionCount > 0;
 
+    const hasPerformanceFlags = flags && hasAnyFlag(flags);
+    const hasAnyFlags = hasMalfunctions || isIdle || hasPerformanceFlags;
+
     return (
       <div
         role="button"
@@ -545,198 +532,164 @@ const MobileSessionCard = memo(
           }
         }}
       >
-        {/* Top row: Station name + Worker section */}
-        <div className="flex items-start justify-between mb-2">
-          {/* Station */}
-          <div className="flex flex-col gap-1">
+        {/* TOP: Station, Worker, Status, Flags */}
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-3">
             <span className="text-base font-bold text-foreground">{session.stationName}</span>
+            <div
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold"
+              style={{
+                backgroundColor: statusStyle.bg,
+                borderWidth: '1px',
+                borderColor: statusStyle.border,
+              }}
+            >
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: statusStyle.dot }} />
+              <span style={{ color: statusStyle.text }}>{statusLabel}</span>
+            </div>
           </div>
-          {/* Worker + Duration */}
           <div className="flex flex-col items-end gap-0.5">
             <div className="flex items-center gap-1.5">
               <User className="h-3.5 w-3.5 text-muted-foreground" />
               <span className="text-sm text-foreground/80">{session.workerName}</span>
             </div>
             <div className="flex items-center gap-1.5 text-muted-foreground">
-              <Clock className="h-3.5 w-3.5" />
+              <Timer className="h-3.5 w-3.5" />
               <span className="font-mono text-sm tabular-nums">{duration}</span>
             </div>
           </div>
         </div>
 
-        {/* Second row: Status badge + Flags */}
-        <div className="flex items-center justify-between mb-3">
-          <div
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold"
-            style={{
-              backgroundColor: statusStyle.bg,
-              borderWidth: '1px',
-              borderColor: statusStyle.border,
-            }}
-          >
-            <span
-              className="w-2 h-2 rounded-full"
-              style={{ backgroundColor: statusStyle.dot }}
-            />
-            <span style={{ color: statusStyle.text }}>{statusLabel}</span>
-          </div>
-
-          {/* Flags */}
-          <TooltipProvider delayDuration={200}>
-            <div className="flex items-center gap-2">
+        {/* Flags row — only when flags exist */}
+        {hasAnyFlags && (
+          <div className="flex items-center gap-2 mb-2">
+            <TooltipProvider delayDuration={200}>
               {hasMalfunctions && (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <span
-                      className="cursor-default"
-                      onClick={(e) => e.stopPropagation()}
-                      onKeyDown={(e) => e.stopPropagation()}
-                    >
+                    <span className="cursor-default" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
                       <AlertOctagon className="h-4 w-4 text-red-500" />
                     </span>
                   </TooltipTrigger>
-                  <TooltipContent side="top" className="text-xs">
-                    {session.malfunctionCount} דיווחי תקלה
-                  </TooltipContent>
+                  <TooltipContent side="top" className="text-xs">{session.malfunctionCount} דיווחי תקלה</TooltipContent>
                 </Tooltip>
               )}
               {isIdle && (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <span
-                      className="cursor-default"
-                      onClick={(e) => e.stopPropagation()}
-                      onKeyDown={(e) => e.stopPropagation()}
-                    >
+                    <span className="cursor-default" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
                       <CirclePause className="h-4 w-4 text-amber-500" />
                     </span>
                   </TooltipTrigger>
-                  <TooltipContent side="top" className="text-xs">
-                    נראה לאחרונה: {lastSeenFormatted}
-                  </TooltipContent>
+                  <TooltipContent side="top" className="text-xs">נראה לאחרונה: {lastSeenFormatted}</TooltipContent>
                 </Tooltip>
               )}
               {flags?.highStoppage && (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <span
-                      className="cursor-default"
-                      onClick={(e) => e.stopPropagation()}
-                      onKeyDown={(e) => e.stopPropagation()}
-                    >
+                    <span className="cursor-default" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
                       <AlertTriangle className="h-4 w-4 text-amber-500" />
                     </span>
                   </TooltipTrigger>
-                  <TooltipContent side="top" className="text-xs">
-                    {SESSION_FLAG_LABELS.high_stoppage}
-                  </TooltipContent>
+                  <TooltipContent side="top" className="text-xs">{SESSION_FLAG_LABELS.high_stoppage}</TooltipContent>
                 </Tooltip>
               )}
               {flags?.highSetup && (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <span
-                      className="cursor-default"
-                      onClick={(e) => e.stopPropagation()}
-                      onKeyDown={(e) => e.stopPropagation()}
-                    >
+                    <span className="cursor-default" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
                       <Settings className="h-4 w-4 text-blue-500" />
                     </span>
                   </TooltipTrigger>
-                  <TooltipContent side="top" className="text-xs">
-                    {SESSION_FLAG_LABELS.high_setup}
-                  </TooltipContent>
+                  <TooltipContent side="top" className="text-xs">{SESSION_FLAG_LABELS.high_setup}</TooltipContent>
                 </Tooltip>
               )}
               {flags?.lowProduction && (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <span
-                      className="cursor-default"
-                      onClick={(e) => e.stopPropagation()}
-                      onKeyDown={(e) => e.stopPropagation()}
-                    >
+                    <span className="cursor-default" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
                       <TrendingDown className="h-4 w-4 text-amber-500" />
                     </span>
                   </TooltipTrigger>
-                  <TooltipContent side="top" className="text-xs">
-                    {SESSION_FLAG_LABELS.low_production}
-                  </TooltipContent>
+                  <TooltipContent side="top" className="text-xs">{SESSION_FLAG_LABELS.low_production}</TooltipContent>
                 </Tooltip>
               )}
-            </div>
-          </TooltipProvider>
-        </div>
+            </TooltipProvider>
+          </div>
+        )}
 
-        {/* Bottom row: Job info + Progress */}
+        {/* BOTTOM: Job info + Progress */}
         <div className="flex flex-col gap-2 pt-2 border-t border-border/50">
-          {/* Job number + Scrap - only show when job is selected */}
-          {session.currentJobItem && (
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1">
-                <span className="text-[10px] text-muted-foreground">פק״ע:</span>
-                <span className="font-mono text-xs text-primary font-medium">{session.jobNumber}</span>
-              </div>
-
-              {/* Scrap - only show if there's scrap, with link to reports */}
-              {session.totalScrap > 0 && (
-                <Link
-                  href={`/admin/reports/scrap?sessionId=${session.id}`}
-                  onClick={(e) => e.stopPropagation()}
-                  className="flex items-center gap-1.5 hover:bg-red-500/10 px-2 py-1 rounded transition-colors"
-                >
-                  <Trash2 className="h-4 w-4 text-red-500" />
-                  <span className="font-mono text-sm tabular-nums text-red-400 font-medium">{session.totalScrap.toLocaleString()}</span>
-                </Link>
-              )}
-            </div>
-          )}
-
-          {/* Progress bar: dual color design matching desktop */}
           {session.currentJobItem ? (
-            <div className="flex flex-col gap-1.5 w-full">
-              {/* Job item name */}
-              <span
-                className="text-xs text-muted-foreground truncate"
-                title={session.currentJobItem.jobItemName}
-              >
-                {session.currentJobItem.jobItemName}
-              </span>
-
-              {/* Text: total / planned with (+session) */}
-              <div className="flex items-center gap-1 justify-center">
-                <Package className="h-4 w-4 text-emerald-500" />
-                <span
-                  className={cn(
-                    "text-base font-bold tabular-nums",
-                    session.currentJobItem.totalCompletedGood >= session.currentJobItem.plannedQuantity
-                      ? "text-emerald-400"
-                      : "text-foreground"
-                  )}
-                >
-                  {session.currentJobItem.totalCompletedGood}
-                </span>
-                <span className="text-muted-foreground text-sm">/</span>
-                <span className="text-sm text-muted-foreground tabular-nums">
-                  {session.currentJobItem.plannedQuantity}
-                </span>
-                {session.currentJobItem.sessionGood > 0 && (
-                  <span className="text-sm font-semibold text-cyan-400 tabular-nums">
-                    (+{session.currentJobItem.sessionGood})
-                  </span>
+            <>
+              {/* Job info row */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-muted-foreground">פק״ע:</span>
+                    <span className="font-mono text-sm text-primary font-semibold">{session.jobNumber}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-muted-foreground">מוצר:</span>
+                    <span className="text-sm text-foreground/90 font-medium truncate max-w-[120px]" title={session.currentJobItem.jobItemName}>
+                      {session.currentJobItem.jobItemName}
+                    </span>
+                  </div>
+                </div>
+                {jobItemDuration && (
+                  <div className="flex items-center gap-1.5 text-muted-foreground/70">
+                    <Timer className="h-3.5 w-3.5" />
+                    <span className="font-mono text-xs tabular-nums">{jobItemDuration}</span>
+                  </div>
                 )}
               </div>
 
-              {/* Dual progress bar */}
-              <DualProgressBar
-                totalCompleted={session.currentJobItem.totalCompletedGood}
-                sessionContribution={session.currentJobItem.sessionGood}
-                plannedQuantity={session.currentJobItem.plannedQuantity}
-              />
-            </div>
+              {/* Progress + session contribution */}
+              <div className="flex items-center gap-3">
+                <div className="flex flex-col gap-0.5 flex-1">
+                  <div className="flex items-center gap-1.5 justify-center text-sm tabular-nums" dir="ltr">
+                    <span className="font-bold text-emerald-400">{session.currentJobItem.totalCompletedGood.toLocaleString()}</span>
+                    {(session.currentJobItem.totalCompletedScrap ?? 0) > 0 && (
+                      <>
+                        <span className="text-muted-foreground">+</span>
+                        <span className="font-bold text-rose-400">{(session.currentJobItem.totalCompletedScrap ?? 0).toLocaleString()}</span>
+                      </>
+                    )}
+                    <span className="text-muted-foreground/60">/</span>
+                    <span className="text-muted-foreground">{session.currentJobItem.plannedQuantity.toLocaleString()}</span>
+                  </div>
+                  <JobProgressBar
+                    plannedQuantity={session.currentJobItem.plannedQuantity}
+                    totalGood={session.currentJobItem.totalCompletedGood}
+                    totalScrap={session.currentJobItem.totalCompletedScrap ?? 0}
+                    sessionGood={session.currentJobItem.sessionGood}
+                    sessionScrap={session.currentJobItem.sessionScrap ?? 0}
+                    size="sm"
+                    showOverlay={false}
+                  />
+                </div>
+                {(session.currentJobItem.sessionGood > 0 || (session.currentJobItem.sessionScrap ?? 0) > 0) && (
+                  <div className="flex flex-col items-center gap-0.5 shrink-0 border-r border-border/50 pr-2.5">
+                    <span className="text-[10px] text-muted-foreground/60">במשמרת זו</span>
+                    {session.currentJobItem.sessionGood > 0 && (
+                      <div className="flex items-center gap-1" dir="ltr">
+                        <Package className="h-3.5 w-3.5 text-emerald-400" />
+                        <span className="text-sm font-semibold text-emerald-400 tabular-nums">+{session.currentJobItem.sessionGood.toLocaleString()}</span>
+                      </div>
+                    )}
+                    {(session.currentJobItem.sessionScrap ?? 0) > 0 && (
+                      <div className="flex items-center gap-1" dir="ltr">
+                        <PackageX className="h-3.5 w-3.5 text-rose-400" />
+                        <span className="text-sm font-semibold text-rose-400 tabular-nums">+{(session.currentJobItem.sessionScrap ?? 0).toLocaleString()}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </>
           ) : (
             <div className="flex items-center justify-center py-2">
-              <span className="text-xs text-muted-foreground/50">לא נבחרה עבודה</span>
+              <span className="text-sm text-muted-foreground/50">לא נבחרה עבודה</span>
             </div>
           )}
         </div>

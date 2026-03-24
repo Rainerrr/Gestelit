@@ -179,7 +179,7 @@ describe("POST /api/status-events/end-production", () => {
 
       // Verify WIP was updated
       const balance = await TestFactory.getWipBalance(jobItem.id, steps[0].id);
-      expect(balance?.good_available).toBe(50);
+      expect(balance?.good_reported).toBe(50);
     });
 
     it("should update WIP balances for multi-station pipeline", async () => {
@@ -218,7 +218,7 @@ describe("POST /api/status-events/end-production", () => {
         testWorker1.worker_code,
       );
 
-      // Worker 2 at station 2: consume 30
+      // Worker 2 at station 2: report 30 independently
       const { session: s2, productionEvent: p2 } = await TestFactory.createProductionSession(
         testWorker2.id,
         testStation2.id,
@@ -243,8 +243,8 @@ describe("POST /api/status-events/end-production", () => {
       const balance1 = await TestFactory.getWipBalance(jobItem.id, steps[0].id);
       const balance2 = await TestFactory.getWipBalance(jobItem.id, steps[1].id);
 
-      expect(balance1?.good_available).toBe(70); // 100 - 30
-      expect(balance2?.good_available).toBe(30);
+      expect(balance1?.good_reported).toBe(100); // Independent: station 1 reported 100
+      expect(balance2?.good_reported).toBe(30);  // Independent: station 2 reported 30
 
       // Cleanup extra station
       await TestCleanup.cleanupStations([testStation2.id]);

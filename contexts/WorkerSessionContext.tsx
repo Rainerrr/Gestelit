@@ -26,8 +26,8 @@ export type ActiveJobItemContext = {
   plannedQuantity: number;
   /** Total completed good (all sessions combined) */
   completedGood?: number;
-  /** @deprecated Use jobItemStepId */
-  jobItemStationId?: string;
+  /** Total completed scrap (all sessions combined) */
+  completedScrap?: number;
   jobItemStepId: string;
 };
 
@@ -58,6 +58,10 @@ type WorkerSessionState = {
     scrap: number;
     lastReportedAt?: string;
   };
+  jobItemTimer: {
+    accumulatedSeconds: number;
+    segmentStart: string | null;
+  };
 };
 
 type WorkerSessionAction =
@@ -78,7 +82,9 @@ type WorkerSessionAction =
   | { type: "setActiveJobItem"; payload?: ActiveJobItemContext | null }
   | { type: "setCurrentStatusEventId"; payload?: string | null }
   | { type: "setProductionTotals"; payload: Partial<WorkerSessionState["productionTotals"]> }
-  | { type: "resetProductionTotals" };
+  | { type: "resetProductionTotals" }
+  | { type: "setJobItemTimer"; payload: { accumulatedSeconds: number; segmentStart: string | null } }
+  | { type: "resetJobItemTimer" };
 
 const WorkerSessionContext = createContext<
   | (WorkerSessionState & {
@@ -102,6 +108,8 @@ const WorkerSessionContext = createContext<
       setCurrentStatusEventId: (eventId?: string | null) => void;
       updateProductionTotals: (totals: Partial<WorkerSessionState["productionTotals"]>) => void;
       resetProductionTotals: () => void;
+      setJobItemTimer: (accumulatedSeconds: number, segmentStart: string | null) => void;
+      resetJobItemTimer: () => void;
     })
   | undefined
 >(undefined);
@@ -125,6 +133,10 @@ const initialState: WorkerSessionState = {
   productionTotals: {
     good: 0,
     scrap: 0,
+  },
+  jobItemTimer: {
+    accumulatedSeconds: 0,
+    segmentStart: null,
   },
 };
 
@@ -171,7 +183,7 @@ function reducer(
         pendingStation: action.payload ?? null,
       };
     case "hydrateFromSnapshot": {
-      const { session, station, job, sessionTotals } = action.payload;
+      const { session, station, job, sessionTotals, currentJobItemStartedAt, jobItemAccumulatedSeconds, activeJobItem: recoveredJobItem } = action.payload;
       return {
         ...state,
         station: station ?? state.station,
@@ -189,6 +201,12 @@ function reducer(
           startCompleted: true,
         },
         pendingRecovery: null,
+        // Restore active job item from recovery data (fixes desync on grace period resume)
+        activeJobItem: recoveredJobItem ?? null,
+        // Seed timer state on recovery with accumulated seconds from DB
+        jobItemTimer: currentJobItemStartedAt && session.job_item_id
+          ? { accumulatedSeconds: jobItemAccumulatedSeconds ?? 0, segmentStart: currentJobItemStartedAt }
+          : { accumulatedSeconds: 0, segmentStart: null },
       };
     }
     case "reset":
@@ -207,6 +225,16 @@ function reducer(
       return {
         ...state,
         productionTotals: { good: 0, scrap: 0 },
+      };
+    case "setJobItemTimer":
+      return {
+        ...state,
+        jobItemTimer: action.payload,
+      };
+    case "resetJobItemTimer":
+      return {
+        ...state,
+        jobItemTimer: { accumulatedSeconds: 0, segmentStart: null },
       };
     default:
       return state;
@@ -298,6 +326,15 @@ export function WorkerSessionProvider({
     () => dispatch({ type: "resetProductionTotals" }),
     [],
   );
+  const setJobItemTimer = useCallback(
+    (accumulatedSeconds: number, segmentStart: string | null) =>
+      dispatch({ type: "setJobItemTimer", payload: { accumulatedSeconds, segmentStart } }),
+    [],
+  );
+  const resetJobItemTimer = useCallback(
+    () => dispatch({ type: "resetJobItemTimer" }),
+    [],
+  );
 
   const hasActiveSession = Boolean(state.sessionId);
 
@@ -323,6 +360,8 @@ export function WorkerSessionProvider({
       setCurrentStatusEventId,
       updateProductionTotals,
       resetProductionTotals,
+      setJobItemTimer,
+      resetJobItemTimer,
     }),
     [
       state,
@@ -344,6 +383,8 @@ export function WorkerSessionProvider({
       setCurrentStatusEventId,
       updateProductionTotals,
       resetProductionTotals,
+      setJobItemTimer,
+      resetJobItemTimer,
     ],
   );
 

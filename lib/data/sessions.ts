@@ -207,111 +207,105 @@ export async function completeSession(
 
 /**
  * Bind a job item to an existing session.
- * Used when worker enters production and selects a job + job item.
- *
- * Updates the session with:
- * - job_id: The selected job
- * - job_item_id: The specific job item to work on
- * - job_item_step_id: The job_item_stations row linking the item to this station
- *
- * Also updates the job-related snapshot fields for historical records.
+ * Uses bind_job_item_atomic RPC for atomic validation and update.
+ * Sets current_job_item_started_at for timer tracking.
  */
 export async function bindJobItemToSession(
   sessionId: string,
   jobId: string,
   jobItemId: string,
-  jobItemStationId: string,
+  jobItemStepId: string,
 ): Promise<Session> {
   const supabase = createServiceSupabase();
 
-  // Verify job item exists and belongs to this job
-  const { data: jobItem, error: jobItemError } = await supabase
-    .from("job_items")
-    .select("id, job_id, is_active")
-    .eq("id", jobItemId)
-    .maybeSingle();
-
-  if (jobItemError || !jobItem) {
-    throw new Error(`JOB_ITEM_NOT_FOUND: ${jobItemError?.message ?? "Job item does not exist"}`);
-  }
-
-  if (jobItem.job_id !== jobId) {
-    throw new Error("JOB_ITEM_JOB_MISMATCH: Job item does not belong to the specified job");
-  }
-
-  if (!jobItem.is_active) {
-    throw new Error("JOB_ITEM_INACTIVE: Job item is not active");
-  }
-
-  // Verify job_item_station exists and links the job_item to a station
-  const { data: jis, error: jisError } = await supabase
-    .from("job_item_steps")
-    .select("id, job_item_id")
-    .eq("id", jobItemStationId)
-    .maybeSingle();
-
-  if (jisError || !jis) {
-    throw new Error(`JOB_ITEM_STATION_NOT_FOUND: ${jisError?.message ?? "Job item station does not exist"}`);
-  }
-
-  if (jis.job_item_id !== jobItemId) {
-    throw new Error("JOB_ITEM_STATION_MISMATCH: Job item station does not match job item");
-  }
-
-  // Update the session
-  const { data, error } = await supabase
-    .from("sessions")
-    .update({
-      job_id: jobId,
-      job_item_id: jobItemId,
-      job_item_step_id: jobItemStationId,
-    })
-    .eq("id", sessionId)
-    .eq("status", "active")
-    .select("*")
-    .single();
+  const { data, error } = await supabase.rpc("bind_job_item_atomic", {
+    p_session_id: sessionId,
+    p_job_id: jobId,
+    p_job_item_id: jobItemId,
+    p_job_item_step_id: jobItemStepId,
+  });
 
   if (error) {
-    throw new Error(`Failed to bind job item to session: ${error.message}`);
+    const msg = error.message;
+    if (msg.includes("JOB_ITEM_NOT_FOUND")) throw new Error("JOB_ITEM_NOT_FOUND");
+    if (msg.includes("JOB_ITEM_JOB_MISMATCH")) throw new Error("JOB_ITEM_JOB_MISMATCH");
+    if (msg.includes("JOB_ITEM_INACTIVE")) throw new Error("JOB_ITEM_INACTIVE");
+    if (msg.includes("JOB_ITEM_STEP_NOT_FOUND")) throw new Error("JOB_ITEM_STATION_NOT_FOUND");
+    if (msg.includes("JOB_ITEM_STEP_MISMATCH")) throw new Error("JOB_ITEM_STATION_MISMATCH");
+    if (msg.includes("SESSION_NOT_FOUND")) throw new Error("SESSION_NOT_FOUND");
+    throw new Error(`Failed to bind job item to session: ${msg}`);
   }
 
   return data as Session;
 }
 
 /**
- * Get the WIP accounting for a session (pulled vs originated for both good and scrap).
- * Returns null for legacy sessions without job_item_id.
+ * Unbind the current job item from a session.
+ * Clears job_id, job_item_id, job_item_step_id, and current_job_item_started_at.
  */
-export async function getSessionWipAccounting(
+export async function unbindJobItemFromSession(
   sessionId: string,
-): Promise<{
-  pulled_good: number;
-  originated_good: number;
-  pulled_scrap: number;
-  originated_scrap: number;
-} | null> {
+): Promise<Session> {
   const supabase = createServiceSupabase();
 
-  const { data, error } = await supabase
-    .from("v_session_wip_accounting")
-    .select("pulled_good, originated_good, pulled_scrap, originated_scrap")
-    .eq("session_id", sessionId)
-    .maybeSingle();
+  const { data, error } = await supabase.rpc("unbind_job_item_atomic", {
+    p_session_id: sessionId,
+  });
 
   if (error) {
-    throw new Error(`Failed to fetch session WIP accounting: ${error.message}`);
+    throw new Error(`Failed to unbind job item: ${error.message}`);
   }
 
-  if (!data) {
-    return null; // Legacy session or session not found
+  return data as Session;
+}
+
+/**
+ * Get accumulated time (seconds) for a job item within a session.
+ * Sums all status_event durations where job_item_id matches.
+ * Returns accumulated seconds + current segment start for live timer.
+ */
+export async function getJobItemAccumulatedTime(
+  sessionId: string,
+  jobItemId: string,
+): Promise<{ accumulatedSeconds: number; segmentStart: string | null }> {
+  const supabase = createServiceSupabase();
+
+  // Get accumulated time from completed status events
+  const { data: events, error: eventsError } = await supabase
+    .from("status_events")
+    .select("started_at, ended_at")
+    .eq("session_id", sessionId)
+    .eq("job_item_id", jobItemId)
+    .not("ended_at", "is", null);
+
+  if (eventsError) {
+    throw new Error(`Failed to fetch job item time: ${eventsError.message}`);
   }
 
-  return {
-    pulled_good: data.pulled_good as number,
-    originated_good: data.originated_good as number,
-    pulled_scrap: data.pulled_scrap as number,
-    originated_scrap: data.originated_scrap as number,
-  };
+  let accumulatedSeconds = 0;
+  for (const event of events ?? []) {
+    const start = new Date(event.started_at).getTime();
+    const end = new Date(event.ended_at).getTime();
+    accumulatedSeconds += Math.max(0, (end - start) / 1000);
+  }
+
+  // Get current segment start from session
+  const { data: session, error: sessionError } = await supabase
+    .from("sessions")
+    .select("current_job_item_started_at, job_item_id")
+    .eq("id", sessionId)
+    .single();
+
+  if (sessionError) {
+    throw new Error(`Failed to fetch session: ${sessionError.message}`);
+  }
+
+  // Only return segment start if this job item is currently active
+  const segmentStart = session.job_item_id === jobItemId
+    ? session.current_job_item_started_at
+    : null;
+
+  return { accumulatedSeconds, segmentStart };
 }
 
 export async function markSessionStarted(
@@ -505,6 +499,7 @@ type WorkerActiveSessionRow = {
   worker_id: string;
   station_id: string;
   job_id: string;
+  job_item_id: string | null;
   status: SessionStatus;
   current_status_id: StatusEventState | null;
   started_at: string;
@@ -512,8 +507,11 @@ type WorkerActiveSessionRow = {
   // total_good/total_scrap removed - derive from status_events
   last_seen_at: string | null;
   forced_closed_at: string | null;
+  current_job_item_started_at: string | null;
+  job_item_step_id: string | null;
   stations: Station | null;
   jobs: Job | null;
+  job_items: { id: string; name: string; planned_quantity: number } | null;
 };
 
 export type WorkerActiveSessionDetails = {
@@ -530,6 +528,20 @@ export type WorkerGraceSessionDetails = WorkerActiveSessionDetails & {
     scrap: number;
     jobItemId: string | null;
   };
+  /** When the current job item was bound (for timer calculation) */
+  currentJobItemStartedAt: string | null;
+  /** Pre-computed accumulated seconds for current job item timer */
+  jobItemAccumulatedSeconds: number;
+  /** Active job item context for recovery (null if no job item bound) */
+  activeJobItem: {
+    id: string;
+    jobId: string;
+    name: string;
+    plannedQuantity: number;
+    jobItemStepId: string;
+    completedGood: number;
+    completedScrap: number;
+  } | null;
 };
 
 const workerSessionSelect = `
@@ -537,14 +549,18 @@ const workerSessionSelect = `
   worker_id,
   station_id,
   job_id,
+  job_item_id,
+  job_item_step_id,
   status,
   current_status_id,
   started_at,
   ended_at,
   last_seen_at,
   forced_closed_at,
+  current_job_item_started_at,
   stations:stations(*),
-  jobs:jobs(*)
+  jobs:jobs(*),
+  job_items:job_items(id, name, planned_quantity)
 `;
 
 function mapSessionRow(row: WorkerActiveSessionRow): WorkerActiveSessionDetails {
@@ -629,10 +645,67 @@ export async function getGracefulActiveSession(
     console.warn("[getGracefulActiveSession] Failed to fetch session totals:", totalsError);
   }
 
+  // Compute accumulated job item timer from completed status events
+  let jobItemAccumulatedSeconds = 0;
+  if (row.job_item_id) {
+    try {
+      const { data: timerEvents } = await supabase
+        .from("status_events")
+        .select("started_at, ended_at")
+        .eq("session_id", row.id)
+        .eq("job_item_id", row.job_item_id)
+        .not("ended_at", "is", null);
+
+      for (const event of timerEvents ?? []) {
+        const start = new Date(event.started_at).getTime();
+        const end = new Date(event.ended_at).getTime();
+        jobItemAccumulatedSeconds += Math.max(0, (end - start) / 1000);
+      }
+    } catch (timerError) {
+      console.warn("[getGracefulActiveSession] Failed to fetch job item timer:", timerError);
+    }
+  }
+
+  // Build activeJobItem context from joined data if job item is bound
+  let activeJobItem: WorkerGraceSessionDetails["activeJobItem"] = null;
+  if (row.job_item_id && row.job_items && row.job_item_step_id) {
+    // Fetch per-station progress from status_events (same source as getJobItemsAtStation)
+    // NOT from job_item_progress which is the terminal-station lifetime total across ALL stations
+    let completedGood = 0;
+    let completedScrap = 0;
+    try {
+      const { data: stepTotals } = await supabase
+        .from("status_events")
+        .select("quantity_good, quantity_scrap")
+        .eq("job_item_step_id", row.job_item_step_id)
+        .or("quantity_good.gt.0,quantity_scrap.gt.0");
+
+      for (const event of stepTotals ?? []) {
+        completedGood += event.quantity_good ?? 0;
+        completedScrap += event.quantity_scrap ?? 0;
+      }
+    } catch (progressError) {
+      console.warn("[getGracefulActiveSession] Failed to fetch step totals:", progressError);
+    }
+
+    activeJobItem = {
+      id: row.job_items.id,
+      jobId: row.job_id,
+      name: row.job_items.name,
+      plannedQuantity: row.job_items.planned_quantity,
+      jobItemStepId: row.job_item_step_id,
+      completedGood,
+      completedScrap,
+    };
+  }
+
   return {
     ...details,
     graceExpiresAt,
     sessionTotals,
+    currentJobItemStartedAt: row.current_job_item_started_at ?? null,
+    jobItemAccumulatedSeconds: Math.floor(jobItemAccumulatedSeconds),
+    activeJobItem,
   };
 }
 
@@ -736,7 +809,8 @@ export type PipelineNeighborStation = {
   code: string;
   position: number;
   isTerminal: boolean;
-  wipAvailable: number;
+  goodReported: number;
+  scrapReported: number;
   occupiedBy: string | null;
 };
 
@@ -755,10 +829,6 @@ export type SessionPipelineContext = {
   prevStation: PipelineNeighborStation | null;
   /** Next station in pipeline (null if terminal) */
   nextStation: PipelineNeighborStation | null;
-  /** WIP available from upstream */
-  upstreamWip: number;
-  /** Our output waiting for downstream consumption */
-  waitingOutput: number;
   /** Job item details */
   jobItem: {
     id: string;
@@ -808,8 +878,6 @@ export async function getSessionPipelineContext(
       isTerminal: true,
       prevStation: null,
       nextStation: null,
-      upstreamWip: 0,
-      waitingOutput: 0,
       jobItem: null,
     };
   }
@@ -853,7 +921,7 @@ export async function getSessionPipelineContext(
     // Get our WIP balance (waiting output)
     const { data: wipBalance } = await supabase
       .from("wip_balances")
-      .select("good_available")
+      .select("good_reported, scrap_reported")
       .eq("job_item_step_id", session.job_item_step_id)
       .maybeSingle();
 
@@ -865,8 +933,6 @@ export async function getSessionPipelineContext(
       isTerminal: true,
       prevStation: null,
       nextStation: null,
-      upstreamWip: 0,
-      waitingOutput: wipBalance?.good_available ?? 0,
       jobItem: {
         id: jobItem.id,
         name: jobItem.name,
@@ -895,17 +961,19 @@ export async function getSessionPipelineContext(
   // Fetch all WIP balances for this job item
   const { data: wipBalances, error: wipError } = await supabase
     .from("wip_balances")
-    .select("job_item_step_id, good_available")
+    .select("job_item_step_id, good_reported, scrap_reported")
     .eq("job_item_id", session.job_item_id);
 
   if (wipError) {
     throw new Error(`Failed to fetch WIP balances: ${wipError.message}`);
   }
 
-  // Create a map of station ID -> WIP balance
+  // Create maps of step ID -> good_reported / scrap_reported
   const wipMap = new Map<string, number>();
+  const scrapMap = new Map<string, number>();
   for (const wip of wipBalances ?? []) {
-    wipMap.set(wip.job_item_step_id, wip.good_available);
+    wipMap.set(wip.job_item_step_id, wip.good_reported ?? 0);
+    scrapMap.set(wip.job_item_step_id, wip.scrap_reported ?? 0);
   }
 
   // Find active workers at stations
@@ -933,42 +1001,37 @@ export async function getSessionPipelineContext(
   // Find previous and next stations
   let prevStation: PipelineNeighborStation | null = null;
   let nextStation: PipelineNeighborStation | null = null;
-  let upstreamWip = 0;
-  let waitingOutput = 0;
 
   for (const jis of allStations ?? []) {
     // Supabase single-relation join returns object, not array
     const station = jis.stations as unknown as { id: string; name: string; code: string } | null;
     if (!station) continue;
 
-    const wipAvailable = wipMap.get(jis.id) ?? 0;
+    const goodReported = wipMap.get(jis.id) ?? 0;
+    const scrapReported = scrapMap.get(jis.id) ?? 0;
 
     if (jis.position === currentPosition - 1) {
-      // Previous station
       prevStation = {
         id: station.id,
         name: station.name,
         code: station.code,
         position: jis.position,
         isTerminal: jis.is_terminal,
-        wipAvailable,
+        goodReported,
+        scrapReported,
         occupiedBy: occupancyMap.get(station.id) ?? null,
       };
-      upstreamWip = wipAvailable;
     } else if (jis.position === currentPosition + 1) {
-      // Next station
       nextStation = {
         id: station.id,
         name: station.name,
         code: station.code,
         position: jis.position,
         isTerminal: jis.is_terminal,
-        wipAvailable,
+        goodReported,
+        scrapReported,
         occupiedBy: occupancyMap.get(station.id) ?? null,
       };
-    } else if (jis.id === session.job_item_step_id) {
-      // Current station - our waiting output is our WIP balance
-      waitingOutput = wipAvailable;
     }
   }
 
@@ -980,8 +1043,6 @@ export async function getSessionPipelineContext(
     isTerminal,
     prevStation,
     nextStation,
-    upstreamWip,
-    waitingOutput,
     jobItem: {
       id: jobItem.id,
       name: jobItem.name,

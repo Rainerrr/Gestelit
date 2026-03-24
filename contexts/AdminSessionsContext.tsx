@@ -80,7 +80,9 @@ const sessionChanged = (a: ActiveSession, b: ActiveSession): boolean =>
   a.jobNumber !== b.jobNumber ||
   a.stationName !== b.stationName ||
   a.workerName !== b.workerName ||
-  a.lastEventNote !== b.lastEventNote;
+  a.lastEventNote !== b.lastEventNote ||
+  a.jobItemTimerAccumulatedSeconds !== b.jobItemTimerAccumulatedSeconds ||
+  a.currentJobItemStartedAt !== b.currentJobItemStartedAt;
 
 const mergeSession = (
   current: ActiveSession | undefined,
@@ -402,6 +404,10 @@ export function AdminSessionsProvider({ children }: { children: ReactNode }) {
   const retryRef = useRef(0);
   const backoffTimeoutRef = useRef<number | null>(null);
   const pollIntervalRef = useRef<number | null>(null);
+  const reconnectRef = useRef<(() => void) | null>(null);
+  // Track whether we've received at least one successful initial message.
+  // Suppress "disconnected" flash until the stream has been established at least once.
+  const hasConnectedRef = useRef(false);
 
   const stopPolling = useCallback(() => {
     if (pollIntervalRef.current) {
@@ -430,6 +436,7 @@ export function AdminSessionsProvider({ children }: { children: ReactNode }) {
     try {
       const payload = JSON.parse(event.data) as StreamMessage;
       if (payload.type === "initial") {
+        hasConnectedRef.current = true;
         applySessions(payload.sessions ?? []);
         return;
       }
@@ -444,7 +451,15 @@ export function AdminSessionsProvider({ children }: { children: ReactNode }) {
         return;
       }
       if (payload.type === "error") {
-        console.error("[admin-dashboard] SSE error event", payload.message);
+        console.warn("[admin-dashboard] SSE channel event:", payload.message);
+        if (payload.message === "CHANNEL_CLOSED") {
+          // Close existing connection and trigger reconnection
+          if (eventSourceRef.current) {
+            eventSourceRef.current.close();
+            eventSourceRef.current = null;
+          }
+          reconnectRef.current?.();
+        }
       }
     } catch (error) {
       console.error("[admin-dashboard] Failed to handle SSE message", error);
@@ -462,6 +477,22 @@ export function AdminSessionsProvider({ children }: { children: ReactNode }) {
     if (typeof window === "undefined") {
       return;
     }
+
+    // Expose reconnect so handleStreamMessage can trigger it on CHANNEL_CLOSED
+    reconnectRef.current = () => {
+      const delay = Math.min(MAX_BACKOFF_MS, 1000 * 2 ** Math.max(0, retryRef.current));
+      retryRef.current += 1;
+      if (hasConnectedRef.current) {
+        setConnectionState("disconnected");
+      }
+      if (backoffTimeoutRef.current) {
+        window.clearTimeout(backoffTimeoutRef.current);
+      }
+      backoffTimeoutRef.current = window.setTimeout(() => {
+        backoffTimeoutRef.current = null;
+        connect();
+      }, delay);
+    };
 
     // Don't try to connect if client-side says not logged in
     if (!isAdminLoggedIn()) {
@@ -520,7 +551,13 @@ export function AdminSessionsProvider({ children }: { children: ReactNode }) {
         1000 * 2 ** Math.max(0, retryRef.current),
       );
       retryRef.current += 1;
-      setConnectionState("disconnected");
+
+      // Only show "disconnected" if we previously had a successful connection.
+      // This prevents the "מתחבר מחדש..." flash on initial page load when
+      // Supabase Realtime channels briefly emit CHANNEL_CLOSED during setup.
+      if (hasConnectedRef.current) {
+        setConnectionState("disconnected");
+      }
 
       if (backoffTimeoutRef.current) {
         window.clearTimeout(backoffTimeoutRef.current);

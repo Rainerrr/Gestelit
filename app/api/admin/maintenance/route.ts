@@ -7,7 +7,7 @@ import {
   fetchMaintenanceStations,
   checkMaintenanceDueNotifications,
 } from "@/lib/data/maintenance";
-import type { StationMaintenanceInfo } from "@/lib/types";
+import type { StationMaintenanceDetail } from "@/lib/types";
 
 export async function GET(request: Request) {
   try {
@@ -18,7 +18,7 @@ export async function GET(request: Request) {
 
   try {
     const stations = await fetchMaintenanceStations();
-    return NextResponse.json<{ stations: StationMaintenanceInfo[] }>({ stations });
+    return NextResponse.json<{ stations: StationMaintenanceDetail[] }>({ stations });
   } catch (error) {
     console.error("[admin-maintenance] GET failed", error);
     return NextResponse.json({ error: "FETCH_FAILED" }, { status: 500 });
