@@ -39,3 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local tooling artifacts
+.claude/settings.local.json
+.claude/Plans/
+.claude/ralph-loop*.md
+.playwright-mcp/
+supabase/.temp/
