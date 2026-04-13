@@ -168,7 +168,7 @@ describe("Worker Flow - Job Selection", () => {
     createdSessionIds.push(session.id);
 
     // Bind job item to session
-    const updatedSession = await bindJobItemToSession(
+    const { session: updatedSession } = await bindJobItemToSession(
       session.id,
       testJob.id,
       testJobItem.id,

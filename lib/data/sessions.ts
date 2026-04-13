@@ -205,17 +205,37 @@ export async function completeSession(
 // updateSessionTotals removed - session totals are now derived from status_events
 // Use SUM(status_events.quantity_good/scrap) instead
 
+export type JobItemBindingResult = {
+  session: Session;
+  /**
+   * If binding/unbinding split an already-open status event (because the
+   * effective job_item_id changed), this is the id of the newly-inserted
+   * continuation event. Callers MUST update their local `currentStatusEventId`
+   * to this value, otherwise subsequent end-production calls will fail with
+   * STATUS_EVENT_ALREADY_ENDED.
+   * Null if no split occurred.
+   */
+  newStatusEventId: string | null;
+};
+
+type BindRpcResult = {
+  session: Session;
+  newStatusEvent: { id: string } | null;
+};
+
 /**
  * Bind a job item to an existing session.
- * Uses bind_job_item_atomic RPC for atomic validation and update.
- * Sets current_job_item_started_at for timer tracking.
+ * Uses bind_job_item_atomic RPC which atomically validates, updates session
+ * binding fields, and splits any currently-open status event so its job_item_id
+ * matches the new binding across its full duration (see migration
+ * 20260413100000_split_status_event_on_job_item_change.sql).
  */
 export async function bindJobItemToSession(
   sessionId: string,
   jobId: string,
   jobItemId: string,
   jobItemStepId: string,
-): Promise<Session> {
+): Promise<JobItemBindingResult> {
   const supabase = createServiceSupabase();
 
   const { data, error } = await supabase.rpc("bind_job_item_atomic", {
@@ -236,16 +256,22 @@ export async function bindJobItemToSession(
     throw new Error(`Failed to bind job item to session: ${msg}`);
   }
 
-  return data as Session;
+  const payload = data as BindRpcResult;
+  return {
+    session: payload.session,
+    newStatusEventId: payload.newStatusEvent?.id ?? null,
+  };
 }
 
 /**
  * Unbind the current job item from a session.
  * Clears job_id, job_item_id, job_item_step_id, and current_job_item_started_at.
+ * Splits any open status event so the [before, NOW] slice stays credited to
+ * the old job item and the continuation event has job_item_id=NULL.
  */
 export async function unbindJobItemFromSession(
   sessionId: string,
-): Promise<Session> {
+): Promise<JobItemBindingResult> {
   const supabase = createServiceSupabase();
 
   const { data, error } = await supabase.rpc("unbind_job_item_atomic", {
@@ -256,7 +282,11 @@ export async function unbindJobItemFromSession(
     throw new Error(`Failed to unbind job item: ${error.message}`);
   }
 
-  return data as Session;
+  const payload = data as BindRpcResult;
+  return {
+    session: payload.session,
+    newStatusEventId: payload.newStatusEvent?.id ?? null,
+  };
 }
 
 /**
