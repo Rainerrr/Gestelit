@@ -314,11 +314,16 @@ const fetchDerivedTotalsBySessionIds = async (
 
 /**
  * Fetch current job item info for multiple sessions.
- * Gets the job item from the latest status event with a job_item_id,
- * along with the job item's planned quantity, total progress, and session contribution.
  *
- * Progress is scoped to the specific pipeline step (job_item_step_id) so that
- * multi-step pipelines don't sum quantities across all steps.
+ * Reads the *live* binding from sessions.job_item_id / sessions.job_item_step_id
+ * rather than from the latest status event. This is critical after unbind:
+ * an unbind leaves the previous status_event rows untouched (still stamped
+ * with the old job_item_id), so a query that inspects status_events would
+ * return stale "current" data. The sessions row is the single source of
+ * truth for what the worker is *currently* bound to.
+ *
+ * Progress totals are still aggregated from status_events by the live
+ * job_item_step_id so multi-step pipelines stay scoped per step.
  */
 const fetchCurrentJobItemBySessionIds = async (
   sessionIds: string[],
@@ -329,11 +334,11 @@ const fetchCurrentJobItemBySessionIds = async (
 
   const supabase = createServiceSupabase();
 
-  // Get the latest status event with a job_item_id for each session
-  const { data: latestEvents, error: eventsError } = await supabase
-    .from("status_events")
+  // Read the live binding directly from the sessions table
+  const { data: sessionBindings, error: bindingError } = await supabase
+    .from("sessions")
     .select(`
-      session_id,
+      id,
       job_item_id,
       job_item_step_id,
       job_items:job_item_id(
@@ -342,18 +347,16 @@ const fetchCurrentJobItemBySessionIds = async (
         planned_quantity
       )
     `)
-    .in("session_id", sessionIds)
-    .not("job_item_id", "is", null)
-    .order("started_at", { ascending: false });
+    .in("id", sessionIds)
+    .not("job_item_id", "is", null);
 
-  if (eventsError) {
-    console.error("[admin-dashboard] Failed to fetch current job items", eventsError);
+  if (bindingError) {
+    console.error("[admin-dashboard] Failed to fetch current job items", bindingError);
     return new Map();
   }
 
-  // For each session, find the first (most recent) event to determine the step
-  type RawJobItemEvent = {
-    session_id: string;
+  type SessionBindingRow = {
+    id: string;
     job_item_id: string;
     job_item_step_id: string | null;
     job_items: {
@@ -363,11 +366,18 @@ const fetchCurrentJobItemBySessionIds = async (
     } | null;
   };
 
-  const sessionLatest = new Map<string, RawJobItemEvent>();
-  for (const event of (latestEvents as unknown as RawJobItemEvent[]) ?? []) {
-    if (!event.session_id || !event.job_item_id || !event.job_items) continue;
-    if (sessionLatest.has(event.session_id)) continue;
-    sessionLatest.set(event.session_id, event);
+  const sessionLatest = new Map<
+    string,
+    { session_id: string; job_item_id: string; job_item_step_id: string | null; job_items: SessionBindingRow["job_items"] }
+  >();
+  for (const row of (sessionBindings as unknown as SessionBindingRow[]) ?? []) {
+    if (!row.id || !row.job_item_id || !row.job_items) continue;
+    sessionLatest.set(row.id, {
+      session_id: row.id,
+      job_item_id: row.job_item_id,
+      job_item_step_id: row.job_item_step_id,
+      job_items: row.job_items,
+    });
   }
 
   // Collect unique step IDs to fetch per-step totals

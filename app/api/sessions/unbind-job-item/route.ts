@@ -28,8 +28,8 @@ export async function POST(request: Request) {
       );
     }
 
-    const session = await unbindJobItemFromSession(sessionId);
-    return NextResponse.json({ success: true, session });
+    const { session, newStatusEventId } = await unbindJobItemFromSession(sessionId);
+    return NextResponse.json({ success: true, session, newStatusEventId });
   } catch (error) {
     console.error("[unbind-job-item] Error:", error);
     return createErrorResponse(error, "UNBIND_JOB_ITEM_FAILED");

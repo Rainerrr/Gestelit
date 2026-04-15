@@ -608,16 +608,25 @@ export async function fetchJobItemsForStationJobApi(
   return data.jobItems;
 }
 
+export type JobItemBindingResponse = {
+  session: Session;
+  /** Non-null when bind/unbind split an open status event (see bind-job-item/route.ts). */
+  newStatusEventId: string | null;
+};
+
 /**
  * Bind a job item to an existing session.
  * Called when worker enters production and selects a job + job item.
+ * If an open status event had a different job_item_id, the RPC splits it
+ * and returns the id of the continuation event — the caller MUST update
+ * its currentStatusEventId to this value.
  */
 export async function bindJobItemToSessionApi(
   sessionId: string,
   jobId: string,
   jobItemId: string,
   jobItemStepId: string,
-): Promise<Session> {
+): Promise<JobItemBindingResponse> {
   const response = await fetch("/api/sessions/bind-job-item", {
     method: "POST",
     headers: createWorkerHeaders(),
@@ -628,23 +637,22 @@ export async function bindJobItemToSessionApi(
       jobItemStepId,
     }),
   });
-  const data = await handleResponse<{ session: Session }>(response);
-  return data.session;
+  return handleResponse<JobItemBindingResponse>(response);
 }
 
 /**
  * Unbind the current job item from a session.
- * Clears all job item context and stops the timer.
+ * Clears all job item context and stops the timer. May split an open event.
  */
 export async function unbindJobItemFromSessionApi(
   sessionId: string,
-): Promise<void> {
+): Promise<JobItemBindingResponse> {
   const response = await fetch("/api/sessions/unbind-job-item", {
     method: "POST",
     headers: createWorkerHeaders(),
     body: JSON.stringify({ sessionId }),
   });
-  await handleResponse(response);
+  return handleResponse<JobItemBindingResponse>(response);
 }
 
 /**

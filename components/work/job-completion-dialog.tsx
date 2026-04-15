@@ -30,7 +30,7 @@ export type AvailableJobItemForCompletion = {
 
 export type JobCompletionResult =
   | { action: "select"; jobItem: AvailableJobItemForCompletion }
-  | { action: "setup" };
+  | { action: "noWork" };
 
 export type JobCompletionDialogProps = {
   /** Whether the dialog is open */
@@ -86,13 +86,16 @@ export function JobCompletionDialog({
     }
   }, [selectedJobItemId, availableJobItems, onComplete]);
 
-  const handleSetup = useCallback(() => {
-    onComplete({ action: "setup" });
+  const handleNoWork = useCallback(() => {
+    onComplete({ action: "noWork" });
   }, [onComplete]);
 
   return (
     <Dialog open={open} onOpenChange={() => {}}>
-      <DialogContent className="max-w-lg border-2 border-emerald-600/50 bg-card">
+      <DialogContent
+        className="max-w-lg border-2 border-emerald-600/50 bg-card"
+        hideCloseButton
+      >
         <DialogHeader className="text-center">
           {/* Success Icon */}
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/20 border-2 border-emerald-500/50">
@@ -236,14 +239,14 @@ export function JobCompletionDialog({
         </div>
 
         <DialogFooter className="flex gap-2 sm:justify-between">
-          {/* Setup Button */}
+          {/* No-Work Button — unbinds the job item and drops the session into a stoppage status */}
           <Button
             variant="outline"
-            onClick={handleSetup}
+            onClick={handleNoWork}
             disabled={isSubmitting}
             className="border-blue-500/50 text-blue-400 hover:bg-blue-500/10 hover:text-blue-300"
           >
-            הכנה
+            ללא עבודה
           </Button>
 
           {/* Select Job Button */}

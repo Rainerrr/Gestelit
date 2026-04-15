@@ -576,18 +576,15 @@ function WorkPageContent() {
       });
   }, [sessionId, updateTotals]);
 
-  // Seed job item timer from database when work page loads (or after recovery)
-  const hasSyncedTimerRef = useRef<string | null>(null);
+  // Seed job item timer from DB whenever the active job item id changes.
+  // Bind paths already await fetchJobItemTimerApi inline; this effect is a
+  // fallback for recovery / page-load. Intentionally re-runs on every id
+  // change (including A -> B -> A) so switching back to a previously-seen
+  // item doesn't leave stale state.
   useEffect(() => {
     if (!sessionId || !activeJobItem?.id) {
       return;
     }
-    const timerKey = `${sessionId}:${activeJobItem.id}`;
-    if (hasSyncedTimerRef.current === timerKey) {
-      return;
-    }
-    hasSyncedTimerRef.current = timerKey;
-
     fetchJobItemTimerApi(sessionId, activeJobItem.id)
       .then((timer) => {
         setJobItemTimer(timer.accumulatedSeconds, timer.segmentStart);
@@ -799,13 +796,19 @@ function WorkPageContent() {
     setStatusError(null);
 
     try {
-      // Immediately bind the new job item to the session
-      await bindJobItemToSessionApi(
+      // Immediately bind the new job item to the session.
+      // If the bind split an open status event, point currentStatusEventId
+      // at the continuation event so subsequent end-production calls don't
+      // hit STATUS_EVENT_ALREADY_ENDED.
+      const bindResult = await bindJobItemToSessionApi(
         sessionId,
         result.job.id,
         result.jobItem.id,
         result.jobItem.jobItemStepId,
       );
+      if (bindResult.newStatusEventId) {
+        setCurrentStatusEventId(bindResult.newStatusEventId);
+      }
 
       // Update context with new active job item
       setActiveJobItem({
@@ -865,7 +868,10 @@ function WorkPageContent() {
     if (isInProduction || !sessionId) return;
 
     try {
-      await unbindJobItemFromSessionApi(sessionId);
+      const unbindResult = await unbindJobItemFromSessionApi(sessionId);
+      if (unbindResult.newStatusEventId) {
+        setCurrentStatusEventId(unbindResult.newStatusEventId);
+      }
       setActiveJobItem(null);
       setJob(undefined);
       resetJobItemTimer();
@@ -991,13 +997,21 @@ function WorkPageContent() {
     if (!sessionId || !pendingProductionStatusId) return;
 
     try {
-      // 1. Bind job item to session
-      await bindJobItemToSessionApi(
+      // 1. Bind job item to session. The bind may split an open status event
+      // (e.g. worker was already in a setup state without a job item). We set
+      // currentStatusEventId to the continuation event id so an immediate
+      // end-production call wouldn't target a stale, already-closed event —
+      // the startStatusEventApi call below will usually overwrite this, but
+      // we still want a consistent interim value.
+      const bindResult = await bindJobItemToSessionApi(
         sessionId,
         result.job.id,
         result.jobItem.id,
         result.jobItem.jobItemStepId,
       );
+      if (bindResult.newStatusEventId) {
+        setCurrentStatusEventId(bindResult.newStatusEventId);
+      }
 
       // 2. Update context with active job item (including completedGood/Scrap for progress tracking)
       setActiveJobItem({
@@ -1296,12 +1310,14 @@ function WorkPageContent() {
       // Reset state
       setPendingExitStatusId(null);
 
-      // If this was a job switch, open job selection dialog
+      // If this was a job switch, open job selection dialog.
+      // Do NOT resetJobItemTimer() here — the next bind will fetch the
+      // correct timer state from the DB. Resetting preemptively only causes
+      // a visible flash to 0 during the dialog.
       if (isPendingJobSwitch) {
         setIsPendingJobSwitch(false);
         // Clear active job item since we're switching
         setActiveJobItem(null);
-        resetJobItemTimer();
         // Open job selection for the production status we were in
         setPendingProductionStatusId(currentStatus ?? null);
         setJobSelectionDialogOpen(true);
@@ -1363,13 +1379,16 @@ function WorkPageContent() {
         // User selected a new job item - bind it and enter production
         const { jobItem } = result;
 
-        // 1. Bind new job item to session
-        await bindJobItemToSessionApi(
+        // 1. Bind new job item to session (may split an open status event)
+        const bindResult = await bindJobItemToSessionApi(
           sessionId,
           jobItem.jobId,
           jobItem.id,
           jobItem.jobItemStepId,
         );
+        if (bindResult.newStatusEventId) {
+          setCurrentStatusEventId(bindResult.newStatusEventId);
+        }
 
         // 2. Update context with new active job item
         setActiveJobItem({
@@ -1421,20 +1440,33 @@ function WorkPageContent() {
 
         // 5. Reset session totals for new job item
         updateTotals({ good: 0, scrap: 0 });
-      } else if (result.action === "setup") {
-        // User chose setup - transition to the designated setup status
-        const SETUP_STATUS_ID = "aba59ce0-d35a-4a2a-a95f-5e0339f4942e";
-
-        const statusEvent = await startStatusEventApi({
-          sessionId,
-          statusDefinitionId: SETUP_STATUS_ID,
-        });
-        setCurrentStatus(SETUP_STATUS_ID);
-        if (statusEvent?.id) {
-          setCurrentStatusEventId(statusEvent.id);
+      } else if (result.action === "noWork") {
+        // User chose "no work" — unbind the job item and drop into a stoppage status.
+        // The unbind RPC splits the currently-open status event so the old
+        // job item's accumulated time is finalized, then the continuation
+        // event has job_item_id=NULL. We then transition to a stoppage
+        // machine_state status so the admin dashboard reflects that the
+        // worker is idle between jobs.
+        const unbindResult = await unbindJobItemFromSessionApi(sessionId);
+        if (unbindResult.newStatusEventId) {
+          setCurrentStatusEventId(unbindResult.newStatusEventId);
         }
 
-        // Clear active job item and job since we're in setup
+        const stoppageStatus =
+          statuses.find((s) => s.machine_state === "stoppage") ??
+          statuses.find((s) => s.scope === "global");
+        if (stoppageStatus?.id) {
+          const statusEvent = await startStatusEventApi({
+            sessionId,
+            statusDefinitionId: stoppageStatus.id,
+          });
+          setCurrentStatus(stoppageStatus.id);
+          if (statusEvent?.id) {
+            setCurrentStatusEventId(statusEvent.id);
+          }
+        }
+
+        // Clear local active job item state
         setActiveJobItem(null);
         setJob(undefined);
         resetJobItemTimer();

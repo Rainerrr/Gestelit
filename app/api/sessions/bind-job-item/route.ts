@@ -56,14 +56,14 @@ export async function POST(request: Request) {
       );
     }
 
-    const session = await bindJobItemToSession(
+    const { session, newStatusEventId } = await bindJobItemToSession(
       sessionId,
       jobId,
       jobItemId,
       stepId,
     );
 
-    return NextResponse.json({ session });
+    return NextResponse.json({ session, newStatusEventId });
   } catch (error) {
     console.error("[bind-job-item] Error:", error);
     return createErrorResponse(error, "BIND_JOB_ITEM_FAILED");
