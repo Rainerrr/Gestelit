@@ -279,6 +279,46 @@ ORDER BY RecordId DESC;
   $hovotSyncRows = Convert-BinaRows -Rows $hovotRows -KeyColumns @("Sug", "KodSapak", "Asmakta", "TarikRishum") -SourceUpdatedColumn "TarikRishum"
   Send-BinaRows -TableName "Hovot" -Rows $hovotSyncRows
 
+  $dfShelitaQuery = "SELECT TOP ($MaxRecentOrders) * FROM dbo.DFShelita ORDER BY RecordId DESC;"
+  $dfShelitaRows = Invoke-BinaQuery -Query $dfShelitaQuery
+  $dfShelitaSyncRows = Convert-BinaRows -Rows $dfShelitaRows -KeyColumns @("RecordId") -SourceUpdatedColumn "TarikStart"
+  Send-BinaRows -TableName "DFShelita" -Rows $dfShelitaSyncRows
+
+  $heshbonitRashiQuery = "SELECT TOP ($MaxRecentOrders) * FROM dbo.HeshbonitRashi ORDER BY TarikHeshbonit DESC, MisparHeshbonit DESC;"
+  $heshbonitRashiRows = Invoke-BinaQuery -Query $heshbonitRashiQuery
+  $heshbonitRashiSyncRows = Convert-BinaRows -Rows $heshbonitRashiRows -KeyColumns @("MisparHeshbonit", "ShnatAvoda") -SourceUpdatedColumn "TarikLastUpdate"
+  Send-BinaRows -TableName "HeshbonitRashi" -Rows $heshbonitRashiSyncRows
+
+  $heshbonitNigrarQuery = "SELECT TOP ($MaxRecentOrders) * FROM dbo.HeshbonitNigrar ORDER BY RecordID DESC;"
+  $heshbonitNigrarRows = Invoke-BinaQuery -Query $heshbonitNigrarQuery
+  $heshbonitNigrarSyncRows = Convert-BinaRows -Rows $heshbonitNigrarRows -KeyColumns @("RecordID")
+  Send-BinaRows -TableName "HeshbonitNigrar" -Rows $heshbonitNigrarSyncRows
+
+  $mishloahRashiQuery = "SELECT TOP ($MaxRecentOrders) * FROM dbo.MishloahRashi ORDER BY TarikMishloah DESC, MisparMishloah DESC;"
+  $mishloahRashiRows = Invoke-BinaQuery -Query $mishloahRashiQuery
+  $mishloahRashiSyncRows = Convert-BinaRows -Rows $mishloahRashiRows -KeyColumns @("MisparMishloah", "ShnatAvoda") -SourceUpdatedColumn "TarikMishloah"
+  Send-BinaRows -TableName "MishloahRashi" -Rows $mishloahRashiSyncRows
+
+  $mishloahNigrarQuery = "SELECT TOP ($MaxRecentOrders) * FROM dbo.MishloahNigrar ORDER BY RecordID DESC;"
+  $mishloahNigrarRows = Invoke-BinaQuery -Query $mishloahNigrarQuery
+  $mishloahNigrarSyncRows = Convert-BinaRows -Rows $mishloahNigrarRows -KeyColumns @("RecordID")
+  Send-BinaRows -TableName "MishloahNigrar" -Rows $mishloahNigrarSyncRows
+
+  $tovinRashiQuery = "SELECT TOP ($MaxRecentOrders) * FROM dbo.TovinRashi ORDER BY TarikTovin DESC, MisparTovin DESC;"
+  $tovinRashiRows = Invoke-BinaQuery -Query $tovinRashiQuery
+  $tovinRashiSyncRows = Convert-BinaRows -Rows $tovinRashiRows -KeyColumns @("MisparTovin") -SourceUpdatedColumn "TarikTovin"
+  Send-BinaRows -TableName "TovinRashi" -Rows $tovinRashiSyncRows
+
+  $tovinNigrarQuery = "SELECT TOP ($MaxRecentOrders) * FROM dbo.TovinNigrar ORDER BY RecordID DESC;"
+  $tovinNigrarRows = Invoke-BinaQuery -Query $tovinNigrarQuery
+  $tovinNigrarSyncRows = Convert-BinaRows -Rows $tovinNigrarRows -KeyColumns @("RecordID")
+  Send-BinaRows -TableName "TovinNigrar" -Rows $tovinNigrarSyncRows
+
+  $sqlLoginsQuery = "SELECT TOP ($MaxRecentOrders) * FROM dbo.SqlLogins ORDER BY recordid DESC;"
+  $sqlLoginsRows = Invoke-BinaQuery -Query $sqlLoginsQuery
+  $sqlLoginsSyncRows = Convert-BinaRows -Rows $sqlLoginsRows -KeyColumns @("recordid") -SourceUpdatedColumn "SLoginTime"
+  Send-BinaRows -TableName "SqlLogins" -Rows $sqlLoginsSyncRows
+
   Write-Log "BINA sync completed"
 }
 catch {

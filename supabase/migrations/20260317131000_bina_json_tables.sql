@@ -112,6 +112,62 @@ CREATE TABLE bina_hovot (
   synced_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE bina_dfshelita (
+  bina_id text PRIMARY KEY,
+  data jsonb NOT NULL,
+  source_updated_at timestamptz,
+  synced_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE bina_heshbonitrashi (
+  bina_id text PRIMARY KEY,
+  data jsonb NOT NULL,
+  source_updated_at timestamptz,
+  synced_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE bina_heshbonitnigrar (
+  bina_id text PRIMARY KEY,
+  data jsonb NOT NULL,
+  source_updated_at timestamptz,
+  synced_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE bina_mishloahrashi (
+  bina_id text PRIMARY KEY,
+  data jsonb NOT NULL,
+  source_updated_at timestamptz,
+  synced_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE bina_mishloahnigrar (
+  bina_id text PRIMARY KEY,
+  data jsonb NOT NULL,
+  source_updated_at timestamptz,
+  synced_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE bina_tovinrashi (
+  bina_id text PRIMARY KEY,
+  data jsonb NOT NULL,
+  source_updated_at timestamptz,
+  synced_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE bina_tovinnigrar (
+  bina_id text PRIMARY KEY,
+  data jsonb NOT NULL,
+  source_updated_at timestamptz,
+  synced_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE bina_sqllogins (
+  bina_id text PRIMARY KEY,
+  data jsonb NOT NULL,
+  source_updated_at timestamptz,
+  synced_at timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE INDEX bina_dfhazmrashi_data_gin ON bina_dfhazmrashi USING gin (data);
 CREATE INDEX bina_dfhazmmontage_data_gin ON bina_dfhazmmontage USING gin (data);
 CREATE INDEX bina_dfhazmnigrar_data_gin ON bina_dfhazmnigrar USING gin (data);
@@ -128,6 +184,14 @@ CREATE INDEX bina_heshsapaknigrar_data_gin ON bina_heshsapaknigrar USING gin (da
 CREATE INDEX bina_tmsapaknigrar_data_gin ON bina_tmsapaknigrar USING gin (data);
 CREATE INDEX bina_bakashanigrar_data_gin ON bina_bakashanigrar USING gin (data);
 CREATE INDEX bina_hovot_data_gin ON bina_hovot USING gin (data);
+CREATE INDEX bina_dfshelita_data_gin ON bina_dfshelita USING gin (data);
+CREATE INDEX bina_heshbonitrashi_data_gin ON bina_heshbonitrashi USING gin (data);
+CREATE INDEX bina_heshbonitnigrar_data_gin ON bina_heshbonitnigrar USING gin (data);
+CREATE INDEX bina_mishloahrashi_data_gin ON bina_mishloahrashi USING gin (data);
+CREATE INDEX bina_mishloahnigrar_data_gin ON bina_mishloahnigrar USING gin (data);
+CREATE INDEX bina_tovinrashi_data_gin ON bina_tovinrashi USING gin (data);
+CREATE INDEX bina_tovinnigrar_data_gin ON bina_tovinnigrar USING gin (data);
+CREATE INDEX bina_sqllogins_data_gin ON bina_sqllogins USING gin (data);
 
 ALTER TABLE bina_dfhazmrashi ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bina_dfhazmmontage ENABLE ROW LEVEL SECURITY;
@@ -145,3 +209,11 @@ ALTER TABLE bina_heshsapaknigrar ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bina_tmsapaknigrar ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bina_bakashanigrar ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bina_hovot ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bina_dfshelita ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bina_heshbonitrashi ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bina_heshbonitnigrar ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bina_mishloahrashi ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bina_mishloahnigrar ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bina_tovinrashi ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bina_tovinnigrar ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bina_sqllogins ENABLE ROW LEVEL SECURITY;
