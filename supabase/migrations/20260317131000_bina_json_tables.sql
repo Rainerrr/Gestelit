@@ -77,6 +77,41 @@ CREATE TABLE bina_mismahim (
   synced_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE bina_heshsapakrashi (
+  bina_id text PRIMARY KEY,
+  data jsonb NOT NULL,
+  source_updated_at timestamptz,
+  synced_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE bina_heshsapaknigrar (
+  bina_id text PRIMARY KEY,
+  data jsonb NOT NULL,
+  source_updated_at timestamptz,
+  synced_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE bina_tmsapaknigrar (
+  bina_id text PRIMARY KEY,
+  data jsonb NOT NULL,
+  source_updated_at timestamptz,
+  synced_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE bina_bakashanigrar (
+  bina_id text PRIMARY KEY,
+  data jsonb NOT NULL,
+  source_updated_at timestamptz,
+  synced_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE bina_hovot (
+  bina_id text PRIMARY KEY,
+  data jsonb NOT NULL,
+  source_updated_at timestamptz,
+  synced_at timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE INDEX bina_dfhazmrashi_data_gin ON bina_dfhazmrashi USING gin (data);
 CREATE INDEX bina_dfhazmmontage_data_gin ON bina_dfhazmmontage USING gin (data);
 CREATE INDEX bina_dfhazmnigrar_data_gin ON bina_dfhazmnigrar USING gin (data);
@@ -88,6 +123,11 @@ CREATE INDEX bina_dfhazmglyonot_data_gin ON bina_dfhazmglyonot USING gin (data);
 CREATE INDEX bina_dfmlay_data_gin ON bina_dfmlay USING gin (data);
 CREATE INDEX bina_tnuotmlay_data_gin ON bina_tnuotmlay USING gin (data);
 CREATE INDEX bina_mismahim_data_gin ON bina_mismahim USING gin (data);
+CREATE INDEX bina_heshsapakrashi_data_gin ON bina_heshsapakrashi USING gin (data);
+CREATE INDEX bina_heshsapaknigrar_data_gin ON bina_heshsapaknigrar USING gin (data);
+CREATE INDEX bina_tmsapaknigrar_data_gin ON bina_tmsapaknigrar USING gin (data);
+CREATE INDEX bina_bakashanigrar_data_gin ON bina_bakashanigrar USING gin (data);
+CREATE INDEX bina_hovot_data_gin ON bina_hovot USING gin (data);
 
 ALTER TABLE bina_dfhazmrashi ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bina_dfhazmmontage ENABLE ROW LEVEL SECURITY;
@@ -100,3 +140,8 @@ ALTER TABLE bina_dfhazmglyonot ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bina_dfmlay ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bina_tnuotmlay ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bina_mismahim ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bina_heshsapakrashi ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bina_heshsapaknigrar ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bina_tmsapaknigrar ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bina_bakashanigrar ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bina_hovot ENABLE ROW LEVEL SECURITY;

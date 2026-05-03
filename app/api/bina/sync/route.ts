@@ -15,6 +15,11 @@ const BINA_TABLES = {
   DFMlay: "bina_dfmlay",
   TnuotMlay: "bina_tnuotmlay",
   Mismahim: "bina_mismahim",
+  HeshSapakRashi: "bina_heshsapakrashi",
+  HeshSapakNigrar: "bina_heshsapaknigrar",
+  TMSapakNigrar: "bina_tmsapaknigrar",
+  BakashaNigrar: "bina_bakashanigrar",
+  Hovot: "bina_hovot",
 } as const;
 
 type BinaTableName = keyof typeof BINA_TABLES;

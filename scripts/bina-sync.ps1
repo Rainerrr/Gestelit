@@ -254,6 +254,31 @@ ORDER BY RecordId DESC;
     Write-Log "WARN: skipped TnuotMlay: $($_.Exception.Message)"
   }
 
+  $heshSapakRashiQuery = "SELECT TOP ($MaxRecentOrders) * FROM dbo.HeshSapakRashi ORDER BY Tarik DESC, MisparHeshSapak DESC;"
+  $heshSapakRashiRows = Invoke-BinaQuery -Query $heshSapakRashiQuery
+  $heshSapakRashiSyncRows = Convert-BinaRows -Rows $heshSapakRashiRows -KeyColumns @("MisparHeshSapak", "ShnatAvoda") -SourceUpdatedColumn "Tarik"
+  Send-BinaRows -TableName "HeshSapakRashi" -Rows $heshSapakRashiSyncRows
+
+  $heshSapakNigrarQuery = "SELECT TOP ($MaxRecentOrders) * FROM dbo.HeshSapakNigrar ORDER BY RecordID DESC;"
+  $heshSapakNigrarRows = Invoke-BinaQuery -Query $heshSapakNigrarQuery
+  $heshSapakNigrarSyncRows = Convert-BinaRows -Rows $heshSapakNigrarRows -KeyColumns @("RecordID")
+  Send-BinaRows -TableName "HeshSapakNigrar" -Rows $heshSapakNigrarSyncRows
+
+  $tmSapakNigrarQuery = "SELECT TOP ($MaxRecentOrders) * FROM dbo.TMSapakNigrar ORDER BY RecordID DESC;"
+  $tmSapakNigrarRows = Invoke-BinaQuery -Query $tmSapakNigrarQuery
+  $tmSapakNigrarSyncRows = Convert-BinaRows -Rows $tmSapakNigrarRows -KeyColumns @("RecordID")
+  Send-BinaRows -TableName "TMSapakNigrar" -Rows $tmSapakNigrarSyncRows
+
+  $bakashaNigrarQuery = "SELECT TOP ($MaxRecentOrders) * FROM dbo.BakashaNigrar ORDER BY RecordID DESC;"
+  $bakashaNigrarRows = Invoke-BinaQuery -Query $bakashaNigrarQuery
+  $bakashaNigrarSyncRows = Convert-BinaRows -Rows $bakashaNigrarRows -KeyColumns @("RecordID")
+  Send-BinaRows -TableName "BakashaNigrar" -Rows $bakashaNigrarSyncRows
+
+  $hovotQuery = "SELECT TOP ($MaxRecentOrders) * FROM dbo.Hovot ORDER BY TarikRishum DESC, Asmakta DESC;"
+  $hovotRows = Invoke-BinaQuery -Query $hovotQuery
+  $hovotSyncRows = Convert-BinaRows -Rows $hovotRows -KeyColumns @("Sug", "KodSapak", "Asmakta", "TarikRishum") -SourceUpdatedColumn "TarikRishum"
+  Send-BinaRows -TableName "Hovot" -Rows $hovotSyncRows
+
   Write-Log "BINA sync completed"
 }
 catch {
