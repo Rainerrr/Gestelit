@@ -1,7 +1,13 @@
 param(
   [string]$Endpoint = "https://YOUR-GESTELIT-SERVICE.onrender.com/api/bina/sync",
   [string]$SyncKey = "REPLACE_WITH_BINA_SYNC_KEY",
-  [string]$SqlServer = "127.0.0.1,30030",
+  [string]$SqlServer = "",
+  [string[]]$SqlServerCandidates = @(
+    "127.0.0.1,30030",
+    "localhost,30030",
+    "SR-BINASQL,30030",
+    "SR-BINASQL\BINA"
+  ),
   [string]$Database = "BinaW18",
   [string]$SqlUser = "readonly",
   [string]$SqlPassword = "REPLACE_WITH_SQL_PASSWORD",
@@ -24,9 +30,12 @@ function Write-Log {
 }
 
 function Invoke-BinaQuery {
-  param([string]$Query)
+  param(
+    [string]$Query,
+    [string]$Server = $script:ActiveSqlServer
+  )
 
-  $connectionString = "Server=$SqlServer;Database=$Database;User ID=$SqlUser;Password=$SqlPassword;TrustServerCertificate=True;Encrypt=False;Connection Timeout=30;"
+  $connectionString = "Server=$Server;Database=$Database;User ID=$SqlUser;Password=$SqlPassword;TrustServerCertificate=True;Encrypt=False;Connection Timeout=30;"
   $connection = New-Object System.Data.SqlClient.SqlConnection $connectionString
   $command = $connection.CreateCommand()
   $command.CommandText = $Query
@@ -41,6 +50,27 @@ function Invoke-BinaQuery {
   finally {
     $connection.Dispose()
   }
+}
+
+function Resolve-SqlServer {
+  if ($SqlServer) {
+    Write-Log "Using SQL Server: $SqlServer"
+    return $SqlServer
+  }
+
+  foreach ($candidate in $SqlServerCandidates) {
+    try {
+      Write-Log "Testing SQL Server candidate: $candidate"
+      [void](Invoke-BinaQuery -Query "SELECT 1 AS ok;" -Server $candidate)
+      Write-Log "Connected to SQL Server: $candidate"
+      return $candidate
+    }
+    catch {
+      Write-Log "Candidate failed: $candidate - $($_.Exception.Message)"
+    }
+  }
+
+  throw "Could not connect to SQL Server using any candidate. Pass -SqlServer with the exact SSMS server name."
 }
 
 function Convert-DataRow {
@@ -140,6 +170,7 @@ function Send-BinaRows {
 
 try {
   Write-Log "BINA sync starting"
+  $script:ActiveSqlServer = Resolve-SqlServer
 
   $rashiQuery = @"
 SELECT TOP ($MaxRecentOrders) *
