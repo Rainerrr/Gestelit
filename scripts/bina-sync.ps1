@@ -45,7 +45,7 @@ function Invoke-BinaQuery {
 
   try {
     [void]$adapter.Fill($table)
-    return $table
+    return ,$table
   }
   finally {
     $connection.Dispose()
@@ -120,8 +120,9 @@ function Convert-BinaRows {
   $converted = @()
   foreach ($row in $Rows.Rows) {
     $data = Convert-DataRow -Row $row
+    $binaId = Get-RowId -Data $data -KeyColumns $KeyColumns
     $syncRow = [ordered]@{
-      bina_id = Get-RowId -Data $data -KeyColumns $KeyColumns
+      bina_id = $binaId
       data = $data
       source_updated_at = $null
     }
@@ -223,21 +224,24 @@ ORDER BY RecordId DESC;
   $mismahimSyncRows = Convert-BinaRows -Rows $mismahimRows -KeyColumns @("RecordId") -SourceUpdatedColumn "Tarik"
   Send-BinaRows -TableName "Mismahim" -Rows $mismahimSyncRows
 
-  $inventoryTables = @(
-    @{ Name = "DFMlay"; Key = @("MisparRashi", "MisparAvoda") },
-    @{ Name = "TnuotMlay"; Key = @("MisparTnua") }
-  )
+  try {
+    $dfMlayQuery = "SELECT TOP ($MaxRecentOrders) * FROM dbo.DFMlay ORDER BY 1 DESC;"
+    $dfMlayRows = Invoke-BinaQuery -Query $dfMlayQuery
+    $dfMlaySyncRows = Convert-BinaRows -Rows $dfMlayRows -KeyColumns @("MisparRashi", "MisparAvoda")
+    Send-BinaRows -TableName "DFMlay" -Rows $dfMlaySyncRows
+  }
+  catch {
+    Write-Log "WARN: skipped DFMlay: $($_.Exception.Message)"
+  }
 
-  foreach ($table in $inventoryTables) {
-    try {
-      $query = "SELECT TOP ($MaxRecentOrders) * FROM dbo.$($table.Name) ORDER BY 1 DESC;"
-      $rows = Invoke-BinaQuery -Query $query
-      $syncRows = Convert-BinaRows -Rows $rows -KeyColumns $table.Key
-      Send-BinaRows -TableName $table.Name -Rows $syncRows
-    }
-    catch {
-      Write-Log "WARN: skipped $($table.Name): $($_.Exception.Message)"
-    }
+  try {
+    $tnuotMlayQuery = "SELECT TOP ($MaxRecentOrders) * FROM dbo.TnuotMlay ORDER BY 1 DESC;"
+    $tnuotMlayRows = Invoke-BinaQuery -Query $tnuotMlayQuery
+    $tnuotMlaySyncRows = Convert-BinaRows -Rows $tnuotMlayRows -KeyColumns @("MisparTnua")
+    Send-BinaRows -TableName "TnuotMlay" -Rows $tnuotMlaySyncRows
+  }
+  catch {
+    Write-Log "WARN: skipped TnuotMlay: $($_.Exception.Message)"
   }
 
   Write-Log "BINA sync completed"
