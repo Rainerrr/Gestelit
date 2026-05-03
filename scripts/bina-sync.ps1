@@ -166,7 +166,7 @@ ORDER BY MisparDFHazmana DESC;
     "DFHazmNigrar",
     "DFHazmGimur",
     "DFHazmGrafika",
-    "DFHazmKtiva",
+    "DFHazmKirkia",
     "DFHazmKedam",
     "DFHazmGlyonot"
   )
@@ -191,6 +191,23 @@ ORDER BY RecordId DESC;
   $mismahimRows = Invoke-BinaQuery -Query $mismahimQuery
   $mismahimSyncRows = Convert-BinaRows -Rows $mismahimRows -KeyColumns @("RecordId") -SourceUpdatedColumn "Tarik"
   Send-BinaRows -TableName "Mismahim" -Rows $mismahimSyncRows
+
+  $inventoryTables = @(
+    @{ Name = "DFMlay"; Key = @("MisparRashi", "MisparAvoda") },
+    @{ Name = "TnuotMlay"; Key = @("MisparTnua") }
+  )
+
+  foreach ($table in $inventoryTables) {
+    try {
+      $query = "SELECT TOP ($MaxRecentOrders) * FROM dbo.$($table.Name) ORDER BY 1 DESC;"
+      $rows = Invoke-BinaQuery -Query $query
+      $syncRows = Convert-BinaRows -Rows $rows -KeyColumns $table.Key
+      Send-BinaRows -TableName $table.Name -Rows $syncRows
+    }
+    catch {
+      Write-Log "WARN: skipped $($table.Name): $($_.Exception.Message)"
+    }
+  }
 
   Write-Log "BINA sync completed"
 }

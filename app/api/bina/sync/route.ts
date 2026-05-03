@@ -9,9 +9,11 @@ const BINA_TABLES = {
   DFHazmNigrar: "bina_dfhazmnigrar",
   DFHazmGimur: "bina_dfhazmgimur",
   DFHazmGrafika: "bina_dfhazmgrafika",
-  DFHazmKtiva: "bina_dfhazmktiva",
+  DFHazmKirkia: "bina_dfhazmkirkia",
   DFHazmKedam: "bina_dfhazmkedam",
   DFHazmGlyonot: "bina_dfhazmglyonot",
+  DFMlay: "bina_dfmlay",
+  TnuotMlay: "bina_tnuotmlay",
   Mismahim: "bina_mismahim",
 } as const;
 
