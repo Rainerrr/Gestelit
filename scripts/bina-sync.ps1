@@ -118,9 +118,19 @@ function Convert-BinaRows {
   )
 
   $converted = @()
+  $seenIds = @{}
   foreach ($row in $Rows.Rows) {
     $data = Convert-DataRow -Row $row
-    $binaId = Get-RowId -Data $data -KeyColumns $KeyColumns
+    $baseId = Get-RowId -Data $data -KeyColumns $KeyColumns
+    if ($seenIds.ContainsKey($baseId)) {
+      $seenIds[$baseId] = $seenIds[$baseId] + 1
+      $binaId = "$($baseId):dup$($seenIds[$baseId])"
+    }
+    else {
+      $seenIds[$baseId] = 0
+      $binaId = $baseId
+    }
+
     $syncRow = [ordered]@{
       bina_id = $binaId
       data = $data
