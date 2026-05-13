@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
-import { Menu, Settings, LayoutDashboard, History, Wrench, ChevronLeft, FileText, Briefcase, CalendarClock } from "lucide-react";
+import { Menu, Settings, LayoutDashboard, History, Wrench, ChevronLeft, FileText, Briefcase, CalendarClock, Database } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/sheet";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { ChangePasswordDialog } from "./change-password-dialog";
+import { AdminAiAssistant, type AdminAiScreenContext } from "./admin-ai-assistant";
 import { NotificationCenter } from "@/components/notifications/notification-center";
 import { fetchReportsCountsAdminApi } from "@/lib/api/admin-management";
 import { fetchMaintenanceStationsApi } from "@/lib/api/maintenance";
@@ -26,18 +27,21 @@ type AdminLayoutProps = {
   header: ReactNode;
   /** Mobile bottom navigation bar - rendered outside header context */
   mobileBottomBar?: ReactNode;
+  /** Optional context passed to the persistent admin AI assistant */
+  aiContext?: AdminAiScreenContext;
 };
 
 const navItems = [
   { label: "דשבורד", href: "/admin", disabled: false, icon: LayoutDashboard },
   { label: "עבודות", href: "/admin/jobs", disabled: false, icon: Briefcase },
+  { label: "נתוני BINA", href: "/admin/bina", disabled: false, icon: Database },
   { label: "היסטוריה ודוחות", href: "/admin/history", disabled: false, icon: History },
   { label: "דיווחים", href: "/admin/reports", disabled: false, icon: FileText },
   { label: "טיפולים", href: "/admin/maintenance", disabled: false, icon: CalendarClock },
   { label: "ניהול", href: "/admin/manage", disabled: false, icon: Wrench },
 ];
 
-export const AdminLayout = ({ children, header, mobileBottomBar }: AdminLayoutProps) => {
+export const AdminLayout = ({ children, header, mobileBottomBar, aiContext }: AdminLayoutProps) => {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
@@ -255,6 +259,8 @@ export const AdminLayout = ({ children, header, mobileBottomBar }: AdminLayoutPr
         isOpen={passwordDialogOpen}
         onOpenChange={setPasswordDialogOpen}
       />
+
+      <AdminAiAssistant context={aiContext} />
 
       {/* Mobile bottom navigation - rendered outside header context */}
       {mobileBottomBar}

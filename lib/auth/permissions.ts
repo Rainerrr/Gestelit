@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import crypto from "node:crypto";
 import { getWorkerFromRequest as getWorkerFromRequestContext } from "@/lib/auth/request-context";
+import { verifyAdminSessionToken } from "@/lib/auth/admin-session";
 import { createServiceSupabase } from "@/lib/supabase/client";
 import type { Worker } from "@/lib/types";
 
@@ -61,16 +63,17 @@ export async function requireWorker(
  */
 export async function requireAdminPassword(
   request: Request,
-  options?: { refreshSession?: boolean }
+  options?: { refreshSession?: boolean; allowQueryPassword?: boolean }
 ): Promise<{ sessionToken?: string }> {
   const shouldRefresh = options?.refreshSession ?? true;
+  const allowQueryPassword = options?.allowQueryPassword ?? true;
 
   // First, check for session cookie (preferred method)
   try {
     const cookieStore = await cookies();
     const sessionToken = cookieStore.get(ADMIN_SESSION_COOKIE)?.value;
 
-    if (sessionToken) {
+    if (verifyAdminSessionToken(sessionToken)) {
       // Valid session cookie found - return token for refresh
       return { sessionToken: shouldRefresh ? sessionToken : undefined };
     }
@@ -92,16 +95,18 @@ export async function requireAdminPassword(
     return {};
   }
 
-  // Try to get password from query params (used for SSE where headers aren't available)
-  try {
-    const passwordFromQuery =
-      new URL(request.url).searchParams.get("password") ??
-      new URL(request.url).searchParams.get("adminPassword");
-    if (passwordFromQuery === adminPassword) {
-      return {};
+  if (allowQueryPassword) {
+    // Try to get password from query params (used for SSE where headers aren't available)
+    try {
+      const passwordFromQuery =
+        new URL(request.url).searchParams.get("password") ??
+        new URL(request.url).searchParams.get("adminPassword");
+      if (passwordFromQuery === adminPassword) {
+        return {};
+      }
+    } catch {
+      // Ignore URL parsing errors and continue to other strategies
     }
-  } catch {
-    // Ignore URL parsing errors and continue to other strategies
   }
 
   // Try to get password from request body
@@ -117,6 +122,10 @@ export async function requireAdminPassword(
   }
 
   throw new UnauthorizedError("Invalid admin password");
+}
+
+export function generateSecureToken(bytes = 32): string {
+  return crypto.randomBytes(bytes).toString("base64url");
 }
 
 /**

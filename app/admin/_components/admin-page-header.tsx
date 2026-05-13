@@ -33,7 +33,7 @@ export const MobileBottomBar = ({ capsules }: { capsules: CapsuleConfig }) => {
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 sm:hidden">
       <div className="border-t border-border/80 bg-card/95 backdrop-blur-md px-2 py-1.5 safe-area-pb">
-        <div className="flex items-center justify-around">
+        <div className="flex items-center justify-start gap-1 overflow-x-auto">
           {capsules.options.map((option) => {
             const isActive = capsules.activeId === option.id;
             const OptionIcon = option.icon;
@@ -43,7 +43,7 @@ export const MobileBottomBar = ({ capsules }: { capsules: CapsuleConfig }) => {
                 type="button"
                 onClick={() => capsules.onChange(option.id)}
                 className={cn(
-                  "flex flex-col items-center gap-0.5 px-4 py-1.5 rounded-lg transition-colors min-w-[4rem]",
+                  "flex min-w-[4.25rem] shrink-0 flex-col items-center gap-0.5 rounded-lg px-3 py-1.5 transition-colors",
                   isActive
                     ? "text-primary"
                     : "text-muted-foreground active:bg-accent"
@@ -89,8 +89,8 @@ export const AdminPageHeader = ({
 
       {/* Center: Capsule selector - desktop only */}
       {capsules && (
-        <div className="hidden sm:flex flex-1 justify-center">
-          <div className="inline-flex items-center gap-0.5 p-1 rounded-xl border border-border/80 bg-muted/50 shadow-sm">
+        <div className="hidden min-w-0 flex-1 justify-center sm:flex">
+          <div className="inline-flex max-w-full items-center gap-0.5 overflow-x-auto rounded-xl border border-border/80 bg-muted/50 p-1 shadow-sm">
             {capsules.options.map((option) => {
               const isActive = capsules.activeId === option.id;
               const OptionIcon = option.icon;
@@ -100,7 +100,7 @@ export const AdminPageHeader = ({
                   type="button"
                   onClick={() => capsules.onChange(option.id)}
                   className={cn(
-                    "relative flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200",
+                    "relative flex shrink-0 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200 lg:px-4",
                     isActive
                       ? "bg-background text-foreground shadow-sm border border-border/50"
                       : "text-muted-foreground hover:text-foreground hover:bg-background/50"

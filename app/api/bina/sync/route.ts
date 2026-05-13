@@ -121,6 +121,14 @@ export async function POST(request: Request) {
     }
   }
 
+  const hasUpsertErrors = Object.values(results).some((result) => result.error);
+  if (hasUpsertErrors) {
+    return NextResponse.json(
+      { ok: false, error: "BINA_PARTIAL_SYNC_REJECTED", results },
+      { status: 500 },
+    );
+  }
+
   // Log sync event
   const { error: logError } = await supabase.from("bina_sync_log").insert({
     synced_at: payload.synced_at,
@@ -134,10 +142,9 @@ export async function POST(request: Request) {
     );
   }
 
-  const hasUpsertErrors = Object.values(results).some((result) => result.error);
   return NextResponse.json(
-    { ok: !hasUpsertErrors, results },
-    { status: hasUpsertErrors ? 207 : 200 },
+    { ok: true, results },
+    { status: 200 },
   );
 }
 
