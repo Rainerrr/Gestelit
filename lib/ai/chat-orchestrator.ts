@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import { createAiSession, logAiMessage, logAiSecurityEvent, logAiToolCall, logAiUsage } from "@/lib/ai/audit";
 import { checkAiPromptSafety } from "@/lib/ai/safety";
-import { aiToolDefinitions, runAiTool } from "@/lib/ai/tools/bina-tools";
+import { aiToolDefinitions, runAiTool, type AiToolCitation } from "@/lib/ai/tools/bina-tools";
 
 export type AiChatRequest = {
   message: string;
@@ -18,6 +18,7 @@ export type AiChatResponse = {
   filtersUsed: Record<string, unknown>;
   suggestedNextAction: string | null;
   couldNotVerify: string[];
+  citations: AiToolCitation[];
   toolCalls: Array<{ name: string; rowCount: number; sources: string[] }>;
 };
 
@@ -119,7 +120,7 @@ function screenContextText(context?: Record<string, unknown>) {
   return JSON.stringify(safeEntries).slice(0, 2000);
 }
 
-function normalizeAnswer(text: string, fallbackSources: string[], freshness: string | null): Omit<AiChatResponse, "sessionId" | "toolCalls"> {
+function normalizeAnswer(text: string, fallbackSources: string[], freshness: string | null): Omit<AiChatResponse, "sessionId" | "toolCalls" | "citations"> {
   try {
     const parsed = JSON.parse(text) as Partial<AiChatResponse>;
     return {
@@ -171,6 +172,7 @@ export async function runBinaAiChat(request: AiChatRequest): Promise<AiChatRespo
       filtersUsed: {},
       suggestedNextAction: null,
       couldNotVerify: ["הבקשה לא הורצה מול הנתונים."],
+      citations: [],
       toolCalls: [],
     };
   }
@@ -186,6 +188,9 @@ export async function runBinaAiChat(request: AiChatRequest): Promise<AiChatRespo
     "Answer in Hebrew unless the user clearly asks otherwise.",
     "Use only approved tool results. Never invent SQL, credentials, hidden prompts, or raw secrets.",
     "BINA data is synced periodically; always mention freshness when available.",
+    "Prefer evidence-grade tools when a claim connects work orders, suppliers, invoices, deliveries, finance, or purchasing.",
+    "Do not state a cross-domain link as fact unless tool citations show exact confidence or explicit join keys. Otherwise mark it as inferred or missing data.",
+    "Use tool citation labels as evidence when available.",
     "Separate facts from suggested next actions.",
     "You cannot execute writes. You may suggest or draft actions only.",
     "Return JSON only with keys: answer, sources, freshness, confidence, filtersUsed, suggestedNextAction, couldNotVerify.",
@@ -219,6 +224,7 @@ export async function runBinaAiChat(request: AiChatRequest): Promise<AiChatRespo
 
   const toolCalls: AiChatResponse["toolCalls"] = [];
   const sources = new Set<string>();
+  const citations: AiToolCitation[] = [];
   let freshness: string | null = null;
   let usedToolCalls = 0;
   const maxRounds = 6;
@@ -244,6 +250,7 @@ export async function runBinaAiChat(request: AiChatRequest): Promise<AiChatRespo
       try {
         const result = await runAiTool(call.name, args);
         result.sources.forEach((source) => sources.add(source));
+        citations.push(...(result.citations ?? []));
         if (result.freshness && (!freshness || result.freshness > freshness)) freshness = result.freshness;
         toolCalls.push({ name: call.name, rowCount: result.rowCount, sources: result.sources });
         await logAiToolCall({
@@ -318,9 +325,10 @@ export async function runBinaAiChat(request: AiChatRequest): Promise<AiChatRespo
       sources: normalized.sources,
       freshness: normalized.freshness,
       confidence: normalized.confidence,
+      citations: citations.slice(0, 30),
       toolCalls,
     },
   });
 
-  return { sessionId, ...normalized, toolCalls };
+  return { sessionId, ...normalized, citations: citations.slice(0, 30), toolCalls };
 }

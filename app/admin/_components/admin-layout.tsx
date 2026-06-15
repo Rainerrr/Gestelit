@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
-import { Menu, Settings, LayoutDashboard, History, Wrench, ChevronLeft, FileText, Briefcase, CalendarClock, Database } from "lucide-react";
+import { Menu, Settings, LayoutDashboard, History, Wrench, ChevronLeft, FileText, Briefcase, CalendarClock, Database, Handshake } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,6 +13,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
+import { GestelitLogo } from "@/components/brand/gestelit-logo";
 import { ChangePasswordDialog } from "./change-password-dialog";
 import { AdminAiAssistant, type AdminAiScreenContext } from "./admin-ai-assistant";
 import { NotificationCenter } from "@/components/notifications/notification-center";
@@ -34,6 +35,7 @@ type AdminLayoutProps = {
 const navItems = [
   { label: "דשבורד", href: "/admin", disabled: false, icon: LayoutDashboard },
   { label: "עבודות", href: "/admin/jobs", disabled: false, icon: Briefcase },
+  { label: "יומן מכירות", href: "/admin/sales-daily-log", disabled: false, icon: Handshake },
   { label: "נתוני BINA", href: "/admin/bina", disabled: false, icon: Database },
   { label: "היסטוריה ודוחות", href: "/admin/history", disabled: false, icon: History },
   { label: "דיווחים", href: "/admin/reports", disabled: false, icon: FileText },
@@ -146,9 +148,7 @@ export const AdminLayout = ({ children, header, mobileBottomBar, aiContext }: Ad
         <aside className="hidden w-56 shrink-0 border-l border-border bg-card/50 backdrop-blur-sm lg:flex lg:flex-col">
           <div className="flex flex-col p-5 border-b border-border/60">
             <Link href="/" className="flex items-center gap-3 transition-opacity hover:opacity-80">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary shadow-lg">
-                <span className="text-sm font-bold text-primary-foreground">G</span>
-              </div>
+              <GestelitLogo size="sm" />
               <div>
                 <span className="text-base font-bold text-foreground tracking-tight">Gestelit</span>
                 <p className="text-[11px] text-muted-foreground leading-tight">ניהול רצפת ייצור</p>
@@ -194,9 +194,7 @@ export const AdminLayout = ({ children, header, mobileBottomBar, aiContext }: Ad
               <SheetTitle className="sr-only">תפריט ניווט</SheetTitle>
               <div className="flex flex-col p-5 pt-14 border-b border-border/60">
                 <Link href="/" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-3 transition-opacity hover:opacity-80">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary shadow-lg">
-                    <span className="text-sm font-bold text-primary-foreground">G</span>
-                  </div>
+                  <GestelitLogo size="sm" />
                   <div>
                     <span className="text-base font-bold text-foreground tracking-tight">Gestelit</span>
                     <p className="text-[11px] text-muted-foreground leading-tight">ניהול רצפת ייצור</p>

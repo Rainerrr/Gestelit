@@ -103,6 +103,10 @@ export const translations = {
     he: "הזינו מספר עובד ובחרו שפה מועדפת",
     ru: "Введите табельный номер и выберите язык",
   },
+  "login.panelDescription": {
+    he: "כניסה מהירה לעובדי ייצור, בחירת עמדה ושחזור עבודה פעילה במקום אחד.",
+    ru: "Быстрый вход для работников производства, выбор станка и восстановление активной работы.",
+  },
   "login.workerIdLabel": {
     he: "מספר עובד",
     ru: "Табельный номер",
@@ -118,6 +122,34 @@ export const translations = {
   "login.submit": {
     he: "כניסה למשמרת",
     ru: "Начать смену",
+  },
+  "login.loading": {
+    he: "מעביר לבחירת תחנה",
+    ru: "Переход к выбору станка",
+  },
+  "login.context.workerTitle": {
+    he: "זיהוי עובד",
+    ru: "Идентификация работника",
+  },
+  "login.context.workerDescription": {
+    he: "כניסה לפי מספר עובד פעיל",
+    ru: "Вход по активному табельному номеру",
+  },
+  "login.context.stationTitle": {
+    he: "בחירת עמדה",
+    ru: "Выбор станка",
+  },
+  "login.context.stationDescription": {
+    he: "מעבר למסך התחנה לאחר הזדהות",
+    ru: "Переход к экрану станка после входа",
+  },
+  "login.context.recoveryTitle": {
+    he: "המשך משמרת",
+    ru: "Продолжение смены",
+  },
+  "login.context.recoveryDescription": {
+    he: "שחזור עבודה פעילה אם קיימת",
+    ru: "Восстановление активной работы, если она есть",
   },
   "login.error.notFound": {
     he: "לא נמצא עובד פעיל עם המספר שסיפקתם.",
@@ -1276,4 +1308,3 @@ export function getTranslation(
 
   return entry[language] ?? entry[FALLBACK_LANGUAGE] ?? key;
 }
-

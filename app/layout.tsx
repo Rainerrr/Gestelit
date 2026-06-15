@@ -20,6 +20,10 @@ const plexMono = IBM_Plex_Mono({
 export const metadata: Metadata = {
   title: "Gestelit Work Monitor",
   description: "מערכת ניטור ובקרה לרצפת הייצור",
+  icons: {
+    icon: "/brand/gestelit-logo.png",
+    apple: "/brand/gestelit-logo.png",
+  },
 };
 
 export const viewport: Viewport = {

@@ -1,0 +1,25 @@
+{
+  "name": "bina-sync-agent",
+  "version": "1.0.0",
+  "description": "Sync agent that reads BINA ERP database and pushes data to Gestelit",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "discover": "tsx src/discover.ts",
+    "install-service": "node scripts/install-service.js",
+    "uninstall-service": "node scripts/uninstall-service.js"
+  },
+  "dependencies": {
+    "mssql": "^11.0.1",
+    "node-fetch": "^3.3.2",
+    "dotenv": "^16.4.7",
+    "node-windows": "^1.0.0-beta.8"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "tsx": "^4.19.0",
+    "@types/node": "^22.0.0"
+  }
+}

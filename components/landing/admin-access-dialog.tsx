@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, type KeyboardEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import { ArrowLeft, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Dialog,
   DialogContent,
@@ -30,7 +32,9 @@ export const AdminAccessDialog = () => {
     }
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (event?: FormEvent<HTMLFormElement>) => {
+    event?.preventDefault();
+
     if (!password) {
       setError("נא להזין סיסמה");
       return;
@@ -64,57 +68,71 @@ export const AdminAccessDialog = () => {
     }
   };
 
-  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Enter" && !isSubmitting) {
-      event.preventDefault();
-      void handleSubmit();
-    }
-  };
-
   return (
     <Dialog open={isOpen} onOpenChange={handleDialogChange}>
       <Button
-        variant="link"
-        className="h-auto p-0 text-sm font-medium text-slate-600 underline-offset-4 hover:underline"
+        variant="secondary"
+        size="lg"
+        className="h-full min-h-32 w-full justify-between whitespace-normal rounded-xl border border-border bg-card px-5 py-5 text-right text-base font-semibold text-foreground hover:bg-secondary"
         onClick={() => setIsOpen(true)}
         aria-label="פתיחת כניסת מנהלים"
       >
-        כניסת מנהל
+        <span className="flex min-w-0 items-start gap-4">
+          <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-secondary text-primary">
+            <ShieldCheck className="h-6 w-6" />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-lg font-semibold">כניסת מנהל</span>
+            <span className="mt-1 block text-sm font-normal leading-6 text-muted-foreground">
+              דשבורד, BINA, דיווחים והגדרות.
+            </span>
+          </span>
+        </span>
+        <ArrowLeft className="hidden h-5 w-5 text-muted-foreground sm:block" />
       </Button>
-      <DialogContent className="text-right">
+      <DialogContent className="text-right sm:max-w-md" dir="rtl">
         <DialogHeader>
+          <div className="mb-2 flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <ShieldCheck className="h-5 w-5" />
+          </div>
           <DialogTitle>כניסת מנהלים</DialogTitle>
-          <DialogDescription>הזן סיסמת מנהל לצפייה בדשבורד.</DialogDescription>
+          <DialogDescription>גישה למנהלים בלבד. הזינו סיסמה לפתיחת הדשבורד.</DialogDescription>
         </DialogHeader>
-        <div className="space-y-2">
+        <form onSubmit={handleSubmit} className="space-y-4">
           <Label htmlFor="admin-password">סיסמת מנהל</Label>
           <Input
             id="admin-password"
             type="password"
             value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            onKeyDown={handleKeyDown}
+            onChange={(event) => {
+              setPassword(event.target.value);
+              if (error) setError("");
+            }}
             placeholder="••••"
             autoComplete="current-password"
             disabled={isSubmitting}
+            autoFocus
+            aria-invalid={Boolean(error)}
+            aria-describedby={error ? "admin-password-error" : undefined}
+            className="h-12 rounded-xl text-lg md:h-12"
           />
           {error ? (
-            <p className="text-sm text-red-600" role="alert">
-              {error}
-            </p>
+            <Alert id="admin-password-error" variant="destructive" className="rounded-xl text-right">
+              <AlertTitle>לא ניתן להיכנס</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
           ) : null}
-        </div>
-        <DialogFooter className="justify-start">
-          <Button
-            onClick={handleSubmit}
-            className="min-w-32"
-            disabled={isSubmitting}
-          >
-            {isSubmitting ? "בודק..." : "כניסה"}
-          </Button>
-        </DialogFooter>
+          <DialogFooter className="pt-2">
+            <Button
+              type="submit"
+              className="h-12 w-full rounded-xl text-base font-semibold"
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? "בודק..." : "כניסה לדשבורד"}
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );
 };
-

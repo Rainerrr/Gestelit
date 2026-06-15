@@ -17,7 +17,7 @@ function adminInit(init?: RequestInit): RequestInit {
   };
 }
 
-function withParams(path: string, params?: Record<string, string | number | null | undefined>) {
+function withParams(path: string, params?: Record<string, string | number | boolean | null | undefined>) {
   const query = new URLSearchParams();
   Object.entries(params ?? {}).forEach(([key, value]) => {
     if (value !== null && value !== undefined && value !== "") {
@@ -34,6 +34,10 @@ export async function fetchBinaOverviewApi() {
 
 export async function fetchBinaWorkOrdersApi(params?: { search?: string; limit?: number; offset?: number }) {
   return handleResponse(await fetch(withParams("/api/admin/bina/work-orders", params), adminInit()));
+}
+
+export async function fetchBinaProductionDashboardApi() {
+  return handleResponse(await fetch("/api/admin/bina/production-dashboard", adminInit()));
 }
 
 export async function fetchBinaWorkOrderDetailApi(binaId: string) {
@@ -62,8 +66,33 @@ export async function fetchBinaSuppliersApi(params?: { search?: string; limit?: 
   return handleResponse(await fetch(withParams("/api/admin/bina/suppliers", params), adminInit()));
 }
 
-export async function fetchBinaFinanceApi(params?: { search?: string; limit?: number; offset?: number }) {
+export async function fetchBinaFinanceApi(params?: {
+  search?: string;
+  limit?: number;
+  offset?: number;
+  kind?: string;
+  partyType?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  dueFrom?: string;
+  dueTo?: string;
+  overdueOnly?: boolean;
+  openOnly?: boolean;
+  currency?: string;
+  minAmount?: number;
+  maxAmount?: number;
+  agingBucket?: string;
+  dateQuality?: string;
+}) {
   return handleResponse(await fetch(withParams("/api/admin/bina/finance", params), adminInit()));
+}
+
+export async function fetchBinaFinanceSummaryApi() {
+  return handleResponse(await fetch("/api/admin/bina/finance/summary", adminInit()));
+}
+
+export async function fetchBinaFinanceDetailApi(binaId: string, kind?: string | null) {
+  return handleResponse(await fetch(withParams(`/api/admin/bina/finance/${encodeURIComponent(binaId)}`, { kind }), adminInit()));
 }
 
 export async function fetchBinaSalesApi(params?: { search?: string; limit?: number; offset?: number }) {

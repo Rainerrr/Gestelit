@@ -33,6 +33,7 @@ type ChatMessage = {
 
 function routeLabel(pathname: string) {
   if (pathname === "/admin") return "דשבורד";
+  if (pathname.startsWith("/admin/sales-daily-log")) return "יומן מכירות";
   if (pathname.startsWith("/admin/bina")) return "נתוני BINA";
   if (pathname.startsWith("/admin/jobs")) return "עבודות";
   if (pathname.startsWith("/admin/history")) return "היסטוריה ודוחות";
@@ -66,6 +67,14 @@ function buildContext(pathname: string, screenContext?: AdminAiScreenContext) {
 }
 
 function suggestedPrompts(pathname: string, context?: AdminAiScreenContext) {
+  if (pathname.startsWith("/admin/sales-daily-log")) {
+    return [
+      "סכם את יומן המכירות והפולואפים שדורשים טיפול היום",
+      "איזה לקוחות חשובים מ-BINA לא קיבלו פעילות מכירה ידנית?",
+      "מצא הזדמנויות פתוחות והשווה אותן להכנסות BINA האחרונות",
+    ];
+  }
+
   if (pathname.startsWith("/admin/bina")) {
     if (context?.activeTab === "purchasing") {
       return [

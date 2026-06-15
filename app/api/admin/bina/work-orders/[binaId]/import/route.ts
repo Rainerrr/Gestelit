@@ -7,12 +7,18 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request, context: { params: Promise<{ binaId: string }> }) {
   try {
     await requireBinaAdmin(request);
+    if (process.env.BINA_IMPORT_ENABLED !== "true") {
+      return NextResponse.json({
+        error: "BINA_IMPORT_DISABLED",
+        message: "BINA import is disabled until the transactional import workflow is hardened.",
+      }, { status: 423 });
+    }
     const { binaId } = await context.params;
     const body = await request.json().catch(() => ({}));
     const payload = {
       pipeline_preset_id: typeof body?.pipeline_preset_id === "string" ? body.pipeline_preset_id : null,
       station_ids: Array.isArray(body?.station_ids) ? body.station_ids.filter((id: unknown) => typeof id === "string") : [],
-      allowQuantityFallback: body?.allowQuantityFallback !== false,
+      allowQuantityFallback: body?.allowQuantityFallback === true,
       first_product_approval_flags:
         body?.first_product_approval_flags && typeof body.first_product_approval_flags === "object"
           ? body.first_product_approval_flags

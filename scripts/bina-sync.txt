@@ -1,0 +1,504 @@
+param(
+  [string]$Endpoint = "https://YOUR-GESTELIT-SERVICE.onrender.com/api/bina/sync",
+  [string]$SyncKey = "REPLACE_WITH_BINA_SYNC_KEY",
+  [string]$SqlServer = "",
+  [string[]]$SqlServerCandidates = @(
+    "127.0.0.1,30030",
+    "localhost,30030",
+    "SR-BINASQL,30030",
+    "SR-BINASQL\BINA"
+  ),
+  [string]$Database = "BinaW18",
+  [string]$SqlUser = "readonly",
+  [string]$SqlPassword = "REPLACE_WITH_SQL_PASSWORD",
+  [int]$MaxRecentOrders = 2000,
+  [int]$BatchSize = 400,
+  [string]$StartAtTable = "",
+  [string]$ExtractorVersion = "bina-sync-utf8-20260615"
+)
+
+$ErrorActionPreference = "Stop"
+
+$BaseDir = "C:\bina-sync"
+$LogFile = Join-Path $BaseDir "bina-sync.log"
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+$script:TableOrder = @(
+  "DFHazmRashi",
+  "DFHazmMontage",
+  "DFHazmNigrar",
+  "DFHazmGimur",
+  "DFHazmGrafika",
+  "DFHazmKirkia",
+  "DFHazmKedam",
+  "DFHazmGlyonot",
+  "Mismahim",
+  "DFMlay",
+  "TnuotMlay",
+  "HeshSapakRashi",
+  "HeshSapakNigrar",
+  "TMSapakNigrar",
+  "BakashaNigrar",
+  "Hovot",
+  "DFShelita",
+  "HeshbonitRashi",
+  "HeshbonitNigrar",
+  "MishloahRashi",
+  "MishloahNigrar",
+  "TovinRashi",
+  "TovinNigrar",
+  "SqlLogins"
+)
+$script:StartTableIndex = 0
+
+New-Item -ItemType Directory -Force -Path $BaseDir | Out-Null
+
+function Write-Log {
+  param([string]$Message)
+  $line = "$(Get-Date -Format o) $Message"
+  Add-Content -Path $LogFile -Value $line
+  Write-Host $line
+}
+
+function Initialize-StartAtTable {
+  if (-not $StartAtTable) {
+    $script:StartTableIndex = 0
+    return
+  }
+
+  $index = [Array]::IndexOf($script:TableOrder, $StartAtTable)
+  if ($index -lt 0) {
+    throw "Unknown StartAtTable '$StartAtTable'. Valid values: $($script:TableOrder -join ', ')"
+  }
+
+  $script:StartTableIndex = $index
+  Write-Log "Resume mode: skipping tables before $StartAtTable"
+}
+
+function Should-SyncTable {
+  param([string]$TableName)
+
+  $index = [Array]::IndexOf($script:TableOrder, $TableName)
+  if ($index -lt 0) {
+    throw "Unknown table '$TableName' in sync script"
+  }
+
+  return ($index -ge $script:StartTableIndex)
+}
+
+function Write-SkipTable {
+  param([string]$TableName)
+  Write-Log "Skipping $TableName due to StartAtTable=$StartAtTable"
+}
+
+function Invoke-BinaQuery {
+  param(
+    [string]$Query,
+    [string]$Server = $script:ActiveSqlServer
+  )
+
+  $connectionString = "Server=$Server;Database=$Database;User ID=$SqlUser;Password=$SqlPassword;TrustServerCertificate=True;Encrypt=False;Connection Timeout=30;"
+  $connection = New-Object System.Data.SqlClient.SqlConnection $connectionString
+  $command = $connection.CreateCommand()
+  $command.CommandText = $Query
+  $command.CommandTimeout = 120
+  $adapter = New-Object System.Data.SqlClient.SqlDataAdapter $command
+  $table = New-Object System.Data.DataTable
+
+  try {
+    [void]$adapter.Fill($table)
+    return ,$table
+  }
+  finally {
+    $connection.Dispose()
+  }
+}
+
+function Resolve-SqlServer {
+  if ($SqlServer) {
+    Write-Log "Using SQL Server: $SqlServer"
+    return $SqlServer
+  }
+
+  foreach ($candidate in $SqlServerCandidates) {
+    try {
+      Write-Log "Testing SQL Server candidate: $candidate"
+      [void](Invoke-BinaQuery -Query "SELECT 1 AS ok;" -Server $candidate)
+      Write-Log "Connected to SQL Server: $candidate"
+      return $candidate
+    }
+    catch {
+      Write-Log "Candidate failed: $candidate - $($_.Exception.Message)"
+    }
+  }
+
+  throw "Could not connect to SQL Server using any candidate. Pass -SqlServer with the exact SSMS server name."
+}
+
+function Convert-DataRow {
+  param([System.Data.DataRow]$Row)
+
+  $data = [ordered]@{}
+  foreach ($column in $Row.Table.Columns) {
+    $value = $Row[$column.ColumnName]
+    if ($value -is [DBNull]) {
+      $data[$column.ColumnName] = $null
+    }
+    elseif ($value -is [DateTime]) {
+      $data[$column.ColumnName] = $value.ToString("o")
+    }
+    else {
+      $data[$column.ColumnName] = $value
+    }
+  }
+
+  return $data
+}
+
+function Get-RowId {
+  param(
+    [System.Collections.IDictionary]$Data,
+    [string[]]$KeyColumns
+  )
+
+  $parts = @()
+  foreach ($column in $KeyColumns) {
+    if (-not $Data.Contains($column) -or $null -eq $Data[$column]) {
+      throw "Missing key column '$column'"
+    }
+    $parts += [string]$Data[$column]
+  }
+
+  return ($parts -join ":")
+}
+
+function Convert-BinaRows {
+  param(
+    [System.Data.DataTable]$Rows,
+    [string[]]$KeyColumns,
+    [string]$SourceUpdatedColumn = ""
+  )
+
+  $converted = @()
+  $seenIds = @{}
+  foreach ($row in $Rows.Rows) {
+    $data = Convert-DataRow -Row $row
+    $baseId = Get-RowId -Data $data -KeyColumns $KeyColumns
+    if ($seenIds.ContainsKey($baseId)) {
+      $seenIds[$baseId] = $seenIds[$baseId] + 1
+      $binaId = "$($baseId):dup$($seenIds[$baseId])"
+    }
+    else {
+      $seenIds[$baseId] = 0
+      $binaId = $baseId
+    }
+
+    $syncRow = [ordered]@{
+      bina_id = $binaId
+      data = $data
+      source_updated_at = $null
+    }
+
+    if ($SourceUpdatedColumn -and $data.Contains($SourceUpdatedColumn) -and $null -ne $data[$SourceUpdatedColumn]) {
+      $syncRow.source_updated_at = $data[$SourceUpdatedColumn]
+    }
+
+    $converted += $syncRow
+  }
+
+  return $converted
+}
+
+function Send-BinaRows {
+  param(
+    [string]$TableName,
+    [array]$Rows
+  )
+
+  if ($Rows.Count -eq 0) {
+    Write-Log "${TableName}: no rows"
+    return
+  }
+
+  for ($offset = 0; $offset -lt $Rows.Count; $offset += $BatchSize) {
+    $count = [Math]::Min($BatchSize, $Rows.Count - $offset)
+    $batch = @($Rows[$offset..($offset + $count - 1)])
+    $syncMode = "recent_window"
+    if ($StartAtTable) {
+      $syncMode = "resume_recent_window"
+    }
+    $payload = @{
+      synced_at = (Get-Date).ToUniversalTime().ToString("o")
+      sync_mode = $syncMode
+      extractor_version = $ExtractorVersion
+      max_recent_orders = $MaxRecentOrders
+      start_at_table = $StartAtTable
+      metadata = @{
+        source_table = $TableName
+        batch_offset = $offset
+        batch_size = $count
+        database = $Database
+      }
+      tables = @{
+        $TableName = $batch
+      }
+    } | ConvertTo-Json -Depth 100 -Compress
+
+    $headers = @{ "X-Sync-Key" = $SyncKey }
+    $bodyBytes = $Utf8NoBom.GetBytes($payload)
+    $response = Invoke-RestMethod -Uri $Endpoint -Method Post -Headers $headers -Body $bodyBytes -ContentType "application/json; charset=utf-8" -TimeoutSec 180
+
+    if (-not $response.ok) {
+      throw "$TableName batch at offset $offset failed: $($response | ConvertTo-Json -Depth 20)"
+    }
+
+    Write-Log "${TableName}: sent $count rows at offset $offset"
+  }
+}
+
+try {
+  Write-Log "BINA sync starting"
+  Initialize-StartAtTable
+  $script:ActiveSqlServer = Resolve-SqlServer
+
+  if (Should-SyncTable "DFHazmRashi") {
+    $rashiQuery = @"
+SELECT TOP ($MaxRecentOrders) *
+FROM dbo.DFHazmRashi
+ORDER BY MisparDFHazmana DESC;
+"@
+    $rashiRows = Invoke-BinaQuery -Query $rashiQuery
+    $rashiSyncRows = Convert-BinaRows -Rows $rashiRows -KeyColumns @("MisparDFHazmana") -SourceUpdatedColumn "TarikRishum"
+    Send-BinaRows -TableName "DFHazmRashi" -Rows $rashiSyncRows
+  }
+  else {
+    Write-SkipTable "DFHazmRashi"
+    Write-Log "Loading DFHazmRashi IDs for resumed station-table sync..."
+    $rashiQuery = @"
+SELECT TOP ($MaxRecentOrders) MisparDFHazmana
+FROM dbo.DFHazmRashi
+ORDER BY MisparDFHazmana DESC;
+"@
+    $rashiRows = Invoke-BinaQuery -Query $rashiQuery
+    Write-Log "Loaded $($rashiRows.Rows.Count) DFHazmRashi IDs"
+  }
+
+  $orderIds = @()
+  foreach ($row in $rashiRows.Rows) {
+    if ($row["MisparDFHazmana"] -isnot [DBNull]) {
+      $orderIds += [int]$row["MisparDFHazmana"]
+    }
+  }
+
+  if ($orderIds.Count -eq 0) {
+    throw "DFHazmRashi returned no order IDs"
+  }
+
+  $stationTables = @(
+    "DFHazmMontage",
+    "DFHazmNigrar",
+    "DFHazmGimur",
+    "DFHazmGrafika",
+    "DFHazmKirkia",
+    "DFHazmKedam",
+    "DFHazmGlyonot"
+  )
+
+  $idList = ($orderIds | Sort-Object -Unique) -join ","
+  foreach ($tableName in $stationTables) {
+    if (-not (Should-SyncTable $tableName)) {
+      Write-SkipTable $tableName
+      continue
+    }
+
+    $query = "SELECT * FROM dbo.$tableName WHERE MisparRashi IN ($idList);"
+    Write-Log "Querying $tableName rows for $($orderIds.Count) order IDs..."
+    $rows = Invoke-BinaQuery -Query $query
+    Write-Log "Query returned $($rows.Rows.Count) rows for $tableName"
+    $keyColumns = @("MisparRashi", "MisparAvoda")
+    if ($tableName -eq "DFHazmNigrar") {
+      $keyColumns = @("RecordId")
+    }
+    $syncRows = Convert-BinaRows -Rows $rows -KeyColumns $keyColumns
+    Send-BinaRows -TableName $tableName -Rows $syncRows
+  }
+
+  if (Should-SyncTable "Mismahim") {
+    $mismahimQuery = @"
+SELECT TOP ($MaxRecentOrders) *
+FROM dbo.Mismahim
+ORDER BY RecordId DESC;
+"@
+    $mismahimRows = Invoke-BinaQuery -Query $mismahimQuery
+    $mismahimSyncRows = Convert-BinaRows -Rows $mismahimRows -KeyColumns @("RecordId") -SourceUpdatedColumn "Tarik"
+    Send-BinaRows -TableName "Mismahim" -Rows $mismahimSyncRows
+  }
+  else {
+    Write-SkipTable "Mismahim"
+  }
+
+  try {
+    if (Should-SyncTable "DFMlay") {
+      $dfMlayQuery = "SELECT TOP ($MaxRecentOrders) * FROM dbo.DFMlay ORDER BY 1 DESC;"
+      $dfMlayRows = Invoke-BinaQuery -Query $dfMlayQuery
+      $dfMlaySyncRows = Convert-BinaRows -Rows $dfMlayRows -KeyColumns @("MisparRashi", "MisparAvoda")
+      Send-BinaRows -TableName "DFMlay" -Rows $dfMlaySyncRows
+    }
+    else {
+      Write-SkipTable "DFMlay"
+    }
+  }
+  catch {
+    Write-Log "WARN: skipped DFMlay: $($_.Exception.Message)"
+  }
+
+  try {
+    if (Should-SyncTable "TnuotMlay") {
+      $tnuotMlayQuery = "SELECT TOP ($MaxRecentOrders) * FROM dbo.TnuotMlay ORDER BY 1 DESC;"
+      $tnuotMlayRows = Invoke-BinaQuery -Query $tnuotMlayQuery
+      $tnuotMlaySyncRows = Convert-BinaRows -Rows $tnuotMlayRows -KeyColumns @("MisparTnua")
+      Send-BinaRows -TableName "TnuotMlay" -Rows $tnuotMlaySyncRows
+    }
+    else {
+      Write-SkipTable "TnuotMlay"
+    }
+  }
+  catch {
+    Write-Log "WARN: skipped TnuotMlay: $($_.Exception.Message)"
+  }
+
+  if (Should-SyncTable "HeshSapakRashi") {
+    $heshSapakRashiQuery = "SELECT TOP ($MaxRecentOrders) * FROM dbo.HeshSapakRashi ORDER BY Tarik DESC, MisparHeshSapak DESC;"
+    $heshSapakRashiRows = Invoke-BinaQuery -Query $heshSapakRashiQuery
+    $heshSapakRashiSyncRows = Convert-BinaRows -Rows $heshSapakRashiRows -KeyColumns @("MisparHeshSapak", "ShnatAvoda") -SourceUpdatedColumn "Tarik"
+    Send-BinaRows -TableName "HeshSapakRashi" -Rows $heshSapakRashiSyncRows
+  }
+  else {
+    Write-SkipTable "HeshSapakRashi"
+  }
+
+  if (Should-SyncTable "HeshSapakNigrar") {
+    $heshSapakNigrarQuery = "SELECT TOP ($MaxRecentOrders) * FROM dbo.HeshSapakNigrar ORDER BY RecordID DESC;"
+    $heshSapakNigrarRows = Invoke-BinaQuery -Query $heshSapakNigrarQuery
+    $heshSapakNigrarSyncRows = Convert-BinaRows -Rows $heshSapakNigrarRows -KeyColumns @("RecordID")
+    Send-BinaRows -TableName "HeshSapakNigrar" -Rows $heshSapakNigrarSyncRows
+  }
+  else {
+    Write-SkipTable "HeshSapakNigrar"
+  }
+
+  if (Should-SyncTable "TMSapakNigrar") {
+    $tmSapakNigrarQuery = "SELECT TOP ($MaxRecentOrders) * FROM dbo.TMSapakNigrar ORDER BY RecordID DESC;"
+    $tmSapakNigrarRows = Invoke-BinaQuery -Query $tmSapakNigrarQuery
+    $tmSapakNigrarSyncRows = Convert-BinaRows -Rows $tmSapakNigrarRows -KeyColumns @("RecordID")
+    Send-BinaRows -TableName "TMSapakNigrar" -Rows $tmSapakNigrarSyncRows
+  }
+  else {
+    Write-SkipTable "TMSapakNigrar"
+  }
+
+  if (Should-SyncTable "BakashaNigrar") {
+    $bakashaNigrarQuery = "SELECT TOP ($MaxRecentOrders) * FROM dbo.BakashaNigrar ORDER BY RecordID DESC;"
+    $bakashaNigrarRows = Invoke-BinaQuery -Query $bakashaNigrarQuery
+    $bakashaNigrarSyncRows = Convert-BinaRows -Rows $bakashaNigrarRows -KeyColumns @("RecordID")
+    Send-BinaRows -TableName "BakashaNigrar" -Rows $bakashaNigrarSyncRows
+  }
+  else {
+    Write-SkipTable "BakashaNigrar"
+  }
+
+  if (Should-SyncTable "Hovot") {
+    $hovotQuery = "SELECT TOP ($MaxRecentOrders) * FROM dbo.Hovot ORDER BY TarikRishum DESC, Asmakta DESC;"
+    $hovotRows = Invoke-BinaQuery -Query $hovotQuery
+    $hovotSyncRows = Convert-BinaRows -Rows $hovotRows -KeyColumns @("Sug", "KodSapak", "Asmakta", "TarikRishum") -SourceUpdatedColumn "TarikRishum"
+    Send-BinaRows -TableName "Hovot" -Rows $hovotSyncRows
+  }
+  else {
+    Write-SkipTable "Hovot"
+  }
+
+  if (Should-SyncTable "DFShelita") {
+    $dfShelitaQuery = "SELECT TOP ($MaxRecentOrders) * FROM dbo.DFShelita ORDER BY RecordId DESC;"
+    $dfShelitaRows = Invoke-BinaQuery -Query $dfShelitaQuery
+    $dfShelitaSyncRows = Convert-BinaRows -Rows $dfShelitaRows -KeyColumns @("RecordId") -SourceUpdatedColumn "TarikStart"
+    Send-BinaRows -TableName "DFShelita" -Rows $dfShelitaSyncRows
+  }
+  else {
+    Write-SkipTable "DFShelita"
+  }
+
+  if (Should-SyncTable "HeshbonitRashi") {
+    $heshbonitRashiQuery = "SELECT TOP ($MaxRecentOrders) * FROM dbo.HeshbonitRashi ORDER BY TarikHeshbonit DESC, MisparHeshbonit DESC;"
+    $heshbonitRashiRows = Invoke-BinaQuery -Query $heshbonitRashiQuery
+    $heshbonitRashiSyncRows = Convert-BinaRows -Rows $heshbonitRashiRows -KeyColumns @("MisparHeshbonit", "ShnatAvoda") -SourceUpdatedColumn "TarikLastUpdate"
+    Send-BinaRows -TableName "HeshbonitRashi" -Rows $heshbonitRashiSyncRows
+  }
+  else {
+    Write-SkipTable "HeshbonitRashi"
+  }
+
+  if (Should-SyncTable "HeshbonitNigrar") {
+    $heshbonitNigrarQuery = "SELECT TOP ($MaxRecentOrders) * FROM dbo.HeshbonitNigrar ORDER BY RecordID DESC;"
+    $heshbonitNigrarRows = Invoke-BinaQuery -Query $heshbonitNigrarQuery
+    $heshbonitNigrarSyncRows = Convert-BinaRows -Rows $heshbonitNigrarRows -KeyColumns @("RecordID")
+    Send-BinaRows -TableName "HeshbonitNigrar" -Rows $heshbonitNigrarSyncRows
+  }
+  else {
+    Write-SkipTable "HeshbonitNigrar"
+  }
+
+  if (Should-SyncTable "MishloahRashi") {
+    $mishloahRashiQuery = "SELECT TOP ($MaxRecentOrders) * FROM dbo.MishloahRashi ORDER BY TarikMishloah DESC, MisparMishloah DESC;"
+    $mishloahRashiRows = Invoke-BinaQuery -Query $mishloahRashiQuery
+    $mishloahRashiSyncRows = Convert-BinaRows -Rows $mishloahRashiRows -KeyColumns @("MisparMishloah", "ShnatAvoda") -SourceUpdatedColumn "TarikMishloah"
+    Send-BinaRows -TableName "MishloahRashi" -Rows $mishloahRashiSyncRows
+  }
+  else {
+    Write-SkipTable "MishloahRashi"
+  }
+
+  if (Should-SyncTable "MishloahNigrar") {
+    $mishloahNigrarQuery = "SELECT TOP ($MaxRecentOrders) * FROM dbo.MishloahNigrar ORDER BY RecordID DESC;"
+    $mishloahNigrarRows = Invoke-BinaQuery -Query $mishloahNigrarQuery
+    $mishloahNigrarSyncRows = Convert-BinaRows -Rows $mishloahNigrarRows -KeyColumns @("RecordID")
+    Send-BinaRows -TableName "MishloahNigrar" -Rows $mishloahNigrarSyncRows
+  }
+  else {
+    Write-SkipTable "MishloahNigrar"
+  }
+
+  if (Should-SyncTable "TovinRashi") {
+    $tovinRashiQuery = "SELECT TOP ($MaxRecentOrders) * FROM dbo.TovinRashi ORDER BY TarikTovin DESC, MisparTovin DESC;"
+    $tovinRashiRows = Invoke-BinaQuery -Query $tovinRashiQuery
+    $tovinRashiSyncRows = Convert-BinaRows -Rows $tovinRashiRows -KeyColumns @("MisparTovin") -SourceUpdatedColumn "TarikTovin"
+    Send-BinaRows -TableName "TovinRashi" -Rows $tovinRashiSyncRows
+  }
+  else {
+    Write-SkipTable "TovinRashi"
+  }
+
+  if (Should-SyncTable "TovinNigrar") {
+    $tovinNigrarQuery = "SELECT TOP ($MaxRecentOrders) * FROM dbo.TovinNigrar ORDER BY RecordID DESC;"
+    $tovinNigrarRows = Invoke-BinaQuery -Query $tovinNigrarQuery
+    $tovinNigrarSyncRows = Convert-BinaRows -Rows $tovinNigrarRows -KeyColumns @("RecordID")
+    Send-BinaRows -TableName "TovinNigrar" -Rows $tovinNigrarSyncRows
+  }
+  else {
+    Write-SkipTable "TovinNigrar"
+  }
+
+  if (Should-SyncTable "SqlLogins") {
+    $sqlLoginsQuery = "SELECT TOP ($MaxRecentOrders) * FROM dbo.SqlLogins ORDER BY recordid DESC;"
+    $sqlLoginsRows = Invoke-BinaQuery -Query $sqlLoginsQuery
+    $sqlLoginsSyncRows = Convert-BinaRows -Rows $sqlLoginsRows -KeyColumns @("recordid") -SourceUpdatedColumn "SLoginTime"
+    Send-BinaRows -TableName "SqlLogins" -Rows $sqlLoginsSyncRows
+  }
+  else {
+    Write-SkipTable "SqlLogins"
+  }
+
+  Write-Log "BINA sync completed"
+}
+catch {
+  Write-Log "ERROR: $($_.Exception.Message)"
+  exit 1
+}

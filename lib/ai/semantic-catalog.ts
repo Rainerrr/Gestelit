@@ -1,3 +1,5 @@
+import { createServiceSupabase } from "@/lib/supabase/client";
+
 export type AiDomain =
   | "overview"
   | "production"
@@ -112,4 +114,3 @@ export async function fetchAvailableMetrics() {
     return AI_METRICS;
   }
 }
-import { createServiceSupabase } from "@/lib/supabase/client";
