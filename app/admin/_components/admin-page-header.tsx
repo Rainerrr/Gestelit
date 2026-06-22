@@ -90,7 +90,7 @@ export const AdminPageHeader = ({
       {/* Center: Capsule selector - desktop only */}
       {capsules && (
         <div className="hidden min-w-0 flex-1 justify-center sm:flex">
-          <div className="inline-flex max-w-full items-center gap-0.5 overflow-x-auto rounded-xl border border-border/80 bg-muted/50 p-1 shadow-sm">
+          <div className="flex max-w-full flex-wrap items-center justify-center gap-1 rounded-xl border border-border/80 bg-muted/50 p-1 shadow-sm">
             {capsules.options.map((option) => {
               const isActive = capsules.activeId === option.id;
               const OptionIcon = option.icon;
@@ -100,7 +100,7 @@ export const AdminPageHeader = ({
                   type="button"
                   onClick={() => capsules.onChange(option.id)}
                   className={cn(
-                    "relative flex shrink-0 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200 lg:px-4",
+                    "relative flex shrink-0 items-center justify-center gap-2 rounded-lg px-2.5 py-2 text-sm font-medium transition-all duration-200 lg:px-3",
                     isActive
                       ? "bg-background text-foreground shadow-sm border border-border/50"
                       : "text-muted-foreground hover:text-foreground hover:bg-background/50"
