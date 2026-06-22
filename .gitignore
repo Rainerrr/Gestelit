@@ -41,6 +41,7 @@ yarn-error.log*
 next-env.d.ts
 
 # local tooling artifacts
+.qa/
 .claude/settings.local.json
 .claude/Plans/
 .claude/ralph-loop*.md

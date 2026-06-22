@@ -420,7 +420,7 @@ function MiniChartCard({
   children: ReactNode;
 }) {
   return (
-    <Card className="rounded-xl border border-border bg-card/50 p-4">
+    <Card className="min-w-0 overflow-hidden rounded-xl border border-border bg-card/50 p-4">
       <div className="mb-3">
         <h3 className="text-sm font-semibold">{title}</h3>
         {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
@@ -473,8 +473,8 @@ function SimpleDonut({ data }: { data: Array<{ label: string; value: number }> }
     return <div className="flex h-52 items-center justify-center rounded-lg border border-dashed border-border text-sm text-muted-foreground">אין נתונים לתרשים</div>;
   }
   return (
-    <div dir="ltr" className="h-56 w-full [direction:ltr]">
-      <ResponsiveContainer width="100%" height="100%">
+    <div dir="ltr" className="h-56 min-h-56 min-w-0 overflow-hidden [direction:ltr]">
+      <ResponsiveContainer width="100%" height={224}>
         <PieChart>
           <Pie data={visible} dataKey="value" nameKey="label" innerRadius={54} outerRadius={82} paddingAngle={3}>
             {visible.map((_, index) => (
@@ -497,8 +497,8 @@ function SimpleBarChart({ data, valueKey, labelKey }: { data: AnyRow[]; valueKey
     return <div className="flex h-52 items-center justify-center rounded-lg border border-dashed border-border text-sm text-muted-foreground">אין נתונים לתרשים</div>;
   }
   return (
-    <div dir="ltr" className="h-56 w-full [direction:ltr]">
-      <ResponsiveContainer width="100%" height="100%">
+    <div dir="ltr" className="h-64 min-h-64 min-w-0 overflow-hidden [direction:ltr]">
+      <ResponsiveContainer width="100%" height={256}>
         <BarChart data={visible} margin={{ top: 8, right: 8, left: 8, bottom: 20 }}>
           <XAxis dataKey={labelKey} tick={{ fontSize: 11 }} interval={0} angle={-20} textAnchor="end" />
           <YAxis tick={{ fontSize: 11 }} />
@@ -510,6 +510,164 @@ function SimpleBarChart({ data, valueKey, labelKey }: { data: AnyRow[]; valueKey
         </BarChart>
       </ResponsiveContainer>
     </div>
+  );
+}
+
+function BinaCommandCenter({
+  overviewData,
+  dashboard,
+  productionMetrics,
+  syncRows,
+  onOpenTab,
+  onAsk,
+}: {
+  overviewData: {
+    sync?: AnyRow;
+    workOrders?: AnyRow;
+    purchasing?: AnyRow;
+    suppliers?: AnyRow;
+    deliveries?: AnyRow;
+  } | null;
+  dashboard: DashboardSummary | null;
+  productionMetrics: AnyRow;
+  syncRows: AnyRow[];
+  onOpenTab: (tab: TabId) => void;
+  onAsk: (prompt: string) => void;
+}) {
+  const coverageStatus = String(dashboard?.coverageStatus ?? "partial_sample");
+  const staleTables = syncRows.filter((row) => row.freshness_status === "stale").length;
+  const qualityCount = Array.isArray(dashboard?.dataQuality) ? dashboard.dataQuality.length : 0;
+  const notImported = numberValue(productionMetrics.not_imported_count) || numberValue(overviewData?.workOrders?.notImported);
+  const atRisk = numberValue(productionMetrics.at_risk_count) || numberValue(overviewData?.workOrders?.atRisk);
+  const missingRoutes = numberValue(productionMetrics.missing_route_count);
+  const materialBlocked = numberValue(productionMetrics.material_blocked_count);
+  const supplierExposure = numberValue(overviewData?.suppliers?.openBalance);
+  const openPurchasing = numberValue(overviewData?.purchasing?.openRequestLines);
+
+  const focusTiles = [
+    {
+      label: "שחרור ייצור",
+      value: formatNumber(notImported),
+      hint: `${formatNumber(atRisk)} בסיכון · ${formatNumber(missingRoutes)} חסרי מסלול`,
+      icon: FileSearch,
+      tone: "from-amber-500/20 to-red-500/10 border-amber-400/25",
+      tab: "production" as TabId,
+    },
+    {
+      label: "רכש וחומרים",
+      value: formatNumber(openPurchasing),
+      hint: `${formatNumber(materialBlocked)} פק״עות עם חסם חומרים`,
+      icon: ShoppingCart,
+      tone: "from-sky-500/20 to-emerald-500/10 border-sky-400/25",
+      tab: "purchasing" as TabId,
+    },
+    {
+      label: "חשיפה כספית",
+      value: formatCompactMoney(supplierExposure, "ILS"),
+      hint: "יתרות ספקים פתוחות לפי BINA",
+      icon: CircleDollarSign,
+      tone: "from-violet-500/20 to-blue-500/10 border-violet-400/25",
+      tab: "finance" as TabId,
+    },
+    {
+      label: "משלוחים פתוחים",
+      value: formatNumber(overviewData?.deliveries?.sentOpen),
+      hint: "מה יצא ועדיין דורש סגירה",
+      icon: Ship,
+      tone: "from-cyan-500/20 to-blue-500/10 border-cyan-400/25",
+      tab: "deliveries" as TabId,
+    },
+  ];
+
+  const trustLabel = coverageStatus === "complete" ? "כיסוי מלא" : "מדגם / חלון חלקי";
+
+  return (
+    <Card className="relative overflow-hidden rounded-2xl border border-blue-400/20 bg-[radial-gradient(circle_at_15%_15%,rgba(59,130,246,0.18),transparent_32%),linear-gradient(135deg,rgba(15,23,42,0.96),rgba(2,6,23,0.88))] p-4 shadow-[0_20px_80px_rgba(15,23,42,0.28)] sm:p-5">
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-l from-transparent via-blue-300/60 to-transparent" />
+      <div className="grid gap-5 xl:grid-cols-[1.05fr_1.4fr]">
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge className="border-blue-400/30 bg-blue-500/15 text-blue-100">חמ״ל BINA</Badge>
+            <Badge className={coverageStatus === "complete" ? statusVariant("ok") : statusVariant("open")}>
+              {trustLabel}
+            </Badge>
+            {staleTables > 0 && <Badge className={statusVariant("at_risk")}>{formatNumber(staleTables)} טבלאות מיושנות</Badge>}
+          </div>
+          <div>
+            <h2 className="max-w-2xl text-2xl font-semibold tracking-normal text-white sm:text-3xl">מה דורש החלטה תפעולית עכשיו?</h2>
+            <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">
+              שכבת MES מעל BINA: ייצור, רכש, ספקים, כספים ומשלוחים מחוברים לתור פעולה אחד. הנתונים נשארים לקריאה בלבד ומסומנים לפי אמינות הסנכרון.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-xs text-slate-300 sm:grid-cols-4">
+            <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+              <div className="text-slate-400">סנכרון אחרון</div>
+              <div className="mt-1 font-mono text-sm text-white tabular-nums">{formatDate(overviewData?.sync?.lastSyncedAt)}</div>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+              <div className="text-slate-400">חריגות איכות</div>
+              <div className="mt-1 font-mono text-sm text-white tabular-nums">{formatNumber(qualityCount)}</div>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+              <div className="text-slate-400">פק״עות בסיכון</div>
+              <div className="mt-1 font-mono text-sm text-white tabular-nums">{formatNumber(atRisk)}</div>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+              <div className="text-slate-400">בקשות רכש</div>
+              <div className="mt-1 font-mono text-sm text-white tabular-nums">{formatNumber(openPurchasing)}</div>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" onClick={() => onAsk("תן לי תמונת מצב ניהולית: מה דורש טיפול עכשיו בייצור, רכש, כספים ומשלוחים, ומה הפעולה הבאה המומלצת?")} className="gap-2">
+              <Bot className="h-4 w-4" />
+              נתח חמ״ל
+            </Button>
+            <Button type="button" variant="outline" onClick={() => onOpenTab("production")} className="border-white/15 bg-white/5 text-white hover:bg-white/10">
+              פתח פק״עות
+            </Button>
+            <Button type="button" variant="outline" onClick={() => onOpenTab("finance")} className="border-white/15 bg-white/5 text-white hover:bg-white/10">
+              פתח כספים
+            </Button>
+          </div>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {focusTiles.map((tile) => {
+            const Icon = tile.icon;
+            return (
+              <button
+                key={tile.label}
+                type="button"
+                onClick={() => onOpenTab(tile.tab)}
+                className={cn(
+                  "group rounded-2xl border bg-gradient-to-br p-4 text-right transition hover:-translate-y-0.5 hover:border-white/25 hover:bg-white/10",
+                  tile.tone,
+                )}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm text-slate-300">{tile.label}</div>
+                    <div className="mt-2 break-words font-mono text-2xl font-semibold text-white tabular-nums">{tile.value}</div>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-white/10 p-2 text-white">
+                    <Icon className="h-5 w-5" />
+                  </div>
+                </div>
+                <div className="mt-3 text-xs leading-5 text-slate-300">{tile.hint}</div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div className="mt-5 grid gap-2 border-t border-white/10 pt-4 text-xs text-slate-300 sm:grid-cols-5">
+        {["BINA ERP", "רכש", "ייצור", "משלוחים", "כספים / AI"].map((step, index) => (
+          <div key={step} className="flex items-center gap-2">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-blue-300/30 bg-blue-400/10 font-mono text-blue-100">{index + 1}</div>
+            <span>{step}</span>
+            {index < 4 && <div className="hidden h-px flex-1 bg-blue-300/25 sm:block" />}
+          </div>
+        ))}
+      </div>
+    </Card>
   );
 }
 
@@ -1420,6 +1578,14 @@ export const BinaDashboard = () => {
         {activeTab === "overview" && (
           <div className="space-y-4">
             <DataQualityBanner dashboard={dashboardSummary} syncRows={effectiveSyncRows} />
+            <BinaCommandCenter
+              overviewData={overviewData}
+              dashboard={dashboardSummary}
+              productionMetrics={productionMetrics}
+              syncRows={effectiveSyncRows}
+              onOpenTab={setActiveTab}
+              onAsk={(prompt) => void sendAi(prompt)}
+            />
             <div className="grid grid-cols-2 gap-3 xl:grid-cols-6">
               <KpiCard label="סנכרון אחרון" value={formatDate(overviewData?.sync?.lastSyncedAt)} icon={RefreshCcw} tone="emerald" hint={dashboardSummary?.coverageStatus === "complete" ? "כיסוי מלא" : "סנכרון חלקי"} />
               <KpiCard label="פק״עות שלא יובאו" value={formatNumber(overviewData?.workOrders?.notImported)} icon={FileSearch} tone="amber" />
