@@ -1,0 +1,82 @@
+name: Render Image Deploy
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE_NAME: ghcr.io/rainerrr/gestelit
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.IMAGE_NAME }}:latest
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Switch Render service to prebuilt image
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+          RENDER_OWNER_ID: ${{ secrets.RENDER_OWNER_ID }}
+          IMAGE_URL: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+        run: |
+          set -euo pipefail
+          curl --fail-with-body -sS -X PATCH "https://api.render.com/v1/services/${RENDER_SERVICE_ID}" \
+            -H "Authorization: Bearer ${RENDER_API_KEY}" \
+            -H "Accept: application/json" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n \
+              --arg ownerId "${RENDER_OWNER_ID}" \
+              --arg imagePath "${IMAGE_URL}" \
+              '{
+                image: {
+                  ownerId: $ownerId,
+                  imagePath: $imagePath
+                },
+                serviceDetails: {
+                  runtime: "image",
+                  envSpecificDetails: {
+                    dockerCommand: "sh -c \"PORT=${PORT:-10000} node server.js\""
+                  }
+                }
+              }')"
+
+      - name: Trigger Render image deploy
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+          IMAGE_URL: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+        run: |
+          set -euo pipefail
+          curl --fail-with-body -sS -X POST "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/deploys" \
+            -H "Authorization: Bearer ${RENDER_API_KEY}" \
+            -H "Accept: application/json" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg imageUrl "${IMAGE_URL}" '{ imageUrl: $imageUrl }')"
