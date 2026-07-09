@@ -160,6 +160,7 @@ export function SalesDailyLogDashboard() {
   const [summary, setSummary] = useState<SalesSummary | null>(null);
   const [clients, setClients] = useState<SalesClientActivity[]>([]);
   const [search, setSearch] = useState("");
+  const [salespersonFilter, setSalespersonFilter] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingClients, setIsLoadingClients] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -198,7 +199,7 @@ export function SalesDailyLogDashboard() {
     try {
       const range = todayRange();
       const [activityResult, followUpResult, summaryResult, clientResult] = await Promise.all([
-        fetchSalesActivitiesApi({ search, dateFrom: range.start, dateTo: range.end, limit: 100 }) as Promise<{ rows: SalesActivityLog[] }>,
+        fetchSalesActivitiesApi({ search, salesperson: salespersonFilter, dateFrom: range.start, dateTo: range.end, limit: 100 }) as Promise<{ rows: SalesActivityLog[] }>,
         fetchSalesActivitiesApi({ status: "follow_up", nextActionTo: todayIsoDate(), limit: 30 }) as Promise<{ rows: SalesActivityLog[] }>,
         fetchSalesSummaryApi() as Promise<SalesSummary>,
         fetchSalesClientsApi({ limit: 8 }) as Promise<{ rows: SalesClientActivity[] }>,
@@ -212,7 +213,7 @@ export function SalesDailyLogDashboard() {
     } finally {
       setIsLoading(false);
     }
-  }, [hasAccess, search]);
+  }, [hasAccess, salespersonFilter, search]);
 
   useEffect(() => {
     void loadData();
@@ -571,9 +572,16 @@ export function SalesDailyLogDashboard() {
                   <h2 className="text-lg font-semibold">יומן היום</h2>
                   <p className="text-sm text-muted-foreground">פעילויות שנרשמו היום לפי זמן אירוע.</p>
                 </div>
-                <div className="relative w-full sm:w-52">
-                  <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="חיפוש" className="pr-9" />
+                <div className="grid w-full gap-2 sm:w-auto sm:grid-cols-[160px_210px]">
+                  <Input
+                    value={salespersonFilter}
+                    onChange={(event) => setSalespersonFilter(event.target.value)}
+                    placeholder="איש מכירות"
+                  />
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="לקוח / תוכן" className="pr-9" />
+                  </div>
                 </div>
               </div>
 
@@ -589,6 +597,7 @@ export function SalesDailyLogDashboard() {
                         <div className="flex flex-wrap items-center gap-2">
                           <Badge>{eventOptions.find((option) => option.id === activity.event_type)?.label ?? activity.event_type}</Badge>
                           <Badge variant="outline">{valueLabel(activity.status)}</Badge>
+                          {activity.sales_user_id ? <Badge className="bg-primary/10 text-primary">פורטל מכירות</Badge> : null}
                         </div>
                         <h3 className="mt-2 truncate font-semibold">{activity.customer_name}</h3>
                         <p className="text-xs text-muted-foreground">{activity.salesperson} · {formatDateTime(activity.event_at)}</p>
@@ -606,6 +615,21 @@ export function SalesDailyLogDashboard() {
                         {activity.next_action_date ? <span className="text-muted-foreground"> · {activity.next_action_date}</span> : null}
                       </div>
                     )}
+                    {activity.attachments && activity.attachments.length > 0 ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {activity.attachments.map((attachment) => (
+                          <a
+                            key={attachment.id}
+                            href={attachment.public_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+                          >
+                            {attachment.file_name}
+                          </a>
+                        ))}
+                      </div>
+                    ) : null}
                     <div className="mt-3 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
                       {activity.status !== "follow_up" && (
                         <Button variant="outline" size="sm" onClick={() => void markStatus(activity, "follow_up")} className="w-full sm:w-auto">להמשך טיפול</Button>

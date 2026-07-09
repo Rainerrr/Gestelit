@@ -21,6 +21,7 @@ const MAX_LIMIT = 200;
 
 export type SalesActivityLog = {
   id: string;
+  sales_user_id: string | null;
   event_type: SalesEventType;
   event_at: string;
   salesperson: string;
@@ -36,6 +37,7 @@ export type SalesActivityLog = {
   currency: string;
   status: SalesStatus;
   source: SalesSource;
+  portal_submitted_at: string | null;
   linked_bina_invoice_no: number | null;
   linked_bina_order_no: number | null;
   linked_bina_delivery_no: number | null;
@@ -43,6 +45,20 @@ export type SalesActivityLog = {
   metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+  attachments?: SalesActivityAttachment[];
+};
+
+export type SalesActivityAttachment = {
+  id: string;
+  sales_activity_id: string;
+  sales_user_id: string | null;
+  file_name: string;
+  file_type: string;
+  file_size: number;
+  storage_bucket: string;
+  storage_path: string;
+  public_url: string;
+  created_at: string;
 };
 
 export type SalesClientActivity = {
@@ -111,6 +127,8 @@ export type SalesActivityInput = {
   linked_bina_delivery_no?: number | string | null;
   ai_confidence?: "low" | "medium" | "high" | null;
   metadata?: Record<string, unknown> | null;
+  sales_user_id?: string | null;
+  portal_submitted_at?: string | null;
 };
 
 function clampLimit(value?: number | null) {
@@ -155,7 +173,33 @@ function cleanActivityInput(input: SalesActivityInput) {
     linked_bina_delivery_no: normalizeSalesInteger(input.linked_bina_delivery_no),
     ai_confidence: input.ai_confidence ?? null,
     metadata: input.metadata ?? {},
+    sales_user_id: typeof input.sales_user_id === "string" && input.sales_user_id ? input.sales_user_id : null,
+    portal_submitted_at: typeof input.portal_submitted_at === "string" && input.portal_submitted_at ? input.portal_submitted_at : null,
   };
+}
+
+async function attachSalesAttachments(rows: SalesActivityLog[]) {
+  if (rows.length === 0) return rows;
+  const supabase = createServiceSupabase();
+  const ids = rows.map((row) => row.id);
+  const { data, error } = await supabase
+    .from("sales_activity_attachments")
+    .select("*")
+    .in("sales_activity_id", ids)
+    .order("created_at", { ascending: false });
+
+  if (error) throw new Error(error.message);
+  const byActivity = new Map<string, SalesActivityAttachment[]>();
+  for (const attachment of (data ?? []) as SalesActivityAttachment[]) {
+    const bucket = byActivity.get(attachment.sales_activity_id) ?? [];
+    bucket.push(attachment);
+    byActivity.set(attachment.sales_activity_id, bucket);
+  }
+
+  return rows.map((row) => ({
+    ...row,
+    attachments: byActivity.get(row.id) ?? [],
+  }));
 }
 
 export async function fetchSalesActivities(params: SalesListParams = {}) {
@@ -189,7 +233,7 @@ export async function fetchSalesActivities(params: SalesListParams = {}) {
 
   const { data, count, error } = await query;
   if (error) throw new Error(error.message);
-  return { rows: (data ?? []) as SalesActivityLog[], count: count ?? 0 };
+  return { rows: await attachSalesAttachments((data ?? []) as SalesActivityLog[]), count: count ?? 0 };
 }
 
 export async function createSalesActivity(input: SalesActivityInput) {
@@ -202,7 +246,8 @@ export async function createSalesActivity(input: SalesActivityInput) {
     .single();
 
   if (error) throw new Error(error.message);
-  return data as SalesActivityLog;
+  const [activity] = await attachSalesAttachments([data as SalesActivityLog]);
+  return activity;
 }
 
 export async function updateSalesActivity(id: string, input: Partial<SalesActivityInput>) {
@@ -247,7 +292,198 @@ export async function updateSalesActivity(id: string, input: Partial<SalesActivi
     .single();
 
   if (error) throw new Error(error.message);
-  return data as SalesActivityLog;
+  const [activity] = await attachSalesAttachments([data as SalesActivityLog]);
+  return activity;
+}
+
+export async function fetchSalesUserActivities(
+  salesUserId: string,
+  params: Omit<SalesListParams, "salesperson"> = {},
+) {
+  const supabase = createServiceSupabase();
+  const limit = clampLimit(params.limit);
+  const offset = Math.max(0, Number(params.offset ?? 0));
+  const pattern = likePattern(params.search);
+
+  let query = supabase
+    .from("sales_activity_logs")
+    .select("*", { count: "exact" })
+    .eq("sales_user_id", salesUserId)
+    .order("event_at", { ascending: false })
+    .range(offset, offset + limit - 1);
+
+  if (params.dateFrom) query = query.gte("event_at", params.dateFrom);
+  if (params.dateTo) query = query.lte("event_at", params.dateTo);
+  if (params.nextActionFrom) query = query.gte("next_action_date", params.nextActionFrom);
+  if (params.nextActionTo) query = query.lte("next_action_date", params.nextActionTo);
+  if (params.eventType && isSalesEventType(params.eventType)) query = query.eq("event_type", params.eventType);
+  if (params.status && isSalesStatus(params.status)) query = query.eq("status", params.status);
+  if (pattern) {
+    query = query.or([
+      `customer_name.ilike.${pattern}`,
+      `contact_person.ilike.${pattern}`,
+      `raw_note.ilike.${pattern}`,
+      `ai_summary.ilike.${pattern}`,
+      `ai_next_action.ilike.${pattern}`,
+    ].join(","));
+  }
+
+  const { data, count, error } = await query;
+  if (error) throw new Error(error.message);
+  return { rows: await attachSalesAttachments((data ?? []) as SalesActivityLog[]), count: count ?? 0 };
+}
+
+export async function createSalesActivityForUser(
+  salesUser: { id: string; full_name: string },
+  input: Omit<SalesActivityInput, "salesperson" | "sales_user_id" | "portal_submitted_at">,
+) {
+  return createSalesActivity({
+    ...input,
+    salesperson: salesUser.full_name,
+    sales_user_id: salesUser.id,
+    portal_submitted_at: new Date().toISOString(),
+    metadata: {
+      ...(input.metadata ?? {}),
+      submittedBy: "sales_portal",
+    },
+  });
+}
+
+export async function updateSalesActivityForUser(
+  salesUserId: string,
+  id: string,
+  input: Partial<SalesActivityInput>,
+) {
+  const supabase = createServiceSupabase();
+  const { data: existing, error: existingError } = await supabase
+    .from("sales_activity_logs")
+    .select("id")
+    .eq("id", id)
+    .eq("sales_user_id", salesUserId)
+    .maybeSingle();
+
+  if (existingError) throw new Error(existingError.message);
+  if (!existing) throw new Error("SALES_ACTIVITY_NOT_FOUND");
+  return updateSalesActivity(id, input);
+}
+
+export async function createSalesActivityAttachment(input: {
+  salesActivityId: string;
+  salesUserId: string | null;
+  fileName: string;
+  fileType: string;
+  fileSize: number;
+  storageBucket: string;
+  storagePath: string;
+  publicUrl: string;
+}) {
+  const supabase = createServiceSupabase();
+  const { data, error } = await supabase
+    .from("sales_activity_attachments")
+    .insert({
+      sales_activity_id: input.salesActivityId,
+      sales_user_id: input.salesUserId,
+      file_name: input.fileName,
+      file_type: input.fileType,
+      file_size: input.fileSize,
+      storage_bucket: input.storageBucket,
+      storage_path: input.storagePath,
+      public_url: input.publicUrl,
+    })
+    .select("*")
+    .single();
+
+  if (error) throw new Error(error.message);
+  return data as SalesActivityAttachment;
+}
+
+export async function fetchSalesUserClients(
+  salesUserId: string,
+  params: { search?: string | null; limit?: number | null } = {},
+) {
+  const supabase = createServiceSupabase();
+  const limit = clampLimit(params.limit ?? 12);
+  const pattern = likePattern(params.search);
+
+  let ownQuery = supabase
+    .from("sales_activity_logs")
+    .select("customer_code, customer_name, contact_person, event_at, estimated_revenue, actual_revenue, status")
+    .eq("sales_user_id", salesUserId)
+    .order("event_at", { ascending: false })
+    .limit(80);
+
+  if (pattern) ownQuery = ownQuery.ilike("customer_name", pattern);
+
+  let suggestedQuery = supabase
+    .from("mart_sales_client_activity")
+    .select("*")
+    .order("combined_score", { ascending: false })
+    .limit(limit);
+
+  if (pattern) suggestedQuery = suggestedQuery.or(`customer_name.ilike.${pattern},salesperson.ilike.${pattern}`);
+
+  const [ownResult, suggestedResult] = await Promise.all([ownQuery, suggestedQuery]);
+  if (ownResult.error) throw new Error(ownResult.error.message);
+  if (suggestedResult.error) throw new Error(suggestedResult.error.message);
+
+  const own = new Map<string, {
+    customer_code: number | null;
+    customer_name: string;
+    contact_person: string | null;
+    activity_count: number;
+    estimated_pipeline: number;
+    actual_revenue: number;
+    last_activity_at: string | null;
+  }>();
+
+  for (const activity of ownResult.data ?? []) {
+    const key = `${activity.customer_code ?? ""}:${activity.customer_name}`;
+    const current = own.get(key) ?? {
+      customer_code: activity.customer_code,
+      customer_name: activity.customer_name,
+      contact_person: activity.contact_person,
+      activity_count: 0,
+      estimated_pipeline: 0,
+      actual_revenue: 0,
+      last_activity_at: null,
+    };
+    current.activity_count += 1;
+    current.estimated_pipeline += Number(activity.estimated_revenue ?? 0);
+    current.actual_revenue += Number(activity.actual_revenue ?? 0);
+    current.last_activity_at = current.last_activity_at ?? activity.event_at;
+    own.set(key, current);
+  }
+
+  return {
+    ownClients: Array.from(own.values()).slice(0, limit),
+    suggestedClients: (suggestedResult.data ?? []) as SalesClientActivity[],
+  };
+}
+
+export async function fetchSalesUserSummary(salesUserId: string) {
+  const supabase = createServiceSupabase();
+  const day = new Date();
+  day.setHours(0, 0, 0, 0);
+  const week = new Date(day);
+  week.setDate(week.getDate() - week.getDay());
+
+  const { data, error } = await supabase
+    .from("sales_activity_logs")
+    .select("id,event_at,status,estimated_revenue,actual_revenue,next_action_date")
+    .eq("sales_user_id", salesUserId)
+    .gte("event_at", week.toISOString());
+
+  if (error) throw new Error(error.message);
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const rows = data ?? [];
+  return {
+    todayCount: rows.filter((row) => new Date(row.event_at) >= day).length,
+    weekCount: rows.length,
+    openFollowUps: rows.filter((row) => row.status === "follow_up").length,
+    overdueFollowUps: rows.filter((row) => row.status === "follow_up" && row.next_action_date && row.next_action_date <= todayIso).length,
+    estimatedPipeline: rows.reduce((sum, row) => sum + Number(row.estimated_revenue ?? 0), 0),
+    actualRevenue: rows.reduce((sum, row) => sum + Number(row.actual_revenue ?? 0), 0),
+  };
 }
 
 export async function fetchSalesClients(params: { search?: string | null; limit?: number | null } = {}) {

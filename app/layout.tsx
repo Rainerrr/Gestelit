@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Mono, Rubik } from "next/font/google";
 import "./globals.css";
 import { AppProviders } from "@/components/providers/app-providers";
+import { RootShell } from "@/components/layout/root-shell";
 
 const rubik = Rubik({
   variable: "--font-rubik",
@@ -45,11 +46,7 @@ export default function RootLayout({
         className={`${rubik.variable} ${plexMono.variable} antialiased`}
       >
         <AppProviders>
-          <main className="min-h-screen">
-            <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-6 px-4 py-10 sm:gap-10 sm:px-6 lg:px-10">
-              {children}
-            </div>
-          </main>
+          <RootShell>{children}</RootShell>
         </AppProviders>
       </body>
     </html>

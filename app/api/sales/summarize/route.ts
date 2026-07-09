@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireSalesAdmin, salesRateLimitKey, salesRouteError } from "../_route-utils";
+import { requireSalesSessionUser } from "@/lib/auth/sales-session";
 import { checkInMemoryRateLimit } from "@/lib/ai/rate-limit";
 import { summarizeSalesActivityNote } from "@/lib/data/sales-ai";
 
@@ -7,19 +7,12 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   try {
-    const auth = await requireSalesAdmin(request);
-    const rate = checkInMemoryRateLimit(await salesRateLimitKey(request, auth.sessionToken));
+    const user = await requireSalesSessionUser();
+    const rate = checkInMemoryRateLimit(`sales-user:${user.id}`);
     if (!rate.allowed) {
       return NextResponse.json(
         { error: "RATE_LIMITED", resetAt: new Date(rate.resetAt).toISOString() },
-        {
-          status: 429,
-          headers: {
-            "Retry-After": String(Math.max(1, Math.ceil((rate.resetAt - Date.now()) / 1000))),
-            "X-RateLimit-Limit": String(rate.limit),
-            "X-RateLimit-Remaining": "0",
-          },
-        },
+        { status: 429 },
       );
     }
 
@@ -28,9 +21,11 @@ export async function POST(request: Request) {
       rawNote: body?.rawNote,
       eventType: body?.eventType,
       customerName: body?.customerName,
-      salesperson: body?.salesperson,
+      salesperson: user.full_name,
     }));
   } catch (error) {
-    return salesRouteError(error, "SALES_SUMMARY_AI_FAILED");
+    const message = error instanceof Error ? error.message : "SALES_SUMMARY_AI_FAILED";
+    const status = message === "SALES_UNAUTHORIZED" ? 401 : message === "NOTE_REQUIRED" ? 400 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }

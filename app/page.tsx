@@ -8,6 +8,7 @@ import {
   ArrowLeft,
   BarChart3,
   Database,
+  Handshake,
   IdCard,
   ShieldCheck,
 } from "lucide-react";
@@ -55,7 +56,7 @@ export default function Home() {
               </p>
             </div>
 
-            <div className="grid gap-3 md:grid-cols-[1.35fr_0.85fr]">
+            <div className="grid gap-3 md:grid-cols-3">
               <Button
                 asChild
                 size="lg"
@@ -80,6 +81,28 @@ export default function Home() {
               <div className="min-h-32">
                 <AdminAccessDialog />
               </div>
+
+              <Button
+                asChild
+                variant="outline"
+                size="lg"
+                className="h-auto min-h-32 w-full justify-between whitespace-normal rounded-xl px-5 py-5 text-right"
+              >
+                <Link href="/sales/login">
+                  <span className="flex min-w-0 items-start gap-4">
+                    <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                      <Handshake className="h-6 w-6" />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-lg font-semibold">יומן מכירות</span>
+                      <span className="mt-1 block text-sm font-normal leading-6 text-muted-foreground">
+                        כניסה לאנשי מכירות, דיווח לקוח וקבצים.
+                      </span>
+                    </span>
+                  </span>
+                  <ArrowLeft className="hidden h-6 w-6 sm:block" />
+                </Link>
+              </Button>
             </div>
           </div>
 
