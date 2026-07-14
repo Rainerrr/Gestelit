@@ -445,10 +445,10 @@ export function SalesPortal() {
           {savedMessage && <Notice tone="green">{savedMessage}</Notice>}
         </div>
 
-        <section className="order-2 grid gap-4 sm:order-3 xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">
-          <Card className="rounded-2xl border border-border/80 bg-card p-4 shadow-sm shadow-slate-900/5 sm:p-5">
+        <section className="order-2 grid min-w-0 gap-4 sm:order-3 xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">
+          <Card className="min-w-0 overflow-hidden rounded-2xl border border-border/80 bg-card p-3 shadow-sm shadow-slate-900/5 sm:p-5">
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
+              <div className="min-w-0">
                 <h1 className="text-xl font-semibold sm:text-2xl">דיווח פעילות חדש</h1>
                 <p className="mt-1 hidden text-sm leading-6 text-muted-foreground sm:block">
                   רשמו מה קרה מול הלקוח. אפשר לצרף תמונה או מסמך, ולתת ל-AI לנסח סיכום עסקי.
@@ -468,22 +468,22 @@ export function SalesPortal() {
                     variant={active ? "default" : "outline"}
                     size="sm"
                     onClick={() => setForm((current) => ({ ...current, event_type: option.id }))}
-                    className="h-11 gap-1.5 px-2 text-sm sm:h-10 sm:px-3"
+                    className="min-w-0 gap-1.5 px-2 text-sm h-11 sm:h-10 sm:px-3 [&_svg]:shrink-0"
                   >
                     <Icon className="h-4 w-4" />
-                    {option.label}
+                    <span className="truncate">{option.label}</span>
                   </Button>
                 );
               })}
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid min-w-0 gap-3 sm:grid-cols-2">
               <Field label="לקוח">
                 <Input
                   value={form.customer_name}
                   onChange={(event) => setForm((current) => ({ ...current, customer_name: event.target.value, customer_code: null }))}
                   placeholder="שם לקוח"
-                  className="h-12 rounded-xl text-base md:h-10 md:text-sm"
+                  className="h-12 min-w-0 rounded-xl text-base md:h-10 md:text-sm"
                 />
               </Field>
               <Field label="איש קשר">
@@ -491,7 +491,7 @@ export function SalesPortal() {
                   value={String(form.contact_person ?? "")}
                   onChange={(event) => setForm((current) => ({ ...current, contact_person: event.target.value }))}
                   placeholder="אופציונלי"
-                  className="h-12 rounded-xl text-base md:h-10 md:text-sm"
+                  className="h-12 min-w-0 rounded-xl text-base md:h-10 md:text-sm"
                 />
               </Field>
               <Field label="תאריך ושעה">
@@ -500,7 +500,7 @@ export function SalesPortal() {
                   type="datetime-local"
                   value={String(form.event_at ?? "")}
                   onChange={(event) => setForm((current) => ({ ...current, event_at: event.target.value }))}
-                  className="h-12 rounded-xl text-base md:h-10 md:text-sm"
+                  className="h-12 min-w-0 rounded-xl text-base md:h-10 md:text-sm"
                 />
               </Field>
               <Field label="תאריך פעולה הבאה">
@@ -509,19 +509,19 @@ export function SalesPortal() {
                   type="date"
                   value={String(form.next_action_date ?? "")}
                   onChange={(event) => setForm((current) => ({ ...current, next_action_date: event.target.value, status: event.target.value ? "follow_up" : current.status }))}
-                  className="h-12 rounded-xl text-base md:h-10 md:text-sm"
+                  className="h-12 min-w-0 rounded-xl text-base md:h-10 md:text-sm"
                 />
               </Field>
             </div>
 
             {clientSuggestions.length > 0 && (
-              <div className="-mx-1 mt-3 flex snap-x gap-2 overflow-x-auto px-1 pb-1">
+              <div className="-mx-1 mt-3 flex max-w-full snap-x gap-2 overflow-x-auto px-1 pb-1">
                 {clientSuggestions.map((client) => (
                   <button
                     key={`${client.source}-${client.customer_code ?? "manual"}-${client.customer_name}`}
                     type="button"
                     onClick={() => selectClient(client)}
-                    className="w-56 shrink-0 snap-start rounded-xl border border-border bg-secondary/40 p-3 text-right text-sm transition hover:bg-accent"
+                    className="w-[min(14rem,82vw)] shrink-0 snap-start rounded-xl border border-border bg-secondary/40 p-3 text-right text-sm transition hover:bg-accent"
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="truncate font-semibold">{client.customer_name}</span>
@@ -538,7 +538,7 @@ export function SalesPortal() {
             <div className="mt-4">
               <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <Label>מה קרה מול הלקוח?</Label>
-                <div className="grid grid-cols-2 gap-2 sm:flex">
+                <div className="grid min-w-0 grid-cols-2 gap-2 sm:flex">
                   <Button type="button" variant="outline" size="sm" onClick={toggleSpeech} className="h-11 gap-2 sm:h-9">
                     {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
                     {isListening ? "עצור" : "דיבור"}
@@ -553,7 +553,7 @@ export function SalesPortal() {
                 value={form.raw_note}
                 onChange={(event) => setForm((current) => ({ ...current, raw_note: event.target.value }))}
                 placeholder="לדוגמה: נפגשתי עם הלקוח, דיברנו על הזמנה חוזרת, ביקש הצעת מחיר עד ראשון..."
-                className="min-h-32 rounded-xl text-base md:text-sm"
+                className="min-h-32 min-w-0 rounded-xl text-base md:text-sm"
               />
             </div>
 
@@ -573,7 +573,7 @@ export function SalesPortal() {
               </Card>
             )}
 
-            <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <div className="mt-4 grid min-w-0 gap-3 sm:grid-cols-3">
               <Field label="סכום מוערך">
                 <Input
                   dir="ltr"
@@ -582,7 +582,7 @@ export function SalesPortal() {
                   value={String(form.estimated_revenue ?? "")}
                   onChange={(event) => setForm((current) => ({ ...current, estimated_revenue: event.target.value }))}
                   placeholder="₪"
-                  className="h-12 rounded-xl text-base md:h-10 md:text-sm"
+                  className="h-12 min-w-0 rounded-xl text-base md:h-10 md:text-sm"
                 />
               </Field>
               <Field label="סכום בפועל">
@@ -593,14 +593,14 @@ export function SalesPortal() {
                   value={String(form.actual_revenue ?? "")}
                   onChange={(event) => setForm((current) => ({ ...current, actual_revenue: event.target.value, status: event.target.value ? "won" : current.status }))}
                   placeholder="אם נסגר"
-                  className="h-12 rounded-xl text-base md:h-10 md:text-sm"
+                  className="h-12 min-w-0 rounded-xl text-base md:h-10 md:text-sm"
                 />
               </Field>
-              <Field label="סטטוס" className="col-span-2 sm:col-span-1">
+              <Field label="סטטוס">
                 <select
                   value={String(form.status ?? "open")}
                   onChange={(event) => setForm((current) => ({ ...current, status: event.target.value as SalesStatus }))}
-                  className="flex h-12 w-full rounded-xl border border-input bg-background px-3 py-2 text-base md:h-10 md:text-sm"
+                  className="flex h-12 min-w-0 w-full rounded-xl border border-input bg-background px-3 py-2 text-base md:h-10 md:text-sm"
                 >
                   {Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                 </select>
@@ -613,20 +613,20 @@ export function SalesPortal() {
                 value={String(form.ai_next_action ?? "")}
                 onChange={(event) => setForm((current) => ({ ...current, ai_next_action: event.target.value }))}
                 placeholder="מה צריך לעשות עכשיו?"
-                className="mt-2 h-12 rounded-xl text-base md:h-10 md:text-sm"
+                className="mt-2 h-12 min-w-0 rounded-xl text-base md:h-10 md:text-sm"
               />
             </div>
 
-            <div className="mt-4 rounded-xl border border-dashed border-border bg-secondary/25 p-4">
+            <div className="mt-4 min-w-0 rounded-xl border border-dashed border-border bg-secondary/25 p-3 sm:p-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
+                <div className="min-w-0">
                   <div className="flex items-center gap-2 font-semibold">
                     <Paperclip className="h-4 w-4" />
                     קבצים ותמונות
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">עד 5 קבצים, 10MB לכל קובץ.</p>
                 </div>
-                <Label className="inline-flex h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-border bg-background px-4 py-2 text-sm font-medium hover:bg-accent">
+                <Label className="inline-flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-border bg-background px-4 py-2 text-sm font-medium hover:bg-accent sm:w-auto">
                   <FileUp className="h-4 w-4" />
                   צרף קבצים
                   <input
@@ -655,7 +655,7 @@ export function SalesPortal() {
               )}
             </div>
 
-            <div className="sticky bottom-0 z-20 -mx-4 mt-5 flex justify-end border-t border-border/70 bg-card/95 px-4 py-3 backdrop-blur sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:p-0">
+            <div className="sticky bottom-0 z-20 -mx-3 mt-5 flex justify-end border-t border-border/70 bg-card/95 px-3 py-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] backdrop-blur sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:p-0">
               <Button onClick={() => void saveActivity()} disabled={isSaving || !isFormReady} className="h-12 w-full rounded-xl text-base sm:w-auto sm:min-w-44 sm:text-sm">
                 {isSaving ? "שומר..." : "שמור ושלח למנהל"}
               </Button>
