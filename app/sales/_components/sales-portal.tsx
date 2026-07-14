@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTheme } from "next-themes";
 import type { ReactNode } from "react";
 import {
   BarChart3,
@@ -24,6 +25,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { GestelitLogo } from "@/components/brand/gestelit-logo";
+import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -151,6 +153,7 @@ function errorLabel(code: string) {
 
 export function SalesPortal() {
   const router = useRouter();
+  const { setTheme } = useTheme();
   const speechRef = useRef<SpeechRecognitionInstance | null>(null);
   const [user, setUser] = useState<SalesPortalUser | null>(null);
   const [activities, setActivities] = useState<SalesActivityLog[]>([]);
@@ -191,6 +194,10 @@ export function SalesPortal() {
   });
 
   const isFormReady = Boolean(form.event_type && form.customer_name?.trim() && form.raw_note?.trim());
+
+  useEffect(() => {
+    setTheme("light");
+  }, [setTheme]);
 
   const loadData = useCallback(async () => {
     try {
@@ -386,35 +393,46 @@ export function SalesPortal() {
   };
 
   if (isLoading) {
-    return <main className="flex min-h-dvh items-center justify-center text-muted-foreground">טוען יומן מכירות...</main>;
+    return (
+      <main
+        dir="rtl"
+        className="flex min-h-dvh items-center justify-center bg-[linear-gradient(180deg,hsl(var(--background)),hsl(var(--secondary)))] text-muted-foreground"
+      >
+        טוען יומן מכירות...
+      </main>
+    );
   }
 
   return (
-    <main dir="rtl" className="min-h-dvh bg-background text-right text-foreground">
-      <header className="sticky top-0 z-30 border-b border-border bg-background/95 px-4 py-3 backdrop-blur sm:px-6">
+    <main
+      dir="rtl"
+      className="min-h-dvh bg-[linear-gradient(180deg,hsl(var(--background)),hsl(var(--secondary)))] text-right text-foreground"
+    >
+      <header className="sticky top-0 z-30 border-b border-border/80 bg-background/95 px-3 py-2.5 shadow-sm shadow-slate-900/5 backdrop-blur sm:px-6 sm:py-3">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
+          <div className="min-w-0 flex items-center gap-2.5 sm:gap-3">
             <GestelitLogo size="sm" className="rounded-xl" />
-            <div>
-              <div className="text-base font-semibold">יומן מכירות</div>
-              <div className="text-xs text-muted-foreground">{user?.full_name}</div>
+            <div className="min-w-0">
+              <div className="truncate text-base font-semibold">יומן מכירות</div>
+              <div className="truncate text-xs text-muted-foreground">{user?.full_name}</div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => void loadData()} className="gap-2">
+          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+            <ThemeToggle />
+            <Button variant="outline" size="sm" onClick={() => void loadData()} className="h-10 gap-2 px-3">
               <RefreshCcw className="h-4 w-4" />
-              רענון
+              <span className="hidden sm:inline">רענון</span>
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => void logout()} className="gap-2">
+            <Button variant="ghost" size="sm" onClick={() => void logout()} className="h-10 gap-2 px-3">
               <LogOut className="h-4 w-4" />
-              יציאה
+              <span className="hidden sm:inline">יציאה</span>
             </Button>
           </div>
         </div>
       </header>
 
-      <div className="mx-auto max-w-7xl space-y-4 p-4 sm:space-y-5 sm:p-6">
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="mx-auto flex max-w-7xl flex-col gap-3 p-3 pb-6 sm:gap-5 sm:p-6">
+        <section className="order-3 grid grid-cols-2 gap-2 sm:order-1 sm:grid-cols-2 sm:gap-3 xl:grid-cols-5">
           <Kpi label="דיווחים היום" value={summary.todayCount} icon={CalendarClock} />
           <Kpi label="דיווחים השבוע" value={summary.weekCount} icon={BarChart3} />
           <Kpi label="פולואפים פתוחים" value={summary.openFollowUps} icon={Clock3} tone={summary.overdueFollowUps > 0 ? "red" : "amber"} />
@@ -422,22 +440,24 @@ export function SalesPortal() {
           <Kpi label="מכירות שנסגרו" value={formatMoney(summary.actualRevenue)} icon={WalletCards} />
         </section>
 
-        {error && <Notice tone="red">{error}</Notice>}
-        {savedMessage && <Notice tone="green">{savedMessage}</Notice>}
+        <div className="order-1 space-y-3 sm:order-2">
+          {error && <Notice tone="red">{error}</Notice>}
+          {savedMessage && <Notice tone="green">{savedMessage}</Notice>}
+        </div>
 
-        <section className="grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">
-          <Card className="rounded-2xl border border-border bg-card/75 p-4 sm:p-5">
+        <section className="order-2 grid gap-4 sm:order-3 xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">
+          <Card className="rounded-2xl border border-border/80 bg-card p-4 shadow-sm shadow-slate-900/5 sm:p-5">
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <h1 className="text-2xl font-semibold">דיווח פעילות חדש</h1>
-                <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                <h1 className="text-xl font-semibold sm:text-2xl">דיווח פעילות חדש</h1>
+                <p className="mt-1 hidden text-sm leading-6 text-muted-foreground sm:block">
                   רשמו מה קרה מול הלקוח. אפשר לצרף תמונה או מסמך, ולתת ל-AI לנסח סיכום עסקי.
                 </p>
               </div>
               <Badge className="w-fit bg-primary/10 text-primary">נשלח למנהל</Badge>
             </div>
 
-            <div className="mb-4 grid grid-cols-3 gap-2 sm:flex sm:flex-wrap">
+            <div className="mb-4 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
               {eventOptions.map((option) => {
                 const Icon = option.icon;
                 const active = form.event_type === option.id;
@@ -448,7 +468,7 @@ export function SalesPortal() {
                     variant={active ? "default" : "outline"}
                     size="sm"
                     onClick={() => setForm((current) => ({ ...current, event_type: option.id }))}
-                    className="h-10 gap-1.5 px-2 text-xs sm:px-3 sm:text-sm"
+                    className="h-11 gap-1.5 px-2 text-sm sm:h-10 sm:px-3"
                   >
                     <Icon className="h-4 w-4" />
                     {option.label}
@@ -459,16 +479,38 @@ export function SalesPortal() {
 
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="לקוח">
-                <Input value={form.customer_name} onChange={(event) => setForm((current) => ({ ...current, customer_name: event.target.value, customer_code: null }))} placeholder="שם לקוח" />
+                <Input
+                  value={form.customer_name}
+                  onChange={(event) => setForm((current) => ({ ...current, customer_name: event.target.value, customer_code: null }))}
+                  placeholder="שם לקוח"
+                  className="h-12 rounded-xl text-base md:h-10 md:text-sm"
+                />
               </Field>
               <Field label="איש קשר">
-                <Input value={String(form.contact_person ?? "")} onChange={(event) => setForm((current) => ({ ...current, contact_person: event.target.value }))} placeholder="אופציונלי" />
+                <Input
+                  value={String(form.contact_person ?? "")}
+                  onChange={(event) => setForm((current) => ({ ...current, contact_person: event.target.value }))}
+                  placeholder="אופציונלי"
+                  className="h-12 rounded-xl text-base md:h-10 md:text-sm"
+                />
               </Field>
               <Field label="תאריך ושעה">
-                <Input dir="ltr" type="datetime-local" value={String(form.event_at ?? "")} onChange={(event) => setForm((current) => ({ ...current, event_at: event.target.value }))} />
+                <Input
+                  dir="ltr"
+                  type="datetime-local"
+                  value={String(form.event_at ?? "")}
+                  onChange={(event) => setForm((current) => ({ ...current, event_at: event.target.value }))}
+                  className="h-12 rounded-xl text-base md:h-10 md:text-sm"
+                />
               </Field>
               <Field label="תאריך פעולה הבאה">
-                <Input dir="ltr" type="date" value={String(form.next_action_date ?? "")} onChange={(event) => setForm((current) => ({ ...current, next_action_date: event.target.value, status: event.target.value ? "follow_up" : current.status }))} />
+                <Input
+                  dir="ltr"
+                  type="date"
+                  value={String(form.next_action_date ?? "")}
+                  onChange={(event) => setForm((current) => ({ ...current, next_action_date: event.target.value, status: event.target.value ? "follow_up" : current.status }))}
+                  className="h-12 rounded-xl text-base md:h-10 md:text-sm"
+                />
               </Field>
             </div>
 
@@ -497,11 +539,11 @@ export function SalesPortal() {
               <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <Label>מה קרה מול הלקוח?</Label>
                 <div className="grid grid-cols-2 gap-2 sm:flex">
-                  <Button type="button" variant="outline" size="sm" onClick={toggleSpeech} className="gap-2">
+                  <Button type="button" variant="outline" size="sm" onClick={toggleSpeech} className="h-11 gap-2 sm:h-9">
                     {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
                     {isListening ? "עצור" : "דיבור"}
                   </Button>
-                  <Button type="button" variant="outline" size="sm" onClick={() => void summarizeNote()} disabled={isSummarizing || !form.raw_note?.trim()} className="gap-2">
+                  <Button type="button" variant="outline" size="sm" onClick={() => void summarizeNote()} disabled={isSummarizing || !form.raw_note?.trim()} className="h-11 gap-2 sm:h-9">
                     <Sparkles className="h-4 w-4" />
                     {isSummarizing ? "מסכם..." : "סיכום AI"}
                   </Button>
@@ -511,7 +553,7 @@ export function SalesPortal() {
                 value={form.raw_note}
                 onChange={(event) => setForm((current) => ({ ...current, raw_note: event.target.value }))}
                 placeholder="לדוגמה: נפגשתי עם הלקוח, דיברנו על הזמנה חוזרת, ביקש הצעת מחיר עד ראשון..."
-                className="min-h-36"
+                className="min-h-32 rounded-xl text-base md:text-sm"
               />
             </div>
 
@@ -533,16 +575,32 @@ export function SalesPortal() {
 
             <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
               <Field label="סכום מוערך">
-                <Input dir="ltr" type="number" min="0" value={String(form.estimated_revenue ?? "")} onChange={(event) => setForm((current) => ({ ...current, estimated_revenue: event.target.value }))} placeholder="₪" />
+                <Input
+                  dir="ltr"
+                  type="number"
+                  min="0"
+                  value={String(form.estimated_revenue ?? "")}
+                  onChange={(event) => setForm((current) => ({ ...current, estimated_revenue: event.target.value }))}
+                  placeholder="₪"
+                  className="h-12 rounded-xl text-base md:h-10 md:text-sm"
+                />
               </Field>
               <Field label="סכום בפועל">
-                <Input dir="ltr" type="number" min="0" value={String(form.actual_revenue ?? "")} onChange={(event) => setForm((current) => ({ ...current, actual_revenue: event.target.value, status: event.target.value ? "won" : current.status }))} placeholder="אם נסגר" />
+                <Input
+                  dir="ltr"
+                  type="number"
+                  min="0"
+                  value={String(form.actual_revenue ?? "")}
+                  onChange={(event) => setForm((current) => ({ ...current, actual_revenue: event.target.value, status: event.target.value ? "won" : current.status }))}
+                  placeholder="אם נסגר"
+                  className="h-12 rounded-xl text-base md:h-10 md:text-sm"
+                />
               </Field>
               <Field label="סטטוס" className="col-span-2 sm:col-span-1">
                 <select
                   value={String(form.status ?? "open")}
                   onChange={(event) => setForm((current) => ({ ...current, status: event.target.value as SalesStatus }))}
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  className="flex h-12 w-full rounded-xl border border-input bg-background px-3 py-2 text-base md:h-10 md:text-sm"
                 >
                   {Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                 </select>
@@ -551,7 +609,12 @@ export function SalesPortal() {
 
             <div className="mt-4">
               <Label>פעולה הבאה / הערה למנהל</Label>
-              <Input value={String(form.ai_next_action ?? "")} onChange={(event) => setForm((current) => ({ ...current, ai_next_action: event.target.value }))} placeholder="מה צריך לעשות עכשיו?" className="mt-2" />
+              <Input
+                value={String(form.ai_next_action ?? "")}
+                onChange={(event) => setForm((current) => ({ ...current, ai_next_action: event.target.value }))}
+                placeholder="מה צריך לעשות עכשיו?"
+                className="mt-2 h-12 rounded-xl text-base md:h-10 md:text-sm"
+              />
             </div>
 
             <div className="mt-4 rounded-xl border border-dashed border-border bg-secondary/25 p-4">
@@ -563,7 +626,7 @@ export function SalesPortal() {
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">עד 5 קבצים, 10MB לכל קובץ.</p>
                 </div>
-                <Label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-border bg-background px-4 py-2 text-sm font-medium hover:bg-accent">
+                <Label className="inline-flex h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-border bg-background px-4 py-2 text-sm font-medium hover:bg-accent">
                   <FileUp className="h-4 w-4" />
                   צרף קבצים
                   <input
@@ -592,23 +655,23 @@ export function SalesPortal() {
               )}
             </div>
 
-            <div className="mt-5 flex justify-end">
-              <Button onClick={() => void saveActivity()} disabled={isSaving || !isFormReady} className="h-12 w-full rounded-xl sm:w-auto sm:min-w-44">
+            <div className="sticky bottom-0 z-20 -mx-4 mt-5 flex justify-end border-t border-border/70 bg-card/95 px-4 py-3 backdrop-blur sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:p-0">
+              <Button onClick={() => void saveActivity()} disabled={isSaving || !isFormReady} className="h-12 w-full rounded-xl text-base sm:w-auto sm:min-w-44 sm:text-sm">
                 {isSaving ? "שומר..." : "שמור ושלח למנהל"}
               </Button>
             </div>
           </Card>
 
           <aside className="space-y-4">
-            <Card className="rounded-2xl border border-border bg-card/75 p-4">
+            <Card className="rounded-2xl border border-border/80 bg-card p-4 shadow-sm shadow-slate-900/5">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
                   <h2 className="text-lg font-semibold">ההיסטוריה שלי</h2>
                   <p className="text-sm text-muted-foreground">דיווחים אחרונים וסטטוסים.</p>
                 </div>
-                <div className="relative w-36 sm:w-48">
+                <div className="relative w-32 sm:w-48">
                   <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="חיפוש" className="pr-9" />
+                  <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="חיפוש" className="h-11 rounded-xl pr-9" />
                 </div>
               </div>
               <div className="space-y-3">
@@ -639,11 +702,11 @@ function Kpi({
 }) {
   const toneClass = {
     blue: "text-primary bg-primary/10",
-    amber: "text-amber-400 bg-amber-500/10",
-    red: "text-red-400 bg-red-500/10",
+    amber: "bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300",
+    red: "bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-300",
   }[tone];
   return (
-    <Card className="rounded-xl border border-border bg-card/75 p-4">
+    <Card className="rounded-xl border border-border/80 bg-card p-3 shadow-sm shadow-slate-900/5 sm:p-4">
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="text-sm text-muted-foreground">{label}</span>
         <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-lg", toneClass)}>
@@ -669,8 +732,8 @@ function Notice({ tone, children }: { tone: "red" | "green"; children: ReactNode
     <Card className={cn(
       "flex items-center gap-2 rounded-xl p-3 text-sm",
       tone === "red"
-        ? "border-red-500/30 bg-red-500/10 text-red-200"
-        : "border-emerald-500/30 bg-emerald-500/10 text-emerald-200",
+        ? "border-red-500/30 bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-200"
+        : "border-emerald-500/30 bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200",
     )}>
       {tone === "green" ? <CheckCircle2 className="h-4 w-4" /> : null}
       {children}
@@ -686,7 +749,7 @@ function ActivityCard({
   onMark: (activity: SalesActivityLog, status: SalesStatus) => void;
 }) {
   return (
-    <div className="rounded-xl border border-border bg-background/60 p-3">
+    <div className="rounded-xl border border-border/80 bg-background/70 p-3 shadow-sm shadow-slate-900/5">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -720,9 +783,9 @@ function ActivityCard({
         </div>
       ) : null}
       <div className="mt-3 grid grid-cols-3 gap-2">
-        <Button variant="outline" size="sm" onClick={() => onMark(activity, "follow_up")}>פולואפ</Button>
-        <Button variant="outline" size="sm" onClick={() => onMark(activity, "won")}>זכייה</Button>
-        <Button variant="outline" size="sm" onClick={() => onMark(activity, "done")}>בוצע</Button>
+        <Button variant="outline" size="sm" className="h-10 px-2" onClick={() => onMark(activity, "follow_up")}>פולואפ</Button>
+        <Button variant="outline" size="sm" className="h-10 px-2" onClick={() => onMark(activity, "won")}>זכייה</Button>
+        <Button variant="outline" size="sm" className="h-10 px-2" onClick={() => onMark(activity, "done")}>בוצע</Button>
       </div>
     </div>
   );

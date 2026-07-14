@@ -1,9 +1,11 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTheme } from "next-themes";
 import { ArrowRight, LockKeyhole, LogIn, Mail } from "lucide-react";
 import { GestelitLogo } from "@/components/brand/gestelit-logo";
+import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,10 +22,15 @@ function errorLabel(code: string) {
 
 export default function SalesLoginPage() {
   const router = useRouter();
+  const { setTheme } = useTheme();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    setTheme("light");
+  }, [setTheme]);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -40,9 +47,12 @@ export default function SalesLoginPage() {
   };
 
   return (
-    <main dir="rtl" className="h-dvh overflow-y-auto bg-background text-right text-foreground">
+    <main
+      dir="rtl"
+      className="h-dvh overflow-y-auto bg-[linear-gradient(180deg,hsl(var(--background)),hsl(var(--secondary)))] text-right text-foreground"
+    >
       <div className="mx-auto flex min-h-full w-full max-w-sm flex-col justify-center px-4 py-5 sm:max-w-md sm:px-6">
-        <section className="rounded-2xl border border-border bg-card p-5 shadow-2xl shadow-black/10 sm:p-6">
+        <section className="rounded-2xl border border-border/80 bg-card p-5 shadow-xl shadow-slate-900/10 sm:p-6">
           <div className="mb-7 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <GestelitLogo size="sm" className="rounded-xl" />
@@ -51,16 +61,19 @@ export default function SalesLoginPage() {
                 <p className="text-xs text-muted-foreground">כניסה</p>
               </div>
             </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={() => router.push("/")}
-              aria-label="חזרה"
-              className="shrink-0 rounded-xl text-muted-foreground"
-            >
-              <ArrowRight className="h-5 w-5" />
-            </Button>
+            <div className="flex items-center gap-1">
+              <ThemeToggle />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => router.push("/")}
+                aria-label="חזרה"
+                className="shrink-0 rounded-xl text-muted-foreground"
+              >
+                <ArrowRight className="h-5 w-5" />
+              </Button>
+            </div>
           </div>
 
           <form onSubmit={submit} className="space-y-4">
@@ -99,7 +112,7 @@ export default function SalesLoginPage() {
             </div>
 
             {error ? (
-              <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
+              <div className="rounded-xl border border-red-500/30 bg-red-50 p-3 text-sm text-red-700 dark:bg-red-500/10 dark:text-red-200">
                 {error}
               </div>
             ) : null}
