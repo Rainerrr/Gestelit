@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "import:bina-client-index": "node scripts/import-bina-client-index.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

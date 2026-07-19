@@ -1,4 +1,5 @@
 import type { SalesActivityInput } from "@/lib/data/sales-log";
+import type { PendingBinaClientInput } from "@/lib/data/bina-client-onboarding";
 
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -54,6 +55,26 @@ export async function fetchSalesPortalActivitiesApi(params?: {
 export async function fetchSalesPortalClientsApi(params?: { search?: string; limit?: number }) {
   return handleResponse(await fetch(withParams("/api/sales/clients", params), {
     credentials: "include",
+  }));
+}
+
+export async function fetchSalesClientIndexApi(params?: {
+  search?: string;
+  mine?: boolean;
+  limit?: number;
+  offset?: number;
+}) {
+  return handleResponse(await fetch(withParams("/api/sales/client-index", params), {
+    credentials: "include",
+  }));
+}
+
+export async function createSalesClientApi(payload: PendingBinaClientInput) {
+  return handleResponse(await fetch("/api/sales/client-index", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
   }));
 }
 

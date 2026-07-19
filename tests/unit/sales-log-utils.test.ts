@@ -20,6 +20,8 @@ describe("sales log utilities", () => {
     expect(normalizeSalesNumber("1200")).toBe(1200);
     expect(normalizeSalesNumber("")).toBeNull();
     expect(normalizeSalesNumber("abc")).toBeNull();
+    expect(normalizeSalesInteger("")).toBeNull();
+    expect(normalizeSalesInteger(undefined)).toBeNull();
     expect(normalizeSalesInteger("1200.5")).toBeNull();
     expect(normalizeSalesInteger("1200")).toBe(1200);
   });

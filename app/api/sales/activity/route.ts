@@ -8,7 +8,7 @@ import {
   type SalesActivityInput,
 } from "@/lib/data/sales-log";
 import { uploadSalesAttachmentToStorage } from "@/lib/utils/storage";
-import { normalizeSalesText } from "@/lib/data/sales-log-utils";
+import { normalizeSalesInteger, normalizeSalesText } from "@/lib/data/sales-log-utils";
 import { salesListParams } from "@/app/api/admin/sales-daily-log/_route-utils";
 
 export const dynamic = "force-dynamic";
@@ -21,11 +21,6 @@ function formText(formData: FormData, key: string) {
 function formNumberOrNull(formData: FormData, key: string) {
   const value = formText(formData, key);
   return value ? value : null;
-}
-
-function formIntegerOrNull(formData: FormData, key: string) {
-  const value = Number(formText(formData, key));
-  return Number.isInteger(value) ? value : null;
 }
 
 function formJsonRecord(formData: FormData, key: string) {
@@ -46,7 +41,8 @@ function formPayload(formData: FormData): Omit<SalesActivityInput, "salesperson"
     event_type: formText(formData, "event_type") as SalesActivityInput["event_type"],
     event_at: formText(formData, "event_at") || null,
     customer_name: formText(formData, "customer_name"),
-    customer_code: formIntegerOrNull(formData, "customer_code"),
+    customer_code: normalizeSalesInteger(formText(formData, "customer_code")),
+    local_client_id: formText(formData, "local_client_id") || null,
     contact_person: formText(formData, "contact_person"),
     raw_note: formText(formData, "raw_note"),
     ai_summary: formText(formData, "ai_summary"),

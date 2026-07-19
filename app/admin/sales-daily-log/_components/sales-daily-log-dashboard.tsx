@@ -22,6 +22,7 @@ import {
 import { AdminLayout } from "@/app/admin/_components/admin-layout";
 import { AdminPageHeader } from "@/app/admin/_components/admin-page-header";
 import { useAdminGuard } from "@/hooks/useAdminGuard";
+import { AddToCalendarButton } from "@/components/sales/add-to-calendar-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -169,6 +170,7 @@ export function SalesDailyLogDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [aiSummary, setAiSummary] = useState<SalesAiSummary | null>(null);
+  const [calendarNote, setCalendarNote] = useState("");
   const [selectedClient, setSelectedClient] = useState<SalesClientActivity | null>(null);
   const speechRef = useRef<SpeechRecognitionInstance | null>(null);
   const [form, setForm] = useState<SalesActivityInput>({
@@ -266,6 +268,7 @@ export function SalesDailyLogDashboard() {
         salesperson: form.salesperson,
       }) as SalesAiSummary;
       setAiSummary(result);
+      setCalendarNote((current) => current || result.nextAction || "");
       setForm((current) => ({
         ...current,
         ai_summary: result.summary,
@@ -343,9 +346,16 @@ export function SalesDailyLogDashboard() {
     setError(null);
     setSavedMessage(null);
     try {
-      await createSalesActivityApi(form);
+      await createSalesActivityApi({
+        ...form,
+        metadata: {
+          ...form.metadata,
+          calendar_event_note: calendarNote.trim() || null,
+        },
+      });
       setSavedMessage("האירוע נשמר ביומן המכירות");
       setAiSummary(null);
+      setCalendarNote("");
       setSelectedClient(null);
       setForm({
         event_type: "call",
@@ -543,8 +553,35 @@ export function SalesDailyLogDashboard() {
               <Field label="הכנסה בפועל">
                 <Input dir="ltr" type="number" min="0" value={String(form.actual_revenue ?? "")} onChange={(event) => setForm((current) => ({ ...current, actual_revenue: event.target.value }))} placeholder="רק אם נסגר" />
               </Field>
-              <Field label="תאריך פעולה הבאה" className="col-span-2 sm:col-span-1">
+              <Field
+                label="תאריך פעולה הבאה"
+                className="col-span-2 sm:col-span-1"
+                action={(
+                  <AddToCalendarButton
+                    date={String(form.next_action_date ?? "")}
+                    customerName={form.customer_name}
+                    customerCode={form.customer_code}
+                    nextAction={form.ai_next_action}
+                    calendarNote={calendarNote}
+                    eventTypeLabel={eventOptions.find((option) => option.id === form.event_type)?.label}
+                    contactPerson={form.contact_person}
+                    salesperson={form.salesperson}
+                    estimatedRevenue={form.estimated_revenue}
+                    currency={form.currency}
+                  />
+                )}
+              >
                 <Input dir="ltr" type="date" value={String(form.next_action_date ?? "")} onChange={(event) => setForm((current) => ({ ...current, next_action_date: event.target.value }))} />
+              </Field>
+              <Field label="הערה לאירוע ביומן" className="col-span-2 sm:col-span-3">
+                <Input
+                  value={calendarNote}
+                  onChange={(event) => setCalendarNote(event.target.value)}
+                  placeholder="לדוגמה: לחזור ללקוח עם הצעת המחיר המעודכנת"
+                />
+                <p className="text-xs leading-5 text-muted-foreground">
+                  פרטי הלקוח, איש הקשר והסכום יצורפו לאירוע אוטומטית.
+                </p>
               </Field>
             </div>
 
@@ -738,10 +775,25 @@ function Kpi({
   );
 }
 
-function Field({ label, children, className }: { label: string; children: ReactNode; className?: string }) {
+function Field({
+  label,
+  children,
+  className,
+  action,
+}: {
+  label: string;
+  children: ReactNode;
+  className?: string;
+  action?: ReactNode;
+}) {
   return (
     <div className={cn("space-y-1.5 sm:space-y-2", className)}>
-      <Label className="text-xs sm:text-sm">{label}</Label>
+      {action ? (
+        <div className="flex min-h-8 items-center justify-between gap-2">
+          <Label className="text-xs sm:text-sm">{label}</Label>
+          {action}
+        </div>
+      ) : <Label className="text-xs sm:text-sm">{label}</Label>}
       {children}
     </div>
   );

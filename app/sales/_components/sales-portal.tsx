@@ -21,10 +21,14 @@ import {
   Sparkles,
   Target,
   Trash2,
+  UserPlus,
+  UsersRound,
   WalletCards,
   type LucideIcon,
 } from "lucide-react";
 import { GestelitLogo } from "@/components/brand/gestelit-logo";
+import { AddToCalendarButton } from "@/components/sales/add-to-calendar-button";
+import { NewClientDialog } from "@/components/sales/new-client-dialog";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -42,6 +46,7 @@ import {
   updateSalesPortalActivityApi,
 } from "@/lib/api/sales-portal";
 import type { SalesActivityInput, SalesActivityLog, SalesClientActivity } from "@/lib/data/sales-log";
+import type { PendingBinaClient } from "@/lib/data/bina-client-onboarding";
 import type { SalesEventType, SalesStatus } from "@/lib/data/sales-log-utils";
 import { cn } from "@/lib/utils";
 
@@ -65,6 +70,7 @@ type SalesAiSummary = {
 };
 
 type OwnClient = {
+  local_client_id: string | null;
   customer_code: number | null;
   customer_name: string;
   contact_person: string | null;
@@ -155,6 +161,7 @@ export function SalesPortal() {
   const router = useRouter();
   const { setTheme } = useTheme();
   const speechRef = useRef<SpeechRecognitionInstance | null>(null);
+  const clientSearchRequestRef = useRef(0);
   const [user, setUser] = useState<SalesPortalUser | null>(null);
   const [activities, setActivities] = useState<SalesActivityLog[]>([]);
   const [ownClients, setOwnClients] = useState<OwnClient[]>([]);
@@ -175,12 +182,15 @@ export function SalesPortal() {
   const [isSaving, setIsSaving] = useState(false);
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [isNewClientOpen, setIsNewClientOpen] = useState(false);
   const [aiSummary, setAiSummary] = useState<SalesAiSummary | null>(null);
+  const [calendarNote, setCalendarNote] = useState("");
   const [form, setForm] = useState<Omit<SalesActivityInput, "salesperson">>({
     event_type: "meeting",
     event_at: formatDateInput(),
     customer_name: "",
     customer_code: null,
+    local_client_id: null,
     contact_person: "",
     raw_note: "",
     ai_summary: "",
@@ -202,48 +212,72 @@ export function SalesPortal() {
   const loadData = useCallback(async () => {
     try {
       setError(null);
-      const [sessionResult, activityResult, clientsResult] = await Promise.all([
+      const [sessionResult, activityResult] = await Promise.all([
         fetchSalesPortalSessionApi() as Promise<{ user: SalesPortalUser }>,
         fetchSalesPortalActivitiesApi({ search, limit: 50 }) as Promise<{
           rows: SalesActivityLog[];
           summary: typeof summary;
         }>,
-        fetchSalesPortalClientsApi({ search: form.customer_name, limit: 12 }) as Promise<{
-          ownClients: OwnClient[];
-          suggestedClients: SalesClientActivity[];
-        }>,
       ]);
       setUser(sessionResult.user);
       setActivities(activityResult.rows);
       setSummary(activityResult.summary);
-      setOwnClients(clientsResult.ownClients);
-      setSuggestedClients(clientsResult.suggestedClients);
     } catch {
       router.push("/sales/login");
     } finally {
       setIsLoading(false);
     }
-  }, [form.customer_name, router, search]);
+  }, [router, search]);
 
   useEffect(() => {
     void loadData();
   }, [loadData]);
 
+  const refreshClientSuggestions = useCallback(async (
+    clientSearch: string,
+    requestId = ++clientSearchRequestRef.current,
+  ) => {
+    const result = await fetchSalesPortalClientsApi({
+      search: clientSearch,
+      limit: 12,
+    }) as {
+      ownClients: OwnClient[];
+      suggestedClients: SalesClientActivity[];
+    };
+    if (clientSearchRequestRef.current !== requestId) return;
+    setOwnClients(result.ownClients);
+    setSuggestedClients(result.suggestedClients);
+  }, []);
+
+  useEffect(() => {
+    const requestId = ++clientSearchRequestRef.current;
+    const timeout = window.setTimeout(async () => {
+      try {
+        await refreshClientSuggestions(form.customer_name, requestId);
+      } catch {
+        // Keep the last usable suggestions; the main session loader owns auth errors.
+      }
+    }, 250);
+
+    return () => window.clearTimeout(timeout);
+  }, [form.customer_name, refreshClientSuggestions]);
+
   const clientSuggestions = useMemo(() => {
     const manual = ownClients.map((client) => ({ ...client, source: "own" as const }));
     const suggested = suggestedClients.map((client) => ({
+      local_client_id: client.local_client_id,
       customer_code: client.customer_code,
       customer_name: client.customer_name,
-      contact_person: null,
+      contact_person: client.contact_person,
       activity_count: client.activity_count,
       estimated_pipeline: client.estimated_pipeline,
       actual_revenue: client.invoice_revenue,
       last_activity_at: client.last_activity_at ?? client.last_invoice_at,
-      source: "bina" as const,
+      source: client.name_source === "local_pending" ? "pending" as const : "index" as const,
     }));
     const seen = new Set<string>();
     return [...manual, ...suggested].filter((client) => {
-      const key = `${client.customer_code ?? ""}:${client.customer_name}`;
+      const key = `${client.customer_code ?? client.local_client_id ?? ""}:${client.customer_name}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -255,8 +289,30 @@ export function SalesPortal() {
       ...current,
       customer_name: client.customer_name,
       customer_code: client.customer_code,
+      local_client_id: client.local_client_id,
       contact_person: client.contact_person ?? current.contact_person,
     }));
+  };
+
+  const hasExactClientMatch = useMemo(() => {
+    const typedName = form.customer_name?.replace(/\s+/g, " ").trim().toLocaleLowerCase("he");
+    if (!typedName) return false;
+    return clientSuggestions.some((client) => (
+      client.customer_name.replace(/\s+/g, " ").trim().toLocaleLowerCase("he") === typedName
+    ));
+  }, [clientSuggestions, form.customer_name]);
+
+  const useCreatedClient = (client: PendingBinaClient) => {
+    setForm((current) => ({
+      ...current,
+      customer_name: client.customer_name,
+      customer_code: client.bina_customer_code,
+      local_client_id: client.id,
+      contact_person: client.contact_person ?? current.contact_person,
+    }));
+    setSavedMessage("הלקוח נשמר וממתין לסנכרון BINA");
+    void refreshClientSuggestions(client.customer_name);
+    void loadData();
   };
 
   const summarizeNote = async () => {
@@ -273,6 +329,7 @@ export function SalesPortal() {
         customerName: form.customer_name,
       }) as SalesAiSummary;
       setAiSummary(result);
+      setCalendarNote((current) => current || result.nextAction || "");
       setForm((current) => ({
         ...current,
         ai_summary: result.summary,
@@ -350,15 +407,23 @@ export function SalesPortal() {
     setError(null);
     setSavedMessage(null);
     try {
-      await createSalesPortalActivityApi(form, files);
+      await createSalesPortalActivityApi({
+        ...form,
+        metadata: {
+          ...form.metadata,
+          calendar_event_note: calendarNote.trim() || null,
+        },
+      }, files);
       setSavedMessage("הדיווח נשמר ונשלח לדשבורד המנהלים");
       setAiSummary(null);
+      setCalendarNote("");
       setFiles([]);
       setForm({
         event_type: "meeting",
         event_at: formatDateInput(),
         customer_name: "",
         customer_code: null,
+        local_client_id: null,
         contact_person: "",
         raw_note: "",
         ai_summary: "",
@@ -419,6 +484,10 @@ export function SalesPortal() {
           </div>
           <div className="flex shrink-0 items-center gap-1 sm:gap-2">
             <ThemeToggle />
+            <Button variant="outline" size="sm" onClick={() => router.push("/sales/clients")} className="h-10 gap-2 px-3">
+              <UsersRound className="h-4 w-4" />
+              <span className="hidden sm:inline">לקוחות</span>
+            </Button>
             <Button variant="outline" size="sm" onClick={() => void loadData()} className="h-10 gap-2 px-3">
               <RefreshCcw className="h-4 w-4" />
               <span className="hidden sm:inline">רענון</span>
@@ -481,7 +550,7 @@ export function SalesPortal() {
               <Field label="לקוח">
                 <Input
                   value={form.customer_name}
-                  onChange={(event) => setForm((current) => ({ ...current, customer_name: event.target.value, customer_code: null }))}
+                  onChange={(event) => setForm((current) => ({ ...current, customer_name: event.target.value, customer_code: null, local_client_id: null }))}
                   placeholder="שם לקוח"
                   className="h-12 min-w-0 rounded-xl text-base md:h-10 md:text-sm"
                 />
@@ -503,7 +572,23 @@ export function SalesPortal() {
                   className="h-12 min-w-0 rounded-xl text-base md:h-10 md:text-sm"
                 />
               </Field>
-              <Field label="תאריך פעולה הבאה">
+              <Field
+                label="תאריך פעולה הבאה"
+                action={(
+                  <AddToCalendarButton
+                    date={String(form.next_action_date ?? "")}
+                    customerName={form.customer_name}
+                    customerCode={form.customer_code}
+                    nextAction={form.ai_next_action}
+                    calendarNote={calendarNote}
+                    eventTypeLabel={eventOptions.find((option) => option.id === form.event_type)?.label}
+                    contactPerson={form.contact_person}
+                    salesperson={user?.full_name}
+                    estimatedRevenue={form.estimated_revenue}
+                    currency={form.currency}
+                  />
+                )}
+              >
                 <Input
                   dir="ltr"
                   type="date"
@@ -512,20 +597,31 @@ export function SalesPortal() {
                   className="h-12 min-w-0 rounded-xl text-base md:h-10 md:text-sm"
                 />
               </Field>
+              <Field label="הערה לאירוע ביומן" className="sm:col-span-2">
+                <Input
+                  value={calendarNote}
+                  onChange={(event) => setCalendarNote(event.target.value)}
+                  placeholder="לדוגמה: לחזור ללקוח עם הצעת המחיר המעודכנת"
+                  className="h-12 min-w-0 rounded-xl text-base md:h-10 md:text-sm"
+                />
+                <p className="text-xs leading-5 text-muted-foreground">
+                  פרטי הלקוח, איש הקשר והסכום יצורפו לאירוע אוטומטית.
+                </p>
+              </Field>
             </div>
 
             {clientSuggestions.length > 0 && (
               <div className="-mx-1 mt-3 flex max-w-full snap-x gap-2 overflow-x-auto px-1 pb-1">
                 {clientSuggestions.map((client) => (
                   <button
-                    key={`${client.source}-${client.customer_code ?? "manual"}-${client.customer_name}`}
+                    key={`${client.source}-${client.customer_code ?? client.local_client_id ?? "manual"}-${client.customer_name}`}
                     type="button"
                     onClick={() => selectClient(client)}
                     className="w-[min(14rem,82vw)] shrink-0 snap-start rounded-xl border border-border bg-secondary/40 p-3 text-right text-sm transition hover:bg-accent"
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="truncate font-semibold">{client.customer_name}</span>
-                      <Badge variant="outline">{client.source === "own" ? "שלי" : "BINA"}</Badge>
+                      <Badge variant="outline">{client.source === "own" ? "שלי" : client.source === "pending" ? "ממתין ל-BINA" : "אינדקס"}</Badge>
                     </div>
                     <div className="mt-1 text-xs text-muted-foreground">
                       {client.activity_count} פעילויות · {formatMoney(client.estimated_pipeline || client.actual_revenue)}
@@ -534,6 +630,22 @@ export function SalesPortal() {
                 ))}
               </div>
             )}
+
+            {form.customer_name.trim().length >= 2 && !hasExactClientMatch ? (
+              <button
+                type="button"
+                onClick={() => setIsNewClientOpen(true)}
+                className="mt-3 flex min-h-12 w-full items-center justify-between gap-3 rounded-xl border border-dashed border-primary/40 bg-primary/5 px-4 py-3 text-right transition hover:bg-primary/10"
+              >
+                <span className="min-w-0">
+                  <span className="block font-semibold text-primary">
+                    {clientSuggestions.length > 0 ? "הלקוח לא ברשימה? יצירה חדשה" : "יצירת לקוח חדש"}
+                  </span>
+                  <span className="block truncate text-sm text-muted-foreground">{form.customer_name.trim()}</span>
+                </span>
+                <UserPlus className="h-5 w-5 shrink-0 text-primary" />
+              </button>
+            ) : null}
 
             <div className="mt-4">
               <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -685,6 +797,12 @@ export function SalesPortal() {
           </aside>
         </section>
       </div>
+      <NewClientDialog
+        open={isNewClientOpen}
+        onOpenChange={setIsNewClientOpen}
+        initialName={form.customer_name}
+        onCreated={useCreatedClient}
+      />
     </main>
   );
 }
@@ -718,10 +836,25 @@ function Kpi({
   );
 }
 
-function Field({ label, children, className }: { label: string; children: ReactNode; className?: string }) {
+function Field({
+  label,
+  children,
+  className,
+  action,
+}: {
+  label: string;
+  children: ReactNode;
+  className?: string;
+  action?: ReactNode;
+}) {
   return (
     <div className={cn("space-y-2", className)}>
-      <Label>{label}</Label>
+      {action ? (
+        <div className="flex min-h-8 items-center justify-between gap-2">
+          <Label>{label}</Label>
+          {action}
+        </div>
+      ) : <Label>{label}</Label>}
       {children}
     </div>
   );

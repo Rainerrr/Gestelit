@@ -27,6 +27,7 @@ export type SalesActivityLog = {
   salesperson: string;
   customer_name: string;
   customer_code: number | null;
+  local_client_id: string | null;
   contact_person: string | null;
   raw_note: string;
   ai_summary: string | null;
@@ -62,6 +63,7 @@ export type SalesActivityAttachment = {
 };
 
 export type SalesClientActivity = {
+  local_client_id: string | null;
   customer_code: number | null;
   customer_name: string;
   invoice_count: number;
@@ -71,7 +73,37 @@ export type SalesClientActivity = {
   estimated_pipeline: number;
   last_activity_at: string | null;
   salesperson: string | null;
+  customer_group: string | null;
+  customer_status: string | null;
+  bookkeeping_no: string | null;
+  contact_person: string | null;
+  opened_at: string | null;
+  name_source: "bina_index" | "local_pending" | "manual_activity" | "bina";
   combined_score: number;
+};
+
+export type BinaClientIndexRow = {
+  client_ref: string;
+  local_client_id: string | null;
+  customer_code: number | null;
+  customer_code_text: string | null;
+  customer_name: string;
+  customer_group: string | null;
+  status: string | null;
+  area: string | null;
+  bookkeeping_no: string | null;
+  tax_id: string | null;
+  contact_person: string | null;
+  phone: string | null;
+  mobile: string | null;
+  email: string | null;
+  salesperson: string | null;
+  opened_at: string | null;
+  source_filename: string;
+  source_updated_at: string | null;
+  imported_at: string;
+  source: "bina_index" | "local_pending";
+  sync_status: "pending" | "ready" | "synced" | "failed" | "rejected";
 };
 
 export type SalesSummary = {
@@ -112,6 +144,7 @@ export type SalesActivityInput = {
   salesperson: string;
   customer_name: string;
   customer_code?: number | null;
+  local_client_id?: string | null;
   contact_person?: string | null;
   raw_note: string;
   ai_summary?: string | null;
@@ -158,6 +191,7 @@ function cleanActivityInput(input: SalesActivityInput) {
     salesperson: normalizeSalesText(input.salesperson, 120),
     customer_name: normalizeSalesText(input.customer_name, 200),
     customer_code: normalizeSalesInteger(input.customer_code),
+    local_client_id: typeof input.local_client_id === "string" && input.local_client_id ? input.local_client_id : null,
     contact_person: normalizeSalesText(input.contact_person, 120) || null,
     raw_note: normalizeSalesText(input.raw_note, 8000),
     ai_summary: normalizeSalesText(input.ai_summary, 4000) || null,
@@ -264,6 +298,7 @@ export async function updateSalesActivity(id: string, input: Partial<SalesActivi
   if (input.salesperson !== undefined) patch.salesperson = normalizeSalesText(input.salesperson, 120);
   if (input.customer_name !== undefined) patch.customer_name = normalizeSalesText(input.customer_name, 200);
   if (input.customer_code !== undefined) patch.customer_code = normalizeSalesInteger(input.customer_code);
+  if (input.local_client_id !== undefined) patch.local_client_id = input.local_client_id || null;
   if (input.contact_person !== undefined) patch.contact_person = normalizeSalesText(input.contact_person, 120) || null;
   if (input.raw_note !== undefined) patch.raw_note = normalizeSalesText(input.raw_note, 8000);
   if (input.ai_summary !== undefined) patch.ai_summary = normalizeSalesText(input.ai_summary, 4000) || null;
@@ -407,26 +442,58 @@ export async function fetchSalesUserClients(
 
   let ownQuery = supabase
     .from("sales_activity_logs")
-    .select("customer_code, customer_name, contact_person, event_at, estimated_revenue, actual_revenue, status")
+    .select("local_client_id, customer_code, customer_name, contact_person, event_at, estimated_revenue, actual_revenue, status")
     .eq("sales_user_id", salesUserId)
     .order("event_at", { ascending: false })
     .limit(80);
 
   if (pattern) ownQuery = ownQuery.ilike("customer_name", pattern);
 
-  let suggestedQuery = supabase
-    .from("mart_sales_client_activity")
-    .select("*")
-    .order("combined_score", { ascending: false })
-    .limit(limit);
+  const suggestedQuery = pattern
+    ? supabase.rpc("search_sales_client_activity", {
+      p_search: params.search?.trim() ?? "",
+      p_limit: limit,
+    })
+    : supabase
+      .from("mart_sales_client_activity")
+      .select("*")
+      .order("combined_score", { ascending: false })
+      .limit(limit);
 
-  if (pattern) suggestedQuery = suggestedQuery.or(`customer_name.ilike.${pattern},salesperson.ilike.${pattern}`);
-
-  const [ownResult, suggestedResult] = await Promise.all([ownQuery, suggestedQuery]);
+  const [initialOwnResult, initialSuggestedResult] = await Promise.all([ownQuery, suggestedQuery]);
+  let ownResult = initialOwnResult;
+  if (ownResult.error?.code === "42703" && ownResult.error.message.includes("local_client_id")) {
+    let legacyOwnQuery = supabase
+      .from("sales_activity_logs")
+      .select("customer_code, customer_name, contact_person, event_at, estimated_revenue, actual_revenue, status")
+      .eq("sales_user_id", salesUserId)
+      .order("event_at", { ascending: false })
+      .limit(80);
+    if (pattern) legacyOwnQuery = legacyOwnQuery.ilike("customer_name", pattern);
+    const legacyResult = await legacyOwnQuery;
+    ownResult = {
+      ...legacyResult,
+      data: (legacyResult.data ?? []).map((row) => ({ ...row, local_client_id: null })),
+    } as typeof initialOwnResult;
+  }
   if (ownResult.error) throw new Error(ownResult.error.message);
+  let suggestedResult = initialSuggestedResult;
+  if (
+    pattern
+    && suggestedResult.error
+    && ["PGRST202", "42883"].includes(suggestedResult.error.code ?? "")
+  ) {
+    suggestedResult = await supabase
+      .from("mart_sales_client_activity")
+      .select("*")
+      .or(`customer_name.ilike.${pattern},salesperson.ilike.${pattern}`)
+      .order("combined_score", { ascending: false })
+      .limit(limit);
+  }
   if (suggestedResult.error) throw new Error(suggestedResult.error.message);
 
   const own = new Map<string, {
+    local_client_id: string | null;
     customer_code: number | null;
     customer_name: string;
     contact_person: string | null;
@@ -437,8 +504,9 @@ export async function fetchSalesUserClients(
   }>();
 
   for (const activity of ownResult.data ?? []) {
-    const key = `${activity.customer_code ?? ""}:${activity.customer_name}`;
+    const key = `${activity.customer_code ?? activity.local_client_id ?? ""}:${activity.customer_name}`;
     const current = own.get(key) ?? {
+      local_client_id: activity.local_client_id,
       customer_code: activity.customer_code,
       customer_name: activity.customer_name,
       contact_person: activity.contact_person,
@@ -454,9 +522,13 @@ export async function fetchSalesUserClients(
     own.set(key, current);
   }
 
+  const cleanSuggestedClients = ((suggestedResult.data ?? []) as SalesClientActivity[])
+    .filter((client) => !/[?]{2,}/.test(String(client.customer_name ?? "")))
+    .slice(0, limit);
+
   return {
     ownClients: Array.from(own.values()).slice(0, limit),
-    suggestedClients: (suggestedResult.data ?? []) as SalesClientActivity[],
+    suggestedClients: cleanSuggestedClients,
   };
 }
 
@@ -504,6 +576,43 @@ export async function fetchSalesClients(params: { search?: string | null; limit?
   const { data, error } = await query;
   if (error) throw new Error(error.message);
   return { rows: (data ?? []) as SalesClientActivity[] };
+}
+
+export async function fetchBinaClientIndex(params: {
+  search?: string | null;
+  salesperson?: string | null;
+  limit?: number | null;
+  offset?: number | null;
+} = {}) {
+  const supabase = createServiceSupabase();
+  const limit = clampLimit(params.limit ?? 30);
+  const offset = Math.max(0, Number(params.offset ?? 0));
+  const pattern = likePattern(params.search);
+  const salespersonPattern = likePattern(params.salesperson);
+
+  let query = supabase
+    .from("mart_sales_client_directory")
+    .select("client_ref,local_client_id,customer_code,customer_code_text,customer_name,customer_group,status,area,bookkeeping_no,tax_id,contact_person,phone,mobile,email,salesperson,opened_at,source,sync_status,source_filename,source_updated_at,imported_at", { count: "exact" })
+    .order("customer_name", { ascending: true })
+    .range(offset, offset + limit - 1);
+
+  if (pattern) {
+    query = query.or([
+      `customer_code_text.ilike.${pattern}`,
+      `customer_name.ilike.${pattern}`,
+      `customer_group.ilike.${pattern}`,
+      `bookkeeping_no.ilike.${pattern}`,
+      `salesperson.ilike.${pattern}`,
+    ].join(","));
+  }
+  if (salespersonPattern) query = query.ilike("salesperson", salespersonPattern);
+
+  const { data, count, error } = await query;
+  if (error) throw new Error(error.message);
+  return {
+    rows: (data ?? []) as BinaClientIndexRow[],
+    count: count ?? 0,
+  };
 }
 
 export async function fetchSalesSummary(): Promise<SalesSummary> {
