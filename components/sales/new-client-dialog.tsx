@@ -157,7 +157,7 @@ export function NewClientDialog({ open, onOpenChange, initialName = "", onCreate
             </Field>
             <Field label="אזור">
               <Select
-                value={form.area_code || undefined}
+                value={form.area_code ?? ""}
                 onValueChange={(code) => {
                   const selectedArea = BINA_CLIENT_AREA_OPTIONS.find((option) => option.code === code);
                   setForm((current) => ({
