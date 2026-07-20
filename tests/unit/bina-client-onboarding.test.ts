@@ -12,7 +12,8 @@ describe("BINA-compatible client onboarding", () => {
       customer_name: "  אנדרח   לואיס ",
       legal_name: " אנדרח לואיס בע״מ ",
       customer_group: " שיווק ופרסום ",
-      area: " פרסום ",
+      area_code: "04",
+      area: " ערך ישן ",
       status: "פעיל",
       email: " Sales@Example.CO.IL ",
       city: " תל אביב ",
@@ -20,10 +21,28 @@ describe("BINA-compatible client onboarding", () => {
       customer_name: "אנדרח לואיס",
       legal_name: "אנדרח לואיס בע״מ",
       customer_group: "שיווק ופרסום",
-      area: "פרסום",
+      area_code: "04",
+      area: "חיפה והצפון",
       email: "sales@example.co.il",
       city: "תל אביב",
     });
+  });
+
+  it("keeps the BINA area code and canonical geographic label together", () => {
+    expect(normalizeBinaClientInput({
+      customer_name: "לקוח חדש",
+      customer_group: "פרטי",
+      area_code: "03",
+    })).toMatchObject({
+      area_code: "03",
+      area: "תל אביב יפו והמרכז",
+    });
+
+    expect(validateBinaClientInput({
+      customer_name: "לקוח חדש",
+      customer_group: "פרטי",
+      area_code: "99",
+    })).toContain("INVALID_CLIENT_AREA");
   });
 
   it("requires only the fields needed to create a usable staged client", () => {

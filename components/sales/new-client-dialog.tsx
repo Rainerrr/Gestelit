@@ -34,6 +34,7 @@ const emptyForm: PendingBinaClientInput = {
   customer_name: "",
   legal_name: "",
   customer_group: "",
+  area_code: "",
   area: "",
   status: "פעיל",
   customer_warehouse: "",
@@ -56,6 +57,7 @@ const errorLabels: Record<string, string> = {
   CLIENT_GROUP_REQUIRED: "צריך לבחור או להזין קבוצת לקוח.",
   INVALID_CLIENT_EMAIL: "כתובת האימייל אינה תקינה.",
   INVALID_CLIENT_TAX_ID: "מספר העוסק יכול להכיל 5 עד 15 ספרות ומקפים בלבד.",
+  INVALID_CLIENT_AREA: "האזור שנבחר אינו קיים ברשימת האזורים של BINA.",
   CLIENT_ALREADY_EXISTS: "כבר קיים לקוח בשם הזה. חזרו לחיפוש ובחרו אותו מהרשימה.",
   CLIENT_SIMILAR_EXISTS: "נמצא לקוח בשם דומה. בדקו שוב את ההצעות; אם זה לקוח אחר, אפשר ליצור אותו בכל זאת.",
   SALES_UNAUTHORIZED: "החיבור הסתיים. התחברו מחדש.",
@@ -153,17 +155,32 @@ export function NewClientDialog({ open, onOpenChange, initialName = "", onCreate
                 {BINA_CLIENT_GROUP_OPTIONS.map((option) => <option key={option} value={option} />)}
               </datalist>
             </Field>
-            <Field label="אזור / תחום">
-              <Input
-                list="bina-client-areas"
-                value={form.area ?? ""}
-                onChange={(event) => setField("area", event.target.value)}
-                placeholder="בחרו או הקלידו תחום"
-                className="h-12 rounded-xl text-base md:h-10 md:text-sm"
-              />
-              <datalist id="bina-client-areas">
-                {BINA_CLIENT_AREA_OPTIONS.map((option) => <option key={option} value={option} />)}
-              </datalist>
+            <Field label="אזור">
+              <Select
+                value={form.area_code || undefined}
+                onValueChange={(code) => {
+                  const selectedArea = BINA_CLIENT_AREA_OPTIONS.find((option) => option.code === code);
+                  setForm((current) => ({
+                    ...current,
+                    area_code: code,
+                    area: selectedArea?.label ?? null,
+                  }));
+                }}
+              >
+                <SelectTrigger className="h-12 rounded-xl text-base md:h-10 md:text-sm">
+                  <SelectValue placeholder="בחרו אזור כמו ב-BINA" />
+                </SelectTrigger>
+                <SelectContent>
+                  {BINA_CLIENT_AREA_OPTIONS.map((option) => (
+                    <SelectItem key={option.code} value={option.code}>
+                      <span className="flex items-center gap-2">
+                        <bdi dir="ltr" className="font-mono text-xs text-muted-foreground">{option.code}</bdi>
+                        <span>{option.label}</span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </Field>
             <Field label="מצב">
               <Select value={form.status ?? "פעיל"} onValueChange={(value) => setField("status", value)}>

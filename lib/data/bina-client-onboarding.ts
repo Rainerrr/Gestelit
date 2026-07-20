@@ -18,12 +18,10 @@ export const BINA_CLIENT_GROUP_OPTIONS = [
 ] as const;
 
 export const BINA_CLIENT_AREA_OPTIONS = [
-  "אופנה",
-  "ביגוד עבודה",
-  "בית דפוס",
-  "בנקים",
-  "דיגיטלי",
-  "הוצאה לאור",
+  { code: "02", label: "ירושלים" },
+  { code: "03", label: "תל אביב יפו והמרכז" },
+  { code: "04", label: "חיפה והצפון" },
+  { code: "08", label: "השפלה והדרום" },
 ] as const;
 
 export const BINA_CLIENT_STATUS_OPTIONS = ["פעיל", "פעיל מועדף", "לא פעיל"] as const;
@@ -32,6 +30,7 @@ export type PendingBinaClientInput = {
   customer_name: string;
   legal_name?: string | null;
   customer_group: string;
+  area_code?: string | null;
   area?: string | null;
   status?: string | null;
   customer_warehouse?: string | null;
@@ -57,6 +56,7 @@ export type PendingBinaClient = {
   customer_name: string;
   legal_name: string | null;
   customer_group: string;
+  area_code: string | null;
   area: string | null;
   status: string;
   customer_warehouse: string | null;
@@ -93,11 +93,15 @@ export function normalizeBinaClientText(value: unknown, maxLength = 250) {
 }
 
 export function normalizeBinaClientInput(input: PendingBinaClientInput): PendingBinaClientInput {
+  const areaCode = normalizeBinaClientText(input.area_code, 2);
+  const knownArea = BINA_CLIENT_AREA_OPTIONS.find((option) => option.code === areaCode);
+
   return {
     customer_name: normalizeBinaClientText(input.customer_name, 200) ?? "",
     legal_name: normalizeBinaClientText(input.legal_name, 200),
     customer_group: normalizeBinaClientText(input.customer_group, 120) ?? "",
-    area: normalizeBinaClientText(input.area, 120),
+    area_code: areaCode,
+    area: knownArea?.label ?? normalizeBinaClientText(input.area, 120),
     status: normalizeBinaClientText(input.status, 50) ?? "פעיל",
     customer_warehouse: normalizeBinaClientText(input.customer_warehouse, 120),
     address_line: normalizeBinaClientText(input.address_line, 250),
@@ -121,6 +125,9 @@ export function validateBinaClientInput(input: PendingBinaClientInput) {
   const errors: string[] = [];
   if (normalized.customer_name.length < 2) errors.push("CLIENT_NAME_REQUIRED");
   if (!normalized.customer_group) errors.push("CLIENT_GROUP_REQUIRED");
+  if (normalized.area_code && !BINA_CLIENT_AREA_OPTIONS.some((option) => option.code === normalized.area_code)) {
+    errors.push("INVALID_CLIENT_AREA");
+  }
   if (normalized.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized.email)) errors.push("INVALID_CLIENT_EMAIL");
   if (normalized.tax_id && !/^[0-9-]{5,15}$/.test(normalized.tax_id)) errors.push("INVALID_CLIENT_TAX_ID");
   return errors;
