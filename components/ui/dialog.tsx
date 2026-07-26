@@ -34,9 +34,12 @@ const DialogContent = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
     /** Hide the close button (X) when true */
     hideCloseButton?: boolean;
+    /** Keep the mobile bottom-sheet layout active through tablet widths. */
+    desktopBreakpoint?: "sm" | "lg";
   }
->(({ className, children, hideCloseButton, ...props }, ref) => {
+>(({ className, children, hideCloseButton, desktopBreakpoint = "sm", ...props }, ref) => {
   const contentChildren = React.Children.toArray(children);
+  const useWideMobileLayout = desktopBreakpoint === "lg";
   const headerChild = contentChildren.find(
     (child) =>
       React.isValidElement(child) &&
@@ -66,27 +69,39 @@ const DialogContent = React.forwardRef<
           // Mobile: full-screen drawer from bottom with safe area
           "inset-x-0 bottom-0 top-auto max-h-[85dvh] w-full rounded-t-xl p-4 pb-[max(env(safe-area-inset-bottom,0px),1rem)]",
           // Desktop: centered modal with max widths
-          "sm:inset-auto sm:left-[50%] sm:top-[50%] sm:translate-x-[-50%] sm:translate-y-[-50%]",
-          "sm:max-h-[85vh] sm:w-[calc(100vw-2rem)] sm:max-w-lg sm:rounded-xl sm:p-6 sm:pb-6",
+          useWideMobileLayout
+            ? "lg:inset-auto lg:left-[50%] lg:top-[50%] lg:max-h-[85vh] lg:w-[calc(100vw-2rem)] lg:max-w-lg lg:translate-x-[-50%] lg:translate-y-[-50%] lg:rounded-xl lg:p-6 lg:pb-6"
+            : "sm:inset-auto sm:left-[50%] sm:top-[50%] sm:max-h-[85vh] sm:w-[calc(100vw-2rem)] sm:max-w-lg sm:translate-x-[-50%] sm:translate-y-[-50%] sm:rounded-xl sm:p-6 sm:pb-6",
           // Animations
           "data-[state=open]:animate-in data-[state=closed]:animate-out",
           "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
           // Mobile: slide up from bottom
           "data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom",
           // Desktop: zoom and center
-          "sm:data-[state=closed]:slide-out-to-bottom-0 sm:data-[state=open]:slide-in-from-bottom-0",
-          "sm:data-[state=closed]:zoom-out-95 sm:data-[state=open]:zoom-in-95",
+          useWideMobileLayout
+            ? "lg:data-[state=closed]:slide-out-to-bottom-0 lg:data-[state=open]:slide-in-from-bottom-0 lg:data-[state=closed]:zoom-out-95 lg:data-[state=open]:zoom-in-95"
+            : "sm:data-[state=closed]:slide-out-to-bottom-0 sm:data-[state=open]:slide-in-from-bottom-0 sm:data-[state=closed]:zoom-out-95 sm:data-[state=open]:zoom-in-95",
           className
         )}
         {...props}
       >
         {headerChild ? <div className="flex-shrink-0">{headerChild}</div> : null}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden -mx-4 px-4 sm:-mx-6 sm:px-6 overscroll-contain touch-pan-y">
+        <div
+          className={cn(
+            "flex-1 overflow-y-auto overflow-x-hidden -mx-4 px-4 overscroll-contain touch-pan-y",
+            useWideMobileLayout ? "lg:-mx-6 lg:px-6" : "sm:-mx-6 sm:px-6"
+          )}
+        >
           {bodyChildren}
         </div>
         {footerChild ? <div className="flex-shrink-0">{footerChild}</div> : null}
         {!hideCloseButton && (
-          <DialogPrimitive.Close className="absolute left-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground sm:left-auto sm:right-4 active:opacity-100 touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center -m-2">
+          <DialogPrimitive.Close
+            className={cn(
+              "absolute left-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground active:opacity-100 touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center -m-2",
+              useWideMobileLayout ? "lg:left-auto lg:right-4" : "sm:left-auto sm:right-4"
+            )}
+          >
             <X className="h-4 w-4" />
             <span className="sr-only">Close</span>
           </DialogPrimitive.Close>

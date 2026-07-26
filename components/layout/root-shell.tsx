@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 export function RootShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
 
-  if (pathname === "/sales/login") {
+  if (pathname.startsWith("/sales")) {
     return <>{children}</>;
   }
 

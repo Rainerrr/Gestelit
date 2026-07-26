@@ -109,7 +109,7 @@ export function NewClientDialog({ open, onOpenChange, initialName = "", onCreate
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent dir="rtl" className="max-h-[92dvh] sm:max-w-2xl">
+      <DialogContent dir="rtl" desktopBreakpoint="lg" className="max-h-[92dvh] lg:max-w-2xl">
         <DialogHeader className="pl-10 pr-0">
           <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
             <UserPlus className="h-5 w-5" />
@@ -131,7 +131,7 @@ export function NewClientDialog({ open, onOpenChange, initialName = "", onCreate
                 value={form.customer_name}
                 onChange={(event) => setField("customer_name", event.target.value)}
                 placeholder="השם שיופיע בחיפוש ובמסמכים"
-                className="h-12 rounded-xl text-base md:h-10 md:text-sm"
+                className="h-12 rounded-xl text-base lg:h-10 lg:text-sm"
                 autoFocus
               />
             </Field>
@@ -140,7 +140,7 @@ export function NewClientDialog({ open, onOpenChange, initialName = "", onCreate
                 value={form.legal_name ?? ""}
                 onChange={(event) => setField("legal_name", event.target.value)}
                 placeholder="אם שונה משם הלקוח"
-                className="h-12 rounded-xl text-base md:h-10 md:text-sm"
+                className="h-12 rounded-xl text-base lg:h-10 lg:text-sm"
               />
             </Field>
             <Field label="קבוצה" required>
@@ -149,7 +149,7 @@ export function NewClientDialog({ open, onOpenChange, initialName = "", onCreate
                 value={form.customer_group}
                 onChange={(event) => setField("customer_group", event.target.value)}
                 placeholder="בחרו או הקלידו קבוצה"
-                className="h-12 rounded-xl text-base md:h-10 md:text-sm"
+                className="h-12 rounded-xl text-base lg:h-10 lg:text-sm"
               />
               <datalist id="bina-client-groups">
                 {BINA_CLIENT_GROUP_OPTIONS.map((option) => <option key={option} value={option} />)}
@@ -167,7 +167,7 @@ export function NewClientDialog({ open, onOpenChange, initialName = "", onCreate
                   }));
                 }}
               >
-                <SelectTrigger className="h-12 rounded-xl text-base md:h-10 md:text-sm">
+                <SelectTrigger className="h-12 rounded-xl text-base lg:h-10 lg:text-sm">
                   <SelectValue placeholder="בחרו אזור כמו ב-BINA" />
                 </SelectTrigger>
                 <SelectContent>
@@ -184,7 +184,7 @@ export function NewClientDialog({ open, onOpenChange, initialName = "", onCreate
             </Field>
             <Field label="מצב">
               <Select value={form.status ?? "פעיל"} onValueChange={(value) => setField("status", value)}>
-                <SelectTrigger className="h-12 rounded-xl text-base md:h-10 md:text-sm">
+                <SelectTrigger className="h-12 rounded-xl text-base lg:h-10 lg:text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -197,61 +197,61 @@ export function NewClientDialog({ open, onOpenChange, initialName = "", onCreate
                 value={form.customer_warehouse ?? ""}
                 onChange={(event) => setField("customer_warehouse", event.target.value)}
                 placeholder="אם מוגדר ב-BINA"
-                className="h-12 rounded-xl text-base md:h-10 md:text-sm"
+                className="h-12 rounded-xl text-base lg:h-10 lg:text-sm"
               />
             </Field>
           </FormSection>
 
           <FormSection icon={MapPin} title="כתובת ויצירת קשר">
             <Field label="איש קשר">
-              <Input value={form.contact_person ?? ""} onChange={(event) => setField("contact_person", event.target.value)} className="h-12 rounded-xl text-base md:h-10 md:text-sm" />
+              <Input value={form.contact_person ?? ""} onChange={(event) => setField("contact_person", event.target.value)} className="h-12 rounded-xl text-base lg:h-10 lg:text-sm" />
             </Field>
             <Field label="טלפון נייד">
-              <Input dir="ltr" inputMode="tel" value={form.mobile ?? ""} onChange={(event) => setField("mobile", event.target.value)} className="h-12 rounded-xl text-left text-base md:h-10 md:text-sm" />
+              <Input dir="ltr" inputMode="tel" value={form.mobile ?? ""} onChange={(event) => setField("mobile", event.target.value)} className="h-12 rounded-xl text-left text-base lg:h-10 lg:text-sm" />
             </Field>
             <Field label="טלפון נוסף">
-              <Input dir="ltr" inputMode="tel" value={form.phone ?? ""} onChange={(event) => setField("phone", event.target.value)} className="h-12 rounded-xl text-left text-base md:h-10 md:text-sm" />
+              <Input dir="ltr" inputMode="tel" value={form.phone ?? ""} onChange={(event) => setField("phone", event.target.value)} className="h-12 rounded-xl text-left text-base lg:h-10 lg:text-sm" />
             </Field>
             <Field label="אימייל">
-              <Input dir="ltr" type="email" value={form.email ?? ""} onChange={(event) => setField("email", event.target.value)} className="h-12 rounded-xl text-left text-base md:h-10 md:text-sm" />
+              <Input dir="ltr" type="email" value={form.email ?? ""} onChange={(event) => setField("email", event.target.value)} className="h-12 rounded-xl text-left text-base lg:h-10 lg:text-sm" />
             </Field>
-            <Field label="כתובת" className="sm:col-span-2">
-              <Input value={form.address_line ?? ""} onChange={(event) => setField("address_line", event.target.value)} className="h-12 rounded-xl text-base md:h-10 md:text-sm" />
+            <Field label="כתובת" className="lg:col-span-2">
+              <Input value={form.address_line ?? ""} onChange={(event) => setField("address_line", event.target.value)} className="h-12 rounded-xl text-base lg:h-10 lg:text-sm" />
             </Field>
             <Field label="עיר">
-              <Input value={form.city ?? ""} onChange={(event) => setField("city", event.target.value)} className="h-12 rounded-xl text-base md:h-10 md:text-sm" />
+              <Input value={form.city ?? ""} onChange={(event) => setField("city", event.target.value)} className="h-12 rounded-xl text-base lg:h-10 lg:text-sm" />
             </Field>
             <Field label="שכונה">
-              <Input value={form.neighborhood ?? ""} onChange={(event) => setField("neighborhood", event.target.value)} className="h-12 rounded-xl text-base md:h-10 md:text-sm" />
+              <Input value={form.neighborhood ?? ""} onChange={(event) => setField("neighborhood", event.target.value)} className="h-12 rounded-xl text-base lg:h-10 lg:text-sm" />
             </Field>
             <Field label="ת.ד.">
-              <Input dir="ltr" value={form.po_box ?? ""} onChange={(event) => setField("po_box", event.target.value)} className="h-12 rounded-xl text-left text-base md:h-10 md:text-sm" />
+              <Input dir="ltr" value={form.po_box ?? ""} onChange={(event) => setField("po_box", event.target.value)} className="h-12 rounded-xl text-left text-base lg:h-10 lg:text-sm" />
             </Field>
             <Field label="מיקוד">
-              <Input dir="ltr" inputMode="numeric" value={form.postal_code ?? ""} onChange={(event) => setField("postal_code", event.target.value)} className="h-12 rounded-xl text-left text-base md:h-10 md:text-sm" />
+              <Input dir="ltr" inputMode="numeric" value={form.postal_code ?? ""} onChange={(event) => setField("postal_code", event.target.value)} className="h-12 rounded-xl text-left text-base lg:h-10 lg:text-sm" />
             </Field>
           </FormSection>
 
           <FormSection icon={ReceiptText} title="פרטי הנהלת חשבונות">
             <Field label="מספר הנה״ח">
-              <Input dir="ltr" value={form.bookkeeping_no ?? ""} onChange={(event) => setField("bookkeeping_no", event.target.value)} className="h-12 rounded-xl text-left text-base md:h-10 md:text-sm" />
+              <Input dir="ltr" value={form.bookkeeping_no ?? ""} onChange={(event) => setField("bookkeeping_no", event.target.value)} className="h-12 rounded-xl text-left text-base lg:h-10 lg:text-sm" />
             </Field>
             <Field label="עוסק מורשה / ח.פ.">
-              <Input dir="ltr" inputMode="numeric" value={form.tax_id ?? ""} onChange={(event) => setField("tax_id", event.target.value)} className="h-12 rounded-xl text-left text-base md:h-10 md:text-sm" />
+              <Input dir="ltr" inputMode="numeric" value={form.tax_id ?? ""} onChange={(event) => setField("tax_id", event.target.value)} className="h-12 rounded-xl text-left text-base lg:h-10 lg:text-sm" />
             </Field>
-            <Field label="הערות" className="sm:col-span-2">
+            <Field label="הערות" className="lg:col-span-2">
               <Textarea
                 value={form.notes ?? ""}
                 onChange={(event) => setField("notes", event.target.value)}
                 placeholder="מידע חשוב לקראת פתיחת הלקוח ב-BINA"
-                className="min-h-24 rounded-xl text-base md:text-sm"
+                className="min-h-24 rounded-xl text-base lg:text-sm"
               />
             </Field>
           </FormSection>
         </div>
 
-        <DialogFooter className="border-t border-border/70 pt-3">
-          <Button onClick={() => void save()} disabled={isSaving} className="h-12 gap-2 rounded-xl sm:min-w-40">
+        <DialogFooter className="border-t border-border/70 pt-3 sm:flex-col-reverse sm:justify-normal sm:gap-2 lg:flex-row-reverse lg:justify-start lg:gap-3">
+          <Button onClick={() => void save()} disabled={isSaving} className="h-12 gap-2 rounded-xl lg:min-w-40">
             <Check className="h-4 w-4" />
             {isSaving ? "שומר..." : similarNameConfirmed ? "יצירה בכל זאת" : "שמירה ובחירת הלקוח"}
           </Button>
@@ -275,7 +275,7 @@ function FormSection({ icon: Icon, title, children }: {
         <Icon className="h-4 w-4 text-primary" />
         <h3 className="font-semibold">{title}</h3>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">{children}</div>
+      <div className="grid gap-3 lg:grid-cols-2">{children}</div>
     </section>
   );
 }

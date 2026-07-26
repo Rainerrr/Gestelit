@@ -51,8 +51,8 @@ export default function SalesLoginPage() {
       dir="rtl"
       className="h-dvh overflow-y-auto bg-[linear-gradient(180deg,hsl(var(--background)),hsl(var(--secondary)))] text-right text-foreground"
     >
-      <div className="mx-auto flex min-h-full w-full max-w-sm flex-col justify-center px-4 py-5 sm:max-w-md sm:px-6">
-        <section className="rounded-2xl border border-border/80 bg-card p-5 shadow-xl shadow-slate-900/10 sm:p-6">
+      <div className="mx-auto flex min-h-full w-full max-w-sm flex-col justify-center px-4 py-5 lg:max-w-md lg:px-6">
+        <section className="rounded-2xl border border-border/80 bg-card p-5 shadow-xl shadow-slate-900/10 lg:p-6">
           <div className="mb-7 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <GestelitLogo size="sm" className="rounded-xl" />
@@ -88,7 +88,7 @@ export default function SalesLoginPage() {
                   autoComplete="email"
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
-                  className="h-14 rounded-xl pr-12 text-left text-base md:h-14 md:py-2 md:text-base"
+                  className="h-14 rounded-xl pr-12 text-left text-base lg:py-2"
                   placeholder="name@company.co.il"
                 />
               </div>
@@ -105,7 +105,7 @@ export default function SalesLoginPage() {
                   autoComplete="current-password"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
-                  className="h-14 rounded-xl pr-12 text-left text-base md:h-14 md:py-2 md:text-base"
+                  className="h-14 rounded-xl pr-12 text-left text-base lg:py-2"
                   placeholder="••••••••"
                 />
               </div>
