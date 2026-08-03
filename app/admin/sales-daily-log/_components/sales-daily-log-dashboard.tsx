@@ -8,6 +8,8 @@ import {
   CheckCircle2,
   Clock3,
   Handshake,
+  LayoutDashboard,
+  ListPlus,
   Mic,
   MicOff,
   PhoneCall,
@@ -40,6 +42,7 @@ import {
 import type { SalesActivityInput, SalesActivityLog, SalesClientActivity, SalesSummary } from "@/lib/data/sales-log";
 import type { SalesEventType, SalesStatus } from "@/lib/data/sales-log-utils";
 import { cn } from "@/lib/utils";
+import { SalesIntelligenceDashboard } from "./sales-intelligence-dashboard";
 
 type SalesAiSummary = {
   summary: string;
@@ -172,6 +175,7 @@ export function SalesDailyLogDashboard() {
   const [aiSummary, setAiSummary] = useState<SalesAiSummary | null>(null);
   const [calendarNote, setCalendarNote] = useState("");
   const [selectedClient, setSelectedClient] = useState<SalesClientActivity | null>(null);
+  const [dashboardView, setDashboardView] = useState<"overview" | "activity">("overview");
   const speechRef = useRef<SpeechRecognitionInstance | null>(null);
   const [form, setForm] = useState<SalesActivityInput>({
     event_type: "call",
@@ -416,12 +420,25 @@ export function SalesDailyLogDashboard() {
       }
     >
       <div className="space-y-4 sm:space-y-5">
-        <div className="-mx-1 flex snap-x gap-2 overflow-x-auto px-1 pb-1 sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 sm:pb-0 xl:grid-cols-5">
-          <Kpi label="אירועים היום" value={summary?.todayCount ?? 0} icon={CalendarClock} />
-          <Kpi label="אירועים השבוע" value={summary?.weekCount ?? 0} icon={BarChart3} />
-          <Kpi label="פולואפים פתוחים" value={summary?.openFollowUps ?? 0} icon={Clock3} tone={(summary?.overdueFollowUps ?? 0) > 0 ? "red" : "amber"} />
-          <Kpi label="פייפליין מוערך" value={formatMoney(summary?.estimatedPipeline ?? 0)} icon={TrendingUp} />
-          <Kpi label="מכירות BINA החודש" value={formatMoney(summary?.binaMonthRevenue ?? 0)} icon={WalletCards} />
+        <div className="grid grid-cols-2 gap-1 rounded-lg border border-border bg-card/60 p-1 sm:flex sm:w-fit" aria-label="תצוגת יומן מכירות">
+          <Button
+            variant={dashboardView === "overview" ? "default" : "ghost"}
+            size="sm"
+            onClick={() => setDashboardView("overview")}
+            className="gap-2"
+          >
+            <LayoutDashboard className="h-4 w-4" />
+            תמונת מצב
+          </Button>
+          <Button
+            variant={dashboardView === "activity" ? "default" : "ghost"}
+            size="sm"
+            onClick={() => setDashboardView("activity")}
+            className="gap-2"
+          >
+            <ListPlus className="h-4 w-4" />
+            דיווח ויומן
+          </Button>
         </div>
 
         {error && (
@@ -435,6 +452,18 @@ export function SalesDailyLogDashboard() {
             {savedMessage}
           </Card>
         )}
+
+        {dashboardView === "overview" ? (
+          <SalesIntelligenceDashboard summary={summary} followUps={followUps} onMarkStatus={markStatus} />
+        ) : (
+          <>
+        <div className="grid grid-cols-2 gap-2 xl:grid-cols-5">
+          <Kpi label="אירועים היום" value={summary?.todayCount ?? 0} icon={CalendarClock} />
+          <Kpi label="אירועים השבוע" value={summary?.weekCount ?? 0} icon={BarChart3} />
+          <Kpi label="פולואפים פתוחים" value={summary?.openFollowUps ?? 0} icon={Clock3} tone={(summary?.overdueFollowUps ?? 0) > 0 ? "red" : "amber"} />
+          <Kpi label="פייפליין מוערך" value={formatMoney(summary?.estimatedPipeline ?? 0)} icon={TrendingUp} />
+          <Kpi label="מכירות BINA החודש" value={formatMoney(summary?.binaMonthRevenue ?? 0)} icon={WalletCards} />
+        </div>
 
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(380px,0.95fr)] xl:gap-5">
           <Card className="rounded-xl border border-border bg-card/70 p-3 sm:p-4">
@@ -741,6 +770,8 @@ export function SalesDailyLogDashboard() {
             </Card>
           </div>
         </div>
+          </>
+        )}
       </div>
     </AdminLayout>
   );

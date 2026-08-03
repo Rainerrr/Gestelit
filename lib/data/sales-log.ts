@@ -15,6 +15,7 @@ import {
   type SalesSource,
   type SalesStatus,
 } from "@/lib/data/sales-log-utils";
+import { scoreIcpSegments, type SalesIcpSegment, type SalesIcpSegmentRow } from "@/lib/data/sales-analytics";
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
@@ -123,6 +124,80 @@ export type SalesSummary = {
     total_amount: number | null;
     salesperson: string | null;
   }>;
+  analytics: {
+    periodDays: number;
+    funnel: {
+      open: number;
+      won: number;
+      lost: number;
+      winRate: number;
+    };
+    eventMix: Array<{
+      eventType: SalesEventType;
+      activityCount: number;
+      uniqueClients: number;
+      wonCount: number;
+    }>;
+    daily: Array<{
+      date: string;
+      currency: string;
+      activityCount: number;
+      uniqueClients: number;
+      wonCount: number;
+      lostCount: number;
+      estimatedPipeline: number;
+      wonRevenue: number;
+    }>;
+    currencies: Array<{
+      currency: string;
+      estimatedPipeline: number;
+      wonRevenue: number;
+      wonCount: number;
+      openCount: number;
+    }>;
+    reps: Array<{
+      salesperson: string;
+      currency: string;
+      activityCount: number;
+      uniqueClients: number;
+      wonCount: number;
+      lostCount: number;
+      openCount: number;
+      overdueFollowUps: number;
+      estimatedPipeline: number;
+      wonRevenue: number;
+      conversionRate: number;
+      lastActivityAt: string | null;
+    }>;
+    icpSegments: SalesIcpSegment[];
+    opportunities: Array<{
+      clientKey: string;
+      customerName: string;
+      customerCode: number | null;
+      localClientId: string | null;
+      salesperson: string;
+      currency: string;
+      activityCount: number;
+      estimatedPipeline: number;
+      overdueFollowUps: number;
+      nextActionDate: string | null;
+      lastActivityAt: string | null;
+      latestContext: string | null;
+      customerGroup: string;
+      area: string;
+      inactiveDays: number;
+      priorityScore: number;
+    }>;
+    dataQuality: {
+      total: number;
+      clientLinkRate: number;
+      valueCaptureRate: number;
+      contactCaptureRate: number;
+      nextActionRate: number;
+      outcomeClosureRate: number;
+      lostOutcomeCount: number;
+    };
+  };
 };
 
 export type SalesListParams = {
@@ -623,13 +698,25 @@ export async function fetchSalesSummary(): Promise<SalesSummary> {
     dashboardResult,
     monthBinaSalesResult,
     topClientsResult,
+    dailyResult,
+    repResult,
+    icpResult,
+    eventMixResult,
+    qualityResult,
+    opportunityResult,
   ] = await Promise.all([
     supabase.from("mart_sales_dashboard_summary").select("*").single(),
     supabase.from("mart_bina_sales_status").select("bina_id,invoice_no,customer_name,invoice_at,total_amount,salesperson").gte("invoice_at", month).order("invoice_at", { ascending: false }).limit(200),
     supabase.from("mart_sales_client_activity").select("*").order("combined_score", { ascending: false }).limit(8),
+    supabase.from("mart_sales_activity_daily").select("*").gte("activity_date", new Date(Date.now() - 90 * 86_400_000).toISOString().slice(0, 10)).order("activity_date", { ascending: true }),
+    supabase.from("mart_sales_rep_performance").select("*").order("estimated_pipeline", { ascending: false }),
+    supabase.from("mart_sales_icp_segments").select("*").order("activity_count", { ascending: false }),
+    supabase.from("mart_sales_event_mix").select("*").order("activity_count", { ascending: false }),
+    supabase.from("mart_sales_data_quality").select("*").single(),
+    supabase.from("mart_sales_opportunity_queue").select("*").order("priority_score", { ascending: false }).limit(12),
   ]);
 
-  for (const result of [dashboardResult, monthBinaSalesResult, topClientsResult]) {
+  for (const result of [dashboardResult, monthBinaSalesResult, topClientsResult, dailyResult, repResult, icpResult, eventMixResult, qualityResult, opportunityResult]) {
     if (result.error) throw new Error(result.error.message);
   }
 
@@ -643,6 +730,45 @@ export async function fetchSalesSummary(): Promise<SalesSummary> {
     actual_logged_revenue?: number | null;
     bina_month_revenue?: number | null;
   } | null;
+  const numberValue = (value: unknown) => Number(value ?? 0);
+  const repRows = (repResult.data ?? []).map((row) => {
+    const wonCount = numberValue(row.won_count);
+    const lostCount = numberValue(row.lost_count);
+    return {
+      salesperson: String(row.salesperson ?? "לא משויך"),
+      currency: String(row.currency ?? "ILS"),
+      activityCount: numberValue(row.activity_count),
+      uniqueClients: numberValue(row.unique_clients),
+      wonCount,
+      lostCount,
+      openCount: numberValue(row.open_count),
+      overdueFollowUps: numberValue(row.overdue_followups),
+      estimatedPipeline: numberValue(row.estimated_pipeline),
+      wonRevenue: numberValue(row.won_revenue),
+      conversionRate: wonCount + lostCount > 0 ? wonCount / (wonCount + lostCount) : 0,
+      lastActivityAt: row.last_activity_at ? String(row.last_activity_at) : null,
+    };
+  });
+  const funnel = repRows.reduce((total, row) => ({
+    open: total.open + row.openCount,
+    won: total.won + row.wonCount,
+    lost: total.lost + row.lostCount,
+  }), { open: 0, won: 0, lost: 0 });
+  const currencyMap = new Map<string, { currency: string; estimatedPipeline: number; wonRevenue: number; wonCount: number; openCount: number }>();
+  for (const row of repRows) {
+    const current = currencyMap.get(row.currency) ?? { currency: row.currency, estimatedPipeline: 0, wonRevenue: 0, wonCount: 0, openCount: 0 };
+    current.estimatedPipeline += row.estimatedPipeline;
+    current.wonRevenue += row.wonRevenue;
+    current.wonCount += row.wonCount;
+    current.openCount += row.openCount;
+    currencyMap.set(row.currency, current);
+  }
+  const quality = qualityResult.data as Record<string, unknown> | null;
+  const qualityTotal = numberValue(quality?.total_count);
+  const qualityRatio = (value: unknown, denominator = qualityTotal) => denominator > 0
+    ? Math.round((numberValue(value) / denominator) * 100)
+    : 0;
+  const openQualityCount = numberValue(quality?.open_count);
 
   return {
     todayCount: Number(dashboard?.today_count ?? 0),
@@ -654,5 +780,58 @@ export async function fetchSalesSummary(): Promise<SalesSummary> {
     binaMonthRevenue: Number(dashboard?.bina_month_revenue ?? 0),
     topClients: (topClientsResult.data ?? []) as SalesClientActivity[],
     recentBinaSales: monthBinaSales as SalesSummary["recentBinaSales"],
+    analytics: {
+      periodDays: 90,
+      funnel: {
+        ...funnel,
+        winRate: funnel.won + funnel.lost > 0 ? funnel.won / (funnel.won + funnel.lost) : 0,
+      },
+      eventMix: (eventMixResult.data ?? []).map((row) => ({
+        eventType: row.event_type as SalesEventType,
+        activityCount: numberValue(row.activity_count),
+        uniqueClients: numberValue(row.unique_clients),
+        wonCount: numberValue(row.won_count),
+      })),
+      daily: (dailyResult.data ?? []).map((row) => ({
+        date: String(row.activity_date),
+        currency: String(row.currency ?? "ILS"),
+        activityCount: numberValue(row.activity_count),
+        uniqueClients: numberValue(row.unique_clients),
+        wonCount: numberValue(row.won_count),
+        lostCount: numberValue(row.lost_count),
+        estimatedPipeline: numberValue(row.estimated_pipeline),
+        wonRevenue: numberValue(row.won_revenue),
+      })),
+      currencies: Array.from(currencyMap.values()),
+      reps: repRows,
+      icpSegments: scoreIcpSegments((icpResult.data ?? []) as SalesIcpSegmentRow[]),
+      opportunities: (opportunityResult.data ?? []).map((row) => ({
+        clientKey: String(row.client_key),
+        customerName: String(row.customer_name ?? "לקוח ללא שם"),
+        customerCode: row.customer_code == null ? null : numberValue(row.customer_code),
+        localClientId: row.local_client_id ? String(row.local_client_id) : null,
+        salesperson: String(row.salesperson ?? "לא משויך"),
+        currency: String(row.currency ?? "ILS"),
+        activityCount: numberValue(row.activity_count),
+        estimatedPipeline: numberValue(row.estimated_pipeline),
+        overdueFollowUps: numberValue(row.overdue_followups),
+        nextActionDate: row.next_action_date ? String(row.next_action_date) : null,
+        lastActivityAt: row.last_activity_at ? String(row.last_activity_at) : null,
+        latestContext: row.latest_context ? String(row.latest_context) : null,
+        customerGroup: String(row.customer_group ?? "לא מסווג"),
+        area: String(row.area ?? "לא מסווג"),
+        inactiveDays: numberValue(row.inactive_days),
+        priorityScore: numberValue(row.priority_score),
+      })),
+      dataQuality: {
+        total: qualityTotal,
+        clientLinkRate: qualityRatio(quality?.linked_client_count),
+        valueCaptureRate: qualityRatio(quality?.valued_count),
+        contactCaptureRate: qualityRatio(quality?.contact_count),
+        nextActionRate: qualityRatio(quality?.open_with_next_action_count, openQualityCount),
+        outcomeClosureRate: qualityRatio(quality?.decided_count),
+        lostOutcomeCount: numberValue(quality?.lost_count),
+      },
+    },
   };
 }
