@@ -1,5 +1,34 @@
 import { describe, expect, it } from "vitest";
-import { calculateSalesDataQuality, getIcpConfidence, scoreIcpSegments } from "@/lib/data/sales-analytics";
+import {
+  buildFilteredSalesAnalytics,
+  calculateSalesDataQuality,
+  getIcpConfidence,
+  scoreIcpSegments,
+  type SalesAnalyticsActivityRow,
+} from "@/lib/data/sales-analytics";
+
+function activity(update: Partial<SalesAnalyticsActivityRow>): SalesAnalyticsActivityRow {
+  return {
+    event_type: "call",
+    event_at: "2026-08-01T09:00:00.000Z",
+    salesperson: "נועה",
+    customer_name: "לקוח א",
+    customer_code: 10,
+    local_client_id: null,
+    contact_person: "דנה",
+    raw_note: "שיחה",
+    ai_summary: null,
+    ai_next_action: null,
+    next_action_date: null,
+    estimated_revenue: null,
+    actual_revenue: null,
+    currency: "ILS",
+    status: "open",
+    customer_group: "תעשייה",
+    area: "מרכז",
+    ...update,
+  };
+}
 
 describe("sales analytics", () => {
   it("does not call a small sample reliable", () => {
@@ -34,5 +63,34 @@ describe("sales analytics", () => {
       contactCaptureRate: 33,
       nextActionRate: 50,
     });
+  });
+
+  it("recalculates every aggregate from the supplied filtered row set", () => {
+    const result = buildFilteredSalesAnalytics([
+      activity({ estimated_revenue: 50_000, next_action_date: "2026-07-30", status: "follow_up" }),
+      activity({ event_at: "2026-08-02T10:00:00.000Z", customer_name: "לקוח ב", customer_code: 11, status: "won", actual_revenue: 20_000 }),
+      activity({ event_at: "2026-08-02T11:00:00.000Z", customer_name: "לקוח ג", customer_code: 12, status: "lost" }),
+    ], { periodDays: 30, now: new Date("2026-08-03T12:00:00.000Z") });
+
+    expect(result.analytics.filteredCount).toBe(3);
+    expect(result.estimatedPipeline).toBe(50_000);
+    expect(result.actualLoggedRevenue).toBe(20_000);
+    expect(result.analytics.funnel).toMatchObject({ open: 1, won: 1, lost: 1, winRate: 0.5 });
+    expect(result.analytics.reps[0]).toMatchObject({ activityCount: 3, uniqueClients: 3, overdueFollowUps: 1 });
+    expect(result.analytics.opportunities[0]).toMatchObject({ customerName: "לקוח א", overdueFollowUps: 1 });
+    expect(result.analytics.dataQuality.outcomeClosureRate).toBe(67);
+  });
+
+  it("keeps currencies separate and exposes truncation", () => {
+    const result = buildFilteredSalesAnalytics([
+      activity({ currency: "ILS", estimated_revenue: 1000 }),
+      activity({ currency: "USD", estimated_revenue: 2000 }),
+    ], { periodDays: 7, isTruncated: true });
+
+    expect(result.analytics.currencies).toEqual(expect.arrayContaining([
+      expect.objectContaining({ currency: "ILS", estimatedPipeline: 1000 }),
+      expect.objectContaining({ currency: "USD", estimatedPipeline: 2000 }),
+    ]));
+    expect(result.analytics.isTruncated).toBe(true);
   });
 });

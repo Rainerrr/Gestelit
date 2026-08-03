@@ -37,6 +37,7 @@ export async function fetchSalesActivitiesApi(params?: {
   dateFrom?: string;
   dateTo?: string;
   salesperson?: string;
+  client?: string;
   eventType?: string;
   status?: string;
   nextActionFrom?: string;
@@ -59,8 +60,15 @@ export async function updateSalesActivityApi(id: string, payload: Partial<SalesA
   })));
 }
 
-export async function fetchSalesSummaryApi() {
-  return handleResponse(await fetch("/api/admin/sales-daily-log/summary", adminInit()));
+export async function fetchSalesSummaryApi(params?: {
+  dateFrom?: string;
+  dateTo?: string;
+  salesperson?: string;
+  client?: string;
+  eventType?: string;
+  status?: string;
+}) {
+  return handleResponse(await fetch(withParams("/api/admin/sales-daily-log/summary", params), adminInit()));
 }
 
 export async function fetchSalesClientsApi(params?: { search?: string; limit?: number }) {

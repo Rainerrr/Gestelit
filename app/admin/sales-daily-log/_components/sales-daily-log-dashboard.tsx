@@ -43,6 +43,11 @@ import type { SalesActivityInput, SalesActivityLog, SalesClientActivity, SalesSu
 import type { SalesEventType, SalesStatus } from "@/lib/data/sales-log-utils";
 import { cn } from "@/lib/utils";
 import { SalesIntelligenceDashboard } from "./sales-intelligence-dashboard";
+import {
+  DEFAULT_SALES_DASHBOARD_FILTERS,
+  SalesDashboardFilters,
+  type SalesDashboardFilterState,
+} from "./sales-dashboard-filters";
 
 type SalesAiSummary = {
   summary: string;
@@ -117,12 +122,16 @@ function formatDateInput(date = new Date()) {
   return local.toISOString().slice(0, 16);
 }
 
-function todayRange() {
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  const end = new Date();
-  end.setHours(23, 59, 59, 999);
-  return { start: start.toISOString(), end: end.toISOString() };
+function dashboardDateParams(filters: SalesDashboardFilterState) {
+  const now = new Date();
+  const end = filters.period === "custom" && filters.dateTo
+    ? new Date(`${filters.dateTo}T23:59:59.999`)
+    : now;
+  const start = filters.period === "custom" && filters.dateFrom
+    ? new Date(`${filters.dateFrom}T00:00:00`)
+    : new Date(end.getTime() - (Number(filters.period === "custom" ? 90 : filters.period) - 1) * 86_400_000);
+  if (filters.period !== "custom") start.setHours(0, 0, 0, 0);
+  return { dateFrom: start.toISOString(), dateTo: end.toISOString() };
 }
 
 function valueLabel(value: unknown) {
@@ -163,8 +172,11 @@ export function SalesDailyLogDashboard() {
   const [followUps, setFollowUps] = useState<SalesActivityLog[]>([]);
   const [summary, setSummary] = useState<SalesSummary | null>(null);
   const [clients, setClients] = useState<SalesClientActivity[]>([]);
+  const [filterClients, setFilterClients] = useState<SalesClientActivity[]>([]);
+  const [salespersonOptions, setSalespersonOptions] = useState<string[]>([]);
   const [search, setSearch] = useState("");
-  const [salespersonFilter, setSalespersonFilter] = useState("");
+  const [filterDraft, setFilterDraft] = useState<SalesDashboardFilterState>(DEFAULT_SALES_DASHBOARD_FILTERS);
+  const [appliedFilters, setAppliedFilters] = useState<SalesDashboardFilterState>(DEFAULT_SALES_DASHBOARD_FILTERS);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingClients, setIsLoadingClients] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -197,33 +209,58 @@ export function SalesDailyLogDashboard() {
     && form.customer_name?.trim()
     && form.raw_note?.trim(),
   );
+  const filterParams = useMemo(() => ({
+    ...dashboardDateParams(appliedFilters),
+    salesperson: appliedFilters.salesperson || undefined,
+    client: appliedFilters.client || undefined,
+    eventType: appliedFilters.eventType || undefined,
+    status: appliedFilters.status || undefined,
+  }), [appliedFilters]);
+  const activeFilterCount = [
+    appliedFilters.period !== "90" ? appliedFilters.period : "",
+    appliedFilters.salesperson,
+    appliedFilters.client,
+    appliedFilters.eventType,
+    appliedFilters.status,
+  ].filter(Boolean).length;
 
   const loadData = useCallback(async () => {
     if (hasAccess !== true) return;
     setIsLoading(true);
     setError(null);
     try {
-      const range = todayRange();
-      const [activityResult, followUpResult, summaryResult, clientResult] = await Promise.all([
-        fetchSalesActivitiesApi({ search, salesperson: salespersonFilter, dateFrom: range.start, dateTo: range.end, limit: 100 }) as Promise<{ rows: SalesActivityLog[] }>,
-        fetchSalesActivitiesApi({ status: "follow_up", nextActionTo: todayIsoDate(), limit: 30 }) as Promise<{ rows: SalesActivityLog[] }>,
-        fetchSalesSummaryApi() as Promise<SalesSummary>,
-        fetchSalesClientsApi({ limit: 8 }) as Promise<{ rows: SalesClientActivity[] }>,
+      const shouldLoadFollowUps = !filterParams.status || filterParams.status === "follow_up";
+      const [activityResult, followUpResult, summaryResult] = await Promise.all([
+        fetchSalesActivitiesApi({ ...filterParams, search, limit: 100 }) as Promise<{ rows: SalesActivityLog[] }>,
+        shouldLoadFollowUps
+          ? fetchSalesActivitiesApi({ ...filterParams, status: "follow_up", nextActionTo: todayIsoDate(), limit: 30 }) as Promise<{ rows: SalesActivityLog[] }>
+          : Promise.resolve({ rows: [] as SalesActivityLog[] }),
+        fetchSalesSummaryApi(filterParams) as Promise<SalesSummary>,
       ]);
       setActivities(activityResult.rows);
       setFollowUps(followUpResult.rows);
       setSummary(summaryResult);
-      setClients(clientResult.rows);
+      setSalespersonOptions((current) => Array.from(new Set([
+        ...current,
+        ...summaryResult.analytics.reps.map((row) => row.salesperson),
+      ])).sort((left, right) => left.localeCompare(right, "he")));
     } catch (loadError) {
       setError(errorLabel(loadError instanceof Error ? loadError.message : "SALES_LOAD_FAILED"));
     } finally {
       setIsLoading(false);
     }
-  }, [hasAccess, salespersonFilter, search]);
+  }, [filterParams, hasAccess, search]);
 
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    if (hasAccess !== true) return;
+    void fetchSalesClientsApi({ limit: 200 })
+      .then((result) => setFilterClients((result as { rows: SalesClientActivity[] }).rows))
+      .catch(() => undefined);
+  }, [hasAccess]);
 
   useEffect(() => {
     if (hasAccess !== true) return;
@@ -402,8 +439,8 @@ export function SalesDailyLogDashboard() {
     <AdminLayout
       aiContext={{
         screen: "sales-daily-log",
-        search,
-        visibleSummary: `יומן מכירות: ${summary?.todayCount ?? 0} אירועים היום, ${summary?.openFollowUps ?? 0} פולואפים פתוחים`,
+        search: appliedFilters.client || search,
+        visibleSummary: `יומן מכירות: ${summary?.analytics.filteredCount ?? 0} אירועים בתקופה, ${summary?.openFollowUps ?? 0} פולואפים פתוחים, איש מכירות ${appliedFilters.salesperson || "הכל"}, לקוח ${appliedFilters.client || "הכל"}`,
       }}
       header={
         <AdminPageHeader
@@ -440,6 +477,21 @@ export function SalesDailyLogDashboard() {
             דיווח ויומן
           </Button>
         </div>
+
+        <SalesDashboardFilters
+          value={filterDraft}
+          onChange={setFilterDraft}
+          onApply={() => setAppliedFilters({ ...filterDraft })}
+          onReset={() => {
+            setFilterDraft(DEFAULT_SALES_DASHBOARD_FILTERS);
+            setAppliedFilters(DEFAULT_SALES_DASHBOARD_FILTERS);
+            setSearch("");
+          }}
+          salespeople={salespersonOptions}
+          clients={Array.from(new Set(filterClients.map((client) => client.customer_name))).filter(Boolean)}
+          activeCount={activeFilterCount}
+          isLoading={isLoading}
+        />
 
         {error && (
           <Card className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
@@ -635,18 +687,13 @@ export function SalesDailyLogDashboard() {
             <Card className="rounded-xl border border-border bg-card/70 p-3 sm:p-4">
               <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <h2 className="text-lg font-semibold">יומן היום</h2>
-                  <p className="text-sm text-muted-foreground">פעילויות שנרשמו היום לפי זמן אירוע.</p>
+                  <h2 className="text-lg font-semibold">יומן הפעילות בתקופה</h2>
+                  <p className="text-sm text-muted-foreground">הרשומות והמדדים משתמשים באותו חתך ניהולי.</p>
                 </div>
-                <div className="grid w-full gap-2 sm:w-auto sm:grid-cols-[160px_210px]">
-                  <Input
-                    value={salespersonFilter}
-                    onChange={(event) => setSalespersonFilter(event.target.value)}
-                    placeholder="איש מכירות"
-                  />
+                <div className="w-full sm:w-64">
                   <div className="relative">
                     <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="לקוח / תוכן" className="pr-9" />
+                    <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="חיפוש חופשי בתוכן" className="pr-9" />
                   </div>
                 </div>
               </div>
@@ -747,8 +794,8 @@ export function SalesDailyLogDashboard() {
             </Card>
 
             <Card className="rounded-xl border border-border bg-card/70 p-3 sm:p-4">
-              <h2 className="text-base font-semibold sm:text-lg">לקוחות בולטים מ-BINA</h2>
-              <p className="mt-1 text-sm text-muted-foreground">מבוסס על חשבוניות BINA ופעילות ידנית שנרשמה בגסטליט.</p>
+              <h2 className="text-base font-semibold sm:text-lg">לקוחות מובילים בתקופה</h2>
+              <p className="mt-1 text-sm text-muted-foreground">מדורג לפי פייפליין וכמות הפעילויות בחתך הנבחר.</p>
               <div className="mt-4 space-y-3">
                 {(summary?.topClients ?? []).slice(0, 5).map((client) => (
                   <button
@@ -760,10 +807,10 @@ export function SalesDailyLogDashboard() {
                     <div className="min-w-0">
                       <div className="truncate font-semibold">{client.customer_name}</div>
                       <div className="mt-1 text-xs text-muted-foreground">
-                        {client.invoice_count} חשבוניות · פעילות ידנית {client.activity_count}
+                        {client.activity_count} פעילויות · {client.salesperson || "ללא איש מכירות"}
                       </div>
                     </div>
-                    <div className="font-mono text-sm">{formatMoney(client.invoice_revenue)}</div>
+                    <div className="font-mono text-sm">{formatMoney(client.estimated_pipeline)}</div>
                   </button>
                 ))}
               </div>

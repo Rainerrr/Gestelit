@@ -15,7 +15,11 @@ import {
   type SalesSource,
   type SalesStatus,
 } from "@/lib/data/sales-log-utils";
-import { scoreIcpSegments, type SalesIcpSegment, type SalesIcpSegmentRow } from "@/lib/data/sales-analytics";
+import {
+  buildFilteredSalesAnalytics,
+  type SalesAnalyticsActivityRow,
+  type SalesIcpSegment,
+} from "@/lib/data/sales-analytics";
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
@@ -126,6 +130,8 @@ export type SalesSummary = {
   }>;
   analytics: {
     periodDays: number;
+    filteredCount: number;
+    isTruncated: boolean;
     funnel: {
       open: number;
       won: number;
@@ -207,6 +213,7 @@ export type SalesListParams = {
   dateFrom?: string | null;
   dateTo?: string | null;
   salesperson?: string | null;
+  client?: string | null;
   eventType?: string | null;
   status?: string | null;
   nextActionFrom?: string | null;
@@ -248,10 +255,6 @@ function clampLimit(value?: number | null) {
 function likePattern(value?: string | null) {
   const text = normalizeSalesText(value, 120).replaceAll("%", "\\%").replaceAll("_", "\\_");
   return text ? `%${text}%` : null;
-}
-
-function startOfMonth(date = new Date()) {
-  return new Date(date.getFullYear(), date.getMonth(), 1);
 }
 
 function cleanActivityInput(input: SalesActivityInput) {
@@ -328,6 +331,16 @@ export async function fetchSalesActivities(params: SalesListParams = {}) {
   if (params.nextActionFrom) query = query.gte("next_action_date", params.nextActionFrom);
   if (params.nextActionTo) query = query.lte("next_action_date", params.nextActionTo);
   if (params.salesperson) query = query.ilike("salesperson", likePattern(params.salesperson) ?? "%");
+  if (params.client) {
+    const clientPattern = likePattern(params.client);
+    const customerCode = normalizeSalesInteger(params.client);
+    if (clientPattern) {
+      query = query.or([
+        `customer_name.ilike.${clientPattern}`,
+        ...(customerCode == null ? [] : [`customer_code.eq.${customerCode}`]),
+      ].join(","));
+    }
+  }
   if (params.eventType && isSalesEventType(params.eventType)) query = query.eq("event_type", params.eventType);
   if (params.status && isSalesStatus(params.status)) query = query.eq("status", params.status);
   if (pattern) {
@@ -690,148 +703,117 @@ export async function fetchBinaClientIndex(params: {
   };
 }
 
-export async function fetchSalesSummary(): Promise<SalesSummary> {
+const SALES_ANALYTICS_PAGE_SIZE = 1000;
+const SALES_ANALYTICS_MAX_ROWS = 20_000;
+
+function analyticsDateRange(params: SalesListParams) {
+  const dateTo = params.dateTo ? new Date(params.dateTo) : new Date();
+  const dateFrom = params.dateFrom
+    ? new Date(params.dateFrom)
+    : new Date(dateTo.getTime() - 89 * 86_400_000);
+  const safeFrom = Number.isNaN(dateFrom.getTime()) ? new Date(dateTo.getTime() - 89 * 86_400_000) : dateFrom;
+  const safeTo = Number.isNaN(dateTo.getTime()) ? new Date() : dateTo;
+  return {
+    dateFrom: safeFrom.toISOString(),
+    dateTo: safeTo.toISOString(),
+    periodDays: Math.max(1, Math.ceil((safeTo.getTime() - safeFrom.getTime()) / 86_400_000)),
+  };
+}
+
+async function fetchFilteredAnalyticsRows(params: SalesListParams, dateFrom: string, dateTo: string) {
   const supabase = createServiceSupabase();
-  const month = startOfMonth().toISOString();
+  const rows: SalesAnalyticsActivityRow[] = [];
+  let totalCount = 0;
 
-  const [
-    dashboardResult,
-    monthBinaSalesResult,
-    topClientsResult,
-    dailyResult,
-    repResult,
-    icpResult,
-    eventMixResult,
-    qualityResult,
-    opportunityResult,
-  ] = await Promise.all([
-    supabase.from("mart_sales_dashboard_summary").select("*").single(),
-    supabase.from("mart_bina_sales_status").select("bina_id,invoice_no,customer_name,invoice_at,total_amount,salesperson").gte("invoice_at", month).order("invoice_at", { ascending: false }).limit(200),
-    supabase.from("mart_sales_client_activity").select("*").order("combined_score", { ascending: false }).limit(8),
-    supabase.from("mart_sales_activity_daily").select("*").gte("activity_date", new Date(Date.now() - 90 * 86_400_000).toISOString().slice(0, 10)).order("activity_date", { ascending: true }),
-    supabase.from("mart_sales_rep_performance").select("*").order("estimated_pipeline", { ascending: false }),
-    supabase.from("mart_sales_icp_segments").select("*").order("activity_count", { ascending: false }),
-    supabase.from("mart_sales_event_mix").select("*").order("activity_count", { ascending: false }),
-    supabase.from("mart_sales_data_quality").select("*").single(),
-    supabase.from("mart_sales_opportunity_queue").select("*").order("priority_score", { ascending: false }).limit(12),
+  while (rows.length < SALES_ANALYTICS_MAX_ROWS) {
+    const offset = rows.length;
+    let query = supabase
+      .from("mart_sales_activity_enriched")
+      .select("event_type,event_at,salesperson,customer_name,customer_code,local_client_id,contact_person,raw_note,ai_summary,ai_next_action,next_action_date,estimated_revenue,actual_revenue,currency,status,customer_group,area", { count: "exact" })
+      .gte("event_at", dateFrom)
+      .lte("event_at", dateTo)
+      .order("event_at", { ascending: false })
+      .range(offset, offset + SALES_ANALYTICS_PAGE_SIZE - 1);
+
+    if (params.salesperson) query = query.ilike("salesperson", likePattern(params.salesperson) ?? "%");
+    if (params.eventType && isSalesEventType(params.eventType)) query = query.eq("event_type", params.eventType);
+    if (params.status && isSalesStatus(params.status)) query = query.eq("status", params.status);
+    if (params.client) {
+      const clientPattern = likePattern(params.client);
+      const customerCode = normalizeSalesInteger(params.client);
+      if (clientPattern) {
+        query = query.or([
+          `customer_name.ilike.${clientPattern}`,
+          ...(customerCode == null ? [] : [`customer_code.eq.${customerCode}`]),
+        ].join(","));
+      }
+    }
+
+    const { data, count, error } = await query;
+    if (error) throw new Error(error.message);
+    totalCount = count ?? totalCount;
+    rows.push(...((data ?? []) as SalesAnalyticsActivityRow[]));
+    if ((data?.length ?? 0) < SALES_ANALYTICS_PAGE_SIZE) break;
+  }
+
+  return { rows, isTruncated: totalCount > rows.length };
+}
+
+export async function fetchSalesSummary(params: SalesListParams = {}): Promise<SalesSummary> {
+  const supabase = createServiceSupabase();
+  const range = analyticsDateRange(params);
+  const [{ rows, isTruncated }, dashboardResult] = await Promise.all([
+    fetchFilteredAnalyticsRows(params, range.dateFrom, range.dateTo),
+    supabase.from("mart_sales_dashboard_summary").select("bina_month_revenue").single(),
   ]);
+  if (dashboardResult.error) throw new Error(dashboardResult.error.message);
 
-  for (const result of [dashboardResult, monthBinaSalesResult, topClientsResult, dailyResult, repResult, icpResult, eventMixResult, qualityResult, opportunityResult]) {
-    if (result.error) throw new Error(result.error.message);
-  }
+  let binaQuery = supabase
+    .from("mart_bina_sales_status")
+    .select("bina_id,invoice_no,customer_name,invoice_at,total_amount,salesperson")
+    .gte("invoice_at", range.dateFrom)
+    .lte("invoice_at", range.dateTo)
+    .order("invoice_at", { ascending: false })
+    .limit(200);
+  if (params.salesperson) binaQuery = binaQuery.ilike("salesperson", likePattern(params.salesperson) ?? "%");
+  if (params.client) binaQuery = binaQuery.ilike("customer_name", likePattern(params.client) ?? "%");
+  const binaResult = await binaQuery;
+  if (binaResult.error) throw new Error(binaResult.error.message);
 
-  const monthBinaSales = monthBinaSalesResult.data ?? [];
-  const dashboard = dashboardResult.data as {
-    today_count?: number | null;
-    week_count?: number | null;
-    open_followups?: number | null;
-    overdue_followups?: number | null;
-    estimated_pipeline?: number | null;
-    actual_logged_revenue?: number | null;
-    bina_month_revenue?: number | null;
-  } | null;
-  const numberValue = (value: unknown) => Number(value ?? 0);
-  const repRows = (repResult.data ?? []).map((row) => {
-    const wonCount = numberValue(row.won_count);
-    const lostCount = numberValue(row.lost_count);
-    return {
-      salesperson: String(row.salesperson ?? "לא משויך"),
-      currency: String(row.currency ?? "ILS"),
-      activityCount: numberValue(row.activity_count),
-      uniqueClients: numberValue(row.unique_clients),
-      wonCount,
-      lostCount,
-      openCount: numberValue(row.open_count),
-      overdueFollowUps: numberValue(row.overdue_followups),
-      estimatedPipeline: numberValue(row.estimated_pipeline),
-      wonRevenue: numberValue(row.won_revenue),
-      conversionRate: wonCount + lostCount > 0 ? wonCount / (wonCount + lostCount) : 0,
-      lastActivityAt: row.last_activity_at ? String(row.last_activity_at) : null,
-    };
+  const filtered = buildFilteredSalesAnalytics(rows, {
+    periodDays: range.periodDays,
+    isTruncated,
   });
-  const funnel = repRows.reduce((total, row) => ({
-    open: total.open + row.openCount,
-    won: total.won + row.wonCount,
-    lost: total.lost + row.lostCount,
-  }), { open: 0, won: 0, lost: 0 });
-  const currencyMap = new Map<string, { currency: string; estimatedPipeline: number; wonRevenue: number; wonCount: number; openCount: number }>();
-  for (const row of repRows) {
-    const current = currencyMap.get(row.currency) ?? { currency: row.currency, estimatedPipeline: 0, wonRevenue: 0, wonCount: 0, openCount: 0 };
-    current.estimatedPipeline += row.estimatedPipeline;
-    current.wonRevenue += row.wonRevenue;
-    current.wonCount += row.wonCount;
-    current.openCount += row.openCount;
-    currencyMap.set(row.currency, current);
-  }
-  const quality = qualityResult.data as Record<string, unknown> | null;
-  const qualityTotal = numberValue(quality?.total_count);
-  const qualityRatio = (value: unknown, denominator = qualityTotal) => denominator > 0
-    ? Math.round((numberValue(value) / denominator) * 100)
-    : 0;
-  const openQualityCount = numberValue(quality?.open_count);
+  const topClients: SalesClientActivity[] = filtered.topClients.map((client) => ({
+    local_client_id: client.local_client_id,
+    customer_code: client.customer_code,
+    customer_name: client.customer_name,
+    invoice_count: 0,
+    invoice_revenue: 0,
+    last_invoice_at: null,
+    activity_count: client.activity_count,
+    estimated_pipeline: client.estimated_pipeline,
+    last_activity_at: client.last_activity_at,
+    salesperson: client.salesperson,
+    customer_group: client.customer_group,
+    customer_status: null,
+    bookkeeping_no: null,
+    contact_person: null,
+    opened_at: null,
+    name_source: "manual_activity",
+    combined_score: client.estimated_pipeline + client.activity_count,
+  }));
 
   return {
-    todayCount: Number(dashboard?.today_count ?? 0),
-    weekCount: Number(dashboard?.week_count ?? 0),
-    openFollowUps: Number(dashboard?.open_followups ?? 0),
-    overdueFollowUps: Number(dashboard?.overdue_followups ?? 0),
-    estimatedPipeline: Number(dashboard?.estimated_pipeline ?? 0),
-    actualLoggedRevenue: Number(dashboard?.actual_logged_revenue ?? 0),
-    binaMonthRevenue: Number(dashboard?.bina_month_revenue ?? 0),
-    topClients: (topClientsResult.data ?? []) as SalesClientActivity[],
-    recentBinaSales: monthBinaSales as SalesSummary["recentBinaSales"],
-    analytics: {
-      periodDays: 90,
-      funnel: {
-        ...funnel,
-        winRate: funnel.won + funnel.lost > 0 ? funnel.won / (funnel.won + funnel.lost) : 0,
-      },
-      eventMix: (eventMixResult.data ?? []).map((row) => ({
-        eventType: row.event_type as SalesEventType,
-        activityCount: numberValue(row.activity_count),
-        uniqueClients: numberValue(row.unique_clients),
-        wonCount: numberValue(row.won_count),
-      })),
-      daily: (dailyResult.data ?? []).map((row) => ({
-        date: String(row.activity_date),
-        currency: String(row.currency ?? "ILS"),
-        activityCount: numberValue(row.activity_count),
-        uniqueClients: numberValue(row.unique_clients),
-        wonCount: numberValue(row.won_count),
-        lostCount: numberValue(row.lost_count),
-        estimatedPipeline: numberValue(row.estimated_pipeline),
-        wonRevenue: numberValue(row.won_revenue),
-      })),
-      currencies: Array.from(currencyMap.values()),
-      reps: repRows,
-      icpSegments: scoreIcpSegments((icpResult.data ?? []) as SalesIcpSegmentRow[]),
-      opportunities: (opportunityResult.data ?? []).map((row) => ({
-        clientKey: String(row.client_key),
-        customerName: String(row.customer_name ?? "לקוח ללא שם"),
-        customerCode: row.customer_code == null ? null : numberValue(row.customer_code),
-        localClientId: row.local_client_id ? String(row.local_client_id) : null,
-        salesperson: String(row.salesperson ?? "לא משויך"),
-        currency: String(row.currency ?? "ILS"),
-        activityCount: numberValue(row.activity_count),
-        estimatedPipeline: numberValue(row.estimated_pipeline),
-        overdueFollowUps: numberValue(row.overdue_followups),
-        nextActionDate: row.next_action_date ? String(row.next_action_date) : null,
-        lastActivityAt: row.last_activity_at ? String(row.last_activity_at) : null,
-        latestContext: row.latest_context ? String(row.latest_context) : null,
-        customerGroup: String(row.customer_group ?? "לא מסווג"),
-        area: String(row.area ?? "לא מסווג"),
-        inactiveDays: numberValue(row.inactive_days),
-        priorityScore: numberValue(row.priority_score),
-      })),
-      dataQuality: {
-        total: qualityTotal,
-        clientLinkRate: qualityRatio(quality?.linked_client_count),
-        valueCaptureRate: qualityRatio(quality?.valued_count),
-        contactCaptureRate: qualityRatio(quality?.contact_count),
-        nextActionRate: qualityRatio(quality?.open_with_next_action_count, openQualityCount),
-        outcomeClosureRate: qualityRatio(quality?.decided_count),
-        lostOutcomeCount: numberValue(quality?.lost_count),
-      },
-    },
+    todayCount: filtered.todayCount,
+    weekCount: filtered.weekCount,
+    openFollowUps: filtered.openFollowUps,
+    overdueFollowUps: filtered.overdueFollowUps,
+    estimatedPipeline: filtered.estimatedPipeline,
+    actualLoggedRevenue: filtered.actualLoggedRevenue,
+    binaMonthRevenue: Number(dashboardResult.data?.bina_month_revenue ?? 0),
+    topClients,
+    recentBinaSales: (binaResult.data ?? []) as SalesSummary["recentBinaSales"],
+    analytics: filtered.analytics as SalesSummary["analytics"],
   };
 }

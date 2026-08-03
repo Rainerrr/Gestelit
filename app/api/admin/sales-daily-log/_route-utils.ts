@@ -47,6 +47,7 @@ export function salesListParams(request: Request) {
     dateFrom: url.searchParams.get("dateFrom"),
     dateTo: url.searchParams.get("dateTo"),
     salesperson: url.searchParams.get("salesperson"),
+    client: url.searchParams.get("client"),
     eventType: url.searchParams.get("eventType"),
     status: url.searchParams.get("status"),
     nextActionFrom: url.searchParams.get("nextActionFrom"),

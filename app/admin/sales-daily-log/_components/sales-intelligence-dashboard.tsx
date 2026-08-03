@@ -85,7 +85,6 @@ export function SalesIntelligenceDashboard({ summary, followUps, onMarkStatus }:
   const daily = (
     (analytics?.daily ?? [])
       .filter((row) => row.currency === activeCurrency)
-      .slice(-30)
       .map((row) => ({ ...row, label: shortDate(row.date) }))
   );
   const icpSegments = (analytics?.icpSegments ?? []).filter((row) => row.currency === activeCurrency);
@@ -101,6 +100,17 @@ export function SalesIntelligenceDashboard({ summary, followUps, onMarkStatus }:
   if (!analytics) {
     return <Card className="border-border bg-card/70 p-6 text-center text-sm text-muted-foreground">טוען ניתוח מכירות...</Card>;
   }
+  const periodLabel = analytics.periodDays <= 1 ? "היום" : `${analytics.periodDays} הימים שנבחרו`;
+
+  if (analytics.filteredCount === 0) {
+    return (
+      <Card className="border-border bg-card/70 p-8 text-center">
+        <Target className="mx-auto h-8 w-8 text-muted-foreground" />
+        <h2 className="mt-3 text-lg font-semibold">אין פעילות בחתך הזה</h2>
+        <p className="mt-1 text-sm text-muted-foreground">שנו תקופה, איש מכירות, לקוח או סטטוס כדי להרחיב את התוצאה.</p>
+      </Card>
+    );
+  }
 
   return (
     <div className="space-y-4 sm:space-y-5" dir="rtl">
@@ -113,7 +123,7 @@ export function SalesIntelligenceDashboard({ summary, followUps, onMarkStatus }:
             </div>
             <h2 className="text-xl font-semibold sm:text-2xl">מה דורש פעולה עכשיו</h2>
             <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
-              ביצועי 90 הימים האחרונים לפי דיווחי אנשי המכירות. פרופיל ה-ICP מבוסס על תוצאות בפועל ומציג גם את חוזק הראיות.
+              ביצועי {periodLabel} לפי {analytics.filteredCount} דיווחים תואמים. כל המדדים, ה-ICP והתורים מחושבים מאותו חתך.
             </p>
           </div>
           {currencyOptions.length > 1 ? (
@@ -134,6 +144,13 @@ export function SalesIntelligenceDashboard({ summary, followUps, onMarkStatus }:
         </div>
       </section>
 
+      {analytics.isTruncated ? (
+        <section className="flex items-start gap-3 rounded-lg border border-amber-500/35 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-100">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div><strong>התוצאה גדולה מדי להצגה מלאה.</strong> צמצמו את התקופה, איש המכירות או הלקוח כדי לקבל מדדים מדויקים לכל הרשומות.</div>
+        </section>
+      ) : null}
+
       <section className="grid grid-cols-2 gap-2 lg:grid-cols-4 lg:gap-3" aria-label="מדדי מכירות מרכזיים">
         <MetricCard icon={TrendingUp} label="פייפליין פתוח" value={money(currency?.estimatedPipeline ?? 0, activeCurrency)} detail={`${currency?.openCount ?? 0} הזדמנויות`} tone="blue" />
         <MetricCard icon={BadgeCheck} label="שיעור זכייה" value={outcomeRateReliable ? percent(funnel.winRate) : "לא אמין"} detail={outcomeRateReliable ? `${funnel.won} זכיות מתוך ${funnel.won + funnel.lost} החלטות` : "לא דווחו עסקאות שאבדו"} tone={outcomeRateReliable ? "green" : "red"} />
@@ -153,7 +170,7 @@ export function SalesIntelligenceDashboard({ summary, followUps, onMarkStatus }:
 
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(330px,0.65fr)]">
         <Card className="min-w-0 border-border bg-card/70 p-4 sm:p-5">
-          <SectionHeading icon={TrendingUp} title="מגמת פעילות ותוצאה" detail="30 ימים אחרונים" />
+          <SectionHeading icon={TrendingUp} title="מגמת פעילות ותוצאה" detail={periodLabel} />
           <div className="mt-4 h-[260px] w-full sm:h-[300px]" dir="ltr">
             {daily.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={260}>
@@ -275,7 +292,7 @@ export function SalesIntelligenceDashboard({ summary, followUps, onMarkStatus }:
 
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
         <Card className="border-border bg-card/70 p-4 sm:p-5">
-          <SectionHeading icon={Users} title="ביצועי צוות" detail="90 ימים, תוצאה לצד פעילות" />
+          <SectionHeading icon={Users} title="ביצועי צוות" detail={`${periodLabel}, תוצאה לצד פעילות`} />
           <div className="mt-4 hidden overflow-x-auto md:block">
             <table className="w-full min-w-[680px] text-right text-sm">
               <thead className="border-b border-border text-xs text-muted-foreground">
