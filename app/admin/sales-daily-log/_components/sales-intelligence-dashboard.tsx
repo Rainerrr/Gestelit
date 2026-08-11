@@ -37,6 +37,7 @@ type Props = {
   summary: SalesSummary | null;
   followUps: SalesActivityLog[];
   onMarkStatus: (activity: SalesActivityLog, status: SalesStatus) => Promise<void> | void;
+  personal?: boolean;
 };
 
 const eventLabels: Record<string, string> = {
@@ -76,7 +77,7 @@ function relativeDays(value: number) {
   return `לפני ${value} ימים`;
 }
 
-export function SalesIntelligenceDashboard({ summary, followUps, onMarkStatus }: Props) {
+export function SalesIntelligenceDashboard({ summary, followUps, onMarkStatus, personal = false }: Props) {
   const analytics = summary?.analytics;
   const currencyOptions = analytics?.currencies.map((row) => row.currency) ?? ["ILS"];
   const [selectedCurrency, setSelectedCurrency] = useState("ILS");
@@ -119,9 +120,9 @@ export function SalesIntelligenceDashboard({ summary, followUps, onMarkStatus }:
           <div>
             <div className="mb-2 flex items-center gap-2 text-sm font-medium text-primary">
               <BriefcaseBusiness className="h-4 w-4" />
-              מרכז שליטה במכירות
+              {personal ? "הדשבורד שלי" : "מרכז שליטה במכירות"}
             </div>
-            <h2 className="text-xl font-semibold sm:text-2xl">מה דורש פעולה עכשיו</h2>
+            <h2 className="text-xl font-semibold sm:text-2xl">{personal ? "מה דורש ממני פעולה עכשיו" : "מה דורש פעולה עכשיו"}</h2>
             <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
               ביצועי {periodLabel} לפי {analytics.filteredCount} דיווחים תואמים. כל המדדים, ה-ICP והתורים מחושבים מאותו חתך.
             </p>
@@ -292,7 +293,7 @@ export function SalesIntelligenceDashboard({ summary, followUps, onMarkStatus }:
 
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
         <Card className="border-border bg-card/70 p-4 sm:p-5">
-          <SectionHeading icon={Users} title="ביצועי צוות" detail={`${periodLabel}, תוצאה לצד פעילות`} />
+          <SectionHeading icon={Users} title={personal ? "הביצועים שלי" : "ביצועי צוות"} detail={`${periodLabel}, תוצאה לצד פעילות`} />
           <div className="mt-4 hidden overflow-x-auto md:block">
             <table className="w-full min-w-[680px] text-right text-sm">
               <thead className="border-b border-border text-xs text-muted-foreground">

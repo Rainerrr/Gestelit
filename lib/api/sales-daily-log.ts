@@ -71,6 +71,22 @@ export async function fetchSalesSummaryApi(params?: {
   return handleResponse(await fetch(withParams("/api/admin/sales-daily-log/summary", params), adminInit()));
 }
 
+export async function exportSalesManagementWorkbookApi(params?: {
+  dateFrom?: string;
+  dateTo?: string;
+  salesperson?: string;
+  client?: string;
+  eventType?: string;
+  status?: string;
+}) {
+  const response = await fetch(withParams("/api/admin/sales-daily-log/export", params), adminInit());
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(typeof payload.error === "string" ? payload.error : "SALES_EXPORT_FAILED");
+  }
+  return response.blob();
+}
+
 export async function fetchSalesClientsApi(params?: { search?: string; limit?: number }) {
   return handleResponse(await fetch(withParams("/api/admin/sales-daily-log/clients", params), adminInit()));
 }

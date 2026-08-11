@@ -52,6 +52,31 @@ export async function fetchSalesPortalActivitiesApi(params?: {
   }));
 }
 
+export type SalesPersonalDashboardParams = {
+  dateFrom?: string;
+  dateTo?: string;
+  client?: string;
+  eventType?: string;
+  status?: string;
+};
+
+export async function fetchSalesPersonalDashboardApi(params?: SalesPersonalDashboardParams) {
+  return handleResponse(await fetch(withParams("/api/sales/dashboard", params), {
+    credentials: "include",
+  }));
+}
+
+export async function exportMySalesWorkbookApi(params?: SalesPersonalDashboardParams) {
+  const response = await fetch(withParams("/api/sales/export", params), {
+    credentials: "include",
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(typeof payload.error === "string" ? payload.error : "SALES_EXPORT_FAILED");
+  }
+  return response.blob();
+}
+
 export async function fetchSalesPortalClientsApi(params?: { search?: string; limit?: number }) {
   return handleResponse(await fetch(withParams("/api/sales/clients", params), {
     credentials: "include",

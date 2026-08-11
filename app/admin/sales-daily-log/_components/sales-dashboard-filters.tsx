@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { CalendarDays, Filter, RotateCcw } from "lucide-react";
+import { CalendarDays, FileSpreadsheet, Filter, RotateCcw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -64,6 +64,8 @@ type Props = {
   clients: string[];
   activeCount: number;
   isLoading: boolean;
+  isExporting: boolean;
+  onExport: () => void;
 };
 
 export function SalesDashboardFilters({
@@ -75,6 +77,8 @@ export function SalesDashboardFilters({
   clients,
   activeCount,
   isLoading,
+  isExporting,
+  onExport,
 }: Props) {
   const patch = (update: Partial<SalesDashboardFilterState>) => onChange({ ...value, ...update });
 
@@ -172,13 +176,23 @@ export function SalesDashboardFilters({
           </div>
         </div>
 
-        <div className="grid shrink-0 grid-cols-[44px_minmax(0,1fr)] gap-2 xl:w-44">
+        <div className="grid shrink-0 grid-cols-[44px_minmax(0,1fr)] gap-2 xl:w-52">
           <Button type="button" variant="outline" size="icon" onClick={onReset} aria-label="איפוס מסננים" title="איפוס מסננים">
             <RotateCcw className="h-4 w-4" />
           </Button>
           <Button type="button" onClick={onApply} disabled={isLoading} className="gap-2">
             <Filter className="h-4 w-4" />
             {isLoading ? "מעדכן..." : "החל סינון"}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onExport}
+            disabled={isExporting || isLoading}
+            className="col-span-2 gap-2 border-emerald-500/30 text-emerald-700 hover:bg-emerald-500/10 dark:text-emerald-300"
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+            {isExporting ? "מכין דוח..." : "ייצוא XLSX מעוצב"}
           </Button>
         </div>
       </div>

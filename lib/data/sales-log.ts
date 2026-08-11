@@ -220,6 +220,22 @@ export type SalesListParams = {
   nextActionTo?: string | null;
 };
 
+export type SalesReportActivityRow = SalesAnalyticsActivityRow & {
+  id: string;
+  sales_user_id: string | null;
+  source: SalesSource;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SalesReportData = {
+  generatedAt: string;
+  dateFrom: string;
+  dateTo: string;
+  rows: SalesReportActivityRow[];
+  summary: SalesSummary;
+};
+
 export type SalesActivityInput = {
   event_type: SalesEventType;
   event_at?: string | null;
@@ -720,20 +736,27 @@ function analyticsDateRange(params: SalesListParams) {
   };
 }
 
-async function fetchFilteredAnalyticsRows(params: SalesListParams, dateFrom: string, dateTo: string) {
+async function fetchFilteredAnalyticsRows(
+  params: SalesListParams,
+  dateFrom: string,
+  dateTo: string,
+  scope: { salesUserId?: string } = {},
+) {
   const supabase = createServiceSupabase();
-  const rows: SalesAnalyticsActivityRow[] = [];
+  const rows: SalesReportActivityRow[] = [];
   let totalCount = 0;
 
   while (rows.length < SALES_ANALYTICS_MAX_ROWS) {
     const offset = rows.length;
     let query = supabase
       .from("mart_sales_activity_enriched")
-      .select("event_type,event_at,salesperson,customer_name,customer_code,local_client_id,contact_person,raw_note,ai_summary,ai_next_action,next_action_date,estimated_revenue,actual_revenue,currency,status,customer_group,area", { count: "exact" })
+      .select("id,sales_user_id,event_type,event_at,salesperson,customer_name,customer_code,local_client_id,contact_person,raw_note,ai_summary,ai_next_action,next_action_date,estimated_revenue,actual_revenue,currency,status,source,customer_group,area,created_at,updated_at", { count: "exact" })
       .gte("event_at", dateFrom)
       .lte("event_at", dateTo)
       .order("event_at", { ascending: false })
       .range(offset, offset + SALES_ANALYTICS_PAGE_SIZE - 1);
+
+    if (scope.salesUserId) query = query.eq("sales_user_id", scope.salesUserId);
 
     if (params.salesperson) query = query.ilike("salesperson", likePattern(params.salesperson) ?? "%");
     if (params.eventType && isSalesEventType(params.eventType)) query = query.eq("event_type", params.eventType);
@@ -752,37 +775,25 @@ async function fetchFilteredAnalyticsRows(params: SalesListParams, dateFrom: str
     const { data, count, error } = await query;
     if (error) throw new Error(error.message);
     totalCount = count ?? totalCount;
-    rows.push(...((data ?? []) as SalesAnalyticsActivityRow[]));
+    rows.push(...((data ?? []) as SalesReportActivityRow[]));
     if ((data?.length ?? 0) < SALES_ANALYTICS_PAGE_SIZE) break;
   }
 
   return { rows, isTruncated: totalCount > rows.length };
 }
 
-export async function fetchSalesSummary(params: SalesListParams = {}): Promise<SalesSummary> {
-  const supabase = createServiceSupabase();
-  const range = analyticsDateRange(params);
-  const [{ rows, isTruncated }, dashboardResult] = await Promise.all([
-    fetchFilteredAnalyticsRows(params, range.dateFrom, range.dateTo),
-    supabase.from("mart_sales_dashboard_summary").select("bina_month_revenue").single(),
-  ]);
-  if (dashboardResult.error) throw new Error(dashboardResult.error.message);
-
-  let binaQuery = supabase
-    .from("mart_bina_sales_status")
-    .select("bina_id,invoice_no,customer_name,invoice_at,total_amount,salesperson")
-    .gte("invoice_at", range.dateFrom)
-    .lte("invoice_at", range.dateTo)
-    .order("invoice_at", { ascending: false })
-    .limit(200);
-  if (params.salesperson) binaQuery = binaQuery.ilike("salesperson", likePattern(params.salesperson) ?? "%");
-  if (params.client) binaQuery = binaQuery.ilike("customer_name", likePattern(params.client) ?? "%");
-  const binaResult = await binaQuery;
-  if (binaResult.error) throw new Error(binaResult.error.message);
-
+function salesSummaryFromRows(
+  rows: SalesReportActivityRow[],
+  options: {
+    periodDays: number;
+    isTruncated: boolean;
+    binaMonthRevenue?: number;
+    recentBinaSales?: SalesSummary["recentBinaSales"];
+  },
+): SalesSummary {
   const filtered = buildFilteredSalesAnalytics(rows, {
-    periodDays: range.periodDays,
-    isTruncated,
+    periodDays: options.periodDays,
+    isTruncated: options.isTruncated,
   });
   const topClients: SalesClientActivity[] = filtered.topClients.map((client) => ({
     local_client_id: client.local_client_id,
@@ -811,9 +822,78 @@ export async function fetchSalesSummary(params: SalesListParams = {}): Promise<S
     overdueFollowUps: filtered.overdueFollowUps,
     estimatedPipeline: filtered.estimatedPipeline,
     actualLoggedRevenue: filtered.actualLoggedRevenue,
-    binaMonthRevenue: Number(dashboardResult.data?.bina_month_revenue ?? 0),
+    binaMonthRevenue: options.binaMonthRevenue ?? 0,
     topClients,
-    recentBinaSales: (binaResult.data ?? []) as SalesSummary["recentBinaSales"],
+    recentBinaSales: options.recentBinaSales ?? [],
     analytics: filtered.analytics as SalesSummary["analytics"],
+  };
+}
+
+export async function fetchSalesSummary(params: SalesListParams = {}): Promise<SalesSummary> {
+  const supabase = createServiceSupabase();
+  const range = analyticsDateRange(params);
+  const [{ rows, isTruncated }, dashboardResult] = await Promise.all([
+    fetchFilteredAnalyticsRows(params, range.dateFrom, range.dateTo),
+    supabase.from("mart_sales_dashboard_summary").select("bina_month_revenue").single(),
+  ]);
+  if (dashboardResult.error) throw new Error(dashboardResult.error.message);
+
+  let binaQuery = supabase
+    .from("mart_bina_sales_status")
+    .select("bina_id,invoice_no,customer_name,invoice_at,total_amount,salesperson")
+    .gte("invoice_at", range.dateFrom)
+    .lte("invoice_at", range.dateTo)
+    .order("invoice_at", { ascending: false })
+    .limit(200);
+  if (params.salesperson) binaQuery = binaQuery.ilike("salesperson", likePattern(params.salesperson) ?? "%");
+  if (params.client) binaQuery = binaQuery.ilike("customer_name", likePattern(params.client) ?? "%");
+  const binaResult = await binaQuery;
+  if (binaResult.error) throw new Error(binaResult.error.message);
+
+  return salesSummaryFromRows(rows, {
+    periodDays: range.periodDays,
+    isTruncated,
+    binaMonthRevenue: Number(dashboardResult.data?.bina_month_revenue ?? 0),
+    recentBinaSales: (binaResult.data ?? []) as SalesSummary["recentBinaSales"],
+  });
+}
+
+export async function fetchSalesUserDashboard(
+  salesUserId: string,
+  params: SalesListParams = {},
+): Promise<SalesSummary> {
+  const range = analyticsDateRange(params);
+  const { rows, isTruncated } = await fetchFilteredAnalyticsRows(
+    params,
+    range.dateFrom,
+    range.dateTo,
+    { salesUserId },
+  );
+  return salesSummaryFromRows(rows, {
+    periodDays: range.periodDays,
+    isTruncated,
+  });
+}
+
+export async function fetchSalesReportData(
+  params: SalesListParams = {},
+  scope: { salesUserId?: string } = {},
+): Promise<SalesReportData> {
+  const range = analyticsDateRange(params);
+  const { rows, isTruncated } = await fetchFilteredAnalyticsRows(
+    params,
+    range.dateFrom,
+    range.dateTo,
+    scope,
+  );
+  return {
+    generatedAt: new Date().toISOString(),
+    dateFrom: range.dateFrom,
+    dateTo: range.dateTo,
+    rows,
+    summary: salesSummaryFromRows(rows, {
+      periodDays: range.periodDays,
+      isTruncated,
+    }),
   };
 }

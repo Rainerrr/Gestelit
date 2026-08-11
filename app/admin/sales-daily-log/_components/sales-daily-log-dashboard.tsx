@@ -33,6 +33,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
   createSalesActivityApi,
+  exportSalesManagementWorkbookApi,
   fetchSalesActivitiesApi,
   fetchSalesClientsApi,
   fetchSalesSummaryApi,
@@ -149,6 +150,7 @@ function errorLabel(code: string) {
     INVALID_ACTUAL_REVENUE: "הכנסה בפועל לא יכולה להיות שלילית",
     INVALID_STATUS: "סטטוס לא תקין",
     RATE_LIMITED: "יותר מדי בקשות AI כרגע. נסה שוב עוד דקה.",
+    SALES_EXPORT_FAILED: "לא הצלחנו להפיק את קובץ האקסל. נסו שוב.",
   };
   return labels[code] ?? code;
 }
@@ -178,6 +180,7 @@ export function SalesDailyLogDashboard() {
   const [filterDraft, setFilterDraft] = useState<SalesDashboardFilterState>(DEFAULT_SALES_DASHBOARD_FILTERS);
   const [appliedFilters, setAppliedFilters] = useState<SalesDashboardFilterState>(DEFAULT_SALES_DASHBOARD_FILTERS);
   const [isLoading, setIsLoading] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [isLoadingClients, setIsLoadingClients] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isSummarizing, setIsSummarizing] = useState(false);
@@ -429,6 +432,26 @@ export function SalesDailyLogDashboard() {
     }
   };
 
+  const exportWorkbook = async () => {
+    setIsExporting(true);
+    setError(null);
+    try {
+      const blob = await exportSalesManagementWorkbookApi(filterParams);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `gestelit-sales-management-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (exportError) {
+      setError(errorLabel(exportError instanceof Error ? exportError.message : "SALES_EXPORT_FAILED"));
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   if (hasAccess === null) {
     return <div className="flex min-h-[60vh] items-center justify-center text-muted-foreground">טוען הרשאות...</div>;
   }
@@ -491,6 +514,8 @@ export function SalesDailyLogDashboard() {
           clients={Array.from(new Set(filterClients.map((client) => client.customer_name))).filter(Boolean)}
           activeCount={activeFilterCount}
           isLoading={isLoading}
+          isExporting={isExporting}
+          onExport={() => void exportWorkbook()}
         />
 
         {error && (

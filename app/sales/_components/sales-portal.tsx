@@ -18,6 +18,7 @@ import {
   PhoneCall,
   RefreshCcw,
   Search,
+  ShieldCheck,
   Sparkles,
   Target,
   Trash2,
@@ -484,6 +485,14 @@ export function SalesPortal() {
           </div>
           <div className="flex shrink-0 items-center gap-1 lg:gap-2">
             <ThemeToggle />
+            <Button variant="outline" size="sm" onClick={() => router.push("/sales/dashboard")} className="h-10 gap-2 px-3">
+              <BarChart3 className="h-4 w-4" />
+              <span className="hidden lg:inline">הדשבורד שלי</span>
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => router.push("/admin/sales-daily-log")} className="h-10 gap-2 px-3">
+              <ShieldCheck className="h-4 w-4" />
+              <span className="hidden lg:inline">ניהול</span>
+            </Button>
             <Button variant="outline" size="sm" onClick={() => router.push("/sales/clients")} className="h-10 gap-2 px-3">
               <UsersRound className="h-4 w-4" />
               <span className="hidden lg:inline">לקוחות</span>
