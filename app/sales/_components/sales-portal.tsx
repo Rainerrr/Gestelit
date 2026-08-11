@@ -15,6 +15,7 @@ import {
   Mic,
   MicOff,
   Paperclip,
+  Pencil,
   PhoneCall,
   RefreshCcw,
   Search,
@@ -25,6 +26,7 @@ import {
   UserPlus,
   UsersRound,
   WalletCards,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { GestelitLogo } from "@/components/brand/gestelit-logo";
@@ -163,6 +165,7 @@ export function SalesPortal() {
   const { setTheme } = useTheme();
   const speechRef = useRef<SpeechRecognitionInstance | null>(null);
   const clientSearchRequestRef = useRef(0);
+  const formCardRef = useRef<HTMLDivElement | null>(null);
   const [user, setUser] = useState<SalesPortalUser | null>(null);
   const [activities, setActivities] = useState<SalesActivityLog[]>([]);
   const [ownClients, setOwnClients] = useState<OwnClient[]>([]);
@@ -186,6 +189,8 @@ export function SalesPortal() {
   const [isNewClientOpen, setIsNewClientOpen] = useState(false);
   const [aiSummary, setAiSummary] = useState<SalesAiSummary | null>(null);
   const [calendarNote, setCalendarNote] = useState("");
+  const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
+  const [eventTimeTouched, setEventTimeTouched] = useState(false);
   const [form, setForm] = useState<Omit<SalesActivityInput, "salesperson">>({
     event_type: "meeting",
     event_at: formatDateInput(),
@@ -205,10 +210,43 @@ export function SalesPortal() {
   });
 
   const isFormReady = Boolean(form.event_type && form.customer_name?.trim() && form.raw_note?.trim());
+  const isDraftPristine = useMemo(() => (
+    !form.customer_name?.trim()
+    && !form.contact_person?.trim()
+    && !form.raw_note?.trim()
+    && !form.ai_summary?.trim()
+    && !form.ai_next_action?.trim()
+    && !form.next_action_date
+    && !Number(form.estimated_revenue ?? 0)
+    && !Number(form.actual_revenue ?? 0)
+    && !calendarNote.trim()
+    && files.length === 0
+  ), [calendarNote, files.length, form]);
 
   useEffect(() => {
     setTheme("light");
   }, [setTheme]);
+
+  useEffect(() => {
+    if (editingActivityId || eventTimeTouched || !isDraftPristine) return;
+
+    const refreshDraftTime = () => {
+      setForm((current) => ({ ...current, event_at: formatDateInput() }));
+    };
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") refreshDraftTime();
+    };
+
+    refreshDraftTime();
+    const interval = window.setInterval(refreshDraftTime, 60_000);
+    window.addEventListener("focus", refreshDraftTime);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshDraftTime);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [editingActivityId, eventTimeTouched, isDraftPristine]);
 
   const loadData = useCallback(async () => {
     try {
@@ -399,6 +437,64 @@ export function SalesPortal() {
     recognition.start();
   };
 
+  const resetActivityDraft = useCallback(() => {
+    setEditingActivityId(null);
+    setEventTimeTouched(false);
+    setAiSummary(null);
+    setCalendarNote("");
+    setFiles([]);
+    setForm({
+      event_type: "meeting",
+      event_at: formatDateInput(),
+      customer_name: "",
+      customer_code: null,
+      local_client_id: null,
+      contact_person: "",
+      raw_note: "",
+      ai_summary: "",
+      ai_next_action: "",
+      next_action_date: "",
+      estimated_revenue: null,
+      actual_revenue: null,
+      currency: "ILS",
+      status: "open",
+      source: "manual",
+    });
+  }, []);
+
+  const editActivity = (activity: SalesActivityLog) => {
+    setEditingActivityId(activity.id);
+    setEventTimeTouched(true);
+    setAiSummary(null);
+    setFiles([]);
+    setCalendarNote(typeof activity.metadata?.calendar_event_note === "string" ? activity.metadata.calendar_event_note : "");
+    setForm({
+      event_type: activity.event_type,
+      event_at: formatDateInput(new Date(activity.event_at)),
+      customer_name: activity.customer_name,
+      customer_code: activity.customer_code,
+      local_client_id: activity.local_client_id,
+      contact_person: activity.contact_person ?? "",
+      raw_note: activity.raw_note,
+      ai_summary: activity.ai_summary ?? "",
+      ai_next_action: activity.ai_next_action ?? "",
+      next_action_date: activity.next_action_date ?? "",
+      estimated_revenue: activity.estimated_revenue,
+      actual_revenue: activity.actual_revenue,
+      currency: activity.currency,
+      status: activity.status,
+      source: activity.source,
+      linked_bina_invoice_no: activity.linked_bina_invoice_no,
+      linked_bina_order_no: activity.linked_bina_order_no,
+      linked_bina_delivery_no: activity.linked_bina_delivery_no,
+      ai_confidence: activity.ai_confidence,
+      metadata: activity.metadata,
+    });
+    setError(null);
+    setSavedMessage(null);
+    window.requestAnimationFrame(() => formCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
+
   const saveActivity = async () => {
     if (!isFormReady) {
       setError("צריך למלא לקוח ותיאור פעילות לפני שמירה");
@@ -408,34 +504,21 @@ export function SalesPortal() {
     setError(null);
     setSavedMessage(null);
     try {
-      await createSalesPortalActivityApi({
+      const payload = {
         ...form,
         metadata: {
           ...form.metadata,
           calendar_event_note: calendarNote.trim() || null,
         },
-      }, files);
-      setSavedMessage("הדיווח נשמר ונשלח לדשבורד המנהלים");
-      setAiSummary(null);
-      setCalendarNote("");
-      setFiles([]);
-      setForm({
-        event_type: "meeting",
-        event_at: formatDateInput(),
-        customer_name: "",
-        customer_code: null,
-        local_client_id: null,
-        contact_person: "",
-        raw_note: "",
-        ai_summary: "",
-        ai_next_action: "",
-        next_action_date: "",
-        estimated_revenue: null,
-        actual_revenue: null,
-        currency: "ILS",
-        status: "open",
-        source: "manual",
-      });
+      };
+      if (editingActivityId) {
+        await updateSalesPortalActivityApi(editingActivityId, payload);
+        setSavedMessage("הדיווח עודכן בהצלחה");
+      } else {
+        await createSalesPortalActivityApi(payload, files);
+        setSavedMessage("הדיווח נשמר ונשלח לדשבורד המנהלים");
+      }
+      resetActivityDraft();
       await loadData();
     } catch (saveError) {
       setError(errorLabel(saveError instanceof Error ? saveError.message : "SALES_SAVE_FAILED"));
@@ -524,15 +607,25 @@ export function SalesPortal() {
         </div>
 
         <section className="order-2 grid min-w-0 gap-4 lg:order-3 xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">
-          <Card className="min-w-0 overflow-hidden rounded-2xl border border-border/80 bg-card p-3 shadow-sm shadow-slate-900/5 lg:p-5">
+          <Card ref={formCardRef} className="min-w-0 scroll-mt-20 overflow-hidden rounded-2xl border border-border/80 bg-card p-3 shadow-sm shadow-slate-900/5 lg:p-5">
             <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
               <div className="min-w-0">
-                <h1 className="text-xl font-semibold lg:text-2xl">דיווח פעילות חדש</h1>
+                <h1 className="text-xl font-semibold lg:text-2xl">{editingActivityId ? "עריכת דיווח" : "דיווח פעילות חדש"}</h1>
                 <p className="mt-1 hidden text-sm leading-6 text-muted-foreground lg:block">
-                  רשמו מה קרה מול הלקוח. אפשר לצרף תמונה או מסמך, ולתת ל-AI לנסח סיכום עסקי.
+                  {editingActivityId
+                    ? "עדכנו את הפרטים ושמרו. רק הדיווחים שלכם ניתנים לעריכה."
+                    : "רשמו מה קרה מול הלקוח. אפשר לצרף תמונה או מסמך, ולתת ל-AI לנסח סיכום עסקי."}
                 </p>
               </div>
-              <Badge className="w-fit bg-primary/10 text-primary">נשלח למנהל</Badge>
+              <div className="flex items-center gap-2">
+                <Badge className="w-fit bg-primary/10 text-primary">{editingActivityId ? "מצב עריכה" : "נשלח למנהל"}</Badge>
+                {editingActivityId ? (
+                  <Button type="button" variant="ghost" size="sm" onClick={resetActivityDraft} className="h-9 gap-1.5">
+                    <X className="h-4 w-4" />
+                    ביטול
+                  </Button>
+                ) : null}
+              </div>
             </div>
 
             <div className="mb-4 grid grid-cols-2 gap-2 lg:flex lg:flex-wrap">
@@ -577,7 +670,10 @@ export function SalesPortal() {
                   dir="ltr"
                   type="datetime-local"
                   value={String(form.event_at ?? "")}
-                  onChange={(event) => setForm((current) => ({ ...current, event_at: event.target.value }))}
+                  onChange={(event) => {
+                    setEventTimeTouched(true);
+                    setForm((current) => ({ ...current, event_at: event.target.value }));
+                  }}
                   className="h-12 min-w-0 rounded-xl text-base lg:h-10 lg:text-sm"
                 />
               </Field>
@@ -745,22 +841,26 @@ export function SalesPortal() {
                     <Paperclip className="h-4 w-4" />
                     קבצים ותמונות
                   </div>
-                  <p className="mt-1 text-xs text-muted-foreground">עד 5 קבצים, 10MB לכל קובץ.</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {editingActivityId ? "הקבצים שכבר צורפו נשמרים ללא שינוי." : "עד 5 קבצים, 10MB לכל קובץ."}
+                  </p>
                 </div>
-                <Label className="inline-flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-border bg-background px-4 py-2 text-sm font-medium hover:bg-accent lg:w-auto">
-                  <FileUp className="h-4 w-4" />
-                  צרף קבצים
-                  <input
-                    type="file"
-                    multiple
-                    accept="image/*,.pdf,.docx,.xlsx"
-                    className="hidden"
-                    onChange={(event) => {
-                      const selected = Array.from(event.target.files ?? []).slice(0, 5);
-                      setFiles(selected);
-                    }}
-                  />
-                </Label>
+                {!editingActivityId ? (
+                  <Label className="inline-flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-border bg-background px-4 py-2 text-sm font-medium hover:bg-accent lg:w-auto">
+                    <FileUp className="h-4 w-4" />
+                    צרף קבצים
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*,.pdf,.docx,.xlsx"
+                      className="hidden"
+                      onChange={(event) => {
+                        const selected = Array.from(event.target.files ?? []).slice(0, 5);
+                        setFiles(selected);
+                      }}
+                    />
+                  </Label>
+                ) : null}
               </div>
               {files.length > 0 && (
                 <div className="mt-3 grid gap-2">
@@ -778,13 +878,13 @@ export function SalesPortal() {
 
             <div className="sticky bottom-0 z-20 -mx-3 mt-5 flex justify-end border-t border-border/70 bg-card/95 px-3 py-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] backdrop-blur lg:static lg:mx-0 lg:border-0 lg:bg-transparent lg:p-0">
               <Button onClick={() => void saveActivity()} disabled={isSaving || !isFormReady} className="h-12 w-full rounded-xl text-base lg:w-auto lg:min-w-44 lg:text-sm">
-                {isSaving ? "שומר..." : "שמור ושלח למנהל"}
+                {isSaving ? "שומר..." : editingActivityId ? "שמור תיקונים" : "שמור ושלח למנהל"}
               </Button>
             </div>
           </Card>
 
-          <aside className="space-y-4">
-            <Card className="rounded-2xl border border-border/80 bg-card p-4 shadow-sm shadow-slate-900/5">
+          <aside className="min-w-0 space-y-4">
+            <Card className="min-w-0 overflow-hidden rounded-2xl border border-border/80 bg-card p-4 shadow-sm shadow-slate-900/5">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
                   <h2 className="text-lg font-semibold">ההיסטוריה שלי</h2>
@@ -799,7 +899,7 @@ export function SalesPortal() {
                 {activities.length === 0 ? (
                   <div className="rounded-xl bg-secondary/40 p-4 text-center text-sm text-muted-foreground">אין דיווחים עדיין</div>
                 ) : activities.map((activity) => (
-                  <ActivityCard key={activity.id} activity={activity} onMark={markStatus} />
+                  <ActivityCard key={activity.id} activity={activity} onMark={markStatus} onEdit={editActivity} />
                 ))}
               </div>
             </Card>
@@ -886,9 +986,11 @@ function Notice({ tone, children }: { tone: "red" | "green"; children: ReactNode
 function ActivityCard({
   activity,
   onMark,
+  onEdit,
 }: {
   activity: SalesActivityLog;
   onMark: (activity: SalesActivityLog, status: SalesStatus) => void;
+  onEdit: (activity: SalesActivityLog) => void;
 }) {
   return (
     <div className="rounded-xl border border-border/80 bg-background/70 p-3 shadow-sm shadow-slate-900/5">
@@ -924,7 +1026,11 @@ function ActivityCard({
           ))}
         </div>
       ) : null}
-      <div className="mt-3 grid grid-cols-3 gap-2">
+      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <Button variant="outline" size="sm" className="h-10 gap-1 px-2" onClick={() => onEdit(activity)}>
+          <Pencil className="h-3.5 w-3.5" />
+          עריכה
+        </Button>
         <Button variant="outline" size="sm" className="h-10 px-2" onClick={() => onMark(activity, "follow_up")}>פולואפ</Button>
         <Button variant="outline" size="sm" className="h-10 px-2" onClick={() => onMark(activity, "won")}>זכייה</Button>
         <Button variant="outline" size="sm" className="h-10 px-2" onClick={() => onMark(activity, "done")}>בוצע</Button>
