@@ -44,6 +44,9 @@ export async function fetchSalesPortalActivitiesApi(params?: {
   search?: string;
   limit?: number;
   offset?: number;
+  dateFrom?: string;
+  dateTo?: string;
+  client?: string;
   eventType?: string;
   status?: string;
 }) {

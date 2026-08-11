@@ -9,6 +9,7 @@ import {
   Building2,
   CheckCircle2,
   CircleDollarSign,
+  ChevronLeft,
   Clock3,
   ContactRound,
   MapPin,
@@ -30,13 +31,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import type { SalesActivityLog, SalesSummary } from "@/lib/data/sales-log";
-import type { SalesStatus } from "@/lib/data/sales-log-utils";
+import type { SalesEventType, SalesStatus } from "@/lib/data/sales-log-utils";
 import { cn } from "@/lib/utils";
 
 type Props = {
   summary: SalesSummary | null;
   followUps: SalesActivityLog[];
   onMarkStatus: (activity: SalesActivityLog, status: SalesStatus) => Promise<void> | void;
+  onEventMixSelect?: (eventType: SalesEventType) => void;
   personal?: boolean;
 };
 
@@ -46,6 +48,14 @@ const eventLabels: Record<string, string> = {
   lead: "לידים",
   sale: "מכירות",
   follow_up: "פולואפים",
+};
+
+const eventSingularLabels: Record<string, string> = {
+  meeting: "פגישה",
+  call: "שיחה",
+  lead: "ליד",
+  sale: "מכירה",
+  follow_up: "פולואפ",
 };
 
 const confidenceLabels = {
@@ -77,7 +87,7 @@ function relativeDays(value: number) {
   return `לפני ${value} ימים`;
 }
 
-export function SalesIntelligenceDashboard({ summary, followUps, onMarkStatus, personal = false }: Props) {
+export function SalesIntelligenceDashboard({ summary, followUps, onMarkStatus, onEventMixSelect, personal = false }: Props) {
   const analytics = summary?.analytics;
   const currencyOptions = analytics?.currencies.map((row) => row.currency) ?? ["ILS"];
   const [selectedCurrency, setSelectedCurrency] = useState("ILS");
@@ -211,17 +221,35 @@ export function SalesIntelligenceDashboard({ summary, followUps, onMarkStatus, p
           <div className="mt-6 border-t border-border pt-4">
             <p className="mb-3 text-xs font-medium text-muted-foreground">סוגי הפעילות</p>
             <div className="space-y-3">
-              {analytics.eventMix.map((row) => (
-                <div key={row.eventType}>
-                  <div className="mb-1 flex items-center justify-between text-sm">
-                    <span>{eventLabels[row.eventType] ?? row.eventType}</span>
-                    <bdi dir="ltr" className="font-medium">{row.activityCount}</bdi>
-                  </div>
-                  <div className="h-1.5 overflow-hidden rounded-full bg-secondary">
-                    <div className="h-full rounded-full bg-primary" style={{ width: `${(row.activityCount / maxEventCount) * 100}%` }} />
-                  </div>
-                </div>
-              ))}
+              {analytics.eventMix.map((row) => {
+                const content = (
+                  <>
+                    <div className="mb-1 flex items-center justify-between gap-3 text-sm">
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        {onEventMixSelect ? <ChevronLeft className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : null}
+                        <span className="truncate">{eventLabels[row.eventType] ?? row.eventType}</span>
+                      </span>
+                      <bdi dir="ltr" className="font-medium">{row.activityCount}</bdi>
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-secondary">
+                      <div className="h-full rounded-full bg-primary" style={{ width: `${(row.activityCount / maxEventCount) * 100}%` }} />
+                    </div>
+                  </>
+                );
+                return onEventMixSelect ? (
+                  <button
+                    key={row.eventType}
+                    type="button"
+                    onClick={() => onEventMixSelect(row.eventType)}
+                    className="w-full rounded-md p-1 text-right transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    aria-label={row.activityCount === 1
+                      ? `הצגת דיווח ${eventSingularLabels[row.eventType] ?? row.eventType}`
+                      : `הצגת ${row.activityCount} דיווחי ${eventLabels[row.eventType] ?? row.eventType}`}
+                  >
+                    {content}
+                  </button>
+                ) : <div key={row.eventType}>{content}</div>;
+              })}
             </div>
           </div>
         </Card>

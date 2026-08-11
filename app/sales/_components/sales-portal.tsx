@@ -48,6 +48,7 @@ import {
   summarizeSalesPortalNoteApi,
   updateSalesPortalActivityApi,
 } from "@/lib/api/sales-portal";
+import { validateAdminSession } from "@/lib/api/auth-helpers";
 import type { SalesActivityInput, SalesActivityLog, SalesClientActivity } from "@/lib/data/sales-log";
 import type { PendingBinaClient } from "@/lib/data/bina-client-onboarding";
 import type { SalesEventType, SalesStatus } from "@/lib/data/sales-log-utils";
@@ -187,6 +188,7 @@ export function SalesPortal() {
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isNewClientOpen, setIsNewClientOpen] = useState(false);
+  const [canViewTeamDashboard, setCanViewTeamDashboard] = useState(false);
   const [aiSummary, setAiSummary] = useState<SalesAiSummary | null>(null);
   const [calendarNote, setCalendarNote] = useState("");
   const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
@@ -226,6 +228,16 @@ export function SalesPortal() {
   useEffect(() => {
     setTheme("light");
   }, [setTheme]);
+
+  useEffect(() => {
+    let active = true;
+    void validateAdminSession().then((isAdmin) => {
+      if (active) setCanViewTeamDashboard(isAdmin);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (editingActivityId || eventTimeTouched || !isDraftPristine) return;
@@ -572,10 +584,6 @@ export function SalesPortal() {
               <BarChart3 className="h-4 w-4" />
               <span className="hidden lg:inline">הסיכום שלי</span>
             </Button>
-            <Button variant="outline" size="sm" onClick={() => router.push("/admin/sales-daily-log")} className="h-10 gap-2 px-3">
-              <ShieldCheck className="h-4 w-4" />
-              <span className="hidden lg:inline">ניהול</span>
-            </Button>
             <Button variant="outline" size="sm" onClick={() => router.push("/sales/clients")} className="h-10 gap-2 px-3">
               <UsersRound className="h-4 w-4" />
               <span className="hidden lg:inline">לקוחות</span>
@@ -593,6 +601,23 @@ export function SalesPortal() {
       </header>
 
       <div className="mx-auto flex max-w-7xl flex-col gap-3 p-3 pb-6 lg:gap-5 lg:p-6">
+        {canViewTeamDashboard ? (
+          <section className="order-1 flex flex-col gap-3 rounded-lg border border-primary/25 bg-primary/5 p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <ShieldCheck className="h-5 w-5" />
+              </span>
+              <div className="min-w-0">
+                <h2 className="font-semibold">דשבורד צוות המכירות</h2>
+                <p className="text-sm text-muted-foreground">כל אנשי המכירות, הלקוחות, הפעילויות וההכנסות במקום אחד.</p>
+              </div>
+            </div>
+            <Button onClick={() => router.push("/admin/sales-daily-log")} className="h-11 w-full gap-2 sm:w-auto">
+              <BarChart3 className="h-4 w-4" />
+              פתיחת דשבורד הצוות
+            </Button>
+          </section>
+        ) : null}
         <section className="order-3 grid grid-cols-2 gap-2 lg:order-1 lg:gap-3 xl:grid-cols-5">
           <Kpi label="דיווחים היום" value={summary.todayCount} icon={CalendarClock} />
           <Kpi label="דיווחים השבוע" value={summary.weekCount} icon={BarChart3} />
