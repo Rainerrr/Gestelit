@@ -59,6 +59,7 @@ type SalesPortalUser = {
   email: string;
   full_name: string;
   phone: string | null;
+  is_admin: boolean;
 };
 
 type SalesAiSummary = {

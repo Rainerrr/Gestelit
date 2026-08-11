@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import crypto from "node:crypto";
 import { createServiceSupabase } from "@/lib/supabase/client";
+import { addAdminSessionCookie } from "@/lib/auth/admin-session";
 
 export const SALES_SESSION_COOKIE = "sales_session";
 const SALES_SESSION_MAX_AGE = 60 * 60 * 12;
@@ -12,7 +13,19 @@ export type SalesUser = {
   full_name: string;
   phone: string | null;
   is_active: boolean;
+  is_admin: boolean;
 };
+
+const DEFAULT_SALES_ADMIN_EMAILS = ["maty@gestelit.co.il"];
+
+export function isSalesAdminEmail(email: string) {
+  const configured = process.env.SALES_ADMIN_EMAILS
+    ?.split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+  return new Set(configured?.length ? configured : DEFAULT_SALES_ADMIN_EMAILS)
+    .has(email.trim().toLowerCase());
+}
 
 type SalesSessionPayload = {
   v: 1;
@@ -107,7 +120,7 @@ export function createSalesResponseWithSession<T>(data: T, user: SalesUser, stat
     maxAge: SALES_SESSION_MAX_AGE,
     path: "/",
   });
-  return response;
+  return user.is_admin ? addAdminSessionCookie(response) : response;
 }
 
 export async function clearSalesSessionCookie() {
@@ -128,7 +141,10 @@ export async function getSalesSessionUser(): Promise<SalesUser | null> {
     .maybeSingle();
 
   if (error || !data || data.is_active !== true) return null;
-  return data as SalesUser;
+  return {
+    ...data,
+    is_admin: isSalesAdminEmail(data.email),
+  } as SalesUser;
 }
 
 export async function requireSalesSessionUser() {

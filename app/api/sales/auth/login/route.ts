@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createServiceSupabase } from "@/lib/supabase/client";
 import {
   createSalesResponseWithSession,
+  isSalesAdminEmail,
   verifySalesPassword,
   type SalesUser,
 } from "@/lib/auth/sales-session";
@@ -44,6 +45,7 @@ export async function POST(request: Request) {
     full_name: data.full_name,
     phone: data.phone,
     is_active: data.is_active,
+    is_admin: isSalesAdminEmail(data.email),
   };
 
   return createSalesResponseWithSession({ user }, user);

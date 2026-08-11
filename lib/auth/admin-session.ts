@@ -140,6 +140,18 @@ export function createResponseWithSession<T>(
   return response;
 }
 
+/** Attach a fresh admin session to an existing response. */
+export function addAdminSessionCookie<T extends NextResponse>(response: T): T {
+  response.cookies.set(ADMIN_SESSION_COOKIE, createSessionToken(), {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: ADMIN_SESSION_MAX_AGE,
+    path: "/",
+  });
+  return response;
+}
+
 /**
  * Create a response that refreshes the session cookie
  */
