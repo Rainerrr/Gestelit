@@ -15,7 +15,7 @@ function errorLabel(code: string) {
   const labels: Record<string, string> = {
     EMAIL_PASSWORD_REQUIRED: "צריך למלא אימייל וסיסמה",
     INVALID_EMAIL_OR_PASSWORD: "האימייל או הסיסמה לא נכונים",
-    SALES_LOGIN_FAILED: "כניסה נכשלה. נסו שוב.",
+    SALES_LOGIN_FAILED: "לא הצלחנו להתחבר. נסו שוב.",
   };
   return labels[code] ?? code;
 }
@@ -119,7 +119,7 @@ export default function SalesLoginPage() {
 
             <Button type="submit" size="lg" disabled={isSubmitting} className="h-14 w-full rounded-xl gap-2 text-base">
               <LogIn className="h-5 w-5" />
-              {isSubmitting ? "נכנס..." : "כניסה"}
+              {isSubmitting ? "מתחבר..." : "כניסה"}
             </Button>
           </form>
         </section>

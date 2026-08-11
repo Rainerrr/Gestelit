@@ -88,9 +88,9 @@ const eventOptions: Array<{ id: SalesEventType; label: string; icon: LucideIcon 
 const statusLabels: Record<SalesStatus, string> = {
   new: "חדש",
   open: "פתוח",
-  follow_up: "להמשך טיפול",
+  follow_up: "צריך לחזור",
   won: "נסגר",
-  lost: "אבד",
+  lost: "לא נסגר",
   done: "בוצע",
 };
 
@@ -146,8 +146,8 @@ function errorLabel(code: string) {
     SALESPERSON_REQUIRED: "צריך למלא איש מכירות",
     CUSTOMER_REQUIRED: "צריך למלא לקוח",
     NOTE_REQUIRED: "צריך לכתוב או להקליט תיאור פעילות",
-    INVALID_ESTIMATED_REVENUE: "הכנסה מוערכת לא יכולה להיות שלילית",
-    INVALID_ACTUAL_REVENUE: "הכנסה בפועל לא יכולה להיות שלילית",
+    INVALID_ESTIMATED_REVENUE: "הסכום המשוער לא יכול להיות שלילי",
+    INVALID_ACTUAL_REVENUE: "הסכום שנסגר לא יכול להיות שלילי",
     INVALID_STATUS: "סטטוס לא תקין",
     RATE_LIMITED: "יותר מדי בקשות AI כרגע. נסה שוב עוד דקה.",
     SALES_EXPORT_FAILED: "לא הצלחנו להפיק את קובץ האקסל. נסו שוב.",
@@ -397,7 +397,7 @@ export function SalesDailyLogDashboard() {
           calendar_event_note: calendarNote.trim() || null,
         },
       });
-      setSavedMessage("האירוע נשמר ביומן המכירות");
+      setSavedMessage("הדיווח נשמר ביומן המכירות");
       setAiSummary(null);
       setCalendarNote("");
       setSelectedClient(null);
@@ -463,13 +463,13 @@ export function SalesDailyLogDashboard() {
       aiContext={{
         screen: "sales-daily-log",
         search: appliedFilters.client || search,
-        visibleSummary: `יומן מכירות: ${summary?.analytics.filteredCount ?? 0} אירועים בתקופה, ${summary?.openFollowUps ?? 0} פולואפים פתוחים, איש מכירות ${appliedFilters.salesperson || "הכל"}, לקוח ${appliedFilters.client || "הכל"}`,
+        visibleSummary: `יומן מכירות: ${summary?.analytics.filteredCount ?? 0} דיווחים בתקופה, ${summary?.openFollowUps ?? 0} לקוחות שצריך לחזור אליהם, איש מכירות ${appliedFilters.salesperson || "הכל"}, לקוח ${appliedFilters.client || "הכל"}`,
       }}
       header={
         <AdminPageHeader
           icon={Handshake}
           title="יומן מכירות"
-          statusElement={<Badge variant="outline" className="hidden sm:inline-flex">שכבת פעילות מעל נתוני BINA</Badge>}
+          statusElement={<Badge variant="outline" className="hidden sm:inline-flex">דיווחי הצוות לצד נתוני BINA</Badge>}
           actions={
             <Button variant="outline" size="sm" onClick={() => void loadData()} className="gap-2">
               <RefreshCcw className="h-4 w-4" />
@@ -497,7 +497,7 @@ export function SalesDailyLogDashboard() {
             className="gap-2"
           >
             <ListPlus className="h-4 w-4" />
-            דיווח ויומן
+            דיווחים
           </Button>
         </div>
 
@@ -535,10 +535,10 @@ export function SalesDailyLogDashboard() {
         ) : (
           <>
         <div className="grid grid-cols-2 gap-2 xl:grid-cols-5">
-          <Kpi label="אירועים היום" value={summary?.todayCount ?? 0} icon={CalendarClock} />
-          <Kpi label="אירועים השבוע" value={summary?.weekCount ?? 0} icon={BarChart3} />
-          <Kpi label="פולואפים פתוחים" value={summary?.openFollowUps ?? 0} icon={Clock3} tone={(summary?.overdueFollowUps ?? 0) > 0 ? "red" : "amber"} />
-          <Kpi label="פייפליין מוערך" value={formatMoney(summary?.estimatedPipeline ?? 0)} icon={TrendingUp} />
+          <Kpi label="דיווחים היום" value={summary?.todayCount ?? 0} icon={CalendarClock} />
+          <Kpi label="דיווחים השבוע" value={summary?.weekCount ?? 0} icon={BarChart3} />
+          <Kpi label="לקוחות שצריך לחזור אליהם" value={summary?.openFollowUps ?? 0} icon={Clock3} tone={(summary?.overdueFollowUps ?? 0) > 0 ? "red" : "amber"} />
+          <Kpi label="שווי עסקאות פתוחות" value={formatMoney(summary?.estimatedPipeline ?? 0)} icon={TrendingUp} />
           <Kpi label="מכירות BINA החודש" value={formatMoney(summary?.binaMonthRevenue ?? 0)} icon={WalletCards} />
         </div>
 
@@ -546,8 +546,8 @@ export function SalesDailyLogDashboard() {
           <Card className="rounded-xl border border-border bg-card/70 p-3 sm:p-4">
             <div className="mb-3 flex items-start justify-between gap-3 sm:mb-4">
               <div>
-                <h2 className="text-base font-semibold sm:text-lg">רישום פעילות מהיר</h2>
-                <p className="mt-1 text-xs text-muted-foreground sm:text-sm">הקלדה או דיבור, ואז סיכום עסקי נקי לפני שמירה.</p>
+                <h2 className="text-base font-semibold sm:text-lg">דיווח מהיר</h2>
+                <p className="mt-1 text-xs text-muted-foreground sm:text-sm">כותבים או מקליטים מה היה, וה-AI מסדר את הסיכום לפני השמירה.</p>
               </div>
               <Badge className="bg-primary/10 text-primary">יומי</Badge>
             </div>
@@ -620,11 +620,11 @@ export function SalesDailyLogDashboard() {
                 <div className="grid grid-cols-2 gap-2 sm:flex">
                   <Button type="button" variant="outline" size="sm" onClick={toggleSpeech} className="gap-2">
                     {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-                    {isListening ? "עצור" : "דיבור"}
+                    {isListening ? "עצור" : "הקלטה"}
                   </Button>
                   <Button type="button" variant="outline" size="sm" onClick={() => void summarizeNote()} disabled={isSummarizing || !form.raw_note?.trim()} className="gap-2">
                     <Sparkles className="h-4 w-4" />
-                    {isSummarizing ? "מסכם..." : "סיכום AI"}
+                    {isSummarizing ? "מסכם..." : "סדר עם AI"}
                   </Button>
                 </div>
               </div>
@@ -640,27 +640,27 @@ export function SalesDailyLogDashboard() {
               <Card className="mt-4 rounded-xl border border-primary/25 bg-primary/5 p-3 sm:p-4">
                 <div className="mb-2 flex items-center gap-2 text-primary">
                   <Sparkles className="h-4 w-4" />
-                  <span className="font-semibold">סיכום עסקי מוצע</span>
+                  <span className="font-semibold">הסיכום של ה-AI</span>
                 </div>
                 <p className="text-sm leading-6">{aiSummary.summary}</p>
                 <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
-                  <div><span className="text-muted-foreground">כוונת לקוח: </span>{aiSummary.customerIntent}</div>
-                  <div><span className="text-muted-foreground">פעולה הבאה: </span>{aiSummary.nextAction ?? "-"}</div>
-                  <div><span className="text-muted-foreground">סיכון/התנגדות: </span>{aiSummary.riskOrObjection ?? "-"}</div>
-                  <div><span className="text-muted-foreground">אמינות: </span>{aiSummary.confidence}</div>
+                  <div><span className="text-muted-foreground">מה הלקוח רוצה: </span>{aiSummary.customerIntent}</div>
+                  <div><span className="text-muted-foreground">מה עושים עכשיו: </span>{aiSummary.nextAction ?? "-"}</div>
+                  <div><span className="text-muted-foreground">מה מעכב: </span>{aiSummary.riskOrObjection ?? "-"}</div>
+                  <div><span className="text-muted-foreground">רמת ביטחון: </span>{aiSummary.confidence}</div>
                 </div>
               </Card>
             )}
 
             <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
-              <Field label="הכנסה מוערכת">
+              <Field label="שווי משוער">
                 <Input dir="ltr" type="number" min="0" value={String(form.estimated_revenue ?? "")} onChange={(event) => setForm((current) => ({ ...current, estimated_revenue: event.target.value }))} placeholder="₪" />
               </Field>
-              <Field label="הכנסה בפועל">
+              <Field label="כמה נסגר?">
                 <Input dir="ltr" type="number" min="0" value={String(form.actual_revenue ?? "")} onChange={(event) => setForm((current) => ({ ...current, actual_revenue: event.target.value }))} placeholder="רק אם נסגר" />
               </Field>
               <Field
-                label="תאריך פעולה הבאה"
+                label="מתי לחזור ללקוח?"
                 className="col-span-2 sm:col-span-1"
                 action={(
                   <AddToCalendarButton
@@ -679,7 +679,7 @@ export function SalesDailyLogDashboard() {
               >
                 <Input dir="ltr" type="date" value={String(form.next_action_date ?? "")} onChange={(event) => setForm((current) => ({ ...current, next_action_date: event.target.value }))} />
               </Field>
-              <Field label="הערה לאירוע ביומן" className="col-span-2 sm:col-span-3">
+              <Field label="מה לרשום ביומן?" className="col-span-2 sm:col-span-3">
                 <Input
                   value={calendarNote}
                   onChange={(event) => setCalendarNote(event.target.value)}
@@ -692,7 +692,7 @@ export function SalesDailyLogDashboard() {
             </div>
 
             <div className="mt-4">
-              <Label>סיכום / פעולה הבאה</Label>
+              <Label>מה הצעד הבא?</Label>
               <Input
                 value={String(form.ai_next_action ?? "")}
                 onChange={(event) => setForm((current) => ({ ...current, ai_next_action: event.target.value }))}
@@ -703,7 +703,7 @@ export function SalesDailyLogDashboard() {
 
             <div className="mt-5 flex justify-end">
               <Button onClick={() => void saveActivity()} disabled={isSaving || !isFormReady} className="w-full sm:w-auto sm:min-w-40">
-                {isSaving ? "שומר..." : "שמור ביומן"}
+                {isSaving ? "שומר..." : "שמור דיווח"}
               </Button>
             </div>
           </Card>
@@ -712,8 +712,8 @@ export function SalesDailyLogDashboard() {
             <Card className="rounded-xl border border-border bg-card/70 p-3 sm:p-4">
               <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <h2 className="text-lg font-semibold">יומן הפעילות בתקופה</h2>
-                  <p className="text-sm text-muted-foreground">הרשומות והמדדים משתמשים באותו חתך ניהולי.</p>
+                  <h2 className="text-lg font-semibold">הדיווחים בתקופה</h2>
+                  <p className="text-sm text-muted-foreground">הרשימה והנתונים למעלה מוצגים לפי אותו סינון.</p>
                 </div>
                 <div className="w-full sm:w-64">
                   <div className="relative">
@@ -727,7 +727,7 @@ export function SalesDailyLogDashboard() {
                 {isLoading ? (
                   <div className="rounded-lg bg-secondary/40 p-4 text-center text-sm text-muted-foreground">טוען...</div>
                 ) : activities.length === 0 ? (
-                  <div className="rounded-lg bg-secondary/40 p-4 text-center text-sm text-muted-foreground">אין אירועים היום עדיין</div>
+                  <div className="rounded-lg bg-secondary/40 p-4 text-center text-sm text-muted-foreground">עוד לא נוספו דיווחים בתקופה הזאת</div>
                 ) : activities.map((activity) => (
                   <div key={activity.id} className="rounded-xl border border-border bg-background/60 p-3">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
@@ -735,7 +735,7 @@ export function SalesDailyLogDashboard() {
                         <div className="flex flex-wrap items-center gap-2">
                           <Badge>{eventOptions.find((option) => option.id === activity.event_type)?.label ?? activity.event_type}</Badge>
                           <Badge variant="outline">{valueLabel(activity.status)}</Badge>
-                          {activity.sales_user_id ? <Badge className="bg-primary/10 text-primary">פורטל מכירות</Badge> : null}
+                          {activity.sales_user_id ? <Badge className="bg-primary/10 text-primary">דווח על ידי איש המכירות</Badge> : null}
                         </div>
                         <h3 className="mt-2 truncate font-semibold">{activity.customer_name}</h3>
                         <p className="text-xs text-muted-foreground">{activity.salesperson} · {formatDateTime(activity.event_at)}</p>
@@ -749,7 +749,7 @@ export function SalesDailyLogDashboard() {
                     </p>
                     {activity.ai_next_action && (
                       <div className="mt-3 rounded-lg bg-secondary/45 p-2 text-sm">
-                        <span className="font-medium">המשך: </span>{activity.ai_next_action}
+                        <span className="font-medium">הצעד הבא: </span>{activity.ai_next_action}
                         {activity.next_action_date ? <span className="text-muted-foreground"> · {activity.next_action_date}</span> : null}
                       </div>
                     )}
@@ -770,13 +770,13 @@ export function SalesDailyLogDashboard() {
                     ) : null}
                     <div className="mt-3 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
                       {activity.status !== "follow_up" && (
-                        <Button variant="outline" size="sm" onClick={() => void markStatus(activity, "follow_up")} className="w-full sm:w-auto">להמשך טיפול</Button>
+                        <Button variant="outline" size="sm" onClick={() => void markStatus(activity, "follow_up")} className="w-full sm:w-auto">צריך לחזור</Button>
                       )}
                       {activity.status !== "won" && (
-                        <Button variant="outline" size="sm" onClick={() => void markStatus(activity, "won")} className="w-full sm:w-auto">זכייה</Button>
+                        <Button variant="outline" size="sm" onClick={() => void markStatus(activity, "won")} className="w-full sm:w-auto">נסגר</Button>
                       )}
                       {activity.status !== "lost" && (
-                        <Button variant="outline" size="sm" onClick={() => void markStatus(activity, "lost")} className="w-full sm:w-auto">אבד</Button>
+                        <Button variant="outline" size="sm" onClick={() => void markStatus(activity, "lost")} className="w-full sm:w-auto">לא נסגר</Button>
                       )}
                       {activity.status !== "done" && (
                         <Button variant="outline" size="sm" onClick={() => void markStatus(activity, "done")} className="w-full sm:w-auto">פעילות בוצעה</Button>
@@ -790,28 +790,28 @@ export function SalesDailyLogDashboard() {
             <Card className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-3 sm:p-4">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-lg font-semibold">לטיפול היום / באיחור</h2>
-                  <p className="text-sm text-muted-foreground">פולואפים פתוחים שהגיע תאריך הטיפול שלהם.</p>
+                  <h2 className="text-lg font-semibold">למי צריך לחזור היום</h2>
+                  <p className="text-sm text-muted-foreground">לקוחות שהגיע הזמן לחזור אליהם או שכבר עבר התאריך.</p>
                 </div>
                 <Badge variant="outline">{followUps.length}</Badge>
               </div>
               <div className="space-y-3">
                 {followUps.length === 0 ? (
-                  <div className="rounded-lg bg-secondary/40 p-4 text-center text-sm text-muted-foreground">אין פולואפים באיחור כרגע</div>
+                  <div className="rounded-lg bg-secondary/40 p-4 text-center text-sm text-muted-foreground">אין כרגע לקוחות שמחכים לחזרה</div>
                 ) : followUps.map((activity) => (
                   <div key={activity.id} className="rounded-xl border border-border bg-background/60 p-3">
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <h3 className="font-semibold">{activity.customer_name}</h3>
-                        <p className="text-xs text-muted-foreground">{activity.salesperson} · יעד: {formatDateOnly(activity.next_action_date)}</p>
+                        <p className="text-xs text-muted-foreground">{activity.salesperson} · לחזור עד: {formatDateOnly(activity.next_action_date)}</p>
                       </div>
-                      <Badge className="bg-amber-500/10 text-amber-300">פולואפ</Badge>
+                      <Badge className="bg-amber-500/10 text-amber-300">צריך לחזור</Badge>
                     </div>
                     <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{activity.ai_next_action || activity.ai_summary || activity.raw_note}</p>
                     <div className="mt-3 grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:justify-end">
                       <Button variant="outline" size="sm" onClick={() => void markStatus(activity, "done")} className="w-full sm:w-auto">בוצע</Button>
-                      <Button variant="outline" size="sm" onClick={() => void markStatus(activity, "won")} className="w-full sm:w-auto">זכייה</Button>
-                      <Button variant="outline" size="sm" onClick={() => void markStatus(activity, "lost")} className="w-full sm:w-auto">אבד</Button>
+                      <Button variant="outline" size="sm" onClick={() => void markStatus(activity, "won")} className="w-full sm:w-auto">נסגר</Button>
+                      <Button variant="outline" size="sm" onClick={() => void markStatus(activity, "lost")} className="w-full sm:w-auto">לא נסגר</Button>
                     </div>
                   </div>
                 ))}
@@ -819,8 +819,8 @@ export function SalesDailyLogDashboard() {
             </Card>
 
             <Card className="rounded-xl border border-border bg-card/70 p-3 sm:p-4">
-              <h2 className="text-base font-semibold sm:text-lg">לקוחות מובילים בתקופה</h2>
-              <p className="mt-1 text-sm text-muted-foreground">מדורג לפי פייפליין וכמות הפעילויות בחתך הנבחר.</p>
+              <h2 className="text-base font-semibold sm:text-lg">הלקוחות הבולטים בתקופה</h2>
+              <p className="mt-1 text-sm text-muted-foreground">לפי שווי העסקאות וכמות הפעילות בתקופה שבחרתם.</p>
               <div className="mt-4 space-y-3">
                 {(summary?.topClients ?? []).slice(0, 5).map((client) => (
                   <button
@@ -832,7 +832,7 @@ export function SalesDailyLogDashboard() {
                     <div className="min-w-0">
                       <div className="truncate font-semibold">{client.customer_name}</div>
                       <div className="mt-1 text-xs text-muted-foreground">
-                        {client.activity_count} פעילויות · {client.salesperson || "ללא איש מכירות"}
+                        {client.activity_count} פעילויות · {client.salesperson || "לא משויך לאיש מכירות"}
                       </div>
                     </div>
                     <div className="font-mono text-sm">{formatMoney(client.estimated_pipeline)}</div>

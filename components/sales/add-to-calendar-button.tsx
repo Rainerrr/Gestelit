@@ -50,7 +50,7 @@ export function AddToCalendarButton({
         variant="ghost"
         size="sm"
         disabled
-        title="יש לבחור תאריך לפני ההוספה ליומן"
+        title="צריך לבחור תאריך לפני שמוסיפים ליומן"
         className={cn("h-8 shrink-0 gap-1.5 px-2 text-xs", className)}
       >
         <CalendarPlus className="h-3.5 w-3.5" />
@@ -72,7 +72,7 @@ export function AddToCalendarButton({
         target="_blank"
         rel="noreferrer"
         title="הוספה ליומן Google"
-        aria-label="הוספת הפעולה הבאה ליומן Google"
+        aria-label="הוספת המשימה ליומן Google"
       >
         <CalendarPlus className="h-3.5 w-3.5" />
         הוסף ליומן

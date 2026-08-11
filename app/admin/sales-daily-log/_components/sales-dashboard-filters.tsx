@@ -33,7 +33,7 @@ const periods = [
   { value: "30", label: "30 ימים" },
   { value: "90", label: "90 ימים" },
   { value: "365", label: "שנה" },
-  { value: "custom", label: "מותאם" },
+  { value: "custom", label: "טווח אחר" },
 ] as const;
 
 const eventTypes = [
@@ -46,12 +46,12 @@ const eventTypes = [
 ];
 
 const statuses = [
-  { value: "", label: "כל הסטטוסים" },
+  { value: "", label: "כל המצבים" },
   { value: "new", label: "חדש" },
   { value: "open", label: "פתוח" },
-  { value: "follow_up", label: "להמשך טיפול" },
-  { value: "won", label: "זכייה" },
-  { value: "lost", label: "אבד" },
+  { value: "follow_up", label: "צריך לחזור" },
+  { value: "won", label: "נסגר" },
+  { value: "lost", label: "לא נסגר" },
   { value: "done", label: "בוצע" },
 ];
 
@@ -89,7 +89,7 @@ export function SalesDashboardFilters({
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <Filter className="h-4 w-4 text-primary" />
-              <h2 className="text-sm font-semibold">חתך ניהולי</h2>
+              <h2 className="text-sm font-semibold">סינון הדוח</h2>
               {activeCount > 0 ? <Badge variant="secondary">{activeCount} מסננים</Badge> : null}
             </div>
             <div className="-mx-1 flex max-w-full gap-1 overflow-x-auto px-1 pb-1" aria-label="תקופת ניתוח">
@@ -169,7 +169,7 @@ export function SalesDashboardFilters({
               ) : (
                 <div className="flex h-full min-h-16 items-end gap-2 text-xs text-muted-foreground">
                   <CalendarDays className="mb-3 h-4 w-4" />
-                  <span className="mb-3">התקופה חלה על כל המדדים והטבלאות</span>
+                  <span className="mb-3">הסינון משפיע על כל הנתונים שמופיעים למטה</span>
                 </div>
               )}
             </div>
@@ -182,7 +182,7 @@ export function SalesDashboardFilters({
           </Button>
           <Button type="button" onClick={onApply} disabled={isLoading} className="gap-2">
             <Filter className="h-4 w-4" />
-            {isLoading ? "מעדכן..." : "החל סינון"}
+            {isLoading ? "טוען..." : "הצג"}
           </Button>
           <Button
             type="button"
@@ -192,7 +192,7 @@ export function SalesDashboardFilters({
             className="col-span-2 gap-2 border-emerald-500/30 text-emerald-700 hover:bg-emerald-500/10 dark:text-emerald-300"
           >
             <FileSpreadsheet className="h-4 w-4" />
-            {isExporting ? "מכין דוח..." : "ייצוא XLSX מעוצב"}
+            {isExporting ? "מכין דוח..." : "הורדת דוח אקסל"}
           </Button>
         </div>
       </div>

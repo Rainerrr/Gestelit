@@ -49,9 +49,9 @@ const eventLabels: Record<string, string> = {
 };
 
 const confidenceLabels = {
-  reliable: "מבוסס",
-  developing: "מתגבש",
-  early_signal: "אות ראשוני",
+  reliable: "מספיק נתונים",
+  developing: "מתחיל להסתמן",
+  early_signal: "מידע ראשוני",
 };
 
 function money(value: number, currency = "ILS") {
@@ -99,7 +99,7 @@ export function SalesIntelligenceDashboard({ summary, followUps, onMarkStatus, p
   const outcomeRateReliable = (analytics?.dataQuality.lostOutcomeCount ?? 0) > 0 || funnel.won === 0;
 
   if (!analytics) {
-    return <Card className="border-border bg-card/70 p-6 text-center text-sm text-muted-foreground">טוען ניתוח מכירות...</Card>;
+    return <Card className="border-border bg-card/70 p-6 text-center text-sm text-muted-foreground">טוען את נתוני המכירות...</Card>;
   }
   const periodLabel = analytics.periodDays <= 1 ? "היום" : `${analytics.periodDays} הימים שנבחרו`;
 
@@ -107,8 +107,8 @@ export function SalesIntelligenceDashboard({ summary, followUps, onMarkStatus, p
     return (
       <Card className="border-border bg-card/70 p-8 text-center">
         <Target className="mx-auto h-8 w-8 text-muted-foreground" />
-        <h2 className="mt-3 text-lg font-semibold">אין פעילות בחתך הזה</h2>
-        <p className="mt-1 text-sm text-muted-foreground">שנו תקופה, איש מכירות, לקוח או סטטוס כדי להרחיב את התוצאה.</p>
+        <h2 className="mt-3 text-lg font-semibold">אין פעילות לפי הסינון הזה</h2>
+        <p className="mt-1 text-sm text-muted-foreground">נסו תקופה אחרת, איש מכירות אחר או לקוח אחר.</p>
       </Card>
     );
   }
@@ -120,11 +120,11 @@ export function SalesIntelligenceDashboard({ summary, followUps, onMarkStatus, p
           <div>
             <div className="mb-2 flex items-center gap-2 text-sm font-medium text-primary">
               <BriefcaseBusiness className="h-4 w-4" />
-              {personal ? "הדשבורד שלי" : "מרכז שליטה במכירות"}
+              {personal ? "הסיכום שלי" : "תמונת מצב במכירות"}
             </div>
-            <h2 className="text-xl font-semibold sm:text-2xl">{personal ? "מה דורש ממני פעולה עכשיו" : "מה דורש פעולה עכשיו"}</h2>
+            <h2 className="text-xl font-semibold sm:text-2xl">{personal ? "במה כדאי לי לטפל עכשיו" : "במה צריך לטפל עכשיו"}</h2>
             <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
-              ביצועי {periodLabel} לפי {analytics.filteredCount} דיווחים תואמים. כל המדדים, ה-ICP והתורים מחושבים מאותו חתך.
+              סיכום {periodLabel} לפי {analytics.filteredCount} דיווחים. כל הנתונים למטה מוצגים לפי הסינון שבחרתם.
             </p>
           </div>
           {currencyOptions.length > 1 ? (
@@ -148,30 +148,30 @@ export function SalesIntelligenceDashboard({ summary, followUps, onMarkStatus, p
       {analytics.isTruncated ? (
         <section className="flex items-start gap-3 rounded-lg border border-amber-500/35 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-100">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <div><strong>התוצאה גדולה מדי להצגה מלאה.</strong> צמצמו את התקופה, איש המכירות או הלקוח כדי לקבל מדדים מדויקים לכל הרשומות.</div>
+          <div><strong>יש יותר מדי נתונים להצגה אחת.</strong> בחרו תקופה קצרה יותר, איש מכירות או לקוח כדי לראות נתונים מדויקים.</div>
         </section>
       ) : null}
 
       <section className="grid grid-cols-2 gap-2 lg:grid-cols-4 lg:gap-3" aria-label="מדדי מכירות מרכזיים">
-        <MetricCard icon={TrendingUp} label="פייפליין פתוח" value={money(currency?.estimatedPipeline ?? 0, activeCurrency)} detail={`${currency?.openCount ?? 0} הזדמנויות`} tone="blue" />
-        <MetricCard icon={BadgeCheck} label="שיעור זכייה" value={outcomeRateReliable ? percent(funnel.winRate) : "לא אמין"} detail={outcomeRateReliable ? `${funnel.won} זכיות מתוך ${funnel.won + funnel.lost} החלטות` : "לא דווחו עסקאות שאבדו"} tone={outcomeRateReliable ? "green" : "red"} />
-        <MetricCard icon={Clock3} label="פולואפים באיחור" value={summary?.overdueFollowUps ?? 0} detail={`${summary?.openFollowUps ?? 0} פולואפים פתוחים`} tone={(summary?.overdueFollowUps ?? 0) > 0 ? "red" : "green"} />
-        <MetricCard icon={CircleDollarSign} label="הכנסה שנסגרה" value={money(currency?.wonRevenue ?? 0, activeCurrency)} detail={`${currency?.wonCount ?? 0} עסקאות שדווחו`} tone="violet" />
+        <MetricCard icon={TrendingUp} label="שווי עסקאות פתוחות" value={money(currency?.estimatedPipeline ?? 0, activeCurrency)} detail={`${currency?.openCount ?? 0} עסקאות פתוחות`} tone="blue" />
+        <MetricCard icon={BadgeCheck} label="אחוז סגירה" value={outcomeRateReliable ? percent(funnel.winRate) : "אין מספיק מידע"} detail={outcomeRateReliable ? `${funnel.won} נסגרו מתוך ${funnel.won + funnel.lost}` : "צריך לדווח גם על עסקאות שלא נסגרו"} tone={outcomeRateReliable ? "green" : "red"} />
+        <MetricCard icon={Clock3} label="לקוחות שחיכו יותר מדי" value={summary?.overdueFollowUps ?? 0} detail={`${summary?.openFollowUps ?? 0} משימות חזרה פתוחות`} tone={(summary?.overdueFollowUps ?? 0) > 0 ? "red" : "green"} />
+        <MetricCard icon={CircleDollarSign} label="עסקאות שנסגרו" value={money(currency?.wonRevenue ?? 0, activeCurrency)} detail={`${currency?.wonCount ?? 0} עסקאות שדווחו`} tone="violet" />
       </section>
 
       {analytics.dataQuality.lostOutcomeCount === 0 && funnel.won > 0 ? (
         <div className="flex items-start gap-3 rounded-lg border border-amber-500/35 bg-amber-500/10 p-3 text-sm text-amber-950 dark:text-amber-100">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
           <div>
-            <div className="font-medium">שיעור הזכייה עדיין אינו אמין</div>
-            <p className="mt-1 leading-5 text-amber-900/80 dark:text-amber-100/75">נרשמו זכיות אך לא נרשמו עסקאות שאבדו. יש לסגור גם הזדמנויות שלא הבשילו כדי שה-ICP וההמרה ישקפו את המציאות.</p>
+            <div className="font-medium">עדיין אי אפשר לחשב אחוז סגירה</div>
+            <p className="mt-1 leading-5 text-amber-900/80 dark:text-amber-100/75">דווחו עסקאות שנסגרו, אבל לא עסקאות שלא נסגרו. סמנו גם אותן כדי לקבל תמונה אמיתית.</p>
           </div>
         </div>
       ) : null}
 
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(330px,0.65fr)]">
         <Card className="min-w-0 border-border bg-card/70 p-4 sm:p-5">
-          <SectionHeading icon={TrendingUp} title="מגמת פעילות ותוצאה" detail={periodLabel} />
+          <SectionHeading icon={TrendingUp} title="פעילות ומכירות לאורך זמן" detail={periodLabel} />
           <div className="mt-4 h-[260px] w-full sm:h-[300px]" dir="ltr">
             {daily.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={260}>
@@ -182,22 +182,22 @@ export function SalesIntelligenceDashboard({ summary, followUps, onMarkStatus, p
                   <YAxis yAxisId="money" orientation="right" hide />
                   <Tooltip
                     contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, direction: "rtl" }}
-                    formatter={(value, name) => name === "wonRevenue" ? [money(Number(value), activeCurrency), "הכנסה"] : [Number(value), "פעילויות"]}
+                    formatter={(value, name) => name === "wonRevenue" ? [money(Number(value), activeCurrency), "עסקאות שנסגרו"] : [Number(value), "פעילויות"]}
                   />
                   <Bar yAxisId="count" dataKey="activityCount" fill="#2f80ed" radius={[4, 4, 0, 0]} maxBarSize={24} />
                   <Line yAxisId="money" type="monotone" dataKey="wonRevenue" stroke="#22c55e" strokeWidth={2.5} dot={false} />
                 </ComposedChart>
               </ResponsiveContainer>
-            ) : <EmptyState text="עדיין אין מספיק פעילות להצגת מגמה" />}
+            ) : <EmptyState text="עוד אין מספיק פעילות כדי להציג מגמה" />}
           </div>
           <div className="mt-2 flex flex-wrap gap-4 text-xs text-muted-foreground">
             <span className="flex items-center gap-2"><i className="h-2.5 w-2.5 rounded-sm bg-[#2f80ed]" />פעילויות</span>
-            <span className="flex items-center gap-2"><i className="h-0.5 w-5 bg-[#22c55e]" />הכנסה שנסגרה</span>
+            <span className="flex items-center gap-2"><i className="h-0.5 w-5 bg-[#22c55e]" />עסקאות שנסגרו</span>
           </div>
         </Card>
 
         <Card className="border-border bg-card/70 p-4 sm:p-5">
-          <SectionHeading icon={Target} title="משפך הזדמנויות" detail="לפי סטטוס מדווח" />
+          <SectionHeading icon={Target} title="מצב העסקאות" detail="לפי מה שדווח" />
           <div className="mt-5 flex h-3 overflow-hidden rounded-full bg-secondary">
             <div className="bg-blue-500" style={{ width: `${(funnel.open / funnelTotal) * 100}%` }} />
             <div className="bg-emerald-500" style={{ width: `${(funnel.won / funnelTotal) * 100}%` }} />
@@ -205,11 +205,11 @@ export function SalesIntelligenceDashboard({ summary, followUps, onMarkStatus, p
           </div>
           <div className="mt-5 grid grid-cols-3 gap-2">
             <FunnelStat label="פתוח" value={funnel.open} color="bg-blue-500" />
-            <FunnelStat label="זכייה" value={funnel.won} color="bg-emerald-500" />
-            <FunnelStat label="אבד" value={funnel.lost} color="bg-rose-500" />
+            <FunnelStat label="נסגר" value={funnel.won} color="bg-emerald-500" />
+            <FunnelStat label="לא נסגר" value={funnel.lost} color="bg-rose-500" />
           </div>
           <div className="mt-6 border-t border-border pt-4">
-            <p className="mb-3 text-xs font-medium text-muted-foreground">תמהיל פעילות</p>
+            <p className="mb-3 text-xs font-medium text-muted-foreground">סוגי הפעילות</p>
             <div className="space-y-3">
               {analytics.eventMix.map((row) => (
                 <div key={row.eventType}>
@@ -229,19 +229,19 @@ export function SalesIntelligenceDashboard({ summary, followUps, onMarkStatus, p
 
       <section className="grid gap-4 xl:grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)]">
         <Card className="border-border bg-card/70 p-4 sm:p-5">
-          <SectionHeading icon={Target} title="פרופיל ICP מתגבש" detail="לפי לקוחות שהתקדמו בפועל" />
+          <SectionHeading icon={Target} title="אילו לקוחות מתאימים לנו" detail="לפי עסקאות שהתקדמו בפועל" />
           {strongestGroup || strongestArea ? (
             <div className="mt-4 rounded-lg border border-primary/25 bg-primary/5 p-4">
-              <p className="text-xs font-medium text-primary">האות החזק ביותר כרגע</p>
+              <p className="text-xs font-medium text-primary">מה בולט כרגע</p>
               <div className="mt-3 flex flex-wrap gap-2">
                 {strongestGroup ? <ProfileChip icon={Building2} label={strongestGroup.segment} /> : null}
                 {strongestArea ? <ProfileChip icon={MapPin} label={strongestArea.segment} /> : null}
               </div>
               <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                זהו כיוון לתעדוף, לא הגדרה סופית. חוזק האות נקבע לפי מספר לקוחות, כמות פעילויות, זכיות וגודל עסקה.
+                זה כיוון שכדאי לבדוק, לא מסקנה סופית. הדירוג מבוסס על מספר הלקוחות, כמות הפעילות, עסקאות שנסגרו וגודל העסקה.
               </p>
             </div>
-          ) : <EmptyState text="חסרים שיוך לקבוצה או אזור כדי לזהות ICP" />}
+          ) : <EmptyState text="צריך עוד נתונים על קבוצת הלקוח והאזור כדי לזהות דפוס" />}
 
           <div className="mt-4 space-y-3">
             {icpSegments.filter((row) => row.segment !== "לא מסווג").slice(0, 6).map((segment) => (
@@ -252,7 +252,7 @@ export function SalesIntelligenceDashboard({ summary, followUps, onMarkStatus, p
                       {segment.dimension === "area" ? <MapPin className="h-4 w-4 text-muted-foreground" /> : <Building2 className="h-4 w-4 text-muted-foreground" />}
                       <span className="truncate font-medium">{segment.segment}</span>
                     </div>
-                    <p className="mt-1 text-xs text-muted-foreground">{segment.uniqueClients} לקוחות · {segment.activityCount} פעילויות · {segment.wonCount === 1 ? "זכייה אחת" : `${segment.wonCount} זכיות`}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{segment.uniqueClients} לקוחות · {segment.activityCount} פעילויות · {segment.wonCount === 1 ? "עסקה אחת נסגרה" : `${segment.wonCount} עסקאות נסגרו`}</p>
                   </div>
                   <Badge variant="outline" className={cn(segment.confidence === "reliable" && "border-emerald-500/40 text-emerald-400")}>{confidenceLabels[segment.confidence]}</Badge>
                 </div>
@@ -268,9 +268,9 @@ export function SalesIntelligenceDashboard({ summary, followUps, onMarkStatus, p
         </Card>
 
         <Card className="border-border bg-card/70 p-4 sm:p-5">
-          <SectionHeading icon={AlertTriangle} title="תור פעולה מסחרי" detail="מדורג לפי איחור, שווי וחוסר פעילות" />
+          <SectionHeading icon={AlertTriangle} title="למי כדאי לחזור עכשיו" detail="לפי איחור, סכום וזמן מאז הקשר האחרון" />
           <div className="mt-4 space-y-2">
-            {opportunities.length === 0 ? <EmptyState text="אין הזדמנויות פתוחות לתעדוף" /> : opportunities.slice(0, 7).map((row, index) => (
+            {opportunities.length === 0 ? <EmptyState text="אין כרגע עסקאות פתוחות שדורשות טיפול" /> : opportunities.slice(0, 7).map((row, index) => (
               <div key={`${row.clientKey}-${row.currency}`} className="grid gap-3 rounded-lg border border-border bg-background/45 p-3 sm:grid-cols-[32px_minmax(0,1fr)_auto] sm:items-center">
                 <div className="hidden h-8 w-8 items-center justify-center rounded-md bg-secondary text-xs font-semibold sm:flex">{index + 1}</div>
                 <div className="min-w-0">
@@ -283,7 +283,7 @@ export function SalesIntelligenceDashboard({ summary, followUps, onMarkStatus, p
                 </div>
                 <div className="flex items-center justify-between gap-3 sm:block sm:text-left">
                   <div className="font-semibold">{money(row.estimatedPipeline, row.currency)}</div>
-                  <div className="text-xs text-muted-foreground">ציון {row.priorityScore}</div>
+                  <div className="text-xs text-muted-foreground">עדיפות {row.priorityScore}</div>
                 </div>
               </div>
             ))}
@@ -293,7 +293,7 @@ export function SalesIntelligenceDashboard({ summary, followUps, onMarkStatus, p
 
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
         <Card className="border-border bg-card/70 p-4 sm:p-5">
-          <SectionHeading icon={Users} title={personal ? "הביצועים שלי" : "ביצועי צוות"} detail={`${periodLabel}, תוצאה לצד פעילות`} />
+          <SectionHeading icon={Users} title={personal ? "הפעילות שלי" : "פעילות הצוות"} detail={`${periodLabel}, פעילות ותוצאות`} />
           <div className="mt-4 hidden overflow-x-auto md:block">
             <table className="w-full min-w-[680px] text-right text-sm">
               <thead className="border-b border-border text-xs text-muted-foreground">
@@ -301,9 +301,9 @@ export function SalesIntelligenceDashboard({ summary, followUps, onMarkStatus, p
                   <th className="pb-3 font-medium">איש מכירות</th>
                   <th className="pb-3 font-medium">פעילויות</th>
                   <th className="pb-3 font-medium">לקוחות</th>
-                  <th className="pb-3 font-medium">זכיות</th>
-                  <th className="pb-3 font-medium">המרה</th>
-                  <th className="pb-3 font-medium">פייפליין</th>
+                  <th className="pb-3 font-medium">עסקאות שנסגרו</th>
+                  <th className="pb-3 font-medium">אחוז סגירה</th>
+                  <th className="pb-3 font-medium">עסקאות פתוחות</th>
                   <th className="pb-3 font-medium">באיחור</th>
                 </tr>
               </thead>
@@ -314,7 +314,7 @@ export function SalesIntelligenceDashboard({ summary, followUps, onMarkStatus, p
                     <td className="py-3"><bdi dir="ltr">{rep.activityCount}</bdi></td>
                     <td className="py-3"><bdi dir="ltr">{rep.uniqueClients}</bdi></td>
                     <td className="py-3"><bdi dir="ltr">{rep.wonCount}</bdi></td>
-                    <td className={cn("py-3", !outcomeRateReliable && rep.wonCount > 0 && "text-amber-500")}><bdi dir="ltr">{outcomeRateReliable || rep.wonCount === 0 ? percent(rep.conversionRate) : "לא אמין"}</bdi></td>
+                    <td className={cn("py-3", !outcomeRateReliable && rep.wonCount > 0 && "text-amber-500")}><bdi dir="ltr">{outcomeRateReliable || rep.wonCount === 0 ? percent(rep.conversionRate) : "חסר מידע"}</bdi></td>
                     <td className="py-3 font-medium"><bdi dir="ltr">{money(rep.estimatedPipeline, rep.currency)}</bdi></td>
                     <td className={cn("py-3", rep.overdueFollowUps > 0 && "text-rose-400")}><bdi dir="ltr">{rep.overdueFollowUps}</bdi></td>
                   </tr>
@@ -329,7 +329,7 @@ export function SalesIntelligenceDashboard({ summary, followUps, onMarkStatus, p
                 <div className="mt-3 grid grid-cols-4 gap-2 text-center text-xs text-muted-foreground">
                   <MiniStat label="פעילות" value={rep.activityCount} />
                   <MiniStat label="לקוחות" value={rep.uniqueClients} />
-                  <MiniStat label="המרה" value={outcomeRateReliable || rep.wonCount === 0 ? percent(rep.conversionRate) : "לא אמין"} />
+                  <MiniStat label="אחוז סגירה" value={outcomeRateReliable || rep.wonCount === 0 ? percent(rep.conversionRate) : "חסר מידע"} />
                   <MiniStat label="באיחור" value={rep.overdueFollowUps} danger={rep.overdueFollowUps > 0} />
                 </div>
               </div>
@@ -338,23 +338,23 @@ export function SalesIntelligenceDashboard({ summary, followUps, onMarkStatus, p
         </Card>
 
         <Card className="border-border bg-card/70 p-4 sm:p-5">
-          <SectionHeading icon={CheckCircle2} title="איכות הדיווח" detail={`${analytics.dataQuality.total} דיווחים שנבדקו`} />
+          <SectionHeading icon={CheckCircle2} title="מה חסר בדיווחים" detail={`${analytics.dataQuality.total} דיווחים שנבדקו`} />
           <div className="mt-5 space-y-5">
-            <QualityBar icon={ContactRound} label="שיוך ללקוח מהאינדקס" value={analytics.dataQuality.clientLinkRate} />
-            <QualityBar icon={CircleDollarSign} label="תיעוד שווי הזדמנות" value={analytics.dataQuality.valueCaptureRate} />
-            <QualityBar icon={Users} label="תיעוד איש קשר" value={analytics.dataQuality.contactCaptureRate} />
-            <QualityBar icon={ArrowUpLeft} label="פעולה הבאה להזדמנות פתוחה" value={analytics.dataQuality.nextActionRate} />
-            <QualityBar icon={BadgeCheck} label="הזדמנויות עם תוצאה סופית" value={analytics.dataQuality.outcomeClosureRate} />
+            <QualityBar icon={ContactRound} label="נבחר לקוח מהרשימה" value={analytics.dataQuality.clientLinkRate} />
+            <QualityBar icon={CircleDollarSign} label="הוזן סכום לעסקה" value={analytics.dataQuality.valueCaptureRate} />
+            <QualityBar icon={Users} label="הוזן איש קשר" value={analytics.dataQuality.contactCaptureRate} />
+            <QualityBar icon={ArrowUpLeft} label="נקבע מה עושים בהמשך" value={analytics.dataQuality.nextActionRate} />
+            <QualityBar icon={BadgeCheck} label="עודכן אם העסקה נסגרה" value={analytics.dataQuality.outcomeClosureRate} />
           </div>
           <p className="mt-5 border-t border-border pt-4 text-xs leading-5 text-muted-foreground">
-            איכות ICP תלויה באיכות הדיווח. השלמת לקוח, סכום ופעולה הבאה משפרת את הדיוק יותר מהוספת טקסט חופשי נוסף.
+            כדי לזהות אילו לקוחות הכי מתאימים לנו, חשוב לבחור לקוח, להוסיף סכום ולרשום מה הצעד הבא.
           </p>
         </Card>
       </section>
 
       {followUps.length > 0 ? (
         <Card className="border-amber-500/25 bg-amber-500/5 p-4 sm:p-5">
-          <SectionHeading icon={Clock3} title="פולואפים לביצוע" detail={`${followUps.length} משימות להשלמה`} />
+          <SectionHeading icon={Clock3} title="למי צריך לחזור" detail={`${followUps.length} משימות פתוחות`} />
           <div className="mt-4 grid gap-2 lg:grid-cols-2">
             {followUps.slice(0, 6).map((activity) => (
               <div key={activity.id} className="rounded-lg border border-border bg-background/60 p-3">
@@ -363,13 +363,13 @@ export function SalesIntelligenceDashboard({ summary, followUps, onMarkStatus, p
                     <div className="truncate font-medium">{activity.customer_name}</div>
                     <div className="mt-1 text-xs text-muted-foreground">{activity.salesperson} · {activity.next_action_date ?? "ללא תאריך"}</div>
                   </div>
-                  <Badge className="bg-amber-500/10 text-amber-400">לטיפול</Badge>
+                  <Badge className="bg-amber-500/10 text-amber-400">צריך לחזור</Badge>
                 </div>
                 <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{activity.ai_next_action || activity.ai_summary || activity.raw_note}</p>
                 <div className="mt-3 grid grid-cols-3 gap-2">
                   <Button size="sm" variant="outline" onClick={() => void onMarkStatus(activity, "done")}>בוצע</Button>
-                  <Button size="sm" variant="outline" onClick={() => void onMarkStatus(activity, "won")}>זכייה</Button>
-                  <Button size="sm" variant="outline" onClick={() => void onMarkStatus(activity, "lost")}>אבד</Button>
+                  <Button size="sm" variant="outline" onClick={() => void onMarkStatus(activity, "won")}>נסגר</Button>
+                  <Button size="sm" variant="outline" onClick={() => void onMarkStatus(activity, "lost")}>לא נסגר</Button>
                 </div>
               </div>
             ))}

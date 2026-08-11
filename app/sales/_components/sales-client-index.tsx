@@ -85,7 +85,7 @@ export function SalesClientIndex() {
         router.push("/sales/login");
         return;
       }
-      setError("לא הצלחנו לטעון את אינדקס הלקוחות. נסו לרענן.");
+      setError("לא הצלחנו לטעון את הלקוחות. נסו לרענן.");
     } finally {
       setIsLoading(false);
     }
@@ -107,7 +107,7 @@ export function SalesClientIndex() {
           <div className="flex min-w-0 items-center gap-2.5">
             <GestelitLogo size="sm" className="rounded-xl" />
             <div className="min-w-0">
-              <h1 className="truncate text-base font-semibold">אינדקס לקוחות</h1>
+              <h1 className="truncate text-base font-semibold">לקוחות</h1>
               <p className="truncate text-xs text-muted-foreground">{user?.full_name ?? "מכירות"}</p>
             </div>
           </div>
@@ -123,7 +123,7 @@ export function SalesClientIndex() {
           <div>
             <h2 className="text-2xl font-semibold lg:text-3xl">לקוחות</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              {isLoading ? "טוען..." : `${count.toLocaleString("he-IL")} לקוחות נמצאו`}
+              {isLoading ? "טוען..." : `מצאנו ${count.toLocaleString("he-IL")} לקוחות`}
             </p>
           </div>
           <div className="flex flex-col gap-2 lg:flex-row">
@@ -179,7 +179,7 @@ export function SalesClientIndex() {
           <Card className="rounded-2xl border-dashed p-10 text-center">
             <UsersRound className="mx-auto h-10 w-10 text-muted-foreground/60" />
             <h3 className="mt-3 font-semibold">לא נמצאו לקוחות</h3>
-            <p className="mt-1 text-sm text-muted-foreground">נסו שם, קוד או נציג אחר.</p>
+            <p className="mt-1 text-sm text-muted-foreground">נסו לחפש בשם אחר, בקוד לקוח או לפי נציג.</p>
           </Card>
         ) : (
           <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
@@ -190,11 +190,11 @@ export function SalesClientIndex() {
                     <h3 className="break-words text-lg font-semibold leading-6">{client.customer_name}</h3>
                     <div className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
                       <Hash className="h-3.5 w-3.5" />
-                      {client.customer_code ? <bdi dir="ltr">{client.customer_code}</bdi> : <span>טרם הוקצה קוד BINA</span>}
+                      {client.customer_code ? <bdi dir="ltr">{client.customer_code}</bdi> : <span>עוד אין קוד BINA</span>}
                     </div>
                   </div>
                   <Badge variant="outline" className={cn("shrink-0", client.source === "local_pending" ? "border-amber-200 bg-amber-50 text-amber-700" : statusTone(client.status))}>
-                    {client.source === "local_pending" ? "ממתין ל-BINA" : client.status || "ללא סיווג"}
+                    {client.source === "local_pending" ? "עדיין לא ב-BINA" : client.status || "ללא קטגוריה"}
                   </Badge>
                 </div>
 
@@ -202,7 +202,7 @@ export function SalesClientIndex() {
                   <ClientMeta icon={Building2} label="קבוצה" value={client.customer_group} />
                   <ClientMeta icon={UserRound} label="נציג" value={client.salesperson} />
                   {client.contact_person ? <ClientMeta icon={UserRound} label="איש קשר" value={client.contact_person} /> : null}
-                  <ClientMeta icon={CalendarDays} label="נפתח" value={formatDate(client.opened_at)} />
+                  <ClientMeta icon={CalendarDays} label="נוסף" value={formatDate(client.opened_at)} />
                 </div>
               </Card>
             ))}
@@ -259,7 +259,7 @@ function ClientMeta({ icon: Icon, label, value }: {
     <div className="flex min-w-0 items-center gap-2">
       <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
       <span className="shrink-0 text-muted-foreground">{label}</span>
-      <span className="truncate font-medium">{value || "לא צוין"}</span>
+      <span className="truncate font-medium">{value || "לא הוזן"}</span>
     </div>
   );
 }

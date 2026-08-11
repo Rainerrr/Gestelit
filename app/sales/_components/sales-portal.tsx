@@ -109,9 +109,9 @@ const eventOptions: Array<{ id: SalesEventType; label: string; icon: LucideIcon 
 const statusLabels: Record<SalesStatus, string> = {
   new: "חדש",
   open: "פתוח",
-  follow_up: "להמשך טיפול",
+  follow_up: "צריך לחזור",
   won: "נסגר",
-  lost: "אבד",
+  lost: "לא נסגר",
   done: "בוצע",
 };
 
@@ -150,12 +150,12 @@ function errorLabel(code: string) {
     INVALID_EVENT_TYPE: "סוג הפעילות לא תקין",
     CUSTOMER_REQUIRED: "צריך למלא לקוח",
     NOTE_REQUIRED: "צריך לכתוב או להקליט תיאור פעילות",
-    INVALID_ESTIMATED_REVENUE: "הכנסה מוערכת לא יכולה להיות שלילית",
-    INVALID_ACTUAL_REVENUE: "הכנסה בפועל לא יכולה להיות שלילית",
+    INVALID_ESTIMATED_REVENUE: "הסכום המשוער לא יכול להיות שלילי",
+    INVALID_ACTUAL_REVENUE: "הסכום שנסגר לא יכול להיות שלילי",
     INVALID_FILE_TYPE: "אפשר לצרף תמונות, PDF או קבצי אופיס בלבד",
     FILE_TOO_LARGE: "קובץ אחד גדול מדי. המגבלה היא 10MB",
-    RATE_LIMITED: "יותר מדי בקשות AI כרגע. נסו שוב בעוד דקה.",
-    SALES_UNAUTHORIZED: "צריך להתחבר מחדש",
+    RATE_LIMITED: "ה-AI עמוס כרגע. נסו שוב בעוד דקה.",
+    SALES_UNAUTHORIZED: "החיבור הסתיים. היכנסו שוב.",
   };
   return labels[code] ?? code;
 }
@@ -349,14 +349,14 @@ export function SalesPortal() {
       local_client_id: client.id,
       contact_person: client.contact_person ?? current.contact_person,
     }));
-    setSavedMessage("הלקוח נשמר וממתין לסנכרון BINA");
+    setSavedMessage("הלקוח נשמר ויופיע גם בחיפושים הבאים");
     void refreshClientSuggestions(client.customer_name);
     void loadData();
   };
 
   const summarizeNote = async () => {
     if (!form.raw_note?.trim()) {
-      setError("צריך לכתוב או להקליט תוכן לפני סיכום AI");
+      setError("כתבו או הקליטו כמה מילים לפני שמפעילים את ה-AI");
       return;
     }
     setIsSummarizing(true);
@@ -394,7 +394,7 @@ export function SalesPortal() {
   const toggleSpeech = () => {
     const Recognition = getSpeechRecognition();
     if (!Recognition) {
-      setError("הדפדפן הזה לא תומך בזיהוי דיבור מובנה. אפשר להקליד ידנית.");
+      setError("הדפדפן הזה לא תומך בהקלטה. אפשר להקליד במקום.");
       return;
     }
 
@@ -430,7 +430,7 @@ export function SalesPortal() {
     recognition.onerror = () => {
       speechRef.current = null;
       setIsListening(false);
-      setError("לא הצלחתי לקלוט דיבור. אפשר להמשיך בכתיבה.");
+      setError("לא הצלחנו לקלוט את ההקלטה. אפשר לנסות שוב או להקליד.");
     };
     speechRef.current = recognition;
     setIsListening(true);
@@ -497,7 +497,7 @@ export function SalesPortal() {
 
   const saveActivity = async () => {
     if (!isFormReady) {
-      setError("צריך למלא לקוח ותיאור פעילות לפני שמירה");
+      setError("לפני השמירה צריך לבחור לקוח ולכתוב מה היה");
       return;
     }
     setIsSaving(true);
@@ -513,10 +513,10 @@ export function SalesPortal() {
       };
       if (editingActivityId) {
         await updateSalesPortalActivityApi(editingActivityId, payload);
-        setSavedMessage("הדיווח עודכן בהצלחה");
+        setSavedMessage("השינויים נשמרו");
       } else {
         await createSalesPortalActivityApi(payload, files);
-        setSavedMessage("הדיווח נשמר ונשלח לדשבורד המנהלים");
+        setSavedMessage("הדיווח נשמר ומופיע אצל המנהל");
       }
       resetActivityDraft();
       await loadData();
@@ -570,7 +570,7 @@ export function SalesPortal() {
             <ThemeToggle />
             <Button variant="outline" size="sm" onClick={() => router.push("/sales/dashboard")} className="h-10 gap-2 px-3">
               <BarChart3 className="h-4 w-4" />
-              <span className="hidden lg:inline">הדשבורד שלי</span>
+              <span className="hidden lg:inline">הסיכום שלי</span>
             </Button>
             <Button variant="outline" size="sm" onClick={() => router.push("/admin/sales-daily-log")} className="h-10 gap-2 px-3">
               <ShieldCheck className="h-4 w-4" />
@@ -596,9 +596,9 @@ export function SalesPortal() {
         <section className="order-3 grid grid-cols-2 gap-2 lg:order-1 lg:gap-3 xl:grid-cols-5">
           <Kpi label="דיווחים היום" value={summary.todayCount} icon={CalendarClock} />
           <Kpi label="דיווחים השבוע" value={summary.weekCount} icon={BarChart3} />
-          <Kpi label="פולואפים פתוחים" value={summary.openFollowUps} icon={Clock3} tone={summary.overdueFollowUps > 0 ? "red" : "amber"} />
-          <Kpi label="פייפליין שלי" value={formatMoney(summary.estimatedPipeline)} icon={Target} />
-          <Kpi label="מכירות שנסגרו" value={formatMoney(summary.actualRevenue)} icon={WalletCards} />
+          <Kpi label="לקוחות שצריך לחזור אליהם" value={summary.openFollowUps} icon={Clock3} tone={summary.overdueFollowUps > 0 ? "red" : "amber"} />
+          <Kpi label="שווי עסקאות פתוחות" value={formatMoney(summary.estimatedPipeline)} icon={Target} />
+          <Kpi label="עסקאות שנסגרו" value={formatMoney(summary.actualRevenue)} icon={WalletCards} />
         </section>
 
         <div className="order-1 space-y-3 lg:order-2">
@@ -610,15 +610,15 @@ export function SalesPortal() {
           <Card ref={formCardRef} className="min-w-0 scroll-mt-20 overflow-hidden rounded-2xl border border-border/80 bg-card p-3 shadow-sm shadow-slate-900/5 lg:p-5">
             <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
               <div className="min-w-0">
-                <h1 className="text-xl font-semibold lg:text-2xl">{editingActivityId ? "עריכת דיווח" : "דיווח פעילות חדש"}</h1>
+                <h1 className="text-xl font-semibold lg:text-2xl">{editingActivityId ? "תיקון דיווח" : "דיווח חדש"}</h1>
                 <p className="mt-1 hidden text-sm leading-6 text-muted-foreground lg:block">
                   {editingActivityId
-                    ? "עדכנו את הפרטים ושמרו. רק הדיווחים שלכם ניתנים לעריכה."
-                    : "רשמו מה קרה מול הלקוח. אפשר לצרף תמונה או מסמך, ולתת ל-AI לנסח סיכום עסקי."}
+                    ? "תקנו מה שצריך ושמרו. אפשר לערוך רק דיווחים שלכם."
+                    : "מה היה מול הלקוח? אפשר גם לצרף קובץ או לתת ל-AI לסדר את הניסוח."}
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <Badge className="w-fit bg-primary/10 text-primary">{editingActivityId ? "מצב עריכה" : "נשלח למנהל"}</Badge>
+                <Badge className="w-fit bg-primary/10 text-primary">{editingActivityId ? "עורכים דיווח" : "מופיע אצל המנהל"}</Badge>
                 {editingActivityId ? (
                   <Button type="button" variant="ghost" size="sm" onClick={resetActivityDraft} className="h-9 gap-1.5">
                     <X className="h-4 w-4" />
@@ -678,7 +678,7 @@ export function SalesPortal() {
                 />
               </Field>
               <Field
-                label="תאריך פעולה הבאה"
+                label="מתי לחזור ללקוח?"
                 action={(
                   <AddToCalendarButton
                     date={String(form.next_action_date ?? "")}
@@ -702,15 +702,15 @@ export function SalesPortal() {
                   className="h-12 min-w-0 rounded-xl text-base lg:h-10 lg:text-sm"
                 />
               </Field>
-              <Field label="הערה לאירוע ביומן" className="lg:col-span-2">
+              <Field label="מה לרשום ביומן?" className="lg:col-span-2">
                 <Input
                   value={calendarNote}
                   onChange={(event) => setCalendarNote(event.target.value)}
-                  placeholder="לדוגמה: לחזור ללקוח עם הצעת המחיר המעודכנת"
+                  placeholder="למשל: לחזור ללקוח עם הצעת המחיר החדשה"
                   className="h-12 min-w-0 rounded-xl text-base lg:h-10 lg:text-sm"
                 />
                 <p className="text-xs leading-5 text-muted-foreground">
-                  פרטי הלקוח, איש הקשר והסכום יצורפו לאירוע אוטומטית.
+                  שם הלקוח, איש הקשר והסכום ייכנסו ליומן אוטומטית.
                 </p>
               </Field>
             </div>
@@ -726,7 +726,7 @@ export function SalesPortal() {
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="truncate font-semibold">{client.customer_name}</span>
-                      <Badge variant="outline">{client.source === "own" ? "שלי" : client.source === "pending" ? "ממתין ל-BINA" : "אינדקס"}</Badge>
+                      <Badge variant="outline">{client.source === "own" ? "לקוח שלי" : client.source === "pending" ? "עדיין לא ב-BINA" : "רשימת לקוחות"}</Badge>
                     </div>
                     <div className="mt-1 text-xs text-muted-foreground">
                       {client.activity_count} פעילויות · {formatMoney(client.estimated_pipeline || client.actual_revenue)}
@@ -744,7 +744,7 @@ export function SalesPortal() {
               >
                 <span className="min-w-0">
                   <span className="block font-semibold text-primary">
-                    {clientSuggestions.length > 0 ? "הלקוח לא ברשימה? יצירה חדשה" : "יצירת לקוח חדש"}
+                    {clientSuggestions.length > 0 ? "לא מצאתם את הלקוח? הוסיפו אותו" : "הוספת לקוח חדש"}
                   </span>
                   <span className="block truncate text-sm text-muted-foreground">{form.customer_name.trim()}</span>
                 </span>
@@ -754,22 +754,22 @@ export function SalesPortal() {
 
             <div className="mt-4">
               <div className="mb-2 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-                <Label>מה קרה מול הלקוח?</Label>
+                <Label>מה היה מול הלקוח?</Label>
                 <div className="grid min-w-0 grid-cols-2 gap-2 lg:flex">
                   <Button type="button" variant="outline" size="sm" onClick={toggleSpeech} className="h-11 gap-2 lg:h-9">
                     {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-                    {isListening ? "עצור" : "דיבור"}
+                    {isListening ? "עצור הקלטה" : "הקלטה"}
                   </Button>
                   <Button type="button" variant="outline" size="sm" onClick={() => void summarizeNote()} disabled={isSummarizing || !form.raw_note?.trim()} className="h-11 gap-2 lg:h-9">
                     <Sparkles className="h-4 w-4" />
-                    {isSummarizing ? "מסכם..." : "סיכום AI"}
+                    {isSummarizing ? "מסדר ניסוח..." : "סדר עם AI"}
                   </Button>
                 </div>
               </div>
               <Textarea
                 value={form.raw_note}
                 onChange={(event) => setForm((current) => ({ ...current, raw_note: event.target.value }))}
-                placeholder="לדוגמה: נפגשתי עם הלקוח, דיברנו על הזמנה חוזרת, ביקש הצעת מחיר עד ראשון..."
+                placeholder="למשל: נפגשתי עם הלקוח, דיברנו על הזמנה חוזרת והוא ביקש הצעה עד יום ראשון..."
                 className="min-h-32 min-w-0 rounded-xl text-base lg:text-sm"
               />
             </div>
@@ -778,20 +778,20 @@ export function SalesPortal() {
               <Card className="mt-4 rounded-xl border border-primary/25 bg-primary/5 p-4">
                 <div className="mb-2 flex items-center gap-2 text-primary">
                   <Sparkles className="h-4 w-4" />
-                  <span className="font-semibold">סיכום עסקי מוצע</span>
+                  <span className="font-semibold">הסיכום של ה-AI</span>
                 </div>
                 <p className="text-sm leading-6">{aiSummary.summary}</p>
                 <div className="mt-3 grid gap-2 text-sm lg:grid-cols-2">
-                  <div><span className="text-muted-foreground">כוונה: </span>{aiSummary.customerIntent}</div>
-                  <div><span className="text-muted-foreground">פעולה: </span>{aiSummary.nextAction ?? "-"}</div>
-                  <div><span className="text-muted-foreground">התנגדות: </span>{aiSummary.riskOrObjection ?? "-"}</div>
-                  <div><span className="text-muted-foreground">אמינות: </span>{aiSummary.confidence}</div>
+                  <div><span className="text-muted-foreground">מה הלקוח רוצה: </span>{aiSummary.customerIntent}</div>
+                  <div><span className="text-muted-foreground">מה עושים עכשיו: </span>{aiSummary.nextAction ?? "-"}</div>
+                  <div><span className="text-muted-foreground">מה מעכב: </span>{aiSummary.riskOrObjection ?? "-"}</div>
+                  <div><span className="text-muted-foreground">רמת ביטחון: </span>{aiSummary.confidence}</div>
                 </div>
               </Card>
             )}
 
             <div className="mt-4 grid min-w-0 gap-3 lg:grid-cols-3">
-              <Field label="סכום מוערך">
+              <Field label="שווי משוער">
                 <Input
                   dir="ltr"
                   type="number"
@@ -802,7 +802,7 @@ export function SalesPortal() {
                   className="h-12 min-w-0 rounded-xl text-base lg:h-10 lg:text-sm"
                 />
               </Field>
-              <Field label="סכום בפועל">
+              <Field label="כמה נסגר?">
                 <Input
                   dir="ltr"
                   type="number"
@@ -813,7 +813,7 @@ export function SalesPortal() {
                   className="h-12 min-w-0 rounded-xl text-base lg:h-10 lg:text-sm"
                 />
               </Field>
-              <Field label="סטטוס">
+              <Field label="מצב">
                 <select
                   value={String(form.status ?? "open")}
                   onChange={(event) => setForm((current) => ({ ...current, status: event.target.value as SalesStatus }))}
@@ -825,11 +825,11 @@ export function SalesPortal() {
             </div>
 
             <div className="mt-4">
-              <Label>פעולה הבאה / הערה למנהל</Label>
+              <Label>מה הצעד הבא?</Label>
               <Input
                 value={String(form.ai_next_action ?? "")}
                 onChange={(event) => setForm((current) => ({ ...current, ai_next_action: event.target.value }))}
-                placeholder="מה צריך לעשות עכשיו?"
+                placeholder="למשל: לשלוח הצעה ולחזור ביום ראשון"
                 className="mt-2 h-12 min-w-0 rounded-xl text-base lg:h-10 lg:text-sm"
               />
             </div>
@@ -842,7 +842,7 @@ export function SalesPortal() {
                     קבצים ותמונות
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {editingActivityId ? "הקבצים שכבר צורפו נשמרים ללא שינוי." : "עד 5 קבצים, 10MB לכל קובץ."}
+                    {editingActivityId ? "הקבצים הקיימים יישארו כמו שהם." : "אפשר לצרף עד 5 קבצים, עד 10MB לקובץ."}
                   </p>
                 </div>
                 {!editingActivityId ? (
@@ -878,7 +878,7 @@ export function SalesPortal() {
 
             <div className="sticky bottom-0 z-20 -mx-3 mt-5 flex justify-end border-t border-border/70 bg-card/95 px-3 py-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] backdrop-blur lg:static lg:mx-0 lg:border-0 lg:bg-transparent lg:p-0">
               <Button onClick={() => void saveActivity()} disabled={isSaving || !isFormReady} className="h-12 w-full rounded-xl text-base lg:w-auto lg:min-w-44 lg:text-sm">
-                {isSaving ? "שומר..." : editingActivityId ? "שמור תיקונים" : "שמור ושלח למנהל"}
+                {isSaving ? "שומר..." : editingActivityId ? "שמור שינויים" : "שמור דיווח"}
               </Button>
             </div>
           </Card>
@@ -887,8 +887,8 @@ export function SalesPortal() {
             <Card className="min-w-0 overflow-hidden rounded-2xl border border-border/80 bg-card p-4 shadow-sm shadow-slate-900/5">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-lg font-semibold">ההיסטוריה שלי</h2>
-                  <p className="text-sm text-muted-foreground">דיווחים אחרונים וסטטוסים.</p>
+                  <h2 className="text-lg font-semibold">הדיווחים שלי</h2>
+                  <p className="text-sm text-muted-foreground">מה דיווחתי ומה עדיין פתוח.</p>
                 </div>
                 <div className="relative w-32 lg:w-48">
                   <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -897,7 +897,7 @@ export function SalesPortal() {
               </div>
               <div className="space-y-3">
                 {activities.length === 0 ? (
-                  <div className="rounded-xl bg-secondary/40 p-4 text-center text-sm text-muted-foreground">אין דיווחים עדיין</div>
+                  <div className="rounded-xl bg-secondary/40 p-4 text-center text-sm text-muted-foreground">עוד לא הוספתם דיווחים</div>
                 ) : activities.map((activity) => (
                   <ActivityCard key={activity.id} activity={activity} onMark={markStatus} onEdit={editActivity} />
                 ))}
@@ -1031,8 +1031,8 @@ function ActivityCard({
           <Pencil className="h-3.5 w-3.5" />
           עריכה
         </Button>
-        <Button variant="outline" size="sm" className="h-10 px-2" onClick={() => onMark(activity, "follow_up")}>פולואפ</Button>
-        <Button variant="outline" size="sm" className="h-10 px-2" onClick={() => onMark(activity, "won")}>זכייה</Button>
+        <Button variant="outline" size="sm" className="h-10 px-2" onClick={() => onMark(activity, "follow_up")}>לחזור אליו</Button>
+        <Button variant="outline" size="sm" className="h-10 px-2" onClick={() => onMark(activity, "won")}>נסגר</Button>
         <Button variant="outline" size="sm" className="h-10 px-2" onClick={() => onMark(activity, "done")}>בוצע</Button>
       </div>
     </div>

@@ -74,7 +74,7 @@ export function SalesPersonalDashboard() {
       await updateSalesPortalActivityApi(activity.id, { status });
       await load();
     } catch {
-      setError("לא הצלחנו לעדכן את הפעילות");
+      setError("העדכון לא נשמר. נסו שוב.");
     }
   };
 
@@ -92,7 +92,7 @@ export function SalesPersonalDashboard() {
       anchor.remove();
       URL.revokeObjectURL(url);
     } catch {
-      setError("לא הצלחנו להפיק את קובץ האקסל");
+      setError("לא הצלחנו להכין את קובץ האקסל. נסו שוב.");
     } finally {
       setIsExporting(false);
     }
@@ -110,7 +110,7 @@ export function SalesPersonalDashboard() {
           <div className="flex min-w-0 items-center gap-2.5">
             <GestelitLogo size="sm" className="rounded-xl" />
             <div className="min-w-0">
-              <div className="truncate text-base font-semibold">הדשבורד שלי</div>
+              <div className="truncate text-base font-semibold">הסיכום שלי</div>
               <div className="truncate text-xs text-muted-foreground">{data?.user.full_name ?? "מכירות"}</div>
             </div>
           </div>
@@ -131,7 +131,7 @@ export function SalesPersonalDashboard() {
         <section className="rounded-lg border border-border bg-card/80 p-3 shadow-sm sm:p-4">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
             <div className="space-y-3">
-              <div className="flex items-center gap-2"><BarChart3 className="h-4 w-4 text-primary" /><h1 className="font-semibold">חתך אישי</h1></div>
+              <div className="flex items-center gap-2"><BarChart3 className="h-4 w-4 text-primary" /><h1 className="font-semibold">הפעילות שלי</h1></div>
               <div className="flex max-w-full gap-1 overflow-x-auto pb-1">
                 {(["7", "30", "90"] as const).map((period) => (
                   <Button key={period} size="sm" variant={filters.period === period ? "default" : "ghost"} onClick={() => setFilters((current) => ({ ...current, period }))} className="shrink-0">
@@ -146,18 +146,18 @@ export function SalesPersonalDashboard() {
                 <option value="">כל הפעילויות</option><option value="meeting">פגישות</option><option value="call">שיחות</option><option value="lead">לידים</option><option value="sale">מכירות</option><option value="follow_up">פולואפים</option>
               </select>
               <select value={filters.status} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))} className="h-10 rounded-md border border-input bg-background px-3 text-sm">
-                <option value="">כל הסטטוסים</option><option value="open">פתוח</option><option value="follow_up">להמשך טיפול</option><option value="won">זכייה</option><option value="lost">אבד</option><option value="done">בוצע</option>
+                <option value="">כל המצבים</option><option value="open">פתוח</option><option value="follow_up">צריך לחזור</option><option value="won">נסגר</option><option value="lost">לא נסגר</option><option value="done">בוצע</option>
               </select>
               <Button variant="outline" onClick={() => void load()} disabled={isLoading} className="h-10 gap-2"><RefreshCcw className="h-4 w-4" />רענון</Button>
               <Button onClick={() => void exportWorkbook()} disabled={isExporting || isLoading} className="h-10 gap-2 bg-emerald-700 text-white hover:bg-emerald-800 sm:col-span-2 xl:col-span-1">
-                <FileSpreadsheet className="h-4 w-4" />{isExporting ? "מכין..." : "ייצוא אישי"}
+                <FileSpreadsheet className="h-4 w-4" />{isExporting ? "מכין..." : "הורדת אקסל"}
               </Button>
             </div>
           </div>
         </section>
 
         {error ? <Card className="border-red-500/30 bg-red-500/10 p-3 text-sm text-red-700 dark:text-red-200">{error}</Card> : null}
-        {isLoading && !data ? <Card className="p-8 text-center text-sm text-muted-foreground">טוען את הדשבורד האישי...</Card> : null}
+        {isLoading && !data ? <Card className="p-8 text-center text-sm text-muted-foreground">טוען את הנתונים שלך...</Card> : null}
         {data ? <SalesIntelligenceDashboard summary={data.summary} followUps={data.followUps} onMarkStatus={markStatus} personal /> : null}
       </div>
     </main>

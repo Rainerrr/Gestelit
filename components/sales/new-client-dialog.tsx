@@ -53,13 +53,13 @@ const emptyForm: PendingBinaClientInput = {
 };
 
 const errorLabels: Record<string, string> = {
-  CLIENT_NAME_REQUIRED: "צריך להזין שם לקוח באורך שני תווים לפחות.",
-  CLIENT_GROUP_REQUIRED: "צריך לבחור או להזין קבוצת לקוח.",
-  INVALID_CLIENT_EMAIL: "כתובת האימייל אינה תקינה.",
-  INVALID_CLIENT_TAX_ID: "מספר העוסק יכול להכיל 5 עד 15 ספרות ומקפים בלבד.",
-  INVALID_CLIENT_AREA: "האזור שנבחר אינו קיים ברשימת האזורים של BINA.",
-  CLIENT_ALREADY_EXISTS: "כבר קיים לקוח בשם הזה. חזרו לחיפוש ובחרו אותו מהרשימה.",
-  CLIENT_SIMILAR_EXISTS: "נמצא לקוח בשם דומה. בדקו שוב את ההצעות; אם זה לקוח אחר, אפשר ליצור אותו בכל זאת.",
+  CLIENT_NAME_REQUIRED: "צריך לכתוב שם לקוח של לפחות שני תווים.",
+  CLIENT_GROUP_REQUIRED: "צריך לבחור קבוצת לקוח.",
+  INVALID_CLIENT_EMAIL: "כתובת האימייל לא תקינה.",
+  INVALID_CLIENT_TAX_ID: "מספר העוסק צריך לכלול 5 עד 15 ספרות, ואפשר גם מקפים.",
+  INVALID_CLIENT_AREA: "האזור שבחרתם לא קיים ברשימה של BINA.",
+  CLIENT_ALREADY_EXISTS: "כבר יש לקוח בשם הזה. חזרו לחיפוש ובחרו אותו מהרשימה.",
+  CLIENT_SIMILAR_EXISTS: "מצאנו לקוח עם שם דומה. בדקו את הרשימה; אם זה לקוח אחר, אפשר להוסיף אותו בכל זאת.",
   SALES_UNAUTHORIZED: "החיבור הסתיים. התחברו מחדש.",
 };
 
@@ -100,7 +100,7 @@ export function NewClientDialog({ open, onOpenChange, initialName = "", onCreate
       onOpenChange(false);
     } catch (saveError) {
       const code = saveError instanceof Error ? saveError.message : "CLIENT_CREATE_FAILED";
-      setError(errorLabels[code] ?? "לא הצלחנו ליצור את הלקוח. נסו שוב.");
+      setError(errorLabels[code] ?? "הלקוח לא נשמר. נסו שוב.");
       if (code === "CLIENT_SIMILAR_EXISTS") setSimilarNameConfirmed(true);
     } finally {
       setIsSaving(false);
@@ -114,9 +114,9 @@ export function NewClientDialog({ open, onOpenChange, initialName = "", onCreate
           <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
             <UserPlus className="h-5 w-5" />
           </div>
-          <DialogTitle className="text-xl">לקוח חדש</DialogTitle>
+          <DialogTitle className="text-xl">הוספת לקוח</DialogTitle>
           <DialogDescription>
-            הלקוח יישמר בגסטליט וימתין לסנכרון עם BINA. לא מתבצעת כרגע כתיבה ל-ERP.
+            נשמור את הלקוח בגסטליט. כשחיבור BINA יהיה מוכן, יהיה אפשר להעביר אותו גם לשם.
           </DialogDescription>
         </DialogHeader>
 
@@ -125,7 +125,7 @@ export function NewClientDialog({ open, onOpenChange, initialName = "", onCreate
             <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>
           ) : null}
 
-          <FormSection icon={Building2} title="פרטי לקוח וסיווג">
+          <FormSection icon={Building2} title="פרטי הלקוח">
             <Field label="שם לקוח" required>
               <Input
                 value={form.customer_name}
@@ -135,7 +135,7 @@ export function NewClientDialog({ open, onOpenChange, initialName = "", onCreate
                 autoFocus
               />
             </Field>
-            <Field label="שם משפטי / חברה">
+            <Field label="שם החברה הרשמי">
               <Input
                 value={form.legal_name ?? ""}
                 onChange={(event) => setField("legal_name", event.target.value)}
@@ -168,7 +168,7 @@ export function NewClientDialog({ open, onOpenChange, initialName = "", onCreate
                 }}
               >
                 <SelectTrigger className="h-12 rounded-xl text-base lg:h-10 lg:text-sm">
-                  <SelectValue placeholder="בחרו אזור כמו ב-BINA" />
+                  <SelectValue placeholder="בחרו אזור" />
                 </SelectTrigger>
                 <SelectContent>
                   {BINA_CLIENT_AREA_OPTIONS.map((option) => (
@@ -182,7 +182,7 @@ export function NewClientDialog({ open, onOpenChange, initialName = "", onCreate
                 </SelectContent>
               </Select>
             </Field>
-            <Field label="מצב">
+            <Field label="מצב הלקוח">
               <Select value={form.status ?? "פעיל"} onValueChange={(value) => setField("status", value)}>
                 <SelectTrigger className="h-12 rounded-xl text-base lg:h-10 lg:text-sm">
                   <SelectValue />
@@ -202,7 +202,7 @@ export function NewClientDialog({ open, onOpenChange, initialName = "", onCreate
             </Field>
           </FormSection>
 
-          <FormSection icon={MapPin} title="כתובת ויצירת קשר">
+          <FormSection icon={MapPin} title="כתובת ופרטי קשר">
             <Field label="איש קשר">
               <Input value={form.contact_person ?? ""} onChange={(event) => setField("contact_person", event.target.value)} className="h-12 rounded-xl text-base lg:h-10 lg:text-sm" />
             </Field>
@@ -243,7 +243,7 @@ export function NewClientDialog({ open, onOpenChange, initialName = "", onCreate
               <Textarea
                 value={form.notes ?? ""}
                 onChange={(event) => setField("notes", event.target.value)}
-                placeholder="מידע חשוב לקראת פתיחת הלקוח ב-BINA"
+                placeholder="כל מידע שכדאי לדעת על הלקוח"
                 className="min-h-24 rounded-xl text-base lg:text-sm"
               />
             </Field>
@@ -253,7 +253,7 @@ export function NewClientDialog({ open, onOpenChange, initialName = "", onCreate
         <DialogFooter className="border-t border-border/70 pt-3 sm:flex-col-reverse sm:justify-normal sm:gap-2 lg:flex-row-reverse lg:justify-start lg:gap-3">
           <Button onClick={() => void save()} disabled={isSaving} className="h-12 gap-2 rounded-xl lg:min-w-40">
             <Check className="h-4 w-4" />
-            {isSaving ? "שומר..." : similarNameConfirmed ? "יצירה בכל זאת" : "שמירה ובחירת הלקוח"}
+            {isSaving ? "שומר..." : similarNameConfirmed ? "הוסף בכל זאת" : "שמור והמשך לדיווח"}
           </Button>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving} className="h-12 rounded-xl">
             ביטול
