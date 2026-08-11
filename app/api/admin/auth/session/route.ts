@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import {
   hasAdminSession,
   clearAdminSession,
-  refreshAdminSession,
   getSessionToken,
   createResponseWithRefreshedSession,
 } from "@/lib/auth/admin-session";
@@ -15,10 +14,10 @@ export async function GET() {
   const hasSession = await hasAdminSession();
 
   if (!hasSession) {
-    return NextResponse.json(
-      { authenticated: false },
-      { status: 401 }
-    );
+    // Session discovery is also used by optional admin-only UI affordances.
+    // Return a normal negative capability result so non-admin pages do not
+    // emit a failed network request in the browser console.
+    return NextResponse.json({ authenticated: false });
   }
 
   // Refresh the session (extend expiry)
