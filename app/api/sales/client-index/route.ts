@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireSalesSessionUser } from "@/lib/auth/sales-session";
+import { requireSalesScope } from "@/lib/auth/sales-session";
 import { fetchBinaClientIndex } from "@/lib/data/sales-log";
 import {
   BinaClientValidationError,
@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   try {
-    const user = await requireSalesSessionUser();
+    const user = await requireSalesScope("sales_personal_view");
     const url = new URL(request.url);
     const onlyMine = url.searchParams.get("mine") === "true";
     return NextResponse.json(await fetchBinaClientIndex({
@@ -30,7 +30,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const user = await requireSalesSessionUser();
+    const user = await requireSalesScope("sales_activity_write");
     const body = await request.json().catch(() => null) as PendingBinaClientInput | null;
     if (!body || typeof body !== "object") {
       return NextResponse.json({ error: "INVALID_PAYLOAD" }, { status: 400 });

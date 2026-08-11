@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BarChart3, CalendarRange, FileSpreadsheet, ListPlus, LogOut, RefreshCcw, ShieldCheck, UsersRound } from "lucide-react";
+import { ArrowLeft, BarChart3, CalendarRange, FileSpreadsheet, ListPlus, LogOut, RefreshCcw, ShieldCheck, Sparkles, UsersRound } from "lucide-react";
 import { SalesIntelligenceDashboard } from "@/app/admin/sales-daily-log/_components/sales-intelligence-dashboard";
 import { GestelitLogo } from "@/components/brand/gestelit-logo";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
@@ -23,15 +23,17 @@ import {
   logoutSalesPortalApi,
   updateSalesPortalActivityApi,
 } from "@/lib/api/sales-portal";
-import { validateAdminSession } from "@/lib/api/auth-helpers";
-import type { SalesActivityLog, SalesSummary } from "@/lib/data/sales-log";
+import type { SalesActivityLog, SalesPortfolioClient, SalesSummary } from "@/lib/data/sales-log";
 import type { SalesEventType, SalesStatus } from "@/lib/data/sales-log-utils";
 
 type DashboardResponse = {
-  user: { id: string; email: string; full_name: string; phone: string | null };
+  user: { id: string; email: string; full_name: string; phone: string | null; scopes: string[] };
   summary: SalesSummary;
   followUps: SalesActivityLog[];
   recent: SalesActivityLog[];
+  portfolio: SalesPortfolioClient[];
+  portfolioCount: number;
+  portfolioCoverage: "gestelit_only";
 };
 
 type Filters = {
@@ -147,14 +149,8 @@ export function SalesPersonalDashboard() {
   useEffect(() => { void load(); }, [load]);
 
   useEffect(() => {
-    let active = true;
-    void validateAdminSession().then((isAdmin) => {
-      if (active) setCanViewTeamDashboard(isAdmin);
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
+    setCanViewTeamDashboard(data?.user.scopes.includes("sales_team_view") ?? false);
+  }, [data?.user.scopes]);
 
   const markStatus = async (activity: SalesActivityLog, status: SalesStatus) => {
     try {
@@ -229,6 +225,9 @@ export function SalesPersonalDashboard() {
           </div>
           <div className="flex shrink-0 items-center gap-1">
             <ThemeToggle />
+            <Button variant="outline" size="sm" onClick={() => router.push("/sales/ai")} className="h-10 gap-2 px-3" aria-label="עוזר המכירות">
+              <Sparkles className="h-4 w-4" /><span className="hidden md:inline">שאל את הנתונים</span>
+            </Button>
             <Button variant="outline" size="sm" onClick={() => router.push("/sales")} className="h-10 gap-2 px-3" aria-label="דיווח חדש">
               <ListPlus className="h-4 w-4" /><span className="hidden sm:inline">דיווח חדש</span>
             </Button>
@@ -252,12 +251,22 @@ export function SalesPersonalDashboard() {
                 <p className="text-sm text-muted-foreground">צפייה בנתונים של כל אנשי המכירות והלקוחות.</p>
               </div>
             </div>
-            <Button onClick={() => router.push("/admin/sales-daily-log")} className="h-11 w-full gap-2 sm:w-auto">
+            <Button onClick={() => router.push("/sales/team")} className="h-11 w-full gap-2 sm:w-auto">
               <BarChart3 className="h-4 w-4" />
               צפייה בנתוני הצוות
             </Button>
           </section>
         ) : null}
+        <section className="grid grid-cols-2 gap-2" aria-label="לקוחות שכדאי לחזור אליהם">
+          <Button variant="outline" onClick={() => router.push("/sales/dormant?bucket=attention")} className="h-auto min-h-14 justify-between gap-2 px-3 py-2 text-right">
+            <span><span className="block text-sm font-semibold">לא דיברתי 3 חודשים</span><span className="mt-0.5 block text-[11px] font-normal text-muted-foreground">לפי דיווחי גסטליט</span></span>
+            <CalendarRange className="h-4 w-4 shrink-0 text-amber-600" />
+          </Button>
+          <Button variant="outline" onClick={() => router.push("/sales/dormant?bucket=dormant")} className="h-auto min-h-14 justify-between gap-2 px-3 py-2 text-right">
+            <span><span className="block text-sm font-semibold">לא דיברתי 6 חודשים</span><span className="mt-0.5 block text-[11px] font-normal text-muted-foreground">לפי דיווחי גסטליט</span></span>
+            <CalendarRange className="h-4 w-4 shrink-0 text-red-600" />
+          </Button>
+        </section>
         <section className="rounded-lg border border-border bg-card/80 p-3 shadow-sm sm:p-4">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
             <div className="space-y-3">
@@ -319,6 +328,58 @@ export function SalesPersonalDashboard() {
         {error ? <Card className="border-red-500/30 bg-red-500/10 p-3 text-sm text-red-700 dark:text-red-200">{error}</Card> : null}
         {isLoading && !data ? <Card className="p-8 text-center text-sm text-muted-foreground">טוען את הנתונים שלך...</Card> : null}
         {data ? <SalesIntelligenceDashboard summary={data.summary} followUps={data.followUps} onMarkStatus={markStatus} onEventMixSelect={openActivityDrilldown} personal /> : null}
+
+        {data ? (
+          <section className="space-y-3" aria-labelledby="portfolio-title">
+            <div className="flex items-end justify-between gap-3">
+              <div>
+                <h2 id="portfolio-title" className="text-lg font-semibold">הלקוחות שלי</h2>
+                <p className="mt-1 text-sm text-muted-foreground">השיוך הקבוע ללקוח, הפעילות האחרונה והצעד הבא.</p>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => router.push("/sales/portfolio")} className="gap-1.5">
+                לכל הלקוחות <ArrowLeft className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+              {data.portfolio.length === 0 ? (
+                <Card className="border-dashed p-6 text-center text-sm text-muted-foreground sm:col-span-2 xl:col-span-3">עדיין אין לקוחות שמשויכים אליך. מנהל המכירות יכול לעדכן שיוך קבוע.</Card>
+              ) : data.portfolio.map((client) => (
+                <button
+                  key={client.client_ref}
+                  type="button"
+                  onClick={() => router.push(`/sales/clients/${encodeURIComponent(client.client_ref)}`)}
+                  className="rounded-lg border border-border bg-card p-4 text-right shadow-sm transition hover:border-primary/40 hover:bg-accent/30"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="truncate font-semibold">{client.customer_name}</h3>
+                      <p className="mt-1 text-xs text-muted-foreground">{client.customer_group || "ללא קבוצה"}{client.area ? ` · ${client.area}` : ""}</p>
+                    </div>
+                    <span className={`shrink-0 rounded-full px-2 py-1 text-xs ${client.dormancy_bucket === "dormant" ? "bg-red-500/10 text-red-700 dark:text-red-200" : client.dormancy_bucket === "attention" ? "bg-amber-500/10 text-amber-800 dark:text-amber-100" : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-200"}`}>
+                      {client.dormancy_bucket === "dormant" ? "6+ חודשים" : client.dormancy_bucket === "attention" ? "3+ חודשים" : client.dormancy_bucket === "unknown" ? "אין מספיק מידע" : "בקשר"}
+                    </span>
+                  </div>
+                  <div className="mt-4 grid grid-cols-2 gap-2 border-t border-border/70 pt-3 text-xs">
+                    <div><span className="block text-muted-foreground">פעילויות בגסטליט</span><strong className="mt-1 block text-sm">{client.activity_count}</strong></div>
+                    <div><span className="block text-muted-foreground">צעד הבא</span><strong className="mt-1 block text-sm">{client.next_action_date ? new Intl.DateTimeFormat("he-IL").format(new Date(client.next_action_date)) : "לא נקבע"}</strong></div>
+                  </div>
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">מוצגים {data.portfolio.length} מתוך {data.portfolioCount}. מדדי הקשר מבוססים כרגע על דיווחים בגסטליט בלבד.</p>
+          </section>
+        ) : null}
+
+        <section className="grid gap-3 md:grid-cols-2" aria-label="נתוני BINA שיתווספו בהמשך">
+          <Card className="border-dashed p-4">
+            <h2 className="font-semibold">הצעות מחיר פתוחות</h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">יופיעו כאן אחרי חיבור היסטוריית ההצעות והסטטוסים מ-BINA. עד אז לא מוצג מספר חלקי כאילו הוא מלא.</p>
+          </Card>
+          <Card className="border-dashed p-4">
+            <h2 className="font-semibold">הזמנות שנכנסו</h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">יופיעו כאן אחרי אימות מקור ההזמנה המסחרית והשלמת נתוני הרטרו מ-BINA.</p>
+          </Card>
+        </section>
       </div>
 
       <Dialog open={drilldownType !== null} onOpenChange={(open) => { if (!open) setDrilldownType(null); }}>

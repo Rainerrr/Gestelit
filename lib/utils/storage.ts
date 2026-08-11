@@ -86,11 +86,8 @@ export async function uploadSalesAttachmentToStorage(
     throw new Error(`UPLOAD_FAILED:${uploadError.message}`);
   }
 
-  const {
-    data: { publicUrl },
-  } = supabase.storage.from(bucket).getPublicUrl(objectPath);
-
-  return { path: objectPath, publicUrl };
+  // Sales evidence is private. The API returns an authenticated download URL
+  // after the attachment row has been created; never expose a storage URL here.
+  return { path: objectPath, publicUrl: "" };
 }
-
 

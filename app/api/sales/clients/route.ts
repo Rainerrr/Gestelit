@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { requireSalesSessionUser } from "@/lib/auth/sales-session";
+import { requireSalesScope } from "@/lib/auth/sales-session";
 import { fetchSalesUserClients } from "@/lib/data/sales-log";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   try {
-    const user = await requireSalesSessionUser();
+    const user = await requireSalesScope("sales_personal_view");
     const url = new URL(request.url);
     return NextResponse.json(await fetchSalesUserClients(user.id, {
       search: url.searchParams.get("search"),

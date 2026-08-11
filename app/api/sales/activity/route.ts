@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireSalesSessionUser } from "@/lib/auth/sales-session";
+import { requireSalesScope } from "@/lib/auth/sales-session";
 import {
   createSalesActivityAttachment,
   createSalesActivityForUser,
@@ -23,6 +23,13 @@ function formNumberOrNull(formData: FormData, key: string) {
   return value ? value : null;
 }
 
+function formBooleanOrNull(formData: FormData, key: string) {
+  const value = formText(formData, key);
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return null;
+}
+
 function formJsonRecord(formData: FormData, key: string) {
   const value = formText(formData, key);
   if (!value) {
@@ -44,6 +51,7 @@ function formPayload(formData: FormData): Omit<SalesActivityInput, "salesperson"
     customer_code: normalizeSalesInteger(formText(formData, "customer_code")),
     local_client_id: formText(formData, "local_client_id") || null,
     contact_person: formText(formData, "contact_person"),
+    contact_occurred: formBooleanOrNull(formData, "contact_occurred"),
     raw_note: formText(formData, "raw_note"),
     ai_summary: formText(formData, "ai_summary"),
     ai_next_action: formText(formData, "ai_next_action"),
@@ -62,7 +70,7 @@ function formPayload(formData: FormData): Omit<SalesActivityInput, "salesperson"
 
 export async function GET(request: Request) {
   try {
-    const user = await requireSalesSessionUser();
+    const user = await requireSalesScope("sales_personal_view");
     const [activities, summary] = await Promise.all([
       fetchSalesUserActivities(user.id, salesListParams(request)),
       fetchSalesUserSummary(user.id),
@@ -75,7 +83,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const user = await requireSalesSessionUser();
+    const user = await requireSalesScope("sales_activity_write");
     const formData = await request.formData().catch(() => null);
     if (!formData) {
       return NextResponse.json({ error: "INVALID_PAYLOAD" }, { status: 400 });

@@ -59,6 +59,10 @@ export function SalesClientIndex() {
   const [isNewClientOpen, setIsNewClientOpen] = useState(false);
 
   useEffect(() => {
+    setMine(new URLSearchParams(window.location.search).get("mine") === "true");
+  }, []);
+
+  useEffect(() => {
     const timer = window.setTimeout(() => {
       setOffset(0);
       setSearch(searchInput.trim());
@@ -184,7 +188,19 @@ export function SalesClientIndex() {
         ) : (
           <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
             {rows.map((client) => (
-              <Card key={client.client_ref} className="min-w-0 rounded-2xl border-border/80 bg-card p-4 shadow-sm transition hover:border-primary/30 hover:shadow-md">
+              <Card
+                key={client.client_ref}
+                role="button"
+                tabIndex={0}
+                onClick={() => router.push(`/sales/clients/${encodeURIComponent(client.client_ref)}`)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    router.push(`/sales/clients/${encodeURIComponent(client.client_ref)}`);
+                  }
+                }}
+                className="min-w-0 cursor-pointer rounded-2xl border-border/80 bg-card p-4 shadow-sm transition hover:border-primary/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <h3 className="break-words text-lg font-semibold leading-6">{client.customer_name}</h3>
@@ -203,6 +219,10 @@ export function SalesClientIndex() {
                   <ClientMeta icon={UserRound} label="נציג" value={client.salesperson} />
                   {client.contact_person ? <ClientMeta icon={UserRound} label="איש קשר" value={client.contact_person} /> : null}
                   <ClientMeta icon={CalendarDays} label="נוסף" value={formatDate(client.opened_at)} />
+                </div>
+                <div className="mt-4 flex items-center justify-between border-t border-border/70 pt-3 text-sm font-medium text-primary">
+                  <span>פתיחת תיק לקוח</span>
+                  <ChevronLeft className="h-4 w-4" />
                 </div>
               </Card>
             ))}

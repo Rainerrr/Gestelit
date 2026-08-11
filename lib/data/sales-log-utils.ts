@@ -61,7 +61,7 @@ export function normalizeSalesInteger(value: unknown) {
 export function normalizeSalesDateTime(value: unknown) {
   if (typeof value !== "string" || !value.trim()) return new Date().toISOString();
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return new Date().toISOString();
+  if (Number.isNaN(date.getTime())) throw new SalesValidationError("INVALID_EVENT_AT");
   return date.toISOString();
 }
 
@@ -84,6 +84,13 @@ export function validateSalesActivityPayload(payload: SalesPayload) {
   if (!normalizeSalesText(payload.salesperson, 120)) errors.push("SALESPERSON_REQUIRED");
   if (!normalizeSalesText(payload.customer_name, 200)) errors.push("CUSTOMER_REQUIRED");
   if (!normalizeSalesText(payload.raw_note, 8000)) errors.push("NOTE_REQUIRED");
+  if (payload.event_at !== undefined && payload.event_at !== null && payload.event_at !== "") {
+    try {
+      normalizeSalesDateTime(payload.event_at);
+    } catch {
+      errors.push("INVALID_EVENT_AT");
+    }
+  }
   if (payload.status !== undefined && !isSalesStatus(payload.status)) errors.push("INVALID_STATUS");
   if (payload.source !== undefined && !isSalesSource(payload.source)) errors.push("INVALID_SOURCE");
   if (payload.ai_confidence !== undefined && payload.ai_confidence !== null && !isSalesAiConfidence(payload.ai_confidence)) {
@@ -105,6 +112,13 @@ export function validateSalesActivityPatch(payload: Partial<SalesPayload>) {
   if (payload.salesperson !== undefined && !normalizeSalesText(payload.salesperson, 120)) errors.push("SALESPERSON_REQUIRED");
   if (payload.customer_name !== undefined && !normalizeSalesText(payload.customer_name, 200)) errors.push("CUSTOMER_REQUIRED");
   if (payload.raw_note !== undefined && !normalizeSalesText(payload.raw_note, 8000)) errors.push("NOTE_REQUIRED");
+  if (payload.event_at !== undefined && payload.event_at !== null && payload.event_at !== "") {
+    try {
+      normalizeSalesDateTime(payload.event_at);
+    } catch {
+      errors.push("INVALID_EVENT_AT");
+    }
+  }
   if (payload.status !== undefined && !isSalesStatus(payload.status)) errors.push("INVALID_STATUS");
   if (payload.source !== undefined && !isSalesSource(payload.source)) errors.push("INVALID_SOURCE");
   if (payload.ai_confidence !== undefined && payload.ai_confidence !== null && !isSalesAiConfidence(payload.ai_confidence)) {

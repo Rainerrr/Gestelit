@@ -2,7 +2,6 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import crypto from "node:crypto";
 import { createServiceSupabase } from "@/lib/supabase/client";
-import { addAdminSessionCookie } from "@/lib/auth/admin-session";
 
 export const SALES_SESSION_COOKIE = "sales_session";
 const SALES_SESSION_MAX_AGE = 60 * 60 * 12;
@@ -14,7 +13,31 @@ export type SalesUser = {
   phone: string | null;
   is_active: boolean;
   is_admin: boolean;
+  roles: SalesRole[];
+  scopes: SalesScope[];
 };
+
+export type SalesRole = "sales_rep" | "sales_manager" | "sales_admin";
+export type SalesScope =
+  | "sales_activity_write"
+  | "sales_personal_view"
+  | "sales_team_view"
+  | "sales_export"
+  | "sales_ai_query"
+  | "sales_client_manage";
+
+const REP_SCOPES: SalesScope[] = [
+  "sales_activity_write",
+  "sales_personal_view",
+  "sales_export",
+  "sales_ai_query",
+];
+
+const MANAGER_SCOPES: SalesScope[] = [
+  ...REP_SCOPES,
+  "sales_team_view",
+  "sales_client_manage",
+];
 
 const DEFAULT_SALES_ADMIN_EMAILS = ["maty@gestelit.co.il"];
 
@@ -120,7 +143,7 @@ export function createSalesResponseWithSession<T>(data: T, user: SalesUser, stat
     maxAge: SALES_SESSION_MAX_AGE,
     path: "/",
   });
-  return user.is_admin ? addAdminSessionCookie(response) : response;
+  return response;
 }
 
 export async function clearSalesSessionCookie() {
@@ -141,9 +164,46 @@ export async function getSalesSessionUser(): Promise<SalesUser | null> {
     .maybeSingle();
 
   if (error || !data || data.is_active !== true) return null;
+  const fallbackManager = isSalesAdminEmail(data.email);
+  const now = new Date().toISOString();
+  const rolesResult = await supabase
+    .from("sales_user_roles")
+    .select("role_key")
+    .eq("sales_user_id", data.id)
+    .lte("valid_from", now)
+    .or(`valid_to.is.null,valid_to.gt.${now}`);
+
+  let roles = rolesResult.error
+    ? [fallbackManager ? "sales_manager" : "sales_rep"] as SalesRole[]
+    : Array.from(new Set((rolesResult.data ?? []).map((row) => row.role_key)))
+      .filter((role): role is SalesRole => ["sales_rep", "sales_manager", "sales_admin"].includes(role));
+  if (roles.length === 0) roles = [fallbackManager ? "sales_manager" : "sales_rep"];
+
+  let scopes: SalesScope[];
+  const scopesResult = await supabase
+    .from("sales_role_scopes")
+    .select("scope_key")
+    .in("role_key", roles);
+  if (scopesResult.error) {
+    scopes = roles.some((role) => role === "sales_manager" || role === "sales_admin")
+      ? MANAGER_SCOPES
+      : REP_SCOPES;
+  } else {
+    scopes = Array.from(new Set((scopesResult.data ?? []).map((row) => row.scope_key)))
+      .filter((scope): scope is SalesScope => [
+        "sales_activity_write",
+        "sales_personal_view",
+        "sales_team_view",
+        "sales_export",
+        "sales_ai_query",
+        "sales_client_manage",
+      ].includes(scope));
+  }
   return {
     ...data,
-    is_admin: isSalesAdminEmail(data.email),
+    roles,
+    scopes,
+    is_admin: scopes.includes("sales_team_view"),
   } as SalesUser;
 }
 
@@ -151,6 +211,14 @@ export async function requireSalesSessionUser() {
   const user = await getSalesSessionUser();
   if (!user) {
     throw new Error("SALES_UNAUTHORIZED");
+  }
+  return user;
+}
+
+export async function requireSalesScope(scope: SalesScope) {
+  const user = await requireSalesSessionUser();
+  if (!user.scopes.includes(scope)) {
+    throw new Error("SALES_FORBIDDEN");
   }
   return user;
 }

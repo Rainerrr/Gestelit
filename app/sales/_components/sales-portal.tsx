@@ -9,6 +9,7 @@ import {
   CalendarClock,
   CheckCircle2,
   Clock3,
+  Copy,
   FileUp,
   Handshake,
   LogOut,
@@ -38,6 +39,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
   createSalesPortalActivityApi,
@@ -48,11 +50,11 @@ import {
   summarizeSalesPortalNoteApi,
   updateSalesPortalActivityApi,
 } from "@/lib/api/sales-portal";
-import { validateAdminSession } from "@/lib/api/auth-helpers";
 import type { SalesActivityInput, SalesActivityLog, SalesClientActivity } from "@/lib/data/sales-log";
 import type { PendingBinaClient } from "@/lib/data/bina-client-onboarding";
 import type { SalesEventType, SalesStatus } from "@/lib/data/sales-log-utils";
 import { cn } from "@/lib/utils";
+import { copyTextToClipboard } from "@/lib/utils/copy-to-clipboard";
 
 type SalesPortalUser = {
   id: string;
@@ -60,6 +62,7 @@ type SalesPortalUser = {
   full_name: string;
   phone: string | null;
   is_admin: boolean;
+  scopes: string[];
 };
 
 type SalesAiSummary = {
@@ -83,6 +86,12 @@ type OwnClient = {
   estimated_pipeline: number;
   actual_revenue: number;
   last_activity_at: string | null;
+  owner_name: string | null;
+};
+
+type PortalClientSuggestion = OwnClient & {
+  source: "own" | "pending" | "index";
+  owner_name: string | null;
 };
 
 type SpeechRecognitionCtor = new () => SpeechRecognitionInstance;
@@ -167,6 +176,8 @@ export function SalesPortal() {
   const { setTheme } = useTheme();
   const speechRef = useRef<SpeechRecognitionInstance | null>(null);
   const clientSearchRequestRef = useRef(0);
+  const dataRequestRef = useRef(0);
+  const copyFeedbackTimerRef = useRef<number | null>(null);
   const formCardRef = useRef<HTMLDivElement | null>(null);
   const [user, setUser] = useState<SalesPortalUser | null>(null);
   const [activities, setActivities] = useState<SalesActivityLog[]>([]);
@@ -185,6 +196,7 @@ export function SalesPortal() {
   const [error, setError] = useState<string | null>(null);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [isListening, setIsListening] = useState(false);
@@ -194,6 +206,9 @@ export function SalesPortal() {
   const [calendarNote, setCalendarNote] = useState("");
   const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
   const [eventTimeTouched, setEventTimeTouched] = useState(false);
+  const [lastSuccessfulRefreshAt, setLastSuccessfulRefreshAt] = useState<Date | null>(null);
+  const [copyFeedback, setCopyFeedback] = useState<"summary" | "nextAction" | null>(null);
+  const [selectedClientOwner, setSelectedClientOwner] = useState<string | null>(null);
   const [form, setForm] = useState<Omit<SalesActivityInput, "salesperson">>({
     event_type: "meeting",
     event_at: formatDateInput(),
@@ -201,6 +216,7 @@ export function SalesPortal() {
     customer_code: null,
     local_client_id: null,
     contact_person: "",
+    contact_occurred: true,
     raw_note: "",
     ai_summary: "",
     ai_next_action: "",
@@ -231,14 +247,8 @@ export function SalesPortal() {
   }, [setTheme]);
 
   useEffect(() => {
-    let active = true;
-    void validateAdminSession().then((isAdmin) => {
-      if (active) setCanViewTeamDashboard(isAdmin);
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
+    setCanViewTeamDashboard(user?.scopes.includes("sales_team_view") ?? false);
+  }, [user?.scopes]);
 
   useEffect(() => {
     if (editingActivityId || eventTimeTouched || !isDraftPristine) return;
@@ -261,7 +271,18 @@ export function SalesPortal() {
     };
   }, [editingActivityId, eventTimeTouched, isDraftPristine]);
 
-  const loadData = useCallback(async () => {
+  useEffect(() => () => {
+    if (copyFeedbackTimerRef.current !== null) {
+      window.clearTimeout(copyFeedbackTimerRef.current);
+    }
+  }, []);
+
+  const loadData = useCallback(async ({ manual = false }: { manual?: boolean } = {}) => {
+    const requestId = ++dataRequestRef.current;
+    if (manual) {
+      setIsRefreshing(true);
+      setSavedMessage(null);
+    }
     try {
       setError(null);
       const [sessionResult, activityResult] = await Promise.all([
@@ -271,13 +292,23 @@ export function SalesPortal() {
           summary: typeof summary;
         }>,
       ]);
+      if (dataRequestRef.current !== requestId) return;
       setUser(sessionResult.user);
       setActivities(activityResult.rows);
       setSummary(activityResult.summary);
-    } catch {
-      router.push("/sales/login");
+      setLastSuccessfulRefreshAt(new Date());
+      if (manual) setSavedMessage("הנתונים עודכנו");
+    } catch (loadError) {
+      if (dataRequestRef.current !== requestId) return;
+      const code = loadError instanceof Error ? loadError.message : "SALES_LOAD_FAILED";
+      if (code === "SALES_UNAUTHORIZED") {
+        router.push("/sales/login");
+      } else {
+        setError(manual ? "לא הצלחנו לרענן כרגע. הנתונים שכבר נטענו נשארו על המסך." : "לא הצלחנו לטעון את הדיווחים. נסו לרענן.");
+      }
     } finally {
-      setIsLoading(false);
+      if (dataRequestRef.current === requestId) setIsLoading(false);
+      if (manual) setIsRefreshing(false);
     }
   }, [router, search]);
 
@@ -314,8 +345,12 @@ export function SalesPortal() {
     return () => window.clearTimeout(timeout);
   }, [form.customer_name, refreshClientSuggestions]);
 
-  const clientSuggestions = useMemo(() => {
-    const manual = ownClients.map((client) => ({ ...client, source: "own" as const }));
+  const clientSuggestions = useMemo<PortalClientSuggestion[]>(() => {
+    const manual = ownClients.map((client) => ({
+      ...client,
+      source: "own" as const,
+      owner_name: client.owner_name,
+    }));
     const suggested = suggestedClients.map((client) => ({
       local_client_id: client.local_client_id,
       customer_code: client.customer_code,
@@ -326,6 +361,7 @@ export function SalesPortal() {
       actual_revenue: client.invoice_revenue,
       last_activity_at: client.last_activity_at ?? client.last_invoice_at,
       source: client.name_source === "local_pending" ? "pending" as const : "index" as const,
+      owner_name: client.salesperson,
     }));
     const seen = new Set<string>();
     return [...manual, ...suggested].filter((client) => {
@@ -337,6 +373,7 @@ export function SalesPortal() {
   }, [ownClients, suggestedClients]);
 
   const selectClient = (client: (typeof clientSuggestions)[number]) => {
+    setSelectedClientOwner(client.owner_name);
     setForm((current) => ({
       ...current,
       customer_name: client.customer_name,
@@ -345,6 +382,12 @@ export function SalesPortal() {
       contact_person: client.contact_person ?? current.contact_person,
     }));
   };
+
+  const selectedClientHasDifferentOwner = useMemo(() => {
+    const owner = selectedClientOwner?.replace(/\s+/g, " ").trim().toLocaleLowerCase("he");
+    const currentUser = user?.full_name.replace(/\s+/g, " ").trim().toLocaleLowerCase("he");
+    return Boolean(owner && currentUser && owner !== currentUser);
+  }, [selectedClientOwner, user?.full_name]);
 
   const hasExactClientMatch = useMemo(() => {
     const typedName = form.customer_name?.replace(/\s+/g, " ").trim().toLocaleLowerCase("he");
@@ -355,6 +398,7 @@ export function SalesPortal() {
   }, [clientSuggestions, form.customer_name]);
 
   const useCreatedClient = (client: PendingBinaClient) => {
+    setSelectedClientOwner(user?.full_name ?? null);
     setForm((current) => ({
       ...current,
       customer_name: client.customer_name,
@@ -402,6 +446,22 @@ export function SalesPortal() {
     } finally {
       setIsSummarizing(false);
     }
+  };
+
+  const copyAiText = async (kind: "summary" | "nextAction", text: string | null) => {
+    if (!text?.trim()) return;
+    const copied = await copyTextToClipboard(text.trim());
+    if (!copied) {
+      setError("לא הצלחנו להעתיק אוטומטית. אפשר לסמן את הטקסט ולהעתיק ידנית.");
+      return;
+    }
+
+    setError(null);
+    setCopyFeedback(kind);
+    if (copyFeedbackTimerRef.current !== null) {
+      window.clearTimeout(copyFeedbackTimerRef.current);
+    }
+    copyFeedbackTimerRef.current = window.setTimeout(() => setCopyFeedback(null), 2_000);
   };
 
   const toggleSpeech = () => {
@@ -456,6 +516,7 @@ export function SalesPortal() {
     setAiSummary(null);
     setCalendarNote("");
     setFiles([]);
+    setSelectedClientOwner(null);
     setForm({
       event_type: "meeting",
       event_at: formatDateInput(),
@@ -463,6 +524,7 @@ export function SalesPortal() {
       customer_code: null,
       local_client_id: null,
       contact_person: "",
+      contact_occurred: true,
       raw_note: "",
       ai_summary: "",
       ai_next_action: "",
@@ -480,6 +542,7 @@ export function SalesPortal() {
     setEventTimeTouched(true);
     setAiSummary(null);
     setFiles([]);
+    setSelectedClientOwner(null);
     setCalendarNote(typeof activity.metadata?.calendar_event_note === "string" ? activity.metadata.calendar_event_note : "");
     setForm({
       event_type: activity.event_type,
@@ -488,6 +551,7 @@ export function SalesPortal() {
       customer_code: activity.customer_code,
       local_client_id: activity.local_client_id,
       contact_person: activity.contact_person ?? "",
+      contact_occurred: activity.contact_occurred,
       raw_note: activity.raw_note,
       ai_summary: activity.ai_summary ?? "",
       ai_next_action: activity.ai_next_action ?? "",
@@ -589,9 +653,17 @@ export function SalesPortal() {
               <UsersRound className="h-4 w-4" />
               <span className="hidden lg:inline">לקוחות</span>
             </Button>
-            <Button variant="outline" size="sm" onClick={() => void loadData()} className="h-10 gap-2 px-3">
-              <RefreshCcw className="h-4 w-4" />
-              <span className="hidden lg:inline">רענון</span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void loadData({ manual: true })}
+              disabled={isRefreshing}
+              aria-label={isRefreshing ? "מרענן נתונים" : "רענון נתונים"}
+              title={isRefreshing ? "מרענן נתונים" : "רענון נתונים"}
+              className="h-10 gap-2 px-3"
+            >
+              <RefreshCcw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
+              <span className="hidden lg:inline">{isRefreshing ? "מרענן..." : "רענון"}</span>
             </Button>
             <Button variant="ghost" size="sm" onClick={() => void logout()} className="h-10 gap-2 px-3">
               <LogOut className="h-4 w-4" />
@@ -613,7 +685,7 @@ export function SalesPortal() {
                 <p className="text-sm text-muted-foreground">כל אנשי המכירות, הלקוחות, הפעילויות וההכנסות במקום אחד.</p>
               </div>
             </div>
-            <Button onClick={() => router.push("/admin/sales-daily-log")} className="h-11 w-full gap-2 sm:w-auto">
+            <Button onClick={() => router.push("/sales/team")} className="h-11 w-full gap-2 sm:w-auto">
               <BarChart3 className="h-4 w-4" />
               פתיחת דשבורד הצוות
             </Button>
@@ -630,6 +702,16 @@ export function SalesPortal() {
         <div className="order-1 space-y-3 lg:order-2">
           {error && <Notice tone="red">{error}</Notice>}
           {savedMessage && <Notice tone="green">{savedMessage}</Notice>}
+          {isRefreshing ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground" role="status" aria-live="polite">
+              <RefreshCcw className="h-4 w-4 animate-spin" />
+              מרענן את הדיווחים...
+            </div>
+          ) : lastSuccessfulRefreshAt ? (
+            <div className="text-xs text-muted-foreground" aria-live="polite">
+              עודכן לאחרונה בשעה {lastSuccessfulRefreshAt.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" })}
+            </div>
+          ) : null}
         </div>
 
         <section className="order-2 grid min-w-0 gap-4 lg:order-3 xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">
@@ -664,7 +746,11 @@ export function SalesPortal() {
                     type="button"
                     variant={active ? "default" : "outline"}
                     size="sm"
-                    onClick={() => setForm((current) => ({ ...current, event_type: option.id }))}
+                    onClick={() => setForm((current) => ({
+                      ...current,
+                      event_type: option.id,
+                      contact_occurred: ["meeting", "call", "sale"].includes(option.id),
+                    }))}
                     className="h-11 min-w-0 gap-1.5 px-2 text-sm lg:h-10 lg:px-3 [&_svg]:shrink-0"
                   >
                     <Icon className="h-4 w-4" />
@@ -678,7 +764,10 @@ export function SalesPortal() {
               <Field label="לקוח">
                 <Input
                   value={form.customer_name}
-                  onChange={(event) => setForm((current) => ({ ...current, customer_name: event.target.value, customer_code: null, local_client_id: null }))}
+                  onChange={(event) => {
+                    setSelectedClientOwner(null);
+                    setForm((current) => ({ ...current, customer_name: event.target.value, customer_code: null, local_client_id: null }));
+                  }}
                   placeholder="שם לקוח"
                   className="h-12 min-w-0 rounded-xl text-base lg:h-10 lg:text-sm"
                 />
@@ -691,6 +780,18 @@ export function SalesPortal() {
                   className="h-12 min-w-0 rounded-xl text-base lg:h-10 lg:text-sm"
                 />
               </Field>
+              <div className="flex min-h-12 items-center justify-between gap-4 rounded-xl border border-border bg-secondary/25 px-3 py-2 lg:col-span-2">
+                <div className="min-w-0">
+                  <Label htmlFor="contact-occurred" className="cursor-pointer">דיברתי עם הלקוח בפועל</Label>
+                  <p className="mt-0.5 text-xs leading-5 text-muted-foreground">מסמנים רק אם הייתה שיחה, פגישה או פנייה שהתקיימה. כך מעקב הלקוחות נשאר מדויק.</p>
+                </div>
+                <Switch
+                  id="contact-occurred"
+                  checked={form.contact_occurred === true}
+                  onCheckedChange={(checked) => setForm((current) => ({ ...current, contact_occurred: checked }))}
+                  aria-label="האם היה קשר בפועל עם הלקוח"
+                />
+              </div>
               <Field label="תאריך ושעה">
                 <Input
                   dir="ltr"
@@ -757,10 +858,21 @@ export function SalesPortal() {
                     <div className="mt-1 text-xs text-muted-foreground">
                       {client.activity_count} פעילויות · {formatMoney(client.estimated_pipeline || client.actual_revenue)}
                     </div>
+                    {client.owner_name ? (
+                      <div className="mt-1 truncate text-xs text-muted-foreground">מנהל/ת לקוח: {client.owner_name}</div>
+                    ) : null}
                   </button>
                 ))}
               </div>
             )}
+
+            {selectedClientHasDifferentOwner ? (
+              <div className="mt-3">
+                <Notice tone="amber">
+                  לפי רשימת הלקוחות, מנהל/ת הלקוח הוא/היא <strong>{selectedClientOwner}</strong>. כדאי לוודא שזה הלקוח הנכון לפני השמירה.
+                </Notice>
+              </div>
+            ) : null}
 
             {form.customer_name.trim().length >= 2 && !hasExactClientMatch ? (
               <button
@@ -802,14 +914,41 @@ export function SalesPortal() {
 
             {aiSummary && (
               <Card className="mt-4 rounded-xl border border-primary/25 bg-primary/5 p-4">
-                <div className="mb-2 flex items-center gap-2 text-primary">
-                  <Sparkles className="h-4 w-4" />
-                  <span className="font-semibold">הסיכום של ה-AI</span>
+                <div className="mb-2 flex items-center justify-between gap-3 text-primary">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-4 w-4" />
+                    <span className="font-semibold">הסיכום של ה-AI</span>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => void copyAiText("summary", aiSummary.summary)}
+                    className="h-9 gap-1.5 px-2"
+                  >
+                    {copyFeedback === "summary" ? <CheckCircle2 className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                    {copyFeedback === "summary" ? "הועתק" : "העתקה"}
+                  </Button>
                 </div>
                 <p className="text-sm leading-6">{aiSummary.summary}</p>
                 <div className="mt-3 grid gap-2 text-sm lg:grid-cols-2">
                   <div><span className="text-muted-foreground">מה הלקוח רוצה: </span>{aiSummary.customerIntent}</div>
-                  <div><span className="text-muted-foreground">מה עושים עכשיו: </span>{aiSummary.nextAction ?? "-"}</div>
+                  <div className="flex min-w-0 items-start justify-between gap-2">
+                    <span className="min-w-0"><span className="text-muted-foreground">מה עושים עכשיו: </span>{aiSummary.nextAction ?? "-"}</span>
+                    {aiSummary.nextAction ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => void copyAiText("nextAction", aiSummary.nextAction)}
+                        aria-label="העתקת הצעד הבא"
+                        title="העתקת הצעד הבא"
+                        className="h-8 w-8 shrink-0"
+                      >
+                        {copyFeedback === "nextAction" ? <CheckCircle2 className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                      </Button>
+                    ) : null}
+                  </div>
                   <div><span className="text-muted-foreground">מה מעכב: </span>{aiSummary.riskOrObjection ?? "-"}</div>
                   <div><span className="text-muted-foreground">רמת ביטחון: </span>{aiSummary.confidence}</div>
                 </div>
@@ -995,13 +1134,16 @@ function Field({
   );
 }
 
-function Notice({ tone, children }: { tone: "red" | "green"; children: ReactNode }) {
+function Notice({ tone, children }: { tone: "red" | "green" | "amber"; children: ReactNode }) {
+  const toneClass = {
+    red: "border-red-500/30 bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-200",
+    green: "border-emerald-500/30 bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200",
+    amber: "border-amber-500/30 bg-amber-50 text-amber-800 dark:bg-amber-500/10 dark:text-amber-200",
+  }[tone];
   return (
     <Card className={cn(
       "flex items-center gap-2 rounded-xl p-3 text-sm",
-      tone === "red"
-        ? "border-red-500/30 bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-200"
-        : "border-emerald-500/30 bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200",
+      toneClass,
     )}>
       {tone === "green" ? <CheckCircle2 className="h-4 w-4" /> : null}
       {children}

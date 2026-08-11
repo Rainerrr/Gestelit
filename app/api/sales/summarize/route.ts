@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireSalesSessionUser } from "@/lib/auth/sales-session";
+import { requireSalesScope } from "@/lib/auth/sales-session";
 import { checkInMemoryRateLimit } from "@/lib/ai/rate-limit";
 import { summarizeSalesActivityNote } from "@/lib/data/sales-ai";
 
@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   try {
-    const user = await requireSalesSessionUser();
+    const user = await requireSalesScope("sales_ai_query");
     const rate = checkInMemoryRateLimit(`sales-user:${user.id}`);
     if (!rate.allowed) {
       return NextResponse.json(

@@ -34,6 +34,7 @@ export type SalesActivityLog = {
   customer_code: number | null;
   local_client_id: string | null;
   contact_person: string | null;
+  contact_occurred: boolean | null;
   raw_note: string;
   ai_summary: string | null;
   ai_next_action: string | null;
@@ -109,6 +110,81 @@ export type BinaClientIndexRow = {
   imported_at: string;
   source: "bina_index" | "local_pending";
   sync_status: "pending" | "ready" | "synced" | "failed" | "rejected";
+};
+
+export type SalesClientProfile = {
+  client: BinaClientIndexRow;
+  ownership: {
+    accountManager: string | null;
+    source: "bina_master" | "approved_local" | "missing";
+    confidence: "exact" | "inferred" | "missing_data";
+  };
+  touch: {
+    lastHumanContactAt: string | null;
+    dormancyBucket: "active" | "attention" | "dormant" | "unknown";
+    daysSinceContact: number | null;
+    wording: string;
+    confidence: "inferred" | "missing_data";
+  };
+  coverage: {
+    gestelitActivities: "complete_for_visible_scope";
+    binaClientMaster: "indexed" | "local_pending";
+    binaCrmHistory: "not_connected";
+    binaCommercialHistory: "partial_sync";
+    visibleScope: "personal" | "team";
+  };
+  activities: {
+    rows: SalesActivityLog[];
+    count: number;
+    limit: number;
+    offset: number;
+  };
+  invoices: Array<{
+    bina_id: string;
+    invoice_no: number | null;
+    invoice_at: string | null;
+    due_at: string | null;
+    total_amount: number | null;
+    salesperson: string | null;
+    synced_at: string | null;
+  }>;
+  deliveries: Array<{
+    bina_id: string;
+    delivery_no: number | null;
+    delivery_at: string | null;
+    sent_at: string | null;
+    delivery_state: string | null;
+    tracking_no: string | null;
+    total_amount: number | null;
+    synced_at: string | null;
+  }>;
+};
+
+export type SalesDormantClient = {
+  client_ref: string;
+  local_client_id: string | null;
+  customer_code: number | null;
+  customer_name: string;
+  customer_group: string | null;
+  area: string | null;
+  account_manager: string | null;
+  account_manager_sales_user_id: string | null;
+  last_human_contact_at: string | null;
+  days_since_last_human_contact: number | null;
+  dormancy_bucket: "attention" | "dormant" | "unknown" | "active";
+  dormancy_label: string;
+  next_action_date: string | null;
+  contact_coverage_scope: "gestelit_only";
+  data_freshness_at: string | null;
+};
+
+export type SalesPortfolioClient = SalesDormantClient & {
+  last_commercial_activity_at: string | null;
+  last_invoice_at: string | null;
+  current_invoice_row_count: number;
+  activity_count: number;
+  contact_confidence: "exact" | "inferred" | "missing_data";
+  coverage_note: string;
 };
 
 export type SalesSummary = {
@@ -218,11 +294,38 @@ export type SalesListParams = {
   status?: string | null;
   nextActionFrom?: string | null;
   nextActionTo?: string | null;
+  accountManager?: string | null;
+  customerGroup?: string | null;
+  area?: string | null;
+  dormancyBucket?: string | null;
+  coverage?: string | null;
+};
+
+type SalesDashboardAggregate = {
+  currency_code: string;
+  activity_count: number;
+  unique_client_count: number;
+  open_count: number;
+  won_count: number;
+  lost_count: number;
+  meeting_count: number;
+  call_count: number;
+  lead_count: number;
+  sale_count: number;
+  follow_up_count: number;
+  open_follow_up_count: number;
+  overdue_follow_up_count: number;
+  estimated_pipeline: number;
+  won_revenue: number;
+  coverage_scope: string;
+  is_complete_contact_history: boolean;
+  freshness_at: string | null;
 };
 
 export type SalesReportActivityRow = SalesAnalyticsActivityRow & {
   id: string;
   sales_user_id: string | null;
+  contact_occurred: boolean | null;
   source: SalesSource;
   created_at: string;
   updated_at: string;
@@ -244,6 +347,7 @@ export type SalesActivityInput = {
   customer_code?: number | null;
   local_client_id?: string | null;
   contact_person?: string | null;
+  contact_occurred?: boolean | null;
   raw_note: string;
   ai_summary?: string | null;
   ai_next_action?: string | null;
@@ -287,6 +391,7 @@ function cleanActivityInput(input: SalesActivityInput) {
     customer_code: normalizeSalesInteger(input.customer_code),
     local_client_id: typeof input.local_client_id === "string" && input.local_client_id ? input.local_client_id : null,
     contact_person: normalizeSalesText(input.contact_person, 120) || null,
+    contact_occurred: typeof input.contact_occurred === "boolean" ? input.contact_occurred : null,
     raw_note: normalizeSalesText(input.raw_note, 8000),
     ai_summary: normalizeSalesText(input.ai_summary, 4000) || null,
     ai_next_action: normalizeSalesText(input.ai_next_action, 1000) || null,
@@ -320,7 +425,10 @@ async function attachSalesAttachments(rows: SalesActivityLog[]) {
   const byActivity = new Map<string, SalesActivityAttachment[]>();
   for (const attachment of (data ?? []) as SalesActivityAttachment[]) {
     const bucket = byActivity.get(attachment.sales_activity_id) ?? [];
-    bucket.push(attachment);
+    bucket.push({
+      ...attachment,
+      public_url: `/api/sales/attachments/${encodeURIComponent(attachment.id)}`,
+    });
     byActivity.set(attachment.sales_activity_id, bucket);
   }
 
@@ -337,7 +445,7 @@ export async function fetchSalesActivities(params: SalesListParams = {}) {
   const pattern = likePattern(params.search);
 
   let query = supabase
-    .from("sales_activity_logs")
+    .from("mart_sales_activity_scoped")
     .select("*", { count: "exact" })
     .order("event_at", { ascending: false })
     .range(offset, offset + limit - 1);
@@ -359,6 +467,11 @@ export async function fetchSalesActivities(params: SalesListParams = {}) {
   }
   if (params.eventType && isSalesEventType(params.eventType)) query = query.eq("event_type", params.eventType);
   if (params.status && isSalesStatus(params.status)) query = query.eq("status", params.status);
+  if (params.accountManager) query = query.ilike("account_manager", likePattern(params.accountManager) ?? "%");
+  if (params.customerGroup) query = query.eq("customer_group", params.customerGroup);
+  if (params.area) query = query.eq("area", params.area);
+  if (params.dormancyBucket) query = query.eq("dormancy_bucket", params.dormancyBucket);
+  if (params.coverage) query = query.eq("coverage_scope", params.coverage);
   if (pattern) {
     query = query.or([
       `customer_name.ilike.${pattern}`,
@@ -388,7 +501,11 @@ export async function createSalesActivity(input: SalesActivityInput) {
   return activity;
 }
 
-export async function updateSalesActivity(id: string, input: Partial<SalesActivityInput>) {
+export async function updateSalesActivity(
+  id: string,
+  input: Partial<SalesActivityInput>,
+  actorSalesUserId?: string,
+) {
   const supabase = createServiceSupabase();
   const patch: Record<string, unknown> = {};
   const errors = validateSalesActivityPatch(input);
@@ -404,6 +521,9 @@ export async function updateSalesActivity(id: string, input: Partial<SalesActivi
   if (input.customer_code !== undefined) patch.customer_code = normalizeSalesInteger(input.customer_code);
   if (input.local_client_id !== undefined) patch.local_client_id = input.local_client_id || null;
   if (input.contact_person !== undefined) patch.contact_person = normalizeSalesText(input.contact_person, 120) || null;
+  if (input.contact_occurred !== undefined) {
+    patch.contact_occurred = typeof input.contact_occurred === "boolean" ? input.contact_occurred : null;
+  }
   if (input.raw_note !== undefined) patch.raw_note = normalizeSalesText(input.raw_note, 8000);
   if (input.ai_summary !== undefined) patch.ai_summary = normalizeSalesText(input.ai_summary, 4000) || null;
   if (input.ai_next_action !== undefined) patch.ai_next_action = normalizeSalesText(input.ai_next_action, 1000) || null;
@@ -420,6 +540,7 @@ export async function updateSalesActivity(id: string, input: Partial<SalesActivi
   if (input.linked_bina_delivery_no !== undefined) patch.linked_bina_delivery_no = normalizeSalesInteger(input.linked_bina_delivery_no);
   if (input.ai_confidence !== undefined) patch.ai_confidence = input.ai_confidence;
   if (input.metadata !== undefined) patch.metadata = input.metadata ?? {};
+  if (actorSalesUserId) patch.last_edited_by_sales_user_id = actorSalesUserId;
 
   if (Object.keys(patch).length === 0) throw new SalesValidationError("EMPTY_PATCH");
 
@@ -503,7 +624,7 @@ export async function updateSalesActivityForUser(
 
   if (existingError) throw new Error(existingError.message);
   if (!existing) throw new Error("SALES_ACTIVITY_NOT_FOUND");
-  return updateSalesActivity(id, input);
+  return updateSalesActivity(id, input, salesUserId);
 }
 
 export async function createSalesActivityAttachment(input: {
@@ -533,7 +654,10 @@ export async function createSalesActivityAttachment(input: {
     .single();
 
   if (error) throw new Error(error.message);
-  return data as SalesActivityAttachment;
+  return {
+    ...(data as SalesActivityAttachment),
+    public_url: `/api/sales/attachments/${encodeURIComponent(data.id)}`,
+  };
 }
 
 export async function fetchSalesUserClients(
@@ -544,42 +668,24 @@ export async function fetchSalesUserClients(
   const limit = clampLimit(params.limit ?? 12);
   const pattern = likePattern(params.search);
 
-  let ownQuery = supabase
-    .from("sales_activity_logs")
-    .select("local_client_id, customer_code, customer_name, contact_person, event_at, estimated_revenue, actual_revenue, status")
-    .eq("sales_user_id", salesUserId)
-    .order("event_at", { ascending: false })
-    .limit(80);
-
-  if (pattern) ownQuery = ownQuery.ilike("customer_name", pattern);
+  const ownQuery = supabase.rpc("get_sales_user_clients", {
+    p_sales_user_id: salesUserId,
+    p_search: params.search?.trim() || null,
+    p_limit: limit,
+  });
 
   const suggestedQuery = pattern
-    ? supabase.rpc("search_sales_client_activity", {
+    ? supabase.rpc("search_sales_client_activity_scoped", {
       p_search: params.search?.trim() ?? "",
       p_limit: limit,
     })
     : supabase
-      .from("mart_sales_client_activity")
+      .from("mart_sales_client_activity_scoped")
       .select("*")
       .order("combined_score", { ascending: false })
       .limit(limit);
 
-  const [initialOwnResult, initialSuggestedResult] = await Promise.all([ownQuery, suggestedQuery]);
-  let ownResult = initialOwnResult;
-  if (ownResult.error?.code === "42703" && ownResult.error.message.includes("local_client_id")) {
-    let legacyOwnQuery = supabase
-      .from("sales_activity_logs")
-      .select("customer_code, customer_name, contact_person, event_at, estimated_revenue, actual_revenue, status")
-      .eq("sales_user_id", salesUserId)
-      .order("event_at", { ascending: false })
-      .limit(80);
-    if (pattern) legacyOwnQuery = legacyOwnQuery.ilike("customer_name", pattern);
-    const legacyResult = await legacyOwnQuery;
-    ownResult = {
-      ...legacyResult,
-      data: (legacyResult.data ?? []).map((row) => ({ ...row, local_client_id: null })),
-    } as typeof initialOwnResult;
-  }
+  const [ownResult, initialSuggestedResult] = await Promise.all([ownQuery, suggestedQuery]);
   if (ownResult.error) throw new Error(ownResult.error.message);
   let suggestedResult = initialSuggestedResult;
   if (
@@ -588,7 +694,7 @@ export async function fetchSalesUserClients(
     && ["PGRST202", "42883"].includes(suggestedResult.error.code ?? "")
   ) {
     suggestedResult = await supabase
-      .from("mart_sales_client_activity")
+      .from("mart_sales_client_activity_scoped")
       .select("*")
       .or(`customer_name.ilike.${pattern},salesperson.ilike.${pattern}`)
       .order("combined_score", { ascending: false })
@@ -596,42 +702,17 @@ export async function fetchSalesUserClients(
   }
   if (suggestedResult.error) throw new Error(suggestedResult.error.message);
 
-  const own = new Map<string, {
-    local_client_id: string | null;
-    customer_code: number | null;
-    customer_name: string;
-    contact_person: string | null;
-    activity_count: number;
-    estimated_pipeline: number;
-    actual_revenue: number;
-    last_activity_at: string | null;
-  }>();
-
-  for (const activity of ownResult.data ?? []) {
-    const key = `${activity.customer_code ?? activity.local_client_id ?? ""}:${activity.customer_name}`;
-    const current = own.get(key) ?? {
-      local_client_id: activity.local_client_id,
-      customer_code: activity.customer_code,
-      customer_name: activity.customer_name,
-      contact_person: activity.contact_person,
-      activity_count: 0,
-      estimated_pipeline: 0,
-      actual_revenue: 0,
-      last_activity_at: null,
-    };
-    current.activity_count += 1;
-    current.estimated_pipeline += Number(activity.estimated_revenue ?? 0);
-    current.actual_revenue += Number(activity.actual_revenue ?? 0);
-    current.last_activity_at = current.last_activity_at ?? activity.event_at;
-    own.set(key, current);
-  }
-
   const cleanSuggestedClients = ((suggestedResult.data ?? []) as SalesClientActivity[])
     .filter((client) => !/[?]{2,}/.test(String(client.customer_name ?? "")))
     .slice(0, limit);
 
   return {
-    ownClients: Array.from(own.values()).slice(0, limit),
+    ownClients: ((ownResult.data ?? []) as Array<Record<string, unknown>>).map((client) => ({
+      ...client,
+      activity_count: Number(client.activity_count ?? 0),
+      estimated_pipeline: Number(client.estimated_pipeline ?? 0),
+      actual_revenue: Number(client.actual_revenue ?? 0),
+    })),
     suggestedClients: cleanSuggestedClients,
   };
 }
@@ -668,7 +749,7 @@ export async function fetchSalesClients(params: { search?: string | null; limit?
   const pattern = likePattern(params.search);
 
   let query = supabase
-    .from("mart_sales_client_activity")
+    .from("mart_sales_client_activity_scoped")
     .select("*")
     .order("combined_score", { ascending: false })
     .limit(limit);
@@ -719,6 +800,247 @@ export async function fetchBinaClientIndex(params: {
   };
 }
 
+function applyClientIdentityFilter<T extends {
+  eq(column: string, value: string | number): T;
+}>(query: T, client: BinaClientIndexRow): T {
+  if (client.local_client_id) return query.eq("local_client_id", client.local_client_id);
+  if (client.customer_code != null) return query.eq("customer_code", client.customer_code);
+  return query.eq("customer_name", client.customer_name);
+}
+
+function clientTouchState(lastHumanContactAt: string | null) {
+  if (!lastHumanContactAt) {
+    return {
+      lastHumanContactAt: null,
+      dormancyBucket: "unknown" as const,
+      daysSinceContact: null,
+      wording: "אין עדיין היסטוריית פניות מלאה. נתוני BINA ההיסטוריים טרם חוברו.",
+      confidence: "missing_data" as const,
+    };
+  }
+  const daysSinceContact = Math.max(
+    0,
+    Math.floor((Date.now() - new Date(lastHumanContactAt).getTime()) / 86_400_000),
+  );
+  const dormancyBucket = daysSinceContact >= 180
+    ? "dormant" as const
+    : daysSinceContact >= 90
+      ? "attention" as const
+      : "active" as const;
+  return {
+    lastHumanContactAt,
+    dormancyBucket,
+    daysSinceContact,
+    wording: daysSinceContact >= 180
+      ? "לא תועדה פנייה בגסטליט ב-6 החודשים האחרונים"
+      : daysSinceContact >= 90
+        ? "לא תועדה פנייה בגסטליט ב-3 החודשים האחרונים"
+        : "תועדה פנייה בגסטליט ב-90 הימים האחרונים",
+    confidence: "inferred" as const,
+  };
+}
+
+export async function fetchSalesClientProfile(input: {
+  clientRef: string;
+  salesUserId: string;
+  canViewTeam: boolean;
+  limit?: number | null;
+  offset?: number | null;
+}): Promise<SalesClientProfile> {
+  const supabase = createServiceSupabase();
+  const limit = clampLimit(input.limit ?? 30);
+  const offset = Math.max(0, Number(input.offset ?? 0));
+
+  const { data: clientData, error: clientError } = await supabase
+    .from("mart_sales_client_directory")
+    .select("client_ref,local_client_id,customer_code,customer_code_text,customer_name,customer_group,status,area,bookkeeping_no,tax_id,contact_person,phone,mobile,email,salesperson,opened_at,source,sync_status,source_filename,source_updated_at,imported_at")
+    .eq("client_ref", input.clientRef)
+    .maybeSingle();
+
+  if (clientError) throw new Error(clientError.message);
+  if (!clientData) throw new Error("SALES_CLIENT_NOT_FOUND");
+  const client = clientData as BinaClientIndexRow;
+
+  const { data: canonicalProfile, error: canonicalError } = await supabase
+    .from("mart_sales_client_profile")
+    .select("account_manager,ownership_source,ownership_confidence")
+    .eq("client_ref", input.clientRef)
+    .maybeSingle();
+  if (canonicalError) throw new Error(canonicalError.message);
+
+  let activityQuery = supabase
+    .from("sales_activity_logs")
+    .select("*", { count: "exact" })
+    .order("event_at", { ascending: false })
+    .range(offset, offset + limit - 1);
+  activityQuery = applyClientIdentityFilter(activityQuery, client);
+  if (!input.canViewTeam) activityQuery = activityQuery.eq("sales_user_id", input.salesUserId);
+
+  let latestTouchQuery = supabase
+    .from("sales_activity_logs")
+    .select("event_at")
+    .in("event_type", ["meeting", "call", "follow_up", "sale"])
+    .order("event_at", { ascending: false })
+    .limit(1);
+  latestTouchQuery = applyClientIdentityFilter(latestTouchQuery, client);
+  if (!input.canViewTeam) latestTouchQuery = latestTouchQuery.eq("sales_user_id", input.salesUserId);
+
+  let invoiceQuery = supabase
+    .from("mart_bina_sales_status")
+    .select("bina_id,invoice_no,invoice_at,due_at,total_amount,salesperson,synced_at")
+    .order("invoice_at", { ascending: false })
+    .limit(25);
+  invoiceQuery = client.customer_code != null
+    ? invoiceQuery.eq("customer_code", client.customer_code)
+    : invoiceQuery.eq("customer_name", client.customer_name);
+
+  let deliveryQuery = supabase
+    .from("mart_bina_delivery_status")
+    .select("bina_id,delivery_no,delivery_at,sent_at,delivery_state,tracking_no,total_amount,synced_at")
+    .order("delivery_at", { ascending: false })
+    .limit(25);
+  deliveryQuery = client.customer_code != null
+    ? deliveryQuery.eq("customer_code", client.customer_code)
+    : deliveryQuery.eq("customer_name", client.customer_name);
+
+  const [activitiesResult, touchResult, invoiceResult, deliveryResult] = await Promise.all([
+    activityQuery,
+    latestTouchQuery,
+    invoiceQuery,
+    deliveryQuery,
+  ]);
+  if (activitiesResult.error) throw new Error(activitiesResult.error.message);
+  if (touchResult.error) throw new Error(touchResult.error.message);
+  if (invoiceResult.error) throw new Error(invoiceResult.error.message);
+  if (deliveryResult.error) throw new Error(deliveryResult.error.message);
+
+  const fallbackSource = client.source === "bina_index" ? "bina_master" as const : "approved_local" as const;
+  const accountManager = canonicalProfile?.account_manager ?? client.salesperson;
+  const ownershipSource = canonicalProfile?.ownership_source === "approved_local"
+    ? "approved_local" as const
+    : canonicalProfile?.ownership_source === "missing"
+      ? "missing" as const
+      : canonicalProfile?.ownership_source
+        ? "bina_master" as const
+        : accountManager
+          ? fallbackSource
+          : "missing" as const;
+  const ownershipConfidence = canonicalProfile?.ownership_confidence === "exact"
+    ? "exact" as const
+    : canonicalProfile?.ownership_confidence === "inferred"
+      ? "inferred" as const
+      : accountManager
+        ? "inferred" as const
+        : "missing_data" as const;
+  return {
+    client,
+    ownership: {
+      accountManager,
+      source: ownershipSource,
+      confidence: ownershipConfidence,
+    },
+    touch: clientTouchState(touchResult.data?.[0]?.event_at ?? null),
+    coverage: {
+      gestelitActivities: "complete_for_visible_scope",
+      binaClientMaster: client.source === "bina_index" ? "indexed" : "local_pending",
+      binaCrmHistory: "not_connected",
+      binaCommercialHistory: "partial_sync",
+      visibleScope: input.canViewTeam ? "team" : "personal",
+    },
+    activities: {
+      rows: await attachSalesAttachments((activitiesResult.data ?? []) as SalesActivityLog[]),
+      count: activitiesResult.count ?? 0,
+      limit,
+      offset,
+    },
+    invoices: (invoiceResult.data ?? []) as SalesClientProfile["invoices"],
+    deliveries: (deliveryResult.data ?? []) as SalesClientProfile["deliveries"],
+  };
+}
+
+export async function fetchSalesDormantClients(input: {
+  salesUserId: string;
+  salesperson: string;
+  bucket?: "attention" | "dormant" | "unknown" | null;
+  limit?: number | null;
+  offset?: number | null;
+}) {
+  const supabase = createServiceSupabase();
+  const limit = clampLimit(input.limit ?? 100);
+  const offset = Math.max(0, Number(input.offset ?? 0));
+
+  let query = supabase
+    .from("mart_sales_client_dormancy")
+    .select("client_ref,local_client_id,customer_code,customer_name,customer_group,area,account_manager,account_manager_sales_user_id,last_human_contact_at,days_since_last_human_contact,dormancy_bucket,dormancy_label,next_action_date,contact_coverage_scope,data_freshness_at", { count: "exact" })
+    .eq("account_manager_sales_user_id", input.salesUserId)
+    .order("days_since_last_human_contact", { ascending: false, nullsFirst: false })
+    .range(offset, offset + limit - 1);
+  if (input.bucket) query = query.eq("dormancy_bucket", input.bucket);
+  let result = await query;
+
+  // Some imported BINA owner names cannot yet be reconciled to a portal UUID.
+  // Exact-name fallback preserves the personal queue without broadening scope.
+  if (!result.error && (result.count ?? 0) === 0 && input.salesperson.trim()) {
+    let fallback = supabase
+      .from("mart_sales_client_dormancy")
+      .select("client_ref,local_client_id,customer_code,customer_name,customer_group,area,account_manager,account_manager_sales_user_id,last_human_contact_at,days_since_last_human_contact,dormancy_bucket,dormancy_label,next_action_date,contact_coverage_scope,data_freshness_at", { count: "exact" })
+      .eq("account_manager", input.salesperson.trim())
+      .order("days_since_last_human_contact", { ascending: false, nullsFirst: false })
+      .range(offset, offset + limit - 1);
+    if (input.bucket) fallback = fallback.eq("dormancy_bucket", input.bucket);
+    result = await fallback;
+  }
+
+  if (result.error) throw new Error(result.error.message);
+  return {
+    rows: (result.data ?? []) as SalesDormantClient[],
+    count: result.count ?? 0,
+    coverage: "gestelit_only" as const,
+    wording: "לא תועדה פנייה בגסטליט בתקופה שנבחרה. היסטוריית CRM מ-BINA עדיין לא מחוברת.",
+  };
+}
+
+export async function fetchSalesPortfolioClients(input: {
+  salesUserId: string;
+  salesperson: string;
+  search?: string | null;
+  limit?: number | null;
+  offset?: number | null;
+}) {
+  const supabase = createServiceSupabase();
+  const limit = clampLimit(input.limit ?? 12);
+  const offset = Math.max(0, Number(input.offset ?? 0));
+  const columns = "client_ref,local_client_id,customer_code,customer_name,customer_group,area,account_manager,account_manager_sales_user_id,last_human_contact_at,days_since_last_human_contact,dormancy_bucket,dormancy_label,next_action_date,contact_coverage_scope,data_freshness_at,last_commercial_activity_at,last_invoice_at,current_invoice_row_count,activity_count,contact_confidence,coverage_note";
+  const pattern = likePattern(input.search);
+
+  const buildQuery = (byName = false) => {
+    let query = supabase
+      .from("mart_sales_personal_portfolio")
+      .select(columns, { count: "exact" })
+      .order("next_action_date", { ascending: true, nullsFirst: false })
+      .order("days_since_last_human_contact", { ascending: false, nullsFirst: false })
+      .range(offset, offset + limit - 1);
+    query = byName
+      ? query.eq("account_manager", input.salesperson.trim())
+      : query.eq("account_manager_sales_user_id", input.salesUserId);
+    if (pattern) {
+      query = query.or(`customer_name.ilike.${pattern},customer_code.eq.${normalizeSalesInteger(input.search) ?? -1}`);
+    }
+    return query;
+  };
+
+  let result = await buildQuery(false);
+  if (!result.error && (result.count ?? 0) === 0 && input.salesperson.trim()) {
+    result = await buildQuery(true);
+  }
+  if (result.error) throw new Error(result.error.message);
+  return {
+    rows: (result.data ?? []) as SalesPortfolioClient[],
+    count: result.count ?? 0,
+    coverage: "gestelit_only" as const,
+  };
+}
+
 const SALES_ANALYTICS_PAGE_SIZE = 1000;
 const SALES_ANALYTICS_MAX_ROWS = 20_000;
 
@@ -741,16 +1063,17 @@ async function fetchFilteredAnalyticsRows(
   dateFrom: string,
   dateTo: string,
   scope: { salesUserId?: string } = {},
+  maxRows = SALES_ANALYTICS_MAX_ROWS,
 ) {
   const supabase = createServiceSupabase();
   const rows: SalesReportActivityRow[] = [];
   let totalCount = 0;
 
-  while (rows.length < SALES_ANALYTICS_MAX_ROWS) {
+  while (rows.length < maxRows) {
     const offset = rows.length;
     let query = supabase
-      .from("mart_sales_activity_enriched")
-      .select("id,sales_user_id,event_type,event_at,salesperson,customer_name,customer_code,local_client_id,contact_person,raw_note,ai_summary,ai_next_action,next_action_date,estimated_revenue,actual_revenue,currency,status,source,customer_group,area,created_at,updated_at", { count: "exact" })
+      .from("mart_sales_activity_scoped")
+      .select("id,sales_user_id,event_type,event_at,salesperson,customer_name,customer_code,local_client_id,contact_person,contact_occurred,raw_note,ai_summary,ai_next_action,next_action_date,estimated_revenue,actual_revenue,currency,status,source,customer_group,area,account_manager,dormancy_bucket,coverage_scope,created_at,updated_at", { count: "exact" })
       .gte("event_at", dateFrom)
       .lte("event_at", dateTo)
       .order("event_at", { ascending: false })
@@ -761,6 +1084,11 @@ async function fetchFilteredAnalyticsRows(
     if (params.salesperson) query = query.ilike("salesperson", likePattern(params.salesperson) ?? "%");
     if (params.eventType && isSalesEventType(params.eventType)) query = query.eq("event_type", params.eventType);
     if (params.status && isSalesStatus(params.status)) query = query.eq("status", params.status);
+    if (params.accountManager) query = query.ilike("account_manager", likePattern(params.accountManager) ?? "%");
+    if (params.customerGroup) query = query.eq("customer_group", params.customerGroup);
+    if (params.area) query = query.eq("area", params.area);
+    if (params.dormancyBucket) query = query.eq("dormancy_bucket", params.dormancyBucket);
+    if (params.coverage) query = query.eq("coverage_scope", params.coverage);
     if (params.client) {
       const clientPattern = likePattern(params.client);
       const customerCode = normalizeSalesInteger(params.client);
@@ -782,6 +1110,47 @@ async function fetchFilteredAnalyticsRows(
   return { rows, isTruncated: totalCount > rows.length };
 }
 
+async function fetchExactSalesAggregates(
+  params: SalesListParams,
+  dateFrom: string,
+  dateTo: string,
+  scope: { salesUserId?: string } = {},
+) {
+  const supabase = createServiceSupabase();
+  const { data, error } = await supabase.rpc("get_sales_dashboard_summary", {
+    p_from: dateFrom,
+    p_to: dateTo,
+    p_activity_sales_user_id: scope.salesUserId ?? null,
+    p_activity_salesperson: params.salesperson?.trim() || null,
+    p_account_manager: params.accountManager?.trim() || null,
+    p_client_search: params.client?.trim() || null,
+    p_event_type: params.eventType && isSalesEventType(params.eventType) ? params.eventType : null,
+    p_status: params.status && isSalesStatus(params.status) ? params.status : null,
+    p_customer_group: params.customerGroup?.trim() || null,
+    p_area: params.area?.trim() || null,
+    p_dormancy_bucket: params.dormancyBucket?.trim() || null,
+    p_coverage: params.coverage?.trim() || null,
+  });
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+    ...row,
+    activity_count: Number(row.activity_count ?? 0),
+    unique_client_count: Number(row.unique_client_count ?? 0),
+    open_count: Number(row.open_count ?? 0),
+    won_count: Number(row.won_count ?? 0),
+    lost_count: Number(row.lost_count ?? 0),
+    meeting_count: Number(row.meeting_count ?? 0),
+    call_count: Number(row.call_count ?? 0),
+    lead_count: Number(row.lead_count ?? 0),
+    sale_count: Number(row.sale_count ?? 0),
+    follow_up_count: Number(row.follow_up_count ?? 0),
+    open_follow_up_count: Number(row.open_follow_up_count ?? 0),
+    overdue_follow_up_count: Number(row.overdue_follow_up_count ?? 0),
+    estimated_pipeline: Number(row.estimated_pipeline ?? 0),
+    won_revenue: Number(row.won_revenue ?? 0),
+  })) as SalesDashboardAggregate[];
+}
+
 function salesSummaryFromRows(
   rows: SalesReportActivityRow[],
   options: {
@@ -789,6 +1158,7 @@ function salesSummaryFromRows(
     isTruncated: boolean;
     binaMonthRevenue?: number;
     recentBinaSales?: SalesSummary["recentBinaSales"];
+    exactAggregates?: SalesDashboardAggregate[];
   },
 ): SalesSummary {
   const filtered = buildFilteredSalesAnalytics(rows, {
@@ -815,25 +1185,60 @@ function salesSummaryFromRows(
     combined_score: client.estimated_pipeline + client.activity_count,
   }));
 
+  const exact = options.exactAggregates;
+  const total = (field: keyof SalesDashboardAggregate) => exact?.reduce((sum, row) => sum + Number(row[field] ?? 0), 0) ?? 0;
+  const eventExact: Partial<Record<SalesEventType, number>> = exact ? {
+    meeting: total("meeting_count"),
+    call: total("call_count"),
+    lead: total("lead_count"),
+    sale: total("sale_count"),
+    follow_up: total("follow_up_count"),
+  } : {};
+  const exactActivityCount = exact ? total("activity_count") : filtered.analytics.filteredCount;
+  const exactFunnel = exact ? {
+    open: total("open_count"),
+    won: total("won_count"),
+    lost: total("lost_count"),
+    winRate: total("won_count") + total("lost_count") > 0
+      ? total("won_count") / (total("won_count") + total("lost_count"))
+      : 0,
+  } : filtered.analytics.funnel;
+
   return {
     todayCount: filtered.todayCount,
     weekCount: filtered.weekCount,
-    openFollowUps: filtered.openFollowUps,
-    overdueFollowUps: filtered.overdueFollowUps,
-    estimatedPipeline: filtered.estimatedPipeline,
-    actualLoggedRevenue: filtered.actualLoggedRevenue,
+    openFollowUps: exact ? total("open_follow_up_count") : filtered.openFollowUps,
+    overdueFollowUps: exact ? total("overdue_follow_up_count") : filtered.overdueFollowUps,
+    estimatedPipeline: exact ? total("estimated_pipeline") : filtered.estimatedPipeline,
+    actualLoggedRevenue: exact ? total("won_revenue") : filtered.actualLoggedRevenue,
     binaMonthRevenue: options.binaMonthRevenue ?? 0,
     topClients,
     recentBinaSales: options.recentBinaSales ?? [],
-    analytics: filtered.analytics as SalesSummary["analytics"],
+    analytics: {
+      ...filtered.analytics,
+      filteredCount: exactActivityCount,
+      funnel: exactFunnel,
+      eventMix: filtered.analytics.eventMix.map((row) => ({
+        ...row,
+        activityCount: eventExact[row.eventType as SalesEventType] ?? row.activityCount,
+      })),
+      currencies: exact?.map((row) => ({
+        currency: row.currency_code,
+        estimatedPipeline: row.estimated_pipeline,
+        wonRevenue: row.won_revenue,
+        wonCount: row.won_count,
+        openCount: row.open_count,
+      })) ?? filtered.analytics.currencies,
+    } as SalesSummary["analytics"],
   };
 }
 
 export async function fetchSalesSummary(params: SalesListParams = {}): Promise<SalesSummary> {
   const supabase = createServiceSupabase();
   const range = analyticsDateRange(params);
-  const [{ rows, isTruncated }, dashboardResult] = await Promise.all([
+  const [{ rows, isTruncated }, exactAggregates, dashboardResult] = await Promise.all([
     fetchFilteredAnalyticsRows(params, range.dateFrom, range.dateTo),
+    fetchExactSalesAggregates(params, range.dateFrom, range.dateTo),
     supabase.from("mart_sales_dashboard_summary").select("bina_month_revenue").single(),
   ]);
   if (dashboardResult.error) throw new Error(dashboardResult.error.message);
@@ -855,6 +1260,7 @@ export async function fetchSalesSummary(params: SalesListParams = {}): Promise<S
     isTruncated,
     binaMonthRevenue: Number(dashboardResult.data?.bina_month_revenue ?? 0),
     recentBinaSales: (binaResult.data ?? []) as SalesSummary["recentBinaSales"],
+    exactAggregates,
   });
 }
 
@@ -863,15 +1269,14 @@ export async function fetchSalesUserDashboard(
   params: SalesListParams = {},
 ): Promise<SalesSummary> {
   const range = analyticsDateRange(params);
-  const { rows, isTruncated } = await fetchFilteredAnalyticsRows(
-    params,
-    range.dateFrom,
-    range.dateTo,
-    { salesUserId },
-  );
+  const [{ rows, isTruncated }, exactAggregates] = await Promise.all([
+    fetchFilteredAnalyticsRows(params, range.dateFrom, range.dateTo, { salesUserId }),
+    fetchExactSalesAggregates(params, range.dateFrom, range.dateTo, { salesUserId }),
+  ]);
   return salesSummaryFromRows(rows, {
     periodDays: range.periodDays,
     isTruncated,
+    exactAggregates,
   });
 }
 
@@ -885,6 +1290,7 @@ export async function fetchSalesReportData(
     range.dateFrom,
     range.dateTo,
     scope,
+    Number.POSITIVE_INFINITY,
   );
   return {
     generatedAt: new Date().toISOString(),

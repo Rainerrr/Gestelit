@@ -207,37 +207,39 @@ function addActivitySheet(workbook: ExcelJS.Workbook, report: SalesReportData) {
   sheet.views = [{ rightToLeft: true, state: "frozen", ySplit: 4 }];
   sheet.columns = [
     { width: 20 }, { width: 16 }, { width: 14 }, { width: 24 }, { width: 13 }, { width: 20 },
-    { width: 42 }, { width: 42 }, { width: 24 }, { width: 15 }, { width: 16 }, { width: 14 },
+    { width: 14 }, { width: 42 }, { width: 42 }, { width: 24 }, { width: 15 }, { width: 16 }, { width: 14 },
     { width: 18 }, { width: 17 }, { width: 15 }, { width: 15 },
   ];
   styleTitle(sheet, "פירוט פעילויות", `${report.rows.length} רשומות | כל הסכומים נשמרים במטבע המקורי`);
-  sheet.mergeCells("A3:P3");
+  sheet.mergeCells("A3:Q3");
   sheet.getCell("A3").value = "הערות וסיכומי AI מופיעים לצורך בקרה תפעולית. מקור הנתונים הוא דיווחי המשתמשים במערכת.";
   sheet.getCell("A3").font = { name: "Arial", size: 9, italic: true, color: { argb: COLORS.muted } };
   sheet.getCell("A3").alignment = { horizontal: "right" };
-  const headers = ["תאריך ושעה", "איש מכירות", "סוג פעילות", "לקוח", "קוד לקוח", "איש קשר", "תיאור", "סיכום AI", "פעולה הבאה", "תאריך פעולה", "סטטוס", "מטבע", "פייפליין", "הכנסה בפועל", "קבוצה", "אזור"];
+  const headers = ["תאריך ושעה", "איש מכירות", "סוג פעילות", "לקוח", "קוד לקוח", "איש קשר", "קשר בפועל", "תיאור", "סיכום AI", "פעולה הבאה", "תאריך פעולה", "סטטוס", "מטבע", "פייפליין", "הכנסה בפועל", "קבוצה", "אזור"];
   sheet.getRow(4).values = headers;
   styleTableHeader(sheet.getRow(4));
-  sheet.autoFilter = { from: "A4", to: "P4" };
+  sheet.autoFilter = { from: "A4", to: "Q4" };
 
   report.rows.forEach((item, index) => {
     const rowIndex = index + 5;
     const row = sheet.getRow(rowIndex);
     row.values = [
       asDate(item.event_at), item.salesperson, eventLabels[item.event_type] ?? item.event_type,
-      item.customer_name, item.customer_code, item.contact_person, item.raw_note, item.ai_summary,
+      item.customer_name, item.customer_code, item.contact_person,
+      item.contact_occurred === true ? "כן" : item.contact_occurred === false ? "לא" : "לא סומן",
+      item.raw_note, item.ai_summary,
       item.ai_next_action, item.next_action_date ? asDate(item.next_action_date) : null,
       statusLabels[item.status] ?? item.status, item.currency || "ILS", Number(item.estimated_revenue ?? 0),
       Number(item.actual_revenue ?? 0), item.customer_group, item.area,
     ];
     row.getCell(1).numFmt = "dd/mm/yyyy hh:mm";
-    row.getCell(10).numFmt = "dd/mm/yyyy";
-    row.getCell(13).numFmt = "#,##0.00";
+    row.getCell(11).numFmt = "dd/mm/yyyy";
     row.getCell(14).numFmt = "#,##0.00";
+    row.getCell(15).numFmt = "#,##0.00";
     row.height = 34;
     styleBodyRow(row, index % 2 === 1);
     const status = item.status;
-    row.getCell(11).fill = {
+    row.getCell(12).fill = {
       type: "pattern",
       pattern: "solid",
       fgColor: { argb: status === "won" ? COLORS.greenSoft : status === "lost" ? COLORS.redSoft : status === "follow_up" ? COLORS.amberSoft : COLORS.blueSoft },

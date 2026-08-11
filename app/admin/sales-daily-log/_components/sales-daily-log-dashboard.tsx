@@ -45,8 +45,10 @@ import type { SalesEventType, SalesStatus } from "@/lib/data/sales-log-utils";
 import { cn } from "@/lib/utils";
 import { SalesIntelligenceDashboard } from "./sales-intelligence-dashboard";
 import {
+  DEFAULT_SALES_DASHBOARD_ADVANCED_FILTERS,
   DEFAULT_SALES_DASHBOARD_FILTERS,
   SalesDashboardFilters,
+  type SalesDashboardAdvancedFilterState,
   type SalesDashboardFilterState,
 } from "./sales-dashboard-filters";
 
@@ -179,6 +181,8 @@ export function SalesDailyLogDashboard() {
   const [search, setSearch] = useState("");
   const [filterDraft, setFilterDraft] = useState<SalesDashboardFilterState>(DEFAULT_SALES_DASHBOARD_FILTERS);
   const [appliedFilters, setAppliedFilters] = useState<SalesDashboardFilterState>(DEFAULT_SALES_DASHBOARD_FILTERS);
+  const [advancedDraft, setAdvancedDraft] = useState<SalesDashboardAdvancedFilterState>(DEFAULT_SALES_DASHBOARD_ADVANCED_FILTERS);
+  const [appliedAdvanced, setAppliedAdvanced] = useState<SalesDashboardAdvancedFilterState>(DEFAULT_SALES_DASHBOARD_ADVANCED_FILTERS);
   const [isLoading, setIsLoading] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isLoadingClients, setIsLoadingClients] = useState(false);
@@ -218,13 +222,23 @@ export function SalesDailyLogDashboard() {
     client: appliedFilters.client || undefined,
     eventType: appliedFilters.eventType || undefined,
     status: appliedFilters.status || undefined,
-  }), [appliedFilters]);
+    accountManager: appliedAdvanced.owner || undefined,
+    customerGroup: appliedAdvanced.group || undefined,
+    area: appliedAdvanced.area || undefined,
+    dormancyBucket: appliedAdvanced.dormancy === "90" ? "attention" : appliedAdvanced.dormancy === "180" ? "dormant" : undefined,
+    coverage: appliedAdvanced.coverage === "current" ? "gestelit_only" : undefined,
+  }), [appliedAdvanced, appliedFilters]);
   const activeFilterCount = [
     appliedFilters.period !== "90" ? appliedFilters.period : "",
     appliedFilters.salesperson,
     appliedFilters.client,
     appliedFilters.eventType,
     appliedFilters.status,
+    appliedAdvanced.owner,
+    appliedAdvanced.group,
+    appliedAdvanced.area,
+    appliedAdvanced.dormancy,
+    appliedAdvanced.coverage,
   ].filter(Boolean).length;
 
   const loadData = useCallback(async () => {
@@ -452,6 +466,17 @@ export function SalesDailyLogDashboard() {
     }
   };
 
+  const openEventMixDrilldown = (eventType: SalesEventType) => {
+    const next = { ...appliedFilters, eventType };
+    setFilterDraft(next);
+    setAppliedFilters(next);
+    setSearch("");
+    setDashboardView("activity");
+    window.setTimeout(() => {
+      document.getElementById("sales-activity-results")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 100);
+  };
+
   if (hasAccess === null) {
     return <div className="flex min-h-[60vh] items-center justify-center text-muted-foreground">טוען הרשאות...</div>;
   }
@@ -503,11 +528,17 @@ export function SalesDailyLogDashboard() {
 
         <SalesDashboardFilters
           value={filterDraft}
+          appliedValue={appliedFilters}
           onChange={setFilterDraft}
-          onApply={() => setAppliedFilters({ ...filterDraft })}
+          onApply={(next) => {
+            setAppliedFilters({ ...(next ?? filterDraft) });
+            setAppliedAdvanced({ ...advancedDraft });
+          }}
           onReset={() => {
             setFilterDraft(DEFAULT_SALES_DASHBOARD_FILTERS);
             setAppliedFilters(DEFAULT_SALES_DASHBOARD_FILTERS);
+            setAdvancedDraft(DEFAULT_SALES_DASHBOARD_ADVANCED_FILTERS);
+            setAppliedAdvanced(DEFAULT_SALES_DASHBOARD_ADVANCED_FILTERS);
             setSearch("");
           }}
           salespeople={salespersonOptions}
@@ -516,6 +547,23 @@ export function SalesDailyLogDashboard() {
           isLoading={isLoading}
           isExporting={isExporting}
           onExport={() => void exportWorkbook()}
+          advanced={{
+            value: advancedDraft,
+            onChange: setAdvancedDraft,
+            options: {
+              owners: salespersonOptions,
+              groups: Array.from(new Set(filterClients.map((client) => client.customer_group).filter((value): value is string => Boolean(value)))).sort((left, right) => left.localeCompare(right, "he")),
+              areas: [],
+            },
+            enabled: {
+              owner: true,
+              group: true,
+              area: false,
+              dormancy: true,
+              coverage: false,
+            },
+            coverageLabel: "מנהל לקוח, קבוצה וחוסר פעילות לפי דיווחי גסטליט זמינים עכשיו. אזור וכיסוי היסטורי מלא יופעלו לאחר השלמת הרטרו מ-BINA.",
+          }}
         />
 
         {error && (
@@ -531,7 +579,12 @@ export function SalesDailyLogDashboard() {
         )}
 
         {dashboardView === "overview" ? (
-          <SalesIntelligenceDashboard summary={summary} followUps={followUps} onMarkStatus={markStatus} />
+          <SalesIntelligenceDashboard
+            summary={summary}
+            followUps={followUps}
+            onMarkStatus={markStatus}
+            onEventMixSelect={openEventMixDrilldown}
+          />
         ) : (
           <>
         <div className="grid grid-cols-2 gap-2 xl:grid-cols-5">
@@ -709,7 +762,7 @@ export function SalesDailyLogDashboard() {
           </Card>
 
           <div className="space-y-5">
-            <Card className="rounded-xl border border-border bg-card/70 p-3 sm:p-4">
+            <Card id="sales-activity-results" className="scroll-mt-24 rounded-xl border border-border bg-card/70 p-3 sm:p-4">
               <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <h2 className="text-lg font-semibold">הדיווחים בתקופה</h2>

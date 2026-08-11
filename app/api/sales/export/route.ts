@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { salesListParams } from "@/app/api/admin/sales-daily-log/_route-utils";
-import { requireSalesSessionUser } from "@/lib/auth/sales-session";
+import { requireSalesScope } from "@/lib/auth/sales-session";
 import { fetchSalesReportData } from "@/lib/data/sales-log";
 import { createSalesWorkbook } from "@/lib/reports/sales-workbook";
 
@@ -9,7 +9,7 @@ export const maxDuration = 60;
 
 export async function GET(request: Request) {
   try {
-    const user = await requireSalesSessionUser();
+    const user = await requireSalesScope("sales_export");
     const filters = salesListParams(request);
     const report = await fetchSalesReportData(filters, { salesUserId: user.id });
     const workbook = await createSalesWorkbook(report, {

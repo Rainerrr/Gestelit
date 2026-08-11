@@ -12,6 +12,8 @@ const baseUser: SalesUser = {
   phone: null,
   is_active: true,
   is_admin: false,
+  roles: ["sales_rep"],
+  scopes: ["sales_activity_write", "sales_personal_view", "sales_export", "sales_ai_query"],
 };
 
 describe("sales admin session grant", () => {
@@ -29,14 +31,20 @@ describe("sales admin session grant", () => {
     expect(response.cookies.get("admin_session")).toBeUndefined();
   });
 
-  it("grants an admin session to an authorized sales admin", () => {
+  it("keeps a sales manager scoped to sales without granting a MES admin session", () => {
     process.env.ADMIN_SESSION_SECRET = "sales-admin-unit-test-secret";
     const response = createSalesResponseWithSession(
       { ok: true },
-      { ...baseUser, email: "maty@gestelit.co.il", is_admin: true },
+      {
+        ...baseUser,
+        email: "maty@gestelit.co.il",
+        is_admin: true,
+        roles: ["sales_manager"],
+        scopes: [...baseUser.scopes, "sales_team_view", "sales_client_manage"],
+      },
     );
 
     expect(response.cookies.get("sales_session")?.value).toBeTruthy();
-    expect(response.cookies.get("admin_session")?.value).toBeTruthy();
+    expect(response.cookies.get("admin_session")).toBeUndefined();
   });
 });

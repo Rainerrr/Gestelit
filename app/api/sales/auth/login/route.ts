@@ -46,6 +46,10 @@ export async function POST(request: Request) {
     phone: data.phone,
     is_active: data.is_active,
     is_admin: isSalesAdminEmail(data.email),
+    roles: [isSalesAdminEmail(data.email) ? "sales_manager" : "sales_rep"],
+    scopes: isSalesAdminEmail(data.email)
+      ? ["sales_activity_write", "sales_personal_view", "sales_team_view", "sales_export", "sales_ai_query", "sales_client_manage"]
+      : ["sales_activity_write", "sales_personal_view", "sales_export", "sales_ai_query"],
   };
 
   return createSalesResponseWithSession({ user }, user);
