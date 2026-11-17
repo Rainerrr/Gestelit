@@ -22,9 +22,19 @@ export function validateAnalyticsPlan(value: unknown, role: "admin" | "sales"): 
   if (role !== "admin") throw new Error("AI_QUERY_SCOPE_FORBIDDEN");
   return validateClosedPlan(value, analyticsDatasets) as AnalyticsPlan;
 }
-function validateClosedPlan(value: unknown, datasets: Record<string, Dataset>) {
-  if (!object(value)) invalid();
+function validateClosedPlan(input: unknown, datasets: Record<string, Dataset>) {
+  if (!object(input)) invalid();
+  const value = { ...input };
   keys(value, ["dataset", "columns", "groupBy", "measures", "filters", "orderBy", "limit"]);
+  // Models sometimes repeat the grouping dimensions in the projection. Remove
+  // only an exactly equivalent set; ungrouped columns must still be rejected.
+  if (Array.isArray(value.measures) && Array.isArray(value.columns) && Array.isArray(value.groupBy)) {
+    const columns = value.columns;
+    const groups = value.groupBy;
+    if (columns.length === groups.length && new Set(columns).size === columns.length && new Set(groups).size === groups.length && columns.every((column) => groups.includes(column))) {
+      delete value.columns;
+    }
+  }
   if (typeof value.dataset !== "string" || !Object.hasOwn(datasets, value.dataset)) invalid();
   const dataset = datasets[value.dataset];
   const field = (column: unknown) => { if (typeof column !== "string" || !(dataset.columns as readonly string[]).includes(column)) invalid(); return column; };
@@ -61,7 +71,7 @@ function validateClosedPlan(value: unknown, datasets: Record<string, Dataset>) {
 export const analyticsQueryTool = {
   type: "function" as const,
   name: "query_analytics",
-  description: `Answer ad hoc natural-language comparisons with a validated query plan compiled to bounded read-only SELECT. Admin only. Datasets and columns: ${JSON.stringify(analyticsDatasets)}. Measures get output names m0,m1,... . count takes no column. Other measures require numeric columns. Finance amounts MUST group by currency, kind, balance_confidence. Source scan is limited to 20000 unranked rows; results are cache/sample facts, never company totals. If sourceTruncated is true, requested top/latest/ranking applies only within that unranked sample and cannot establish a global top or latest. No joins, expressions, custom SQL, functions or writes. Call metric trust too when interpreting coverage.`,
+  description: `Answer ad hoc natural-language comparisons with a validated query plan compiled to bounded read-only SELECT. Admin only. Datasets and columns: ${JSON.stringify(analyticsDatasets)}. Measures get output names m0,m1,... . When measures are present, omit columns; list grouping dimensions only in groupBy. count takes no column. Other measures require numeric columns. Finance amounts MUST group by currency, kind, balance_confidence. Source scan is limited to 20000 unranked rows; results are cache/sample facts, never company totals. If sourceTruncated is true, requested top/latest/ranking applies only within that unranked sample and cannot establish a global top or latest. No joins, expressions, custom SQL, functions or writes. Call metric trust too when interpreting coverage.`,
   parameters: { type: "object", properties: {
     dataset: { type: "string", enum: Object.keys(analyticsDatasets) },
     columns: { type: "array", items: { type: "string" }, maxItems: 8 },
@@ -84,6 +94,6 @@ export function validateSalesAnalyticsPlan(value: unknown): SalesAnalyticsPlan {
 export const salesAnalyticsQueryTool = {
   ...analyticsQueryTool,
   name: "query_sales_activity",
-  description: `Query the authenticated viewer's allowed Gestelit sales activity with a fresh question-specific JSON plan, compiled into read-only bounded SQL. Server enforces personal/team scope; never supply user IDs or permissions. Dataset fields: ${JSON.stringify(salesAnalyticsDataset)}. count has no column; other measures only numeric fields and must group by currency. Measure aliases m0,m1. Respect screen filters unless user requests otherwise. Queries cover recorded Gestelit activity only, not complete BINA contact history. If sourceTruncated is true, requested top/latest/ranking applies only within the unranked bounded sample and cannot establish a global top or latest. No free-form SQL, joins, credentials, custom functions or writes.`,
+  description: `Query the authenticated viewer's allowed Gestelit sales activity with a fresh question-specific JSON plan, compiled into read-only bounded SQL. Server enforces personal/team scope; never supply user IDs or permissions. Dataset fields: ${JSON.stringify(salesAnalyticsDataset)}. count has no column; other measures only numeric fields and must group by currency. Measure aliases m0,m1. When measures are present, omit columns; list grouping dimensions only in groupBy. Respect screen filters unless user requests otherwise. Queries cover recorded Gestelit activity only, not complete BINA contact history. If sourceTruncated is true, requested top/latest/ranking applies only within the unranked bounded sample and cannot establish a global top or latest. No free-form SQL, joins, credentials, custom functions or writes.`,
   parameters: { ...analyticsQueryTool.parameters, properties: { ...analyticsQueryTool.parameters.properties, dataset: { type: "string", enum: ["sales_activity"] } } },
 };

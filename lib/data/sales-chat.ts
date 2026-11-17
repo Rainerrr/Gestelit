@@ -112,6 +112,15 @@ function validateAnswer(value: unknown): SalesChatAnswer {
   return answer;
 }
 
+function withinSalesDeadline<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  signal.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(new Error("SALES_AI_TIMEOUT"));
+    signal.addEventListener("abort", abort, { once: true });
+    work.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+  });
+}
+
 export async function runSalesChat(input: {
   message: string;
   signal?: AbortSignal;
@@ -141,9 +150,10 @@ export async function runSalesChat(input: {
   const appliedFilters = Object.fromEntries(["search", "client", "eventType", "status", "accountManager", "customerGroup", "area", "coverage", "dormancyBucket", ...(scope === "team" ? ["salesperson"] : [])].flatMap((key) => typeof filters[key] === "string" ? [[key, normalizeSalesText(filters[key], 200)]] : []));
   const params = { dateFrom, dateTo, ...appliedFilters };
   const history = normalizeSalesChatHistory(input.history);
-  const summary = scope === "team"
-    ? await fetchSalesSummary(params)
-    : await fetchSalesUserDashboard(input.salesUserId, params);
+  input.signal!.throwIfAborted();
+  const summary = await withinSalesDeadline(scope === "team"
+    ? fetchSalesSummary(params)
+    : fetchSalesUserDashboard(input.salesUserId, params), input.signal!);
 
   const apiKey = process.env.OPENAI_API_KEY;
   const model = process.env.OPENAI_MODEL;
@@ -210,7 +220,13 @@ export async function runSalesChat(input: {
         if (index >= 2 || call.name !== "query_sales_activity") throw new Error("SALES_AI_QUERY_UNAVAILABLE");
         result = await runSalesAnalyticsQuery(JSON.parse(call.arguments), { id: input.salesUserId, scope }, input.signal);
         queryResults.push(result as SalesQueryResult);
-      } catch { queryFailures.push("לא ניתן היה לאמת חלק מהשאילתות המותאמות; הניתוח נשען על הסיכום הזמין."); result = { error: "SALES_AI_QUERY_UNAVAILABLE" }; }
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : "";
+        const code = ["AI_QUERY_PLAN_INVALID", "AI_QUERY_SCOPE_FORBIDDEN", "SALES_AI_QUERY_TIMEOUT", "SALES_AI_QUERY_FORBIDDEN"].includes(reason) ? reason : "SALES_AI_QUERY_UNAVAILABLE";
+        console.warn("SALES_AI_QUERY_FAILED", { code, tool: call.name === "query_sales_activity" ? call.name : "unapproved", index });
+        queryFailures.push("לא ניתן היה לאמת חלק מהשאילתות המותאמות; הניתוח נשען על הסיכום הזמין.");
+        result = { error: "SALES_AI_QUERY_UNAVAILABLE" };
+      }
       outputs.push({ type: "function_call_output" as const, call_id: call.call_id, output: JSON.stringify(result) });
     }
     response = await client.responses.create({ model, instructions, previous_response_id: response.id, input: outputs, text: { format: SALES_CHAT_FORMAT, verbosity: "medium" } }, { signal: input.signal });

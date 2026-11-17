@@ -32,3 +32,25 @@ describe("closed admin analytics query language", () => {
     expect(validateAnalyticsPlan({ dataset: "finance", groupBy: ["currency", "kind", "balance_confidence"], measures: [{ op: "sum", column: "open_amount" }] }, "admin")).toBeTruthy();
   });
 });
+
+describe("redundant grouped projection canonicalization", () => {
+  it("accepts the captured model plan only after removing equivalent grouping columns", async () => {
+    const { validateSalesAnalyticsPlan } = await import("@/lib/ai/query/plan");
+    const plan = validateSalesAnalyticsPlan({ dataset: "sales_activity", columns: ["salesperson", "currency"], groupBy: ["salesperson", "currency"], measures: [{ op: "count" }], filters: [{ column: "event_at", op: "gte", value: "2026-01-01T00:00:00.000Z" }], orderBy: { column: "salesperson", direction: "asc" }, limit: 50 });
+    expect(plan).not.toHaveProperty("columns");
+    expect(plan.groupBy).toEqual(["salesperson", "currency"]);
+  });
+  it("accepts the same safe redundancy for admin grouped queries", () => {
+    expect(validateAnalyticsPlan({ dataset: "work_orders", columns: ["customer_name"], groupBy: ["customer_name"], measures: [{ op: "count" }] }, "admin")).not.toHaveProperty("columns");
+  });
+  it.each([
+    { columns: ["customer_name"], groupBy: ["salesperson"] },
+    { columns: ["salesperson", "customer_name"], groupBy: ["salesperson"] },
+    { columns: ["salesperson"] },
+    { columns: ["salesperson", "salesperson"], groupBy: ["salesperson", "currency"] },
+    { columns: ["salesperson) FROM sales_users--"], groupBy: ["salesperson) FROM sales_users--"] },
+  ])("continues rejecting mismatched projections or identifier escapes: %j", async (projection) => {
+    const { validateSalesAnalyticsPlan } = await import("@/lib/ai/query/plan");
+    expect(() => validateSalesAnalyticsPlan({ dataset: "sales_activity", ...projection, measures: [{ op: "count" }] })).toThrow("AI_QUERY");
+  });
+});

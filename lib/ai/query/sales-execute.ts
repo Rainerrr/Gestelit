@@ -6,6 +6,11 @@ export async function runSalesAnalyticsQuery(value: unknown, viewer: { id: strin
   const plan = validateSalesAnalyticsPlan(value);
   const query = createServiceSupabase().rpc("ai_query_sales_analytics", { plan, viewer_id: viewer.id, requested_scope: viewer.scope });
   const { data, error } = await query.abortSignal(signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000));
-  if (error || !data || !Array.isArray(data.rows)) throw new Error("SALES_AI_QUERY_UNAVAILABLE");
+  if (error) {
+    if (error.code === "57014") throw new Error("SALES_AI_QUERY_TIMEOUT");
+    if (error.code === "42501" || error.message === "AI_QUERY_SCOPE_FORBIDDEN") throw new Error("SALES_AI_QUERY_FORBIDDEN");
+    throw new Error("SALES_AI_QUERY_UNAVAILABLE");
+  }
+  if (!data || !Array.isArray(data.rows)) throw new Error("SALES_AI_QUERY_UNAVAILABLE");
   return sanitizeToolText(data) as SalesQueryResult;
 }

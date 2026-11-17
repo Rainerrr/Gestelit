@@ -15,6 +15,14 @@ describe("sales conversational scoped analytics", () => {
     expect(history).toHaveLength(2); expect(history[0].content).toBe("לקוח א");
     expect(normalizeSalesChatHistory(Array.from({ length: 20 }, () => ({ role: "user", content: "x".repeat(9000) })))).toHaveLength(8);
   });
+  it("cancels a pending summary fetch before calling the provider", async () => {
+    mocks.personal.mockReturnValue(new Promise(() => undefined));
+    const controller = new AbortController();
+    const pending = expect(runSalesChat({ ...input, signal: controller.signal })).rejects.toThrow("SALES_AI_TIMEOUT");
+    controller.abort();
+    await pending;
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
   it("ignores forged team scope and refreshes personal facts on each turn", async () => {
     await runSalesChat({ ...input, requestedScope: "team", history: [{ role: "user", content: "לקוח קודם" }], context: { role: "admin", filters: { salesperson: "Other", client: "Acme" } } });
     expect(mocks.team).not.toHaveBeenCalled(); expect(mocks.personal).toHaveBeenCalledWith("authenticated-user", expect.objectContaining({ client: "Acme" }));
