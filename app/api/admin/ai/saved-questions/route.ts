@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { createErrorResponse, requireAdminPassword } from "@/lib/auth/permissions";
+import { requireAdminPassword } from "@/lib/auth/permissions";
+import { aiErrorResponse } from "@/lib/ai/http";
 import { createServiceSupabase } from "@/lib/supabase/client";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +18,6 @@ export async function GET(request: Request) {
     if (error) throw new Error(error.message);
     return NextResponse.json({ questions: data ?? [] });
   } catch (error) {
-    return createErrorResponse(error, "AI_SAVED_QUESTIONS_FAILED");
+    return aiErrorResponse(error, "AI_SAVED_QUESTIONS_FAILED");
   }
 }

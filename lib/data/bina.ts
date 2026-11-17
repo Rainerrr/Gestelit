@@ -1496,7 +1496,7 @@ export async function fetchBinaWorkOrderOperationalProfile(params: {
   };
 }
 
-export async function fetchBinaPurchasing(params: PageParams = {}) {
+export async function fetchBinaPurchasing(params: PageParams & { openRequestsOnly?: boolean } = {}) {
   const supabase = createServiceSupabase();
   const limit = clampLimit(params.limit);
   const offset = Math.max(0, params.offset ?? 0);
@@ -1507,6 +1507,10 @@ export async function fetchBinaPurchasing(params: PageParams = {}) {
     .select(PURCHASING_COLUMNS, { count: "exact" })
     .order("synced_at", { ascending: false })
     .range(offset, offset + limit - 1);
+
+  if (params.openRequestsOnly) {
+    query = query.eq("flow_type", "purchase_request").or("remaining_quantity.gt.0,remaining_quantity.is.null");
+  }
 
   if (pattern) {
     query = query.or(
@@ -1525,7 +1529,7 @@ export async function fetchBinaPurchasing(params: PageParams = {}) {
   return { rows: (data ?? []) as unknown as BinaPurchasingRow[], count: count ?? 0 };
 }
 
-export async function fetchBinaSuppliers(params: PageParams = {}) {
+export async function fetchBinaSuppliers(params: PageParams & { sortBy?: "open_balance" | "overdue_balance" } = {}) {
   const supabase = createServiceSupabase();
   const limit = clampLimit(params.limit);
   const offset = Math.max(0, params.offset ?? 0);
@@ -1534,7 +1538,7 @@ export async function fetchBinaSuppliers(params: PageParams = {}) {
   let query = supabase
     .from("mart_bina_supplier_aging")
     .select(SUPPLIER_COLUMNS, { count: "exact" })
-    .order("overdue_balance", { ascending: false, nullsFirst: false })
+    .order(params.sortBy ?? "overdue_balance", { ascending: false, nullsFirst: false })
     .range(offset, offset + limit - 1);
 
   if (pattern) {
@@ -1798,7 +1802,7 @@ export async function fetchBinaSales(params: PageParams = {}) {
   return { rows: (data ?? []) as unknown as BinaSalesRow[], count: count ?? 0 };
 }
 
-export async function fetchBinaDeliveries(params: PageParams = {}) {
+export async function fetchBinaDeliveries(params: PageParams & { deliveryState?: string } = {}) {
   const supabase = createServiceSupabase();
   const limit = clampLimit(params.limit);
   const offset = Math.max(0, params.offset ?? 0);
@@ -1811,8 +1815,12 @@ export async function fetchBinaDeliveries(params: PageParams = {}) {
     .range(offset, offset + limit - 1);
 
   if (pattern) {
-    query = query.or(`customer_name.ilike.${pattern},carrier.ilike.${pattern},tracking_no.ilike.${pattern}`);
+    const filters = [`customer_name.ilike.${pattern}`, `carrier.ilike.${pattern}`, `tracking_no.ilike.${pattern}`, `bina_id.ilike.${pattern}`];
+    const numericSearch = normalizeNumber(params.search);
+    if (numericSearch !== null) filters.push(`work_order_id.eq.${numericSearch}`, `delivery_no.eq.${numericSearch}`, `invoice_no.eq.${numericSearch}`);
+    query = query.or(filters.join(","));
   }
+  if (params.deliveryState) query = query.eq("delivery_state", params.deliveryState);
 
   const { data, count, error } = await query;
   if (error) throw new Error(error.message);
