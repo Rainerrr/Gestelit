@@ -55,6 +55,7 @@ import type { PendingBinaClient } from "@/lib/data/bina-client-onboarding";
 import type { SalesEventType, SalesStatus } from "@/lib/data/sales-log-utils";
 import { cn } from "@/lib/utils";
 import { copyTextToClipboard } from "@/lib/utils/copy-to-clipboard";
+import { SalesMobileNav } from "@/components/sales/sales-mobile-nav";
 
 type SalesPortalUser = {
   id: string;
@@ -190,6 +191,7 @@ export function SalesPortal() {
     overdueFollowUps: 0,
     estimatedPipeline: 0,
     actualRevenue: 0,
+    headlineCurrency: "ILS",
   });
   const [search, setSearch] = useState("");
   const [files, setFiles] = useState<File[]>([]);
@@ -228,7 +230,7 @@ export function SalesPortal() {
     source: "manual",
   });
 
-  const isFormReady = Boolean(form.event_type && form.customer_name?.trim() && form.raw_note?.trim());
+  const isBaseFormReady = Boolean(form.event_type && form.customer_name?.trim() && form.raw_note?.trim());
   const isDraftPristine = useMemo(() => (
     !form.customer_name?.trim()
     && !form.contact_person?.trim()
@@ -383,12 +385,6 @@ export function SalesPortal() {
     }));
   };
 
-  const selectedClientHasDifferentOwner = useMemo(() => {
-    const owner = selectedClientOwner?.replace(/\s+/g, " ").trim().toLocaleLowerCase("he");
-    const currentUser = user?.full_name.replace(/\s+/g, " ").trim().toLocaleLowerCase("he");
-    return Boolean(owner && currentUser && owner !== currentUser);
-  }, [selectedClientOwner, user?.full_name]);
-
   const hasExactClientMatch = useMemo(() => {
     const typedName = form.customer_name?.replace(/\s+/g, " ").trim().toLocaleLowerCase("he");
     if (!typedName) return false;
@@ -396,6 +392,25 @@ export function SalesPortal() {
       client.customer_name.replace(/\s+/g, " ").trim().toLocaleLowerCase("he") === typedName
     ));
   }, [clientSuggestions, form.customer_name]);
+
+  const exactClientSuggestion = useMemo(() => {
+    const typedName = form.customer_name?.replace(/\s+/g, " ").trim().toLocaleLowerCase("he");
+    if (!typedName) return null;
+    return clientSuggestions.find((client) => (
+      client.customer_name.replace(/\s+/g, " ").trim().toLocaleLowerCase("he") === typedName
+    )) ?? null;
+  }, [clientSuggestions, form.customer_name]);
+  const unresolvedKnownClient = Boolean(
+    exactClientSuggestion && form.customer_code == null && form.local_client_id == null,
+  );
+  const effectiveClientOwner = selectedClientOwner ?? exactClientSuggestion?.owner_name ?? null;
+  const effectiveClientHasDifferentOwner = useMemo(() => {
+    const owner = effectiveClientOwner?.replace(/\s+/g, " ").trim().toLocaleLowerCase("he");
+    const currentUser = user?.full_name.replace(/\s+/g, " ").trim().toLocaleLowerCase("he");
+    return Boolean(owner && currentUser && owner !== currentUser);
+  }, [effectiveClientOwner, user?.full_name]);
+  const canManageClients = user?.scopes.includes("sales_client_manage") ?? false;
+  const isFormReady = isBaseFormReady && !unresolvedKnownClient;
 
   const useCreatedClient = (client: PendingBinaClient) => {
     setSelectedClientOwner(user?.full_name ?? null);
@@ -673,7 +688,7 @@ export function SalesPortal() {
         </div>
       </header>
 
-      <div className="mx-auto flex max-w-7xl flex-col gap-3 p-3 pb-6 lg:gap-5 lg:p-6">
+      <div className="mx-auto flex max-w-7xl flex-col gap-3 p-3 pb-24 lg:gap-5 lg:p-6">
         {canViewTeamDashboard ? (
           <section className="order-1 flex flex-col gap-3 rounded-lg border border-primary/25 bg-primary/5 p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-4">
             <div className="flex min-w-0 items-center gap-3">
@@ -695,8 +710,8 @@ export function SalesPortal() {
           <Kpi label="דיווחים היום" value={summary.todayCount} icon={CalendarClock} />
           <Kpi label="דיווחים השבוע" value={summary.weekCount} icon={BarChart3} />
           <Kpi label="לקוחות שצריך לחזור אליהם" value={summary.openFollowUps} icon={Clock3} tone={summary.overdueFollowUps > 0 ? "red" : "amber"} />
-          <Kpi label="שווי עסקאות פתוחות" value={formatMoney(summary.estimatedPipeline)} icon={Target} />
-          <Kpi label="עסקאות שנסגרו" value={formatMoney(summary.actualRevenue)} icon={WalletCards} />
+          <Kpi label={`שווי עסקאות פתוחות (${summary.headlineCurrency})`} value={formatMoney(summary.estimatedPipeline, summary.headlineCurrency)} icon={Target} />
+          <Kpi label={`עסקאות שנסגרו (${summary.headlineCurrency})`} value={formatMoney(summary.actualRevenue, summary.headlineCurrency)} icon={WalletCards} />
         </section>
 
         <div className="order-1 space-y-3 lg:order-2">
@@ -715,7 +730,7 @@ export function SalesPortal() {
         </div>
 
         <section className="order-2 grid min-w-0 gap-4 lg:order-3 xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">
-          <Card ref={formCardRef} className="min-w-0 scroll-mt-20 overflow-hidden rounded-2xl border border-border/80 bg-card p-3 shadow-sm shadow-slate-900/5 lg:p-5">
+          <Card id="new-report" ref={formCardRef} className="min-w-0 scroll-mt-20 overflow-hidden rounded-2xl border border-border/80 bg-card p-3 shadow-sm shadow-slate-900/5 lg:p-5">
             <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
               <div className="min-w-0">
                 <h1 className="text-xl font-semibold lg:text-2xl">{editingActivityId ? "תיקון דיווח" : "דיווח חדש"}</h1>
@@ -866,15 +881,21 @@ export function SalesPortal() {
               </div>
             )}
 
-            {selectedClientHasDifferentOwner ? (
+            {effectiveClientHasDifferentOwner ? (
               <div className="mt-3">
                 <Notice tone="amber">
-                  לפי רשימת הלקוחות, מנהל/ת הלקוח הוא/היא <strong>{selectedClientOwner}</strong>. כדאי לוודא שזה הלקוח הנכון לפני השמירה.
+                  מנהל/ת הלקוח הקבוע/ה הוא/היא <strong>{effectiveClientOwner}</strong>. הדיווח יישמר על שמך ולא ישנה את שיוך הלקוח.
                 </Notice>
               </div>
             ) : null}
 
-            {form.customer_name.trim().length >= 2 && !hasExactClientMatch ? (
+            {unresolvedKnownClient ? (
+              <div className="mt-3">
+                <Notice tone="amber">מצאנו לקוח קיים בשם הזה. בחרו אותו מהרשימה כדי שהדיווח לא יישמר על לקוח שגוי.</Notice>
+              </div>
+            ) : null}
+
+            {canManageClients && form.customer_name.trim().length >= 2 && !hasExactClientMatch ? (
               <button
                 type="button"
                 onClick={() => setIsNewClientOpen(true)}
@@ -1048,7 +1069,7 @@ export function SalesPortal() {
             </div>
           </Card>
 
-          <aside className="min-w-0 space-y-4">
+          <aside id="my-reports" className="min-w-0 scroll-mt-20 space-y-4">
             <Card className="min-w-0 overflow-hidden rounded-2xl border border-border/80 bg-card p-4 shadow-sm shadow-slate-900/5">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
@@ -1077,6 +1098,7 @@ export function SalesPortal() {
         initialName={form.customer_name}
         onCreated={useCreatedClient}
       />
+      <SalesMobileNav />
     </main>
   );
 }

@@ -115,13 +115,17 @@ const LiveJobProgressComponent = ({ className }: LiveJobProgressProps) => {
         }
       }
     }
-    setCollapsedItems((prev) => (prev.size === 0 && completedIds.size > 0 ? completedIds : prev));
+    queueMicrotask(() => {
+      setCollapsedItems((prev) => (prev.size === 0 && completedIds.size > 0 ? completedIds : prev));
+    });
   }, [mergedJobs]);
 
   // Keep current index in bounds when jobs change
   useEffect(() => {
     if (currentIndex >= sortedJobs.length && sortedJobs.length > 0) {
-      setCurrentIndex(Math.max(0, sortedJobs.length - 1));
+      queueMicrotask(() => {
+        setCurrentIndex(Math.max(0, sortedJobs.length - 1));
+      });
     }
   }, [sortedJobs.length, currentIndex]);
 

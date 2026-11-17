@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
-import { Menu, Settings, LayoutDashboard, History, Wrench, ChevronLeft, FileText, Briefcase, CalendarClock, Database, Handshake } from "lucide-react";
+import { Menu, Settings, LayoutDashboard, History, Wrench, ChevronLeft, FileText, Briefcase, CalendarClock, Database, Handshake, MessageSquare } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -36,6 +36,7 @@ const navItems = [
   { label: "דשבורד", href: "/admin", disabled: false, icon: LayoutDashboard },
   { label: "עבודות", href: "/admin/jobs", disabled: false, icon: Briefcase },
   { label: "יומן מכירות", href: "/admin/sales-daily-log", disabled: false, icon: Handshake },
+  { label: "הודעות", href: "/admin/messages", disabled: false, icon: MessageSquare },
   { label: "נתוני BINA", href: "/admin/bina", disabled: false, icon: Database },
   { label: "היסטוריה ודוחות", href: "/admin/history", disabled: false, icon: History },
   { label: "דיווחים", href: "/admin/reports", disabled: false, icon: FileText },

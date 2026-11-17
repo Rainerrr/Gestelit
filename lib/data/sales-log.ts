@@ -194,6 +194,7 @@ export type SalesSummary = {
   overdueFollowUps: number;
   estimatedPipeline: number;
   actualLoggedRevenue: number;
+  headlineCurrency: string;
   binaMonthRevenue: number;
   topClients: SalesClientActivity[];
   recentBinaSales: Array<{
@@ -321,6 +322,11 @@ type SalesDashboardAggregate = {
   is_complete_contact_history: boolean;
   freshness_at: string | null;
 };
+
+export function selectSalesHeadlineCurrency(rows: SalesDashboardAggregate[]) {
+  return rows.find((row) => row.currency_code === "ILS")
+    ?? (rows.length === 1 ? rows[0] : undefined);
+}
 
 export type SalesReportActivityRow = SalesAnalyticsActivityRow & {
   id: string;
@@ -726,20 +732,35 @@ export async function fetchSalesUserSummary(salesUserId: string) {
 
   const { data, error } = await supabase
     .from("sales_activity_logs")
-    .select("id,event_at,status,estimated_revenue,actual_revenue,next_action_date")
+    .select("id,event_at,status,estimated_revenue,actual_revenue,currency,next_action_date")
     .eq("sales_user_id", salesUserId)
     .gte("event_at", week.toISOString());
 
   if (error) throw new Error(error.message);
   const todayIso = new Date().toISOString().slice(0, 10);
   const rows = data ?? [];
+  const currencyTotals = new Map<string, { estimated: number; actual: number }>();
+  for (const row of rows) {
+    const currency = String(row.currency || "ILS").toUpperCase();
+    const current = currencyTotals.get(currency) ?? { estimated: 0, actual: 0 };
+    current.estimated += Number(row.estimated_revenue ?? 0);
+    current.actual += Number(row.actual_revenue ?? 0);
+    currencyTotals.set(currency, current);
+  }
+  const headlineCurrency = currencyTotals.has("ILS")
+    ? "ILS"
+    : [...currencyTotals.entries()].sort((left, right) => (
+      right[1].estimated + right[1].actual - left[1].estimated - left[1].actual
+    ))[0]?.[0] ?? "ILS";
+  const headlineTotals = currencyTotals.get(headlineCurrency) ?? { estimated: 0, actual: 0 };
   return {
     todayCount: rows.filter((row) => new Date(row.event_at) >= day).length,
     weekCount: rows.length,
     openFollowUps: rows.filter((row) => row.status === "follow_up").length,
     overdueFollowUps: rows.filter((row) => row.status === "follow_up" && row.next_action_date && row.next_action_date <= todayIso).length,
-    estimatedPipeline: rows.reduce((sum, row) => sum + Number(row.estimated_revenue ?? 0), 0),
-    actualRevenue: rows.reduce((sum, row) => sum + Number(row.actual_revenue ?? 0), 0),
+    estimatedPipeline: headlineTotals.estimated,
+    actualRevenue: headlineTotals.actual,
+    headlineCurrency,
   };
 }
 
@@ -765,7 +786,7 @@ export async function fetchSalesClients(params: { search?: string | null; limit?
 
 export async function fetchBinaClientIndex(params: {
   search?: string | null;
-  salesperson?: string | null;
+  salesUserId?: string | null;
   limit?: number | null;
   offset?: number | null;
 } = {}) {
@@ -773,29 +794,49 @@ export async function fetchBinaClientIndex(params: {
   const limit = clampLimit(params.limit ?? 30);
   const offset = Math.max(0, Number(params.offset ?? 0));
   const pattern = likePattern(params.search);
-  const salespersonPattern = likePattern(params.salesperson);
-
   let query = supabase
-    .from("mart_sales_client_directory")
-    .select("client_ref,local_client_id,customer_code,customer_code_text,customer_name,customer_group,status,area,bookkeeping_no,tax_id,contact_person,phone,mobile,email,salesperson,opened_at,source,sync_status,source_filename,source_updated_at,imported_at", { count: "exact" })
+    .from("mart_sales_client_profile")
+    .select("client_ref,local_client_id,customer_code,customer_name,customer_group,customer_status,area,bookkeeping_no,tax_id,contact_person,phone,mobile,email,account_manager,opened_at,directory_source,data_freshness_at,account_manager_sales_user_id", { count: "exact" })
     .order("customer_name", { ascending: true })
     .range(offset, offset + limit - 1);
 
   if (pattern) {
     query = query.or([
-      `customer_code_text.ilike.${pattern}`,
+      `customer_code.eq.${normalizeSalesInteger(params.search) ?? -1}`,
       `customer_name.ilike.${pattern}`,
       `customer_group.ilike.${pattern}`,
       `bookkeeping_no.ilike.${pattern}`,
-      `salesperson.ilike.${pattern}`,
+      `account_manager.ilike.${pattern}`,
     ].join(","));
   }
-  if (salespersonPattern) query = query.ilike("salesperson", salespersonPattern);
+  if (params.salesUserId) query = query.eq("account_manager_sales_user_id", params.salesUserId);
 
   const { data, count, error } = await query;
   if (error) throw new Error(error.message);
   return {
-    rows: (data ?? []) as BinaClientIndexRow[],
+    rows: (data ?? []).map((row) => ({
+      client_ref: row.client_ref,
+      local_client_id: row.local_client_id,
+      customer_code: row.customer_code,
+      customer_code_text: row.customer_code == null ? null : String(row.customer_code),
+      customer_name: row.customer_name,
+      customer_group: row.customer_group,
+      status: row.customer_status,
+      area: row.area,
+      bookkeeping_no: row.bookkeeping_no,
+      tax_id: row.tax_id,
+      contact_person: row.contact_person,
+      phone: row.phone,
+      mobile: row.mobile,
+      email: row.email,
+      salesperson: row.account_manager,
+      opened_at: row.opened_at,
+      source_filename: "",
+      source_updated_at: row.data_freshness_at,
+      imported_at: row.data_freshness_at ?? new Date(0).toISOString(),
+      source: row.directory_source === "approved_local" ? "local_pending" : "bina_index",
+      sync_status: row.directory_source === "approved_local" ? "pending" : "synced",
+    })) as BinaClientIndexRow[],
     count: count ?? 0,
   };
 }
@@ -863,10 +904,23 @@ export async function fetchSalesClientProfile(input: {
 
   const { data: canonicalProfile, error: canonicalError } = await supabase
     .from("mart_sales_client_profile")
-    .select("account_manager,ownership_source,ownership_confidence")
+    .select("account_manager,account_manager_sales_user_id,ownership_source,ownership_confidence")
     .eq("client_ref", input.clientRef)
     .maybeSingle();
   if (canonicalError) throw new Error(canonicalError.message);
+
+  const isOwner = canonicalProfile?.account_manager_sales_user_id === input.salesUserId;
+  if (!input.canViewTeam && !isOwner) {
+    let visibilityQuery = supabase
+      .from("sales_activity_logs")
+      .select("id")
+      .eq("sales_user_id", input.salesUserId)
+      .limit(1);
+    visibilityQuery = applyClientIdentityFilter(visibilityQuery, client);
+    const visibility = await visibilityQuery;
+    if (visibility.error) throw new Error(visibility.error.message);
+    if (!visibility.data?.length) throw new Error("SALES_CLIENT_FORBIDDEN");
+  }
 
   let activityQuery = supabase
     .from("sales_activity_logs")
@@ -879,7 +933,7 @@ export async function fetchSalesClientProfile(input: {
   let latestTouchQuery = supabase
     .from("sales_activity_logs")
     .select("event_at")
-    .in("event_type", ["meeting", "call", "follow_up", "sale"])
+    .or("contact_occurred.eq.true,and(contact_occurred.is.null,event_type.in.(meeting,call,follow_up,sale))")
     .order("event_at", { ascending: false })
     .limit(1);
   latestTouchQuery = applyClientIdentityFilter(latestTouchQuery, client);
@@ -1042,7 +1096,6 @@ export async function fetchSalesPortfolioClients(input: {
 }
 
 const SALES_ANALYTICS_PAGE_SIZE = 1000;
-const SALES_ANALYTICS_MAX_ROWS = 20_000;
 
 function analyticsDateRange(params: SalesListParams) {
   const dateTo = params.dateTo ? new Date(params.dateTo) : new Date();
@@ -1063,7 +1116,7 @@ async function fetchFilteredAnalyticsRows(
   dateFrom: string,
   dateTo: string,
   scope: { salesUserId?: string } = {},
-  maxRows = SALES_ANALYTICS_MAX_ROWS,
+  maxRows = Number.POSITIVE_INFINITY,
 ) {
   const supabase = createServiceSupabase();
   const rows: SalesReportActivityRow[] = [];
@@ -1186,6 +1239,7 @@ function salesSummaryFromRows(
   }));
 
   const exact = options.exactAggregates;
+  const headline = exact ? selectSalesHeadlineCurrency(exact) : undefined;
   const total = (field: keyof SalesDashboardAggregate) => exact?.reduce((sum, row) => sum + Number(row[field] ?? 0), 0) ?? 0;
   const eventExact: Partial<Record<SalesEventType, number>> = exact ? {
     meeting: total("meeting_count"),
@@ -1209,8 +1263,9 @@ function salesSummaryFromRows(
     weekCount: filtered.weekCount,
     openFollowUps: exact ? total("open_follow_up_count") : filtered.openFollowUps,
     overdueFollowUps: exact ? total("overdue_follow_up_count") : filtered.overdueFollowUps,
-    estimatedPipeline: exact ? total("estimated_pipeline") : filtered.estimatedPipeline,
-    actualLoggedRevenue: exact ? total("won_revenue") : filtered.actualLoggedRevenue,
+    estimatedPipeline: exact ? Number(headline?.estimated_pipeline ?? 0) : filtered.estimatedPipeline,
+    actualLoggedRevenue: exact ? Number(headline?.won_revenue ?? 0) : filtered.actualLoggedRevenue,
+    headlineCurrency: headline?.currency_code ?? "ILS",
     binaMonthRevenue: options.binaMonthRevenue ?? 0,
     topClients,
     recentBinaSales: options.recentBinaSales ?? [],
@@ -1236,12 +1291,17 @@ function salesSummaryFromRows(
 export async function fetchSalesSummary(params: SalesListParams = {}): Promise<SalesSummary> {
   const supabase = createServiceSupabase();
   const range = analyticsDateRange(params);
-  const [{ rows, isTruncated }, exactAggregates, dashboardResult] = await Promise.all([
+  const [{ rows, isTruncated }, exactAggregates, binaSummaryResult] = await Promise.all([
     fetchFilteredAnalyticsRows(params, range.dateFrom, range.dateTo),
     fetchExactSalesAggregates(params, range.dateFrom, range.dateTo),
-    supabase.from("mart_sales_dashboard_summary").select("bina_month_revenue").single(),
+    supabase.rpc("get_filtered_bina_sales_total", {
+      p_from: range.dateFrom,
+      p_to: range.dateTo,
+      p_salesperson: params.salesperson?.trim() || null,
+      p_client_search: params.client?.trim() || null,
+    }),
   ]);
-  if (dashboardResult.error) throw new Error(dashboardResult.error.message);
+  if (binaSummaryResult.error) throw new Error(binaSummaryResult.error.message);
 
   let binaQuery = supabase
     .from("mart_bina_sales_status")
@@ -1258,10 +1318,27 @@ export async function fetchSalesSummary(params: SalesListParams = {}): Promise<S
   return salesSummaryFromRows(rows, {
     periodDays: range.periodDays,
     isTruncated,
-    binaMonthRevenue: Number(dashboardResult.data?.bina_month_revenue ?? 0),
+    binaMonthRevenue: Number(binaSummaryResult.data ?? 0),
     recentBinaSales: (binaResult.data ?? []) as SalesSummary["recentBinaSales"],
     exactAggregates,
   });
+}
+
+export async function fetchSalesDashboardFilterOptions() {
+  const supabase = createServiceSupabase();
+  const { data, error } = await supabase.rpc("get_sales_dashboard_filter_options");
+  if (error) throw new Error(error.message);
+  const value = data && typeof data === "object" ? data as Record<string, unknown> : {};
+  const strings = (key: string) => Array.isArray(value[key])
+    ? (value[key] as unknown[]).filter((item): item is string => typeof item === "string" && Boolean(item.trim()))
+    : [];
+  return {
+    salespeople: strings("salespeople"),
+    accountManagers: strings("accountManagers"),
+    customerGroups: strings("customerGroups"),
+    areas: strings("areas"),
+    gestelitCoverageStartAt: typeof value.gestelitCoverageStartAt === "string" ? value.gestelitCoverageStartAt : null,
+  };
 }
 
 export async function fetchSalesUserDashboard(

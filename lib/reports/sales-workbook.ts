@@ -32,9 +32,9 @@ const eventLabels: Record<string, string> = {
 const statusLabels: Record<string, string> = {
   new: "חדש",
   open: "פתוח",
-  follow_up: "להמשך טיפול",
-  won: "זכייה",
-  lost: "אבד",
+  follow_up: "צריך לחזור",
+  won: "נסגר",
+  lost: "לא נסגר",
   done: "בוצע",
 };
 
@@ -279,7 +279,13 @@ function addMetadataSheet(workbook: ExcelJS.Workbook, report: SalesReportData, o
     ["לקוח", filters.client ?? "הכל"],
     ["סוג פעילות", filters.eventType ? eventLabels[filters.eventType] ?? filters.eventType : "הכל"],
     ["סטטוס", filters.status ? statusLabels[filters.status] ?? filters.status : "הכל"],
+    ["מנהל לקוח", filters.accountManager ?? "הכל"],
+    ["קבוצת לקוח", filters.customerGroup ?? "הכל"],
+    ["אזור", filters.area ?? "הכל"],
+    ["מצב קשר", filters.dormancyBucket ?? "הכל"],
+    ["כיסוי נתונים", filters.coverage ?? "הכל"],
     ["מספר רשומות", report.rows.length],
+    ["כיסוי היסטורי", "פעילויות Gestelit מלאות בטווח הנבחר; CRM היסטורי מ-BINA עדיין לא מחובר"],
     ["הערת מטבע", "המערכת אינה מחברת מטבעות שונים. יש לנתח כל מטבע בנפרד."],
     ["שימוש", "דוח תפעולי לקריאה וניתוח. הנתונים משקפים דיווחי משתמשים ואינם תחליף למערכת הנהלת חשבונות."],
   ];

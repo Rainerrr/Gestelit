@@ -49,7 +49,7 @@ export async function fetchJobItemsForJob(
 
   // Post Phase 5: station_id, production_line_id, kind columns removed from job_items
   // All job items are now pipeline-based with job_item_steps
-  let selectParts = [
+  const selectParts = [
     "*",
     "pipeline_presets:pipeline_preset_id(id, name)",
   ];

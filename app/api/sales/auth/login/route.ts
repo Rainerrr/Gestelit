@@ -2,10 +2,11 @@ import { NextResponse } from "next/server";
 import { createServiceSupabase } from "@/lib/supabase/client";
 import {
   createSalesResponseWithSession,
-  isSalesAdminEmail,
+  loadSalesAuthorization,
   verifySalesPassword,
   type SalesUser,
 } from "@/lib/auth/sales-session";
+import { checkSalesLoginRateLimit } from "@/lib/auth/sales-login-rate-limit";
 import { normalizeSalesText } from "@/lib/data/sales-log-utils";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +18,17 @@ export async function POST(request: Request) {
 
   if (!email || !password) {
     return NextResponse.json({ error: "EMAIL_PASSWORD_REQUIRED" }, { status: 400 });
+  }
+
+  const preflight = await checkSalesLoginRateLimit(request, email, "check").catch(() => null);
+  if (!preflight) {
+    return NextResponse.json({ error: "SALES_AUTHORIZATION_UNAVAILABLE" }, { status: 503 });
+  }
+  if (!preflight.allowed) {
+    return NextResponse.json(
+      { error: "SALES_LOGIN_RATE_LIMITED" },
+      { status: 429, headers: { "Retry-After": String(preflight.retryAfterSeconds) } },
+    );
   }
 
   const supabase = createServiceSupabase();
@@ -31,8 +43,19 @@ export async function POST(request: Request) {
   }
 
   if (!data || data.is_active !== true || !verifySalesPassword(password, data.password_hash)) {
-    return NextResponse.json({ error: "INVALID_EMAIL_OR_PASSWORD" }, { status: 401 });
+    const limited = await checkSalesLoginRateLimit(request, email, "failure").catch(() => null);
+    if (!limited) return NextResponse.json({ error: "SALES_AUTHORIZATION_UNAVAILABLE" }, { status: 503 });
+    return NextResponse.json(
+      { error: limited.allowed ? "INVALID_EMAIL_OR_PASSWORD" : "SALES_LOGIN_RATE_LIMITED" },
+      { status: limited.allowed ? 401 : 429, headers: limited.allowed ? undefined : { "Retry-After": String(limited.retryAfterSeconds) } },
+    );
   }
+
+  const authorization = await loadSalesAuthorization(data.id, supabase).catch(() => null);
+  if (!authorization) {
+    return NextResponse.json({ error: "SALES_AUTHORIZATION_UNAVAILABLE" }, { status: 503 });
+  }
+  await checkSalesLoginRateLimit(request, email, "success").catch(() => null);
 
   await supabase
     .from("sales_users")
@@ -45,11 +68,9 @@ export async function POST(request: Request) {
     full_name: data.full_name,
     phone: data.phone,
     is_active: data.is_active,
-    is_admin: isSalesAdminEmail(data.email),
-    roles: [isSalesAdminEmail(data.email) ? "sales_manager" : "sales_rep"],
-    scopes: isSalesAdminEmail(data.email)
-      ? ["sales_activity_write", "sales_personal_view", "sales_team_view", "sales_export", "sales_ai_query", "sales_client_manage"]
-      : ["sales_activity_write", "sales_personal_view", "sales_export", "sales_ai_query"],
+    is_admin: authorization.scopes.includes("sales_team_view"),
+    roles: authorization.roles,
+    scopes: authorization.scopes,
   };
 
   return createSalesResponseWithSession({ user }, user);

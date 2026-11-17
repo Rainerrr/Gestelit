@@ -7,7 +7,7 @@ import {
   fetchSalesUserSummary,
   type SalesActivityInput,
 } from "@/lib/data/sales-log";
-import { uploadSalesAttachmentToStorage } from "@/lib/utils/storage";
+import { uploadSalesAttachmentToStorage, validateSalesAttachment } from "@/lib/utils/storage";
 import { normalizeSalesInteger, normalizeSalesText } from "@/lib/data/sales-log-utils";
 import { salesListParams } from "@/app/api/admin/sales-daily-log/_route-utils";
 
@@ -89,10 +89,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "INVALID_PAYLOAD" }, { status: 400 });
     }
 
-    const files = formData
+    const allFiles = formData
       .getAll("attachments")
-      .filter((item): item is File => item instanceof File && item.size > 0)
-      .slice(0, 5);
+      .filter((item): item is File => item instanceof File && item.size > 0);
+    if (allFiles.length > 5) {
+      return NextResponse.json({ error: "TOO_MANY_ATTACHMENTS" }, { status: 400 });
+    }
+    allFiles.forEach(validateSalesAttachment);
+    const totalBytes = allFiles.reduce((sum, file) => sum + file.size, 0);
+    if (totalBytes > 25 * 1024 * 1024) {
+      return NextResponse.json({ error: "ATTACHMENTS_TOTAL_TOO_LARGE" }, { status: 400 });
+    }
+    const files = allFiles;
 
     const activity = await createSalesActivityForUser(user, formPayload(formData));
     const attachments = [];

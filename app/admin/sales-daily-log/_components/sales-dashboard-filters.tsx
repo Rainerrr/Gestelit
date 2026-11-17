@@ -46,13 +46,18 @@ export type SalesDashboardAdvancedFilterContract = {
 
 export const DEFAULT_SALES_DASHBOARD_FILTERS: SalesDashboardFilterState = {
   period: "90",
-  dateFrom: "",
-  dateTo: "",
+  dateFrom: localDateInput(new Date(Date.now() - 89 * 86_400_000)),
+  dateTo: localDateInput(new Date()),
   salesperson: "",
   client: "",
   eventType: "",
   status: "",
 };
+
+function localDateInput(date: Date) {
+  const adjusted = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return adjusted.toISOString().slice(0, 10);
+}
 
 export const DEFAULT_SALES_DASHBOARD_ADVANCED_FILTERS: SalesDashboardAdvancedFilterState = {
   owner: "",
@@ -254,7 +259,7 @@ export function SalesDashboardFilters({
                     key={period.value}
                     type="button"
                     size="sm"
-                    variant={value.period === period.value ? "secondary" : "ghost"}
+                    variant={value.period === period.value ? "default" : "outline"}
                     onClick={() => patch({ period: period.value })}
                     className="h-8 shrink-0 px-3"
                   >
@@ -315,10 +320,10 @@ export function SalesDashboardFilters({
                   {value.period === "custom" ? (
                     <>
                       <FilterField label="מתאריך" htmlFor="sales-filter-date-from">
-                        <Input id="sales-filter-date-from" dir="ltr" type="date" value={value.dateFrom} onChange={(event) => patch({ dateFrom: event.target.value })} />
+                        <Input id="sales-filter-date-from" dir="ltr" type="date" value={value.dateFrom} onChange={(event) => patch({ period: "custom", dateFrom: event.target.value })} className="bg-card text-foreground opacity-100 [color-scheme:light] dark:[color-scheme:dark]" />
                       </FilterField>
                       <FilterField label="עד תאריך" htmlFor="sales-filter-date-to">
-                        <Input id="sales-filter-date-to" dir="ltr" type="date" value={value.dateTo} onChange={(event) => patch({ dateTo: event.target.value })} />
+                        <Input id="sales-filter-date-to" dir="ltr" type="date" value={value.dateTo} onChange={(event) => patch({ period: "custom", dateTo: event.target.value })} className="bg-card text-foreground opacity-100 [color-scheme:light] dark:[color-scheme:dark]" />
                       </FilterField>
                     </>
                   ) : (

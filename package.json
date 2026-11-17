@@ -9,6 +9,9 @@
     "lint": "eslint",
     "test": "vitest",
     "test:run": "vitest run",
+    "verify:chat-schema": "node scripts/verify-chat-schema.mjs",
+    "smoke:chat-api": "node scripts/smoke-chat-api.mjs",
+    "smoke:sales-portal": "node scripts/smoke-sales-portal.mjs",
     "import:bina-client-index": "node scripts/import-bina-client-index.mjs"
   },
   "dependencies": {

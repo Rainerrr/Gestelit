@@ -95,6 +95,7 @@ import { Spinner, FullPageSpinner } from "@/components/ui/spinner";
 import { useJobItemTimer } from "@/lib/hooks/useJobItemTimer";
 import { formatDurationHMS } from "@/lib/hooks/useLiveDuration";
 import { useToast } from "@/contexts/ToastContext";
+import { WorkerChatSheet } from "@/components/chat/chat-ui";
 
 type StatusVisual = {
   dotColor: string;
@@ -1745,9 +1746,12 @@ function WorkPageContent() {
             : t("work.noJobSelected")
         }
         actions={
-          <Badge variant="secondary" className="border-border bg-secondary text-base text-foreground/80">
-            {`${t("common.station")}: ${station.name}`}
-          </Badge>
+          <>
+            <WorkerChatSheet sessionId={sessionId} />
+            <Badge variant="secondary" className="border-border bg-secondary text-base text-foreground/80">
+              {`${t("common.station")}: ${station.name}`}
+            </Badge>
+          </>
         }
       />
 

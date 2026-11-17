@@ -31,6 +31,9 @@ export async function GET(request: Request, context: RouteContext) {
     if (code === "SALES_CLIENT_NOT_FOUND") {
       return NextResponse.json({ error: code }, { status: 404 });
     }
+    if (code === "SALES_CLIENT_FORBIDDEN" || code === "SALES_FORBIDDEN") {
+      return NextResponse.json({ error: "SALES_FORBIDDEN" }, { status: 403 });
+    }
     console.error("SALES_CLIENT_PROFILE_FAILED", error);
     return NextResponse.json({ error: "SALES_CLIENT_PROFILE_FAILED" }, { status: 500 });
   }

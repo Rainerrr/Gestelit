@@ -190,6 +190,11 @@ export async function fetchSalesTeamActivitiesApi(params?: {
   client?: string;
   eventType?: string;
   status?: string;
+  accountManager?: string;
+  customerGroup?: string;
+  area?: string;
+  dormancyBucket?: string;
+  coverage?: string;
   limit?: number;
   offset?: number;
 }) {

@@ -233,14 +233,6 @@ export const VisSessionTimeline = ({
     }
   };
 
-  if (!hasBounds || !startTs || !endTs) {
-    return (
-      <div className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-sm text-primary">
-        חסרים נתונים להצגת ציר הזמן.
-      </div>
-    );
-  }
-
   // Build color map for unique job items
   const jobItemColorMap = useMemo(() => {
     const map = new Map<string, typeof JOB_ITEM_COLORS[0]>();
@@ -254,6 +246,14 @@ export const VisSessionTimeline = ({
     }
     return map;
   }, [jobItemDistribution]);
+
+  if (!hasBounds || !startTs || !endTs) {
+    return (
+      <div className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-sm text-primary">
+        חסרים נתונים להצגת ציר הזמן.
+      </div>
+    );
+  }
 
   const handleDistSegmentHover = (
     period: { jobItemId: string; jobItemName: string; jobNumber: string; startedAt: string; endedAt: string | null },

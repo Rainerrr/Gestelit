@@ -74,7 +74,7 @@ export function JobCompletionDialog({
   // Reset selection when dialog opens
   useEffect(() => {
     if (open) {
-      setSelectedJobItemId(null);
+      queueMicrotask(() => setSelectedJobItemId(null));
     }
   }, [open]);
 

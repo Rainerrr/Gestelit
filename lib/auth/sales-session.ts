@@ -26,29 +26,15 @@ export type SalesScope =
   | "sales_ai_query"
   | "sales_client_manage";
 
-const REP_SCOPES: SalesScope[] = [
+const SALES_ROLES = new Set<SalesRole>(["sales_rep", "sales_manager", "sales_admin"]);
+const SALES_SCOPES = new Set<SalesScope>([
   "sales_activity_write",
   "sales_personal_view",
+  "sales_team_view",
   "sales_export",
   "sales_ai_query",
-];
-
-const MANAGER_SCOPES: SalesScope[] = [
-  ...REP_SCOPES,
-  "sales_team_view",
   "sales_client_manage",
-];
-
-const DEFAULT_SALES_ADMIN_EMAILS = ["maty@gestelit.co.il"];
-
-export function isSalesAdminEmail(email: string) {
-  const configured = process.env.SALES_ADMIN_EMAILS
-    ?.split(",")
-    .map((value) => value.trim().toLowerCase())
-    .filter(Boolean);
-  return new Set(configured?.length ? configured : DEFAULT_SALES_ADMIN_EMAILS)
-    .has(email.trim().toLowerCase());
-}
+]);
 
 type SalesSessionPayload = {
   v: 1;
@@ -134,6 +120,46 @@ export function verifySalesSessionToken(token: string | null | undefined): Sales
   }
 }
 
+export function parseSalesAuthorizationRows(
+  roleRows: Array<{ role_key: unknown }>,
+  scopeRows: Array<{ scope_key: unknown }>,
+) {
+  const roles = Array.from(new Set(roleRows.map((row) => row.role_key)))
+    .filter((role): role is SalesRole => SALES_ROLES.has(role as SalesRole));
+  if (roles.length === 0) throw new Error("SALES_FORBIDDEN");
+  const scopes = Array.from(new Set(scopeRows.map((row) => row.scope_key)))
+    .filter((scope): scope is SalesScope => SALES_SCOPES.has(scope as SalesScope));
+  if (scopes.length === 0) throw new Error("SALES_FORBIDDEN");
+  return { roles, scopes };
+}
+
+export async function loadSalesAuthorization(
+  salesUserId: string,
+  supabase = createServiceSupabase(),
+): Promise<{ roles: SalesRole[]; scopes: SalesScope[] }> {
+  const now = new Date().toISOString();
+  const rolesResult = await supabase
+    .from("sales_user_roles")
+    .select("role_key")
+    .eq("sales_user_id", salesUserId)
+    .lte("valid_from", now)
+    .or(`valid_to.is.null,valid_to.gt.${now}`);
+
+  if (rolesResult.error) throw new Error("SALES_AUTHORIZATION_UNAVAILABLE");
+  const roleRows = rolesResult.data ?? [];
+  const roles = Array.from(new Set(roleRows.map((row) => row.role_key)))
+    .filter((role): role is SalesRole => SALES_ROLES.has(role as SalesRole));
+  if (roles.length === 0) throw new Error("SALES_FORBIDDEN");
+
+  const scopesResult = await supabase
+    .from("sales_role_scopes")
+    .select("scope_key")
+    .in("role_key", roles);
+  if (scopesResult.error) throw new Error("SALES_AUTHORIZATION_UNAVAILABLE");
+
+  return parseSalesAuthorizationRows(roleRows, scopesResult.data ?? []);
+}
+
 export function createSalesResponseWithSession<T>(data: T, user: SalesUser, status = 200) {
   const response = NextResponse.json(data, { status });
   response.cookies.set(SALES_SESSION_COOKIE, createSalesSessionToken(user), {
@@ -164,41 +190,7 @@ export async function getSalesSessionUser(): Promise<SalesUser | null> {
     .maybeSingle();
 
   if (error || !data || data.is_active !== true) return null;
-  const fallbackManager = isSalesAdminEmail(data.email);
-  const now = new Date().toISOString();
-  const rolesResult = await supabase
-    .from("sales_user_roles")
-    .select("role_key")
-    .eq("sales_user_id", data.id)
-    .lte("valid_from", now)
-    .or(`valid_to.is.null,valid_to.gt.${now}`);
-
-  let roles = rolesResult.error
-    ? [fallbackManager ? "sales_manager" : "sales_rep"] as SalesRole[]
-    : Array.from(new Set((rolesResult.data ?? []).map((row) => row.role_key)))
-      .filter((role): role is SalesRole => ["sales_rep", "sales_manager", "sales_admin"].includes(role));
-  if (roles.length === 0) roles = [fallbackManager ? "sales_manager" : "sales_rep"];
-
-  let scopes: SalesScope[];
-  const scopesResult = await supabase
-    .from("sales_role_scopes")
-    .select("scope_key")
-    .in("role_key", roles);
-  if (scopesResult.error) {
-    scopes = roles.some((role) => role === "sales_manager" || role === "sales_admin")
-      ? MANAGER_SCOPES
-      : REP_SCOPES;
-  } else {
-    scopes = Array.from(new Set((scopesResult.data ?? []).map((row) => row.scope_key)))
-      .filter((scope): scope is SalesScope => [
-        "sales_activity_write",
-        "sales_personal_view",
-        "sales_team_view",
-        "sales_export",
-        "sales_ai_query",
-        "sales_client_manage",
-      ].includes(scope));
-  }
+  const { roles, scopes } = await loadSalesAuthorization(data.id, supabase);
   return {
     ...data,
     roles,

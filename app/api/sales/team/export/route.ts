@@ -9,7 +9,7 @@ export const maxDuration = 60;
 
 export async function GET(request: Request) {
   try {
-    const user = await requireSalesScope("sales_export");
+    const user = await requireSalesScope("sales_team_view");
     if (!user.scopes.includes("sales_team_view")) {
       return NextResponse.json({ error: "SALES_FORBIDDEN" }, { status: 403 });
     }

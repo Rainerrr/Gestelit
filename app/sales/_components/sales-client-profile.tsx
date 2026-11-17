@@ -22,6 +22,7 @@ import { Card } from "@/components/ui/card";
 import { fetchSalesClientProfileApi } from "@/lib/api/sales-portal";
 import type { SalesClientProfile } from "@/lib/data/sales-log";
 import { cn } from "@/lib/utils";
+import { SalesMobileNav } from "@/components/sales/sales-mobile-nav";
 
 const PAGE_SIZE = 30;
 
@@ -62,6 +63,7 @@ export function SalesClientProfileView({ clientRef }: { clientRef: string }) {
   const [offset, setOffset] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"activity" | "commercial" | "pipeline" | "details">("activity");
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -103,7 +105,7 @@ export function SalesClientProfileView({ clientRef }: { clientRef: string }) {
         </div>
       </header>
 
-      <div className="mx-auto max-w-7xl space-y-4 p-3 pb-10 lg:p-6">
+      <div className="mx-auto max-w-7xl space-y-4 p-3 pb-24 lg:p-6">
         {error ? (
           <Card className="flex flex-col items-center gap-3 rounded-xl border-red-200 bg-red-50 p-6 text-red-800">
             <AlertTriangle className="h-6 w-6" />
@@ -153,7 +155,16 @@ export function SalesClientProfileView({ clientRef }: { clientRef: string }) {
               </Card>
             </section>
 
-            <section className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
+            <div className="flex max-w-full gap-1 overflow-x-auto rounded-xl border border-border bg-card p-1">
+              {([
+                ["activity", "פעילות"],
+                ["commercial", "חשבוניות ומשלוחים"],
+                ["pipeline", "הצעות והזמנות"],
+                ["details", "פרטי לקוח"],
+              ] as const).map(([id, label]) => <Button key={id} variant={activeTab === id ? "default" : "ghost"} size="sm" onClick={() => setActiveTab(id)} className="shrink-0">{label}</Button>)}
+            </div>
+
+            {activeTab === "activity" ? <section>
               <Card className="rounded-xl border-border/80 p-4 shadow-sm lg:p-5">
                 <div className="flex items-center justify-between gap-3">
                   <div>
@@ -189,8 +200,9 @@ export function SalesClientProfileView({ clientRef }: { clientRef: string }) {
                   </div>
                 ) : null}
               </Card>
+            </section> : null}
 
-              <div className="space-y-4">
+            {activeTab === "commercial" ? <section className="grid gap-4 lg:grid-cols-2">
                 <CommercialCard
                   icon={CircleDollarSign}
                   title="חשבוניות אחרונות"
@@ -213,11 +225,25 @@ export function SalesClientProfileView({ clientRef }: { clientRef: string }) {
                     value: delivery.tracking_no || formatMoney(delivery.total_amount),
                   }))}
                 />
-              </div>
-            </section>
+            </section> : null}
+
+            {activeTab === "pipeline" ? <section className="grid gap-4 md:grid-cols-2">
+              <Card className="rounded-xl border-dashed p-6"><h3 className="font-semibold">הצעות מחיר</h3><p className="mt-2 text-sm leading-6 text-muted-foreground">הנתון עדיין לא מחובר. נדרש סנכרון DFHats ומיפוי סטטוסים לפני שנציג מספרים.</p></Card>
+              <Card className="rounded-xl border-dashed p-6"><h3 className="font-semibold">הזמנות מסחריות</h3><p className="mt-2 text-sm leading-6 text-muted-foreground">מקור ההזמנות ב-BINA עדיין לא אומת עסקית, ולכן המערכת לא מציגה פקודות ייצור כהזמנות מכירה.</p></Card>
+            </section> : null}
+
+            {activeTab === "details" ? <Card className="grid gap-4 rounded-xl p-4 sm:grid-cols-2 lg:grid-cols-3">
+              <ProfileMeta icon={UserRound} label="איש קשר" value={data.client.contact_person} />
+              <ProfileMeta icon={Building2} label="טלפון" value={data.client.phone || data.client.mobile} />
+              <ProfileMeta icon={Building2} label="אימייל" value={data.client.email} />
+              <ProfileMeta icon={Building2} label="מספר הנהלת חשבונות" value={data.client.bookkeeping_no} />
+              <ProfileMeta icon={Building2} label="עוסק / ח.פ." value={data.client.tax_id} />
+              <ProfileMeta icon={CalendarClock} label="נפתח בתאריך" value={formatDate(data.client.opened_at)} />
+            </Card> : null}
           </>
         ) : null}
       </div>
+      <SalesMobileNav />
     </main>
   );
 }

@@ -6,6 +6,7 @@ import { ArrowLeft, BarChart3, CalendarRange, FileSpreadsheet, ListPlus, LogOut,
 import { SalesIntelligenceDashboard } from "@/app/admin/sales-daily-log/_components/sales-intelligence-dashboard";
 import { GestelitLogo } from "@/components/brand/gestelit-logo";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
+import { SalesMobileNav } from "@/components/sales/sales-mobile-nav";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -139,8 +140,11 @@ export function SalesPersonalDashboard() {
     try {
       const result = await fetchSalesPersonalDashboardApi(params) as DashboardResponse;
       if (requestId === loadRequestId.current) setData(result);
-    } catch {
-      if (requestId === loadRequestId.current) router.push("/sales/login");
+    } catch (loadError) {
+      if (requestId !== loadRequestId.current) return;
+      const code = loadError instanceof Error ? loadError.message : "SALES_DASHBOARD_FAILED";
+      if (code === "SALES_UNAUTHORIZED") router.push("/sales/login");
+      else setError("לא הצלחנו לרענן כרגע. הנתונים שכבר נטענו נשארו על המסך.");
     } finally {
       if (requestId === loadRequestId.current) setIsLoading(false);
     }
@@ -239,7 +243,7 @@ export function SalesPersonalDashboard() {
         </div>
       </header>
 
-      <div className="mx-auto max-w-7xl space-y-4 p-3 pb-8 lg:space-y-5 lg:p-6">
+      <div className="mx-auto max-w-7xl space-y-4 p-3 pb-24 lg:space-y-5 lg:p-6">
         {canViewTeamDashboard ? (
           <section className="flex flex-col gap-3 rounded-lg border border-primary/25 bg-primary/5 p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-4">
             <div className="flex min-w-0 items-center gap-3">
@@ -432,6 +436,7 @@ export function SalesPersonalDashboard() {
           )}
         </DialogContent>
       </Dialog>
+      <SalesMobileNav />
     </main>
   );
 }

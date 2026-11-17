@@ -24,6 +24,7 @@ import { fetchSalesClientIndexApi, fetchSalesPortalSessionApi } from "@/lib/api/
 import type { BinaClientIndexRow } from "@/lib/data/sales-log";
 import type { PendingBinaClient } from "@/lib/data/bina-client-onboarding";
 import { cn } from "@/lib/utils";
+import { SalesMobileNav } from "@/components/sales/sales-mobile-nav";
 
 const PAGE_SIZE = 30;
 
@@ -31,6 +32,7 @@ type SalesPortalUser = {
   id: string;
   email: string;
   full_name: string;
+  scopes: string[];
 };
 
 function formatDate(value: string | null) {
@@ -82,6 +84,7 @@ export function SalesClientIndex() {
         }>,
       ]);
       setUser(session.user);
+      if (!session.user.scopes.includes("sales_team_view")) setMine(true);
       setRows(result.rows);
       setCount(result.count);
     } catch (loadError) {
@@ -122,7 +125,7 @@ export function SalesClientIndex() {
         </div>
       </header>
 
-      <div className="mx-auto max-w-7xl space-y-4 p-3 pb-8 lg:p-6">
+      <div className="mx-auto max-w-7xl space-y-4 p-3 pb-24 lg:p-6">
         <section className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
           <div>
             <h2 className="text-2xl font-semibold lg:text-3xl">לקוחות</h2>
@@ -131,19 +134,19 @@ export function SalesClientIndex() {
             </p>
           </div>
           <div className="flex flex-col gap-2 lg:flex-row">
-            <Button onClick={() => setIsNewClientOpen(true)} className="h-12 gap-2 rounded-xl lg:h-auto">
+            {user?.scopes.includes("sales_client_manage") ? <Button onClick={() => setIsNewClientOpen(true)} className="h-12 gap-2 rounded-xl lg:h-auto">
               <UserPlus className="h-4 w-4" />
               לקוח חדש
-            </Button>
+            </Button> : null}
             <div className="flex rounded-xl border border-border bg-card p-1 shadow-sm">
-            <button
+            {user?.scopes.includes("sales_team_view") ? <button
               type="button"
               onClick={() => { setMine(false); setOffset(0); }}
               className={cn("flex h-10 flex-1 items-center justify-center gap-2 rounded-lg px-4 text-sm font-medium transition lg:flex-none", !mine ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent")}
             >
               <UsersRound className="h-4 w-4" />
               כל הלקוחות
-            </button>
+            </button> : null}
             <button
               type="button"
               onClick={() => { setMine(true); setOffset(0); }}
@@ -266,6 +269,7 @@ export function SalesClientIndex() {
           void load();
         }}
       />
+      <SalesMobileNav />
     </main>
   );
 }

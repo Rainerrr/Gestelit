@@ -16,6 +16,8 @@ function errorLabel(code: string) {
     EMAIL_PASSWORD_REQUIRED: "צריך למלא אימייל וסיסמה",
     INVALID_EMAIL_OR_PASSWORD: "האימייל או הסיסמה לא נכונים",
     SALES_LOGIN_FAILED: "לא הצלחנו להתחבר. נסו שוב.",
+    SALES_LOGIN_RATE_LIMITED: "היו יותר מדי ניסיונות כניסה. חכו כמה דקות ונסו שוב.",
+    SALES_AUTHORIZATION_UNAVAILABLE: "מערכת ההרשאות לא זמינה כרגע. נסו שוב בעוד כמה דקות.",
   };
   return labels[code] ?? code;
 }

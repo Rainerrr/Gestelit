@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { fetchSalesPortfolioApi } from "@/lib/api/sales-portal";
 import type { SalesPortfolioClient } from "@/lib/data/sales-log";
+import { SalesMobileNav } from "@/components/sales/sales-mobile-nav";
 
 const PAGE_SIZE = 30;
 
@@ -71,7 +72,7 @@ export function SalesPortfolioList() {
         </div>
       </header>
 
-      <div className="mx-auto max-w-7xl space-y-4 p-3 pb-10 lg:p-6">
+      <div className="mx-auto max-w-7xl space-y-4 p-3 pb-24 lg:p-6">
         <Card className="rounded-xl p-3 shadow-sm sm:p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <div className="relative flex-1"><Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="חיפוש לקוח" className="h-11 pr-9" /></div>
@@ -99,6 +100,7 @@ export function SalesPortfolioList() {
 
         {count > PAGE_SIZE ? <div className="flex items-center justify-center gap-2"><Button variant="outline" disabled={offset === 0 || isLoading} onClick={() => setOffset((value) => Math.max(0, value - PAGE_SIZE))}>הקודם</Button><span className="text-sm text-muted-foreground">{offset + 1}-{Math.min(offset + PAGE_SIZE, count)} מתוך {count}</span><Button variant="outline" disabled={offset + PAGE_SIZE >= count || isLoading} onClick={() => setOffset((value) => value + PAGE_SIZE)}>הבא</Button></div> : null}
       </div>
+      <SalesMobileNav />
     </main>
   );
 }

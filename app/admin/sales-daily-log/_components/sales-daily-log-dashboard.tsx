@@ -591,7 +591,7 @@ export function SalesDailyLogDashboard() {
           <Kpi label="דיווחים היום" value={summary?.todayCount ?? 0} icon={CalendarClock} />
           <Kpi label="דיווחים השבוע" value={summary?.weekCount ?? 0} icon={BarChart3} />
           <Kpi label="לקוחות שצריך לחזור אליהם" value={summary?.openFollowUps ?? 0} icon={Clock3} tone={(summary?.overdueFollowUps ?? 0) > 0 ? "red" : "amber"} />
-          <Kpi label="שווי עסקאות פתוחות" value={formatMoney(summary?.estimatedPipeline ?? 0)} icon={TrendingUp} />
+          <Kpi label={`שווי עסקאות פתוחות (${summary?.headlineCurrency ?? "ILS"})`} value={formatMoney(summary?.estimatedPipeline ?? 0, summary?.headlineCurrency ?? "ILS")} icon={TrendingUp} />
           <Kpi label="מכירות BINA החודש" value={formatMoney(summary?.binaMonthRevenue ?? 0)} icon={WalletCards} />
         </div>
 

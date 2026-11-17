@@ -515,6 +515,11 @@ activity_resolved AS (
          l.customer_code IS NULL
          AND l.local_client_id IS NULL
          AND d.normalized_name = lower(trim(l.customer_name))
+         AND 1 = (
+           SELECT COUNT(*)
+           FROM directory candidates
+           WHERE candidates.normalized_name = lower(trim(l.customer_name))
+         )
        )
     ORDER BY
       (d.customer_code = l.customer_code) DESC NULLS LAST,
@@ -577,6 +582,11 @@ invoice_resolved AS (
        OR (
          s.customer_code IS NULL
          AND d.normalized_name = lower(trim(s.customer_name))
+         AND 1 = (
+           SELECT COUNT(*)
+           FROM directory candidates
+           WHERE candidates.normalized_name = lower(trim(s.customer_name))
+         )
        )
     ORDER BY (d.customer_code = s.customer_code) DESC NULLS LAST,
       d.directory_updated_at DESC NULLS LAST
@@ -710,6 +720,11 @@ resolved AS (
          l.customer_code IS NULL
          AND l.local_client_id IS NULL
          AND d.normalized_name = lower(trim(l.customer_name))
+         AND 1 = (
+           SELECT COUNT(*)
+           FROM directory candidates
+           WHERE candidates.normalized_name = lower(trim(l.customer_name))
+         )
        )
     ORDER BY
       (d.customer_code = l.customer_code) DESC NULLS LAST,

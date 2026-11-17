@@ -84,7 +84,7 @@ const useValueChangeAnimation = (value: number, duration = 600) => {
   useEffect(() => {
     if (prevValueRef.current !== value) {
       prevValueRef.current = value;
-      setIsAnimating(true);
+      const frame = requestAnimationFrame(() => setIsAnimating(true));
 
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
@@ -92,6 +92,12 @@ const useValueChangeAnimation = (value: number, duration = 600) => {
       timeoutRef.current = setTimeout(() => {
         setIsAnimating(false);
       }, duration);
+      return () => {
+        cancelAnimationFrame(frame);
+        if (timeoutRef.current) {
+          clearTimeout(timeoutRef.current);
+        }
+      };
     }
 
     return () => {
@@ -137,9 +143,12 @@ const NeighborStationCard = ({
   useEffect(() => {
     if (lastUpdated && prevWipRef.current !== wipCount) {
       prevWipRef.current = wipCount;
-      setShowFlowAnimation(true);
+      const frame = requestAnimationFrame(() => setShowFlowAnimation(true));
       const timeout = setTimeout(() => setShowFlowAnimation(false), 800);
-      return () => clearTimeout(timeout);
+      return () => {
+        cancelAnimationFrame(frame);
+        clearTimeout(timeout);
+      };
     }
   }, [wipCount, lastUpdated]);
 

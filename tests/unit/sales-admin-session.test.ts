@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createSalesResponseWithSession,
-  isSalesAdminEmail,
+  parseSalesAuthorizationRows,
   type SalesUser,
 } from "@/lib/auth/sales-session";
 
@@ -17,10 +17,18 @@ const baseUser: SalesUser = {
 };
 
 describe("sales admin session grant", () => {
-  it("recognizes Maty's account and not a regular salesperson", () => {
-    delete process.env.SALES_ADMIN_EMAILS;
-    expect(isSalesAdminEmail("MATY@GESTELIT.CO.IL")).toBe(true);
-    expect(isSalesAdminEmail("sales@gestelit.co.il")).toBe(false);
+  it("derives authorization only from persisted role and scope rows", () => {
+    expect(
+      parseSalesAuthorizationRows(
+        [{ role_key: "sales_manager" }],
+        [{ scope_key: "sales_team_view" }, { scope_key: "sales_client_manage" }],
+      ),
+    ).toEqual({
+      roles: ["sales_manager"],
+      scopes: ["sales_team_view", "sales_client_manage"],
+    });
+
+    expect(() => parseSalesAuthorizationRows([], [])).toThrow("SALES_FORBIDDEN");
   });
 
   it("does not grant an admin session to a regular salesperson", () => {
