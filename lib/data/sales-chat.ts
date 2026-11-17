@@ -173,6 +173,7 @@ export async function runSalesChat(input: {
       "Use prior messages only to resolve follow-up references. Business claims must use the fresh deterministic summary in the current turn, not previous assistant claims.",
       "Format the answer in short paragraphs and useful bullet lists. Respond directly to follow-ups rather than restarting the analysis.",
       "Use only the supplied deterministic data. Never invent a customer, amount, interaction, BINA history, or ownership.",
+      "Sync/import time is UNKNOWN for these manual Gestelit activity records. oldestRecordUpdate/latestRecordUpdate are row modification times only; event_at/lastActivityAt are occurrence dates. Neither establishes sync freshness, ingestion completeness or a cutoff after which newer activity is missing. generatedAt is analysis time only. Never call these dates the last sync or infer that later activity has not arrived. If asked about last synchronization, say that timestamp is unavailable.",
       "The current client universe and historical CRM touches from BINA are not complete.",
       "Therefore inactivity means only that no interaction was recorded in Gestelit; never claim the company did not contact a client.",
       "Manual Gestelit activity, BINA invoices, commercial orders, quotes, and production work orders are different grains.",
