@@ -6,7 +6,7 @@ const FORBIDDEN_PATTERNS = [
   /password/i,
   /סיסמ[הת]/i,
   /secret/i,
-  /סוד/i,
+  /(?:^|[^\u0590-\u05ff])(?:ה?סוד|סודות)(?=$|[^\u0590-\u05ff])/,
   /openai/i,
   /drop\s+table/i,
   /delete\s+from/i,

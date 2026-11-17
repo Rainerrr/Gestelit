@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { createErrorResponse, requireAdminPassword } from "@/lib/auth/permissions";
+import { requireAdminPassword } from "@/lib/auth/permissions";
+import { aiErrorResponse, isAiSessionId } from "@/lib/ai/http";
 import { runBinaAiChat } from "@/lib/ai/chat-orchestrator";
 import { checkInMemoryRateLimit } from "@/lib/ai/rate-limit";
 import { generateSecureToken } from "@/lib/auth/permissions";
@@ -45,6 +46,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "MESSAGE_TOO_LONG", maxChars: MAX_MESSAGE_CHARS }, { status: 413 });
     }
 
+    if (body.sessionId != null && !isAiSessionId(body.sessionId)) {
+      return NextResponse.json({ error: "INVALID_SESSION_ID" }, { status: 400 });
+    }
+
     const response = await runBinaAiChat({
       message: body.message.trim(),
       sessionId: typeof body.sessionId === "string" ? body.sessionId : null,
@@ -53,6 +58,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json(response);
   } catch (error) {
-    return createErrorResponse(error, "AI_CHAT_FAILED");
+    return aiErrorResponse(error, "AI_CHAT_FAILED");
   }
 }

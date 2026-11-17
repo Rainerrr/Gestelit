@@ -175,6 +175,9 @@ export function AdminAiAssistant({ context }: { context?: AdminAiScreenContext }
     }
   };
 
+  // The BINA AI tab already has a composer; the fixed launcher overlaps Send.
+  if (pathname === "/admin/bina" && context?.activeTab === "ai") return null;
+
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
