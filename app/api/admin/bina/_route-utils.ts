@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { createErrorResponse, requireAdminPassword } from "@/lib/auth/permissions";
+import { createErrorResponse, requireAdminPassword, UnauthorizedError, ForbiddenError, NotFoundError } from "@/lib/auth/permissions";
 
 export async function requireBinaAdmin(request: Request) {
   await requireAdminPassword(request, { allowQueryPassword: false });
 }
 
 export function routeError(error: unknown, fallback = "BINA_REQUEST_FAILED") {
-  if (!(error instanceof Error)) {
+  if (!(error instanceof Error) || error instanceof UnauthorizedError || error instanceof ForbiddenError || error instanceof NotFoundError) {
     return createErrorResponse(error, fallback);
   }
 

@@ -222,7 +222,7 @@ export const aiToolDefinitions = [
   {
     type: "function" as const,
     name: "search_bina_work_orders",
-    description: "Search BINA work orders by customer, title, or order reference.",
+    description: "Search BINA work orders by customer, title, or order reference, newest work-order number first.",
     parameters: {
       type: "object",
       properties: {

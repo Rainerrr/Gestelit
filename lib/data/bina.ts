@@ -10,6 +10,7 @@ const STALE_SECONDS = 6 * 60 * 60;
 export type BinaConfidence = "exact" | "inferred" | "missing_data";
 
 export type BinaOverview = {
+  scope: { kind: "cached_partial_snapshot"; note: string; sampledRows: Record<string, number>; unavailableDomains: string[] };
   sync: {
     lastSyncedAt: string | null;
     staleTables: number;
@@ -27,9 +28,10 @@ export type BinaOverview = {
     openRequestAmount: number;
   };
   suppliers: {
+    balancesByCurrency: Array<{ currency: string; openBalance: number; overdueBalance: number }>;
     supplierCount: number;
-    openBalance: number;
-    overdueBalance: number;
+    openBalance: number | null;
+    overdueBalance: number | null;
   };
   sales: {
     invoiceCount: number;
@@ -717,6 +719,8 @@ function fallbackDashboardSummary(
     },
     coverageStatus: "partial_sample",
     overview: {
+      metric_scope: overview.scope,
+      supplier_balances_by_currency: overview.suppliers.balancesByCurrency,
       last_synced_at: latest,
       stale_tables: overview.sync.staleTables,
       empty_tables: overview.sync.failedTables,
@@ -850,23 +854,26 @@ async function validateBinaImportPipeline(supabase: ReturnType<typeof createServ
 export async function fetchBinaOverview(): Promise<BinaOverview> {
   const supabase = createServiceSupabase();
 
-  const [syncResult, workOrdersResult, purchasingResult, suppliersResult, salesResult, deliveriesResult] = await Promise.all([
+  const [syncResult, workOrdersResult, notImportedResult, atRiskResult, mismatchResult, openRequestsResult, openDeliveriesResult, purchasingResult, suppliersResult, salesResult, deliveriesResult] = await Promise.all([
     supabase
       .from("mart_bina_metric_trust")
       .select("source_table,freshness_status,last_table_sync_at")
       .order("source_table"),
     supabase
       .from("mart_bina_work_order_status")
-      .select("link_status,synced_at")
-      .order("work_order_id", { ascending: false, nullsFirst: false })
-      .limit(1000),
+      .select("bina_id", { count: "exact", head: true }),
+    supabase.from("mart_bina_work_order_status").select("bina_id", { count: "exact", head: true }).eq("link_status", "not_imported"),
+    supabase.from("mart_bina_work_order_status").select("bina_id", { count: "exact", head: true }).eq("link_status", "at_risk"),
+    supabase.from("mart_bina_work_order_status").select("bina_id", { count: "exact", head: true }).eq("link_status", "quantity_mismatch"),
+    supabase.from("mart_bina_purchase_flow").select("bina_id", { count: "exact", head: true }).eq("flow_type", "purchase_request").gt("remaining_quantity", 0),
+    supabase.from("mart_bina_delivery_status").select("bina_id", { count: "exact", head: true }).eq("delivery_state", "sent_open"),
     supabase
       .from("mart_bina_purchase_flow")
       .select("flow_type,remaining_quantity,total_amount")
       .limit(5000),
     supabase
       .from("mart_bina_supplier_aging")
-      .select("supplier_code,open_balance,overdue_balance")
+      .select("supplier_code,currency,open_balance,overdue_balance")
       .limit(5000),
     supabase
       .from("mart_bina_sales_status")
@@ -878,10 +885,12 @@ export async function fetchBinaOverview(): Promise<BinaOverview> {
       .limit(5000),
   ]);
 
-  if (workOrdersResult.error) throw new Error(workOrdersResult.error.message);
+  for (const result of [workOrdersResult, notImportedResult, atRiskResult, mismatchResult, openRequestsResult, openDeliveriesResult]) {
+    if (result.error) throw new Error(result.error.message);
+  }
 
   const syncRows = syncResult.error ? [] : ((syncResult.data ?? []) as AnyRecord[]);
-  const workOrderRows = (workOrdersResult.data ?? []) as AnyRecord[];
+
   const purchasingRows = purchasingResult.error ? [] : ((purchasingResult.data ?? []) as AnyRecord[]);
   const supplierRows = suppliersResult.error ? [] : ((suppliersResult.data ?? []) as AnyRecord[]);
   const salesRows = salesResult.error ? [] : ((salesResult.data ?? []) as AnyRecord[]);
@@ -893,7 +902,26 @@ export async function fetchBinaOverview(): Promise<BinaOverview> {
     return !latest || value > latest ? value : latest;
   }, null);
 
+  const balances = new Map<string, { currency: string; openBalance: number; overdueBalance: number }>();
+  for (const row of supplierRows) {
+    // Preserve source currencies; no conversion or cross-currency addition.
+    const currency = String(row.currency ?? "unknown");
+    const total = balances.get(currency) ?? { currency, openBalance: 0, overdueBalance: 0 };
+    total.openBalance += Number(row.open_balance ?? 0);
+    total.overdueBalance += Number(row.overdue_balance ?? 0);
+    balances.set(currency, total);
+  }
+  const balancesByCurrency = [...balances.values()];
+  const unavailableDomains = [["sync", syncResult], ["purchasing", purchasingResult], ["suppliers", suppliersResult], ["sales", salesResult], ["deliveries", deliveriesResult]]
+    .filter(([, result]) => typeof result !== "string" && result.error).map(([domain]) => String(domain));
+
   return {
+    scope: {
+      kind: "cached_partial_snapshot",
+      note: "Work-order and open request/delivery counts cover the cached snapshot, not all BINA source data. Monetary totals and other metrics cover only sampled rows; inspect currencies separately. Failed domains are unavailable, never verified zero.",
+      sampledRows: { purchasing: purchasingRows.length, suppliers: supplierRows.length, sales: salesRows.length, deliveries: deliveryRows.length },
+      unavailableDomains,
+    },
     sync: {
       lastSyncedAt,
       staleTables: syncRows.filter((row) => row.freshness_status === "stale").length,
@@ -901,21 +929,20 @@ export async function fetchBinaOverview(): Promise<BinaOverview> {
       tableCount: new Set(syncRows.map((row) => row.source_table).filter(Boolean)).size,
     },
     workOrders: {
-      total: workOrderRows.length,
-      notImported: workOrderRows.filter((row) => row.link_status === "not_imported").length,
-      atRisk: workOrderRows.filter((row) => row.link_status === "at_risk").length,
-      quantityMismatch: workOrderRows.filter((row) => row.link_status === "quantity_mismatch").length,
+      total: workOrdersResult.count ?? 0,
+      notImported: notImportedResult.count ?? 0,
+      atRisk: atRiskResult.count ?? 0,
+      quantityMismatch: mismatchResult.count ?? 0,
     },
     purchasing: {
-      openRequestLines: purchasingRows.filter(
-        (row) => row.flow_type === "purchase_request" && Number(row.remaining_quantity ?? 0) > 0,
-      ).length,
-      openRequestAmount: purchasingRows.reduce((sum, row) => sum + Number(row.total_amount ?? 0), 0),
+      openRequestLines: openRequestsResult.count ?? 0,
+      openRequestAmount: purchasingRows.filter((row) => row.flow_type === "purchase_request" && Number(row.remaining_quantity ?? 0) > 0).reduce((sum, row) => sum + Number(row.total_amount ?? 0), 0),
     },
     suppliers: {
       supplierCount: new Set(supplierRows.map((row) => row.supplier_code).filter(Boolean)).size,
-      openBalance: supplierRows.reduce((sum, row) => sum + Number(row.open_balance ?? 0), 0),
-      overdueBalance: supplierRows.reduce((sum, row) => sum + Number(row.overdue_balance ?? 0), 0),
+      balancesByCurrency,
+      openBalance: balancesByCurrency.length === 1 ? balancesByCurrency[0].openBalance : null,
+      overdueBalance: balancesByCurrency.length === 1 ? balancesByCurrency[0].overdueBalance : null,
     },
     sales: {
       invoiceCount: salesRows.length,
@@ -923,7 +950,7 @@ export async function fetchBinaOverview(): Promise<BinaOverview> {
     },
     deliveries: {
       total: deliveryRows.length,
-      sentOpen: deliveryRows.filter((row) => row.delivery_state === "sent_open").length,
+      sentOpen: openDeliveriesResult.count ?? 0,
     },
   };
 }
@@ -1264,7 +1291,8 @@ export async function fetchBinaWorkOrders(params: PageParams = {}) {
   let query = supabase
     .from("mart_bina_work_order_status")
     .select(WORK_ORDER_COLUMNS, { count: "exact" })
-    .order("due_at", { ascending: true, nullsFirst: false })
+    .order("work_order_id", { ascending: false, nullsFirst: false })
+    .order("bina_id")
     .range(offset, offset + limit - 1);
 
   if (pattern) {
