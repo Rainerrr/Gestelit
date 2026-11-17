@@ -1,3 +1,5 @@
+import { analyticsQueryTool } from "@/lib/ai/query/plan";
+import { runAnalyticsQuery } from "@/lib/ai/query/execute";
 import { selectMetricTrust } from "@/lib/ai/metric-trust";
 import {
   fetchSalesActivities,
@@ -97,6 +99,7 @@ function rowsResult(name: string, rows: unknown[], sources: string[], freshness?
 }
 
 export const aiToolDefinitions = [
+  analyticsQueryTool,
   {
     type: "function" as const,
     name: "get_bina_dashboard_summary",
@@ -544,6 +547,7 @@ export async function runAiTool(name: string, args: ToolArgs): Promise<AiToolRes
   const limit = Math.max(1, Math.min(Math.floor(numberArg(args, "limit", 20)), Number(process.env.AI_MAX_ROWS ?? 50)));
 
   switch (name) {
+    case "query_analytics": return runAnalyticsQuery(args);
     case "get_bina_dashboard_summary": {
       const summary = await fetchBinaDashboardSummary();
       return {

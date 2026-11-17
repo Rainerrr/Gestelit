@@ -49,7 +49,7 @@ export function SalesDormantQueue() {
   }, []);
 
   return (
-    <main dir="rtl" className="min-h-dvh bg-[linear-gradient(180deg,hsl(var(--background)),hsl(var(--secondary)))] text-right text-foreground">
+    <main dir="rtl" className="min-h-dvh bg-background text-right text-foreground">
       <header className="sticky top-0 z-30 border-b border-border/80 bg-background/95 px-3 py-2.5 shadow-sm backdrop-blur lg:px-6"><div className="mx-auto flex max-w-6xl items-center justify-between gap-3"><div className="flex items-center gap-2.5"><GestelitLogo size="sm" className="rounded-xl" /><div><h1 className="font-semibold">לקוחות שכדאי לחזור אליהם</h1><p className="text-xs text-muted-foreground">לפי דיווחי גסטליט</p></div></div><Button variant="outline" size="sm" onClick={() => router.push("/sales/dashboard")} className="h-10 gap-2"><ArrowRight className="h-4 w-4" /><span className="hidden sm:inline">הסיכום שלי</span></Button></div></header>
       <div className="mx-auto max-w-6xl space-y-4 p-3 pb-24 lg:p-6">
         <Card className="rounded-xl border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-100"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" /><p><strong>חשוב:</strong> הרשימה אומרת שלא תועדה פנייה בגסטליט. היא לא כוללת עדיין את היסטוריית ה-CRM הישנה מ-BINA.</p></div></Card>

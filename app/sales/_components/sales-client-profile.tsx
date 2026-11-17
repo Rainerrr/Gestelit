@@ -1,5 +1,6 @@
 "use client";
 
+import { useAssistantScreenContext } from "@/components/ai/use-assistant-screen-context";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -65,6 +66,8 @@ export function SalesClientProfileView({ clientRef }: { clientRef: string }) {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"activity" | "commercial" | "pipeline" | "details">("activity");
 
+  useAssistantScreenContext({ activeTab, selectedEntity: { clientRef, customerName: data?.client.customer_name ?? null }, filters: data?.client.customer_name ? { client: data.client.customer_name } : {} });
+
   const load = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -88,7 +91,7 @@ export function SalesClientProfileView({ clientRef }: { clientRef: string }) {
   useEffect(() => { void load(); }, [load]);
 
   return (
-    <main dir="rtl" className="min-h-dvh bg-[linear-gradient(180deg,hsl(var(--background)),hsl(var(--secondary)))] text-right text-foreground">
+    <main dir="rtl" className="min-h-dvh bg-background text-right text-foreground">
       <header className="sticky top-0 z-30 border-b border-border/80 bg-background/95 px-3 py-2.5 shadow-sm backdrop-blur lg:px-6">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2.5">

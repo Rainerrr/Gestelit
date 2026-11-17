@@ -32,7 +32,6 @@ import { format } from "date-fns";
 import { he } from "date-fns/locale";
 import { DatePicker } from "@/components/ui/date-picker";
 import type {
-  Job,
   PipelinePresetWithSteps,
   Station,
 } from "@/lib/types";
@@ -50,7 +49,7 @@ import {
 type JobCreationWizardProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onComplete: (job: Partial<Job>) => Promise<void>;
+  onComplete: () => Promise<void>;
 };
 
 type WizardStep = "details" | "products" | "review";
@@ -67,6 +66,7 @@ type PendingProduct = {
 export const JobCreationWizard = ({
   open,
   onOpenChange,
+  onComplete,
 }: JobCreationWizardProps) => {
   const [step, setStep] = useState<WizardStep>("details");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -294,6 +294,7 @@ export const JobCreationWizard = ({
         });
       }
 
+      await onComplete();
       onOpenChange(false);
     } catch (err) {
       const message = err instanceof Error ? err.message : "שגיאה ביצירת העבודה";
@@ -314,7 +315,7 @@ export const JobCreationWizard = ({
   );
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(nextOpen) => { if (!isSubmitting) onOpenChange(nextOpen); }}>
       <DialogContent className="text-right sm:max-w-2xl border-border bg-card max-h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader className="flex-shrink-0">
           <DialogTitle className="text-foreground flex items-center gap-2">
@@ -654,11 +655,11 @@ export const JobCreationWizard = ({
               {/* Confirmation */}
               <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
                 <div className="flex items-start gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-400 mt-0.5 flex-shrink-0" />
-                  <p className="text-sm text-emerald-300">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-700 dark:text-emerald-400 mt-0.5 flex-shrink-0" />
+                  <p className="text-sm text-emerald-800 dark:text-emerald-300">
                     העבודה מוכנה ליצירה.
                     <br />
-                    <span className="text-emerald-400/80">
+                    <span className="text-emerald-700 dark:text-emerald-400/80">
                       לאחר היצירה, עובדים יוכלו להתחיל לעבוד על המוצרים שהוגדרו.
                     </span>
                   </p>

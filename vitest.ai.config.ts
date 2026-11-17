@@ -4,7 +4,7 @@ import path from "node:path";
 export default defineConfig({
   test: {
     environment: "node",
-    include: ["tests/unit/ai-*.test.ts", "tests/integration/ai-tools-readonly.test.ts"],
+    include: ["tests/unit/ai-*.test.ts", "tests/unit/ai-*.test.tsx", "tests/integration/ai-tools-readonly.test.ts"],
     testTimeout: 120000,
     fileParallelism: false,
   },

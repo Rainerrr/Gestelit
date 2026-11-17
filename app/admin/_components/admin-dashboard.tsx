@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo } from "react";
-import { LayoutDashboard } from "lucide-react";
+import Link from "next/link";
+import { LayoutDashboard, Plus, ArrowLeft } from "lucide-react";
 import {
   AdminSessionsProvider,
   useAdminSessionCount,
@@ -46,7 +47,7 @@ const KpiCardsSection = ({ dictionary, isLoading }: SectionProps) => {
   const productionIds = useMemo(
     () =>
       Array.from(dictionary.global.values())
-        .filter((item) => item.label_he.includes("ייצור"))
+        .filter((item) => item.machine_state === "production")
         .map((item) => item.id),
     [dictionary],
   );
@@ -64,7 +65,16 @@ const KpiCardsSection = ({ dictionary, isLoading }: SectionProps) => {
     return count;
   });
 
-  const stopCount = 0;
+  const stopCount = useAdminSessionsSelector((state) => {
+    let count = 0;
+    state.sessionIds.forEach((id) => {
+      const session = state.sessionsMap.get(id);
+      if (!session?.currentStatus) return;
+      const definition = dictionary.station.get(session.stationId ?? "")?.get(session.currentStatus) ?? dictionary.global.get(session.currentStatus);
+      if (definition?.machine_state === "stoppage") count += 1;
+    });
+    return count;
+  });
 
   return (
     <KpiCards
@@ -129,7 +139,6 @@ const StatusChartsSection = ({ dictionary, isLoading }: SectionProps) => {
       statusData={statusData}
       isLoading={isLoading}
       dictionary={dictionary}
-      sideWidget={<ActiveReportsWidget />}
     />
   );
 };
@@ -200,13 +209,17 @@ const AdminDashboardContent = () => {
         </div>
       }
     >
-        <div className="space-y-6">
-          <KpiCardsSection dictionary={dictionary} isLoading={isLoading} />
-          <ActiveSessionsTable
-            dictionary={dictionary}
-            isDictionaryLoading={isStatusesLoading}
-          />
-          <StatusChartsSection dictionary={dictionary} isLoading={isLoading} />
+      <div className="space-y-6">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div><p className="mb-2 text-xs font-medium text-muted-foreground">מרכז התפעול</p><h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">רצפת הייצור, במבט אחד</h2><p className="mt-2 text-sm text-muted-foreground">המשמרות הפעילות והנושאים שדורשים טיפול עכשיו.</p></div>
+          <Link href="/admin/jobs" className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground"><Plus className="h-4 w-4" />ניהול עבודות</Link>
+        </div>
+        <KpiCardsSection dictionary={dictionary} isLoading={isLoading} />
+        <div className="grid items-start gap-6 min-[1180px]:grid-cols-[minmax(0,1fr)_300px]">
+          <div className="min-w-0"><ActiveSessionsTable dictionary={dictionary} isDictionaryLoading={isStatusesLoading} /></div>
+          <aside className="space-y-3"><div className="flex items-center justify-between"><h2 className="text-sm font-semibold">דורש תשומת לב</h2><Link href="/admin/reports" className="inline-flex items-center gap-1 text-xs text-primary">כל הדיווחים<ArrowLeft className="h-3 w-3" /></Link></div><ActiveReportsWidget /></aside>
+        </div>
+        <details className="group rounded-xl border border-border bg-card p-4 sm:p-5"><summary className="cursor-pointer text-sm font-semibold">תמונת הייצור והתקדמות העבודות</summary><div className="mt-5"><StatusChartsSection dictionary={dictionary} isLoading={isLoading} /></div></details>
       </div>
     </AdminLayout>
   );

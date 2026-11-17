@@ -4,6 +4,7 @@ import { NotFoundError } from "@/lib/auth/permissions";
 export async function createAiSession(params: {
   sessionId?: string | null;
   model: string;
+  initialMessage?: string;
   adminIdentity?: string | null;
   metadata?: Record<string, unknown>;
 }) {
@@ -21,7 +22,10 @@ export async function createAiSession(params: {
     .insert({
       model: params.model,
       admin_identity: params.adminIdentity ?? null,
-      metadata: params.metadata ?? {},
+      metadata: {
+        ...params.metadata,
+        ...(params.initialMessage?.trim() ? { title: params.initialMessage.trim().replace(/\s+/g, " ").slice(0, 60) } : {}),
+      },
     })
     .select("id")
     .single();
@@ -60,6 +64,7 @@ export async function logAiMessage(params: {
     .single();
 
   if (error) throw new Error(`AI_MESSAGE_LOG_FAILED: ${error.message}`);
+  await supabase.from("ai_chat_sessions").update({ updated_at: new Date().toISOString() }).eq("id", params.sessionId);
   return String(data.id);
 }
 

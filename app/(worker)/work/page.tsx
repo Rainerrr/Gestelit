@@ -2534,10 +2534,9 @@ function SessionCard({
 
   return (
     <Card
-      className="rounded-xl border-2 bg-card/50 backdrop-blur-sm"
+      className="rounded-xl border bg-card shadow-sm"
       style={{
         borderColor: activeVisual.timerBorder,
-        boxShadow: activeVisual.shadow,
       }}
     >
       <CardContent className="p-5 space-y-5">
@@ -2547,7 +2546,7 @@ function SessionCard({
             <p className="text-sm font-medium text-muted-foreground">
               {t("work.shiftDuration")}
             </p>
-            <p className="text-5xl font-semibold tabular-nums text-foreground mt-1">
+            <p className="text-4xl sm:text-5xl font-semibold tabular-nums text-foreground mt-1">
               {formatDuration(elapsed)}
             </p>
           </div>
@@ -2571,10 +2570,10 @@ function SessionCard({
           <button
             type="button"
             className={cn(
-              "flex-1 h-14 text-lg font-bold rounded-xl shadow-lg transition-all duration-200 inline-flex items-center justify-center touch-manipulation select-none active:scale-[0.98]",
+              "flex-1 h-14 text-base font-semibold rounded-xl shadow-sm transition-all duration-200 inline-flex items-center justify-center touch-manipulation select-none active:scale-[0.98]",
               isReportQuantityDisabled
-                ? "bg-emerald-800/40 text-emerald-300/50 cursor-not-allowed shadow-none"
-                : "bg-emerald-600 hover:bg-emerald-500/90 active:bg-emerald-700 text-white shadow-emerald-600/25 hover:shadow-emerald-600/35 hover:shadow-xl",
+                ? "bg-muted text-muted-foreground shadow-none"
+                : "bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm",
             )}
             onClick={handleReportQuantityClick}
           >
@@ -2626,7 +2625,7 @@ function SessionCard({
             <div className="flex items-baseline justify-between gap-3">
               <div className="flex items-baseline gap-1.5 min-w-0">
                 <span className="text-xs font-medium text-muted-foreground shrink-0">{t("work.productLabel")}:</span>
-                <span className="text-sm font-bold text-foreground truncate">{activeJobItem.name}</span>
+                <span className="text-sm font-semibold text-foreground break-words">{activeJobItem.name}</span>
               </div>
               <div className="flex items-baseline gap-1.5 shrink-0">
                 <span className="text-xs font-medium text-muted-foreground">{t("work.jobItemTimeLabel")}:</span>

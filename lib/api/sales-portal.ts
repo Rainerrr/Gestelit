@@ -153,12 +153,15 @@ export async function summarizeSalesPortalNoteApi(payload: {
 
 export async function askSalesAssistantApi(payload: {
   message: string;
+  history?: Array<{ role: "user" | "assistant"; content: string }>;
+  context?: Record<string, unknown>;
   scope?: "personal" | "team";
   dateFrom?: string;
   dateTo?: string;
-}) {
+}, signal?: AbortSignal) {
   return handleResponse(await fetch("/api/sales/ai/chat", {
     method: "POST",
+    signal,
     credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),

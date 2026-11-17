@@ -15,6 +15,9 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => null);
     const answer = await runSalesChat({
       message: typeof body?.message === "string" ? body.message : "",
+      history: body?.history,
+      signal: request.signal,
+      context: body?.context,
       salesUserId: user.id,
       salesperson: user.full_name,
       canViewTeam: user.is_admin,
@@ -27,10 +30,10 @@ export async function POST(request: Request) {
     const code = error instanceof Error ? error.message : "SALES_AI_FAILED";
     const status = code === "SALES_UNAUTHORIZED"
       ? 401
-      : code === "SALES_AI_MESSAGE_REQUIRED" || code === "SALES_AI_REQUEST_BLOCKED"
+      : code === "SALES_AI_MESSAGE_REQUIRED" || code === "SALES_AI_REQUEST_BLOCKED" || code === "SALES_AI_INVALID_DATE_RANGE"
         ? 400
         : 500;
     if (status === 500) console.error("SALES_AI_FAILED", error);
-    return NextResponse.json({ error: code }, { status });
+    return NextResponse.json({ error: status === 500 ? "SALES_AI_FAILED" : code }, { status });
   }
 }

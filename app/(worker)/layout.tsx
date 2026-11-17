@@ -8,7 +8,7 @@ export default function WorkerLayout({ children }: { children: ReactNode }) {
       <div className="fixed top-4 right-4 z-50 sm:top-6 sm:right-6">
         <LanguageFlagToggle />
       </div>
-      <div className="mx-auto flex min-h-full max-w-7xl flex-col gap-6">
+      <div className="mx-auto flex min-h-full max-w-5xl flex-col gap-4">
         {children}
       </div>
     </section>

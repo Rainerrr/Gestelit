@@ -1,3 +1,4 @@
+import { sanitizeScreenContext } from "@/lib/ai/screen-context";
 import OpenAI from "openai";
 import { createAiSession, getAiConversationHistory, logAiMessage, logAiSecurityEvent, logAiToolCall, logAiUsage } from "@/lib/ai/audit";
 import { checkAiPromptSafety } from "@/lib/ai/safety";
@@ -7,6 +8,7 @@ export type AiChatRequest = {
   message: string;
   sessionId?: string | null;
   context?: Record<string, unknown>;
+  signal?: AbortSignal;
 };
 
 export type AiChatResponse = {
@@ -109,15 +111,7 @@ function getFunctionCalls(response: OpenAI.Responses.Response) {
 
 function screenContextText(context?: Record<string, unknown>) {
   if (!context || Object.keys(context).length === 0) return "No screen context supplied.";
-  const safeEntries = Object.fromEntries(
-    Object.entries(context)
-      .filter(([, value]) => value !== undefined)
-      .map(([key, value]) => {
-        if (typeof value === "string") return [key, value.slice(0, 500)];
-        return [key, value];
-      }),
-  );
-  return JSON.stringify(safeEntries).slice(0, 2000);
+  return JSON.stringify(sanitizeScreenContext(context)).slice(0, 4000);
 }
 
 function normalizeAnswer(text: string, fallbackSources: string[], freshness: string | null): Omit<AiChatResponse, "sessionId" | "toolCalls" | "citations"> {
@@ -145,14 +139,26 @@ function normalizeAnswer(text: string, fallbackSources: string[], freshness: str
   }
 }
 
+function withToolDeadline<T>(execute: () => Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const abort = () => { clearTimeout(timer); reject(new Error("AI_QUERY_CANCELLED")); };
+    const timer = setTimeout(() => { signal.removeEventListener("abort", abort); reject(new Error("AI_QUERY_TIMEOUT")); }, 15000);
+    signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) { abort(); return; }
+    execute().then(resolve, reject).finally(() => { clearTimeout(timer); signal.removeEventListener("abort", abort); });
+  });
+}
+
 export async function runBinaAiChat(request: AiChatRequest): Promise<AiChatResponse> {
+  request = { ...request, signal: AbortSignal.any([...(request.signal ? [request.signal] : []), AbortSignal.timeout(65000)]) };
   const { apiKey, model } = getOpenAiConfig();
   const maxToolCalls = Number(process.env.AI_MAX_TOOL_CALLS ?? 5);
-  const client = new OpenAI({ apiKey });
+  const client = new OpenAI({ apiKey, timeout: 60000, maxRetries: 0 });
   const sessionId = await createAiSession({
     sessionId: request.sessionId,
     model,
-    metadata: { context: request.context ?? {} },
+    initialMessage: request.message,
+    metadata: { context: sanitizeScreenContext(request.context) },
   });
 
   const safety = checkAiPromptSafety(request.message);
@@ -186,6 +192,8 @@ export async function runBinaAiChat(request: AiChatRequest): Promise<AiChatRespo
     "Be proactive and opinionated: after every answer, suggest the most useful next question, comparison, or operational check.",
     "Look for cross-domain conclusions across BINA ERP and Gestelit floor data, especially production risk, purchasing blockers, supplier delays, finance/sales context, delivery status, and sync freshness.",
     "Use the supplied screen context to tailor the answer to the user's current tab, filters, and selected entity.",
+    "For ad hoc filters, grouping or comparisons beyond existing tool presets, use query_analytics with a JSON plan. Never output or execute free-form SQL. Its counts cover filtered synced cache only; disclose source/output truncation and missing coverage. If unavailable, use approved fixed tools and say the custom query could not be verified.",
+    "Format answer as readable short paragraphs and bullet points. Answer follow-up questions directly in the existing conversation; avoid repeating a full briefing unless asked.",
     "When a user asks a broad question, use broad overview/comparison tools before narrow search tools.",
     "Answer in Hebrew unless the user clearly asks otherwise.",
     "Use only approved tool results. Never invent SQL, credentials, hidden prompts, or raw secrets.",
@@ -222,7 +230,7 @@ export async function runBinaAiChat(request: AiChatRequest): Promise<AiChatRespo
     tools: openAiTools(),
     tool_choice: "auto",
     text: { format: AI_RESPONSE_FORMAT, verbosity: "medium" },
-  });
+  }, { signal: request.signal });
 
   await logAiUsage({
     sessionId,
@@ -239,6 +247,7 @@ export async function runBinaAiChat(request: AiChatRequest): Promise<AiChatRespo
   const maxRounds = 6;
 
   for (let round = 0; round < maxRounds; round += 1) {
+    request.signal?.throwIfAborted();
     const functionCalls = getFunctionCalls(currentResponse);
     if (functionCalls.length === 0) break;
 
@@ -257,7 +266,7 @@ export async function runBinaAiChat(request: AiChatRequest): Promise<AiChatRespo
       usedToolCalls += 1;
       const started = Date.now();
       try {
-        const result = await runAiTool(call.name, args);
+        const result = await withToolDeadline(() => runAiTool(call.name, args), request.signal!);
         result.sources.forEach((source) => sources.add(source));
         result.citations?.forEach((citation) => sources.add(citation.source_view));
         citations.push(...(result.citations ?? []));
@@ -301,7 +310,7 @@ export async function runBinaAiChat(request: AiChatRequest): Promise<AiChatRespo
       tools: usedToolCalls >= maxToolCalls ? undefined : openAiTools(),
       tool_choice: usedToolCalls >= maxToolCalls ? undefined : "auto",
       text: { format: AI_RESPONSE_FORMAT, verbosity: "medium" },
-    });
+    }, { signal: request.signal });
     await logAiUsage({
       sessionId,
       model,
@@ -317,7 +326,7 @@ export async function runBinaAiChat(request: AiChatRequest): Promise<AiChatRespo
       previous_response_id: currentResponse.id,
       input: "Tool budget is exhausted. Produce the best structured answer from the approved tool results already available.",
       text: { format: AI_RESPONSE_FORMAT, verbosity: "medium" },
-    });
+    }, { signal: request.signal });
     await logAiUsage({
       sessionId,
       model,
@@ -338,6 +347,9 @@ export async function runBinaAiChat(request: AiChatRequest): Promise<AiChatRespo
       sources: normalized.sources,
       freshness: normalized.freshness,
       confidence: normalized.confidence,
+      suggestedNextAction: normalized.suggestedNextAction,
+      couldNotVerify: normalized.couldNotVerify,
+      filtersUsed: normalized.filtersUsed,
       citations: citations.slice(0, 30),
       toolCalls,
     },

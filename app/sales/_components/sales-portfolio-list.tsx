@@ -64,7 +64,7 @@ export function SalesPortfolioList() {
   useEffect(() => { void load(); }, [load]);
 
   return (
-    <main dir="rtl" className="min-h-dvh bg-[linear-gradient(180deg,hsl(var(--background)),hsl(var(--secondary)))] text-right text-foreground">
+    <main dir="rtl" className="min-h-dvh bg-background text-right text-foreground">
       <header className="sticky top-0 z-30 border-b border-border/80 bg-background/95 px-3 py-2.5 shadow-sm backdrop-blur lg:px-6">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2.5"><GestelitLogo size="sm" className="rounded-xl" /><div><h1 className="font-semibold">הלקוחות שלי</h1><p className="text-xs text-muted-foreground">לקוחות שמשויכים אליי באופן קבוע</p></div></div>

@@ -12,7 +12,9 @@
     "verify:chat-schema": "node scripts/verify-chat-schema.mjs",
     "smoke:chat-api": "node scripts/smoke-chat-api.mjs",
     "smoke:sales-portal": "node scripts/smoke-sales-portal.mjs",
-    "import:bina-client-index": "node scripts/import-bina-client-index.mjs"
+    "import:bina-client-index": "node scripts/import-bina-client-index.mjs",
+    "test:release": "vitest run --config vitest.release.config.ts",
+    "preflight:production": "node scripts/preflight-production-schema.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

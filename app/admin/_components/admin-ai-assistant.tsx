@@ -1,21 +1,8 @@
 "use client";
-
-import { useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
-import { Bot, Loader2, Send, Sparkles } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
-import { sendBinaAiChatApi } from "@/lib/api/bina";
-import { cn } from "@/lib/utils";
+import { AssistantChat, type AssistantAnswer, type AssistantTurn } from "@/components/ai/assistant-chat";
+import { sendBinaAiChatApi, fetchBinaAiSessionsApi, fetchBinaAiSessionApi } from "@/lib/api/bina";
+import { currentScreenFilters } from "@/lib/ai/screen-context";
 
 export type AdminAiScreenContext = {
   screen?: string;
@@ -23,12 +10,6 @@ export type AdminAiScreenContext = {
   search?: string | null;
   selectedEntity?: Record<string, unknown> | null;
   visibleSummary?: string | null;
-};
-
-type ChatMessage = {
-  role: "user" | "assistant";
-  content: string;
-  meta?: Record<string, unknown>;
 };
 
 function routeLabel(pathname: string) {
@@ -42,16 +23,6 @@ function routeLabel(pathname: string) {
   if (pathname.startsWith("/admin/manage")) return "ניהול";
   if (pathname.startsWith("/admin/session")) return "סשן ייצור";
   return "מסך ניהול";
-}
-
-function formatDate(value: unknown) {
-  if (!value || typeof value !== "string") return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "-";
-  return new Intl.DateTimeFormat("he-IL", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(date);
 }
 
 function buildContext(pathname: string, screenContext?: AdminAiScreenContext) {
@@ -126,164 +97,34 @@ function suggestedPrompts(pathname: string, context?: AdminAiScreenContext) {
   ];
 }
 
+const tabLabels: Record<string, string> = {
+  active: "עבודות פעילות", completed: "עבודות שהושלמו",
+  overview: "סקירה", production: "פק״עות", purchasing: "רכש", suppliers: "ספקים",
+  finance: "כספים", sales: "מכירות", deliveries: "משלוחים", ai: "עוזר הנתונים", sync: "סנכרון",
+};
+
 export function AdminAiAssistant({ context }: { context?: AdminAiScreenContext }) {
   const pathname = usePathname();
-  const [open, setOpen] = useState(false);
-  const [input, setInput] = useState("תן תמונת מצב תפעולית מלאה והשווה ייצור, רכש, ספקים, כספים ומשלוחים");
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const currentContext = useMemo(() => buildContext(pathname, context), [pathname, context]);
-  const prompts = useMemo(() => suggestedPrompts(pathname, context), [pathname, context]);
-
-  const sendMessage = async (messageOverride?: string) => {
-    const message = (messageOverride ?? input).trim();
-    if (!message) return;
-    setOpen(true);
-    setError(null);
-    setMessages((current) => [...current, { role: "user", content: message }]);
-    setIsLoading(true);
-    try {
-      const response = await sendBinaAiChatApi({
-        message,
-        sessionId,
-        context: currentContext,
-      }) as Record<string, unknown>;
-      setSessionId(String(response.sessionId));
-      setMessages((current) => [
-        ...current,
-        {
-          role: "assistant",
-          content: String(response.answer ?? ""),
-          meta: response,
-        },
-      ]);
-    } catch (sendError) {
-      const messageText = sendError instanceof Error ? sendError.message : "AI_CHAT_FAILED";
-      setError(messageText);
-      setMessages((current) => [
-        ...current,
-        {
-          role: "assistant",
-          content: "לא הצלחתי לענות כרגע. בדוק שה-OpenAI key, ה-migrations והחיבור ל-Supabase פעילים, ואז נסה שוב.",
-        },
-      ]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // The BINA AI tab already has a composer; the fixed launcher overlaps Send.
-  if (pathname === "/admin/bina" && context?.activeTab === "ai") return null;
-
-  return (
-    <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger asChild>
-        <Button
-          type="button"
-          className="fixed bottom-20 left-4 z-50 h-12 rounded-full border border-primary/40 bg-primary px-4 text-primary-foreground shadow-xl shadow-primary/20 lg:bottom-5"
-        >
-          <Sparkles className="h-4 w-4" />
-          <span className="mr-2 hidden sm:inline">שאל את ה-AI</span>
-        </Button>
-      </SheetTrigger>
-      <SheetContent side="left" className="flex w-full max-w-full flex-col p-0 sm:max-w-xl" dir="rtl">
-        <SheetHeader className="border-b border-border p-5">
-          <div className="flex items-center gap-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-primary/30 bg-primary/10 text-primary">
-              <Bot className="h-5 w-5" />
-            </div>
-            <div>
-              <SheetTitle>AI תפעולי</SheetTitle>
-              <SheetDescription>
-                מודע למסך הנוכחי: {currentContext.routeLabel}
-                {currentContext.activeTab ? ` / ${currentContext.activeTab}` : ""}
-              </SheetDescription>
-            </div>
-          </div>
-        </SheetHeader>
-
-        <div className="border-b border-border p-4">
-          <div className="mb-2 flex flex-wrap gap-2">
-            <Badge variant="outline">{currentContext.routeLabel}</Badge>
-            {currentContext.activeTab && <Badge variant="outline">{String(currentContext.activeTab)}</Badge>}
-            {currentContext.search && <Badge variant="outline">חיפוש: {String(currentContext.search)}</Badge>}
-          </div>
-          <div className="grid gap-2">
-            {prompts.map((prompt) => (
-              <button
-                key={prompt}
-                type="button"
-                onClick={() => void sendMessage(prompt)}
-                className="rounded-lg border border-border bg-card/70 p-2 text-right text-sm transition hover:bg-accent"
-              >
-                {prompt}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex-1 space-y-3 overflow-y-auto p-4">
-          {error && (
-            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-2 text-sm text-amber-200">
-              {error}
-            </div>
-          )}
-          {messages.length === 0 && (
-            <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-              שאל שאלה רחבה, למשל השוואה בין רכש, ספקים, פק״עות ומשלוחים. ה-AI ישתמש בכלים מאושרים בלבד ויציע את הצעד הבא.
-            </div>
-          )}
-          {messages.map((message, index) => (
-            <div
-              key={`${message.role}-${index}`}
-              className={cn(
-                "rounded-xl p-3 text-sm",
-                message.role === "user" ? "mr-auto max-w-[88%] bg-primary/10" : "ml-auto max-w-[94%] bg-card",
-              )}
-            >
-              <div className="whitespace-pre-wrap">{message.content}</div>
-              {message.meta && (
-                <div className="mt-3 space-y-1 border-t border-border pt-2 text-xs text-muted-foreground">
-                  <div>מקורות: {Array.isArray(message.meta.sources) ? message.meta.sources.join(", ") : "-"}</div>
-                  <div>עדכניות: {formatDate(message.meta.freshness)}</div>
-                  {Boolean(message.meta.confidence) && <div>ביטחון: {String(message.meta.confidence)}</div>}
-                  {Boolean(message.meta.suggestedNextAction) && <div>המשך מומלץ: {String(message.meta.suggestedNextAction)}</div>}
-                </div>
-              )}
-            </div>
-          ))}
-          {isLoading && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              מנתח נתונים ומחפש קשרים...
-            </div>
-          )}
-        </div>
-
-        <div className="border-t border-border p-4">
-          <Textarea
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-                void sendMessage();
-              }
-            }}
-            className="min-h-20 resize-none bg-background"
-            placeholder="שאל על המסך הנוכחי, או בקש השוואה בין BINA לגסטליט"
-          />
-          <div className="mt-2 flex items-center justify-between gap-2">
-            <span className="text-xs text-muted-foreground">Ctrl/⌘ + Enter לשליחה</span>
-            <Button onClick={() => void sendMessage()} disabled={isLoading} className="gap-2">
-              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              שלח
-            </Button>
-          </div>
-        </div>
-      </SheetContent>
-    </Sheet>
-  );
+  const screenContext = buildContext(pathname, context);
+  return <AssistantChat
+    title="Gestelit AI"
+    storageKey="admin-ai"
+    screen={`${screenContext.routeLabel}${context?.activeTab ? ` · ${tabLabels[context.activeTab] ?? context.activeTab}` : ""}${context?.search ? ` · ${context.search}` : ""}`}
+    context={screenContext}
+    prompts={suggestedPrompts(pathname, context)}
+    openEvent="gestelit:admin-ai-open"
+    loadHistory={async () => {
+      const response = await fetchBinaAiSessionsApi() as { sessions?: Array<{ id: string; started_at: string; metadata?: { title?: string; context?: { routeLabel?: string } } }> };
+      return (response.sessions ?? []).map((session) => ({ id: session.id, label: session.metadata?.title ?? `${session.metadata?.context?.routeLabel ?? "שיחה קודמת"} · ${new Date(session.started_at).toLocaleDateString("he-IL")}` }));
+    }}
+    loadConversation={async (id) => {
+      const response = await fetchBinaAiSessionApi(id) as { session: { metadata?: { title?: string } }; messages?: Array<{ role: string; content: string; metadata?: AssistantAnswer }> };
+      const messages: AssistantTurn[] = (response.messages ?? []).flatMap((turn) => turn.role === "user" || turn.role === "assistant" ? [{ role: turn.role, content: turn.content, ...(turn.role === "assistant" ? { answer: { ...turn.metadata, answer: turn.content } } : {}) }] : []);
+      return { id, sessionId: id, label: response.session.metadata?.title ?? messages[0]?.content.slice(0, 45) ?? "שיחה קודמת", messages };
+    }}
+    request={async ({ message, sessionId, context: hints, signal }) => {
+      const response = await sendBinaAiChatApi({ message, sessionId, context: { ...hints, filters: currentScreenFilters() } }, signal) as AssistantAnswer & { citations?: Array<{ label: string; source_view: string; synced_at: string | null }> };
+      return { ...response, evidence: response.citations?.map((item) => ({ label: item.label, source: item.source_view, freshness: item.synced_at })) };
+    }}
+  />;
 }

@@ -799,7 +799,7 @@ const ActiveSessionsTableComponent = ({
           </div>
         </div>
       ) : sortedSessions.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 px-4">
+        <div className="flex flex-col items-center justify-center py-10 px-4">
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-muted mb-4">
             <Activity className="h-6 w-6 text-muted-foreground" />
           </div>

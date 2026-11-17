@@ -1,5 +1,6 @@
 "use client";
 
+import { useAssistantScreenContext } from "@/components/ai/use-assistant-screen-context";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, BarChart3, CalendarRange, FileSpreadsheet, ListPlus, LogOut, RefreshCcw, ShieldCheck, Sparkles, UsersRound } from "lucide-react";
@@ -128,6 +129,8 @@ export function SalesPersonalDashboard() {
     };
   }, [filters]);
 
+  useAssistantScreenContext({ filters: params ?? {}, selectedEntity: drilldownType ? { eventType: drilldownType } : null });
+
   const load = useCallback(async () => {
     if (!params) {
       setError("בחרו טווח תאריכים תקין");
@@ -217,7 +220,7 @@ export function SalesPersonalDashboard() {
   };
 
   return (
-    <main dir="rtl" className="min-h-dvh bg-[linear-gradient(180deg,hsl(var(--background)),hsl(var(--secondary)))] text-right text-foreground">
+    <main dir="rtl" className="min-h-dvh bg-background text-right text-foreground">
       <header className="sticky top-0 z-30 border-b border-border/80 bg-background/95 px-3 py-2.5 shadow-sm backdrop-blur lg:px-6 lg:py-3">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2.5">

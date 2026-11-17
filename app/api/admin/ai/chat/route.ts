@@ -52,6 +52,7 @@ export async function POST(request: Request) {
 
     const response = await runBinaAiChat({
       message: body.message.trim(),
+      signal: request.signal,
       sessionId: typeof body.sessionId === "string" ? body.sessionId : null,
       context: body.context && typeof body.context === "object" ? body.context : {},
     });

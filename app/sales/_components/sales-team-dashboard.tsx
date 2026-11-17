@@ -1,5 +1,6 @@
 "use client";
 
+import { useAssistantScreenContext } from "@/components/ai/use-assistant-screen-context";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, ChevronLeft, ChevronRight, Download, Filter, RefreshCcw, Search, SlidersHorizontal, Sparkles } from "lucide-react";
@@ -110,6 +111,8 @@ export function SalesTeamDashboard() {
     coverage: filters.coverage || undefined,
   }), [filters]);
 
+  useAssistantScreenContext({ filters: params ?? {}, selectedEntity: drilldownType ? { eventType: drilldownType } : null });
+
   const load = useCallback(async () => {
     const requestId = ++requestIdRef.current;
     if (!rangeForFilters(filters)) {
@@ -204,7 +207,7 @@ export function SalesTeamDashboard() {
   );
 
   return (
-    <main dir="rtl" className="min-h-dvh bg-[linear-gradient(180deg,hsl(var(--background)),hsl(var(--secondary)))] text-right text-foreground">
+    <main dir="rtl" className="min-h-dvh bg-background text-right text-foreground">
       <header className="sticky top-0 z-30 border-b border-border/80 bg-background/95 px-3 py-2.5 shadow-sm backdrop-blur lg:px-6">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2.5"><GestelitLogo size="sm" className="rounded-xl" /><div className="min-w-0"><h1 className="truncate font-semibold">ניהול מכירות</h1><p className="truncate text-xs text-muted-foreground">{data?.user.full_name ?? "נתוני הצוות"}</p></div></div>

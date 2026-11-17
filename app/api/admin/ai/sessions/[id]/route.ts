@@ -14,8 +14,8 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 
     const [sessionResult, messagesResult, toolsResult] = await Promise.all([
       supabase.from("ai_chat_sessions").select("*").eq("id", id).maybeSingle(),
-      supabase.from("ai_chat_messages").select("*").eq("session_id", id).order("created_at", { ascending: true }),
-      supabase.from("ai_tool_calls").select("*").eq("session_id", id).order("created_at", { ascending: true }),
+      supabase.from("ai_chat_messages").select("*").eq("session_id", id).order("created_at", { ascending: false }).limit(200),
+      supabase.from("ai_tool_calls").select("*").eq("session_id", id).order("created_at", { ascending: true }).limit(200),
     ]);
 
     if (sessionResult.error) throw new Error(sessionResult.error.message);
@@ -25,7 +25,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 
     return NextResponse.json({
       session: sessionResult.data,
-      messages: messagesResult.data ?? [],
+      messages: (messagesResult.data ?? []).reverse(),
       toolCalls: toolsResult.data ?? [],
     });
   } catch (error) {
