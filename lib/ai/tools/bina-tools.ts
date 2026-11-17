@@ -593,19 +593,20 @@ export async function runAiTool(name: string, args: ToolArgs): Promise<AiToolRes
     case "get_cross_domain_risk_map": {
       const search = stringArg(args, "search");
       const unavailableSources: string[] = [];
+      const optional = <T>(source: string, query: Promise<T>, fallback: T) => query.catch(() => {
+        unavailableSources.push(source);
+        return fallback;
+      });
       const [overview, sync, riskQueue, workOrders, purchasing, suppliers, finance, sales, deliveries] = await Promise.all([
-        fetchBinaOverview(),
-        fetchBinaSyncStatus(),
-        fetchBinaCrossDomainRisks({ search, limit }).catch(() => {
-          unavailableSources.push("mart_bina_cross_domain_risk");
-          return [];
-        }),
-        fetchBinaWorkOrders({ search, limit: 200 }),
-        fetchBinaPurchasing({ search, limit: 200 }),
-        fetchBinaSuppliers({ search, limit: 100 }),
-        fetchBinaFinance({ search, limit: 100 }),
-        fetchBinaSales({ search, limit: 100 }),
-        fetchBinaDeliveries({ search, limit: 100 }),
+        optional("mart_bina_overview_kpis", fetchBinaOverview(), null),
+        optional("mart_bina_sync_health", fetchBinaSyncStatus(), { tables: [], logs: [] }),
+        optional("mart_bina_cross_domain_risk", fetchBinaCrossDomainRisks({ search, limit }), []),
+        optional("mart_bina_work_order_status", fetchBinaWorkOrders({ search, limit: 200 }), { rows: [], count: 0 }),
+        optional("mart_bina_purchase_flow", fetchBinaPurchasing({ search, limit: 200 }), { rows: [], count: 0 }),
+        optional("mart_bina_supplier_aging", fetchBinaSuppliers({ search, limit: 100 }), { rows: [], count: 0 }),
+        optional("mart_bina_finance", fetchBinaFinance({ search, limit: 100 }), { rows: [], count: 0 }),
+        optional("mart_bina_sales_status", fetchBinaSales({ search, limit: 100 }), { rows: [], count: 0 }),
+        optional("mart_bina_delivery_status", fetchBinaDeliveries({ search, limit: 100 }), { rows: [], count: 0 }),
       ]);
       const riskyWorkOrders = workOrders.rows
         .filter((row) => row.link_status !== "linked")
@@ -633,7 +634,7 @@ export async function runAiTool(name: string, args: ToolArgs): Promise<AiToolRes
           overview,
           coverage: "partial_sample",
           unavailableSources,
-          evidenceNote: unavailableSources.length ? "Risk queue unavailable; missing rows do not establish absence of risks. Other domains are sampled." : "Domains are sampled; links require matching keys.",
+          evidenceNote: unavailableSources.length ? "Listed sources are unavailable; missing rows do not establish absence of risks. Other domains are sampled." : "Domains are sampled; links require matching keys.",
           syncFreshness: sync.tables.slice(0, 25),
           evidenceBackedRiskQueue: riskQueue,
           riskyWorkOrders,
@@ -657,13 +658,13 @@ export async function runAiTool(name: string, args: ToolArgs): Promise<AiToolRes
           "mart_bina_finance",
           "mart_bina_sales_status",
           "mart_bina_delivery_status",
-        ],
+        ].filter((source) => !unavailableSources.includes(source)),
         citations: [
           ...citationsFromRows("mart_bina_cross_domain_risk", riskQueue),
           ...citationsFromRows("mart_bina_work_order_status", riskyWorkOrders),
           ...citationsFromRows("mart_bina_finance_transactions", openFinance),
         ],
-        freshness: overview.sync.lastSyncedAt,
+        freshness: overview?.sync.lastSyncedAt ?? null,
       };
     }
     case "get_bina_sync_health": {
