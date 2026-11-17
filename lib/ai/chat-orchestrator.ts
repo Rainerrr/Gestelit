@@ -327,6 +327,9 @@ export async function runBinaAiChat(request: AiChatRequest): Promise<AiChatRespo
   }
 
   const normalized = normalizeAnswer(extractText(currentResponse), Array.from(sources), freshness);
+  // The model may correctly say "no information" but still label it exact.
+  // No returned evidence must never carry an exact/inferred fact badge.
+  if (!toolCalls.some((call) => call.rowCount > 0)) normalized.confidence = "missing_data";
   await logAiMessage({
     sessionId,
     role: "assistant",

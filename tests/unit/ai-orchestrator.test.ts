@@ -67,4 +67,10 @@ describe("AI conversation and evidence boundaries", () => {
     const answer = await runBinaAiChat({ message: "בדיקה" });
     expect(answer.confidence).toBe("missing_data");expect(answer.answer).not.toContain("unvalidated");
   });
+  it("forces missing-data confidence when every executed query returned no rows", async () => {
+    mocks.tool.mockResolvedValue({ name: "search_bina_work_orders", data: [], rowCount: 0, sources: ["actual-source"] });
+    mocks.create.mockResolvedValueOnce(calls()).mockResolvedValueOnce(response("אין מידע", { confidence: "exact" }));
+    const answer = await runBinaAiChat({ message: "פקע שאינה קיימת" });
+    expect(answer.confidence).toBe("missing_data");
+  });
 });
