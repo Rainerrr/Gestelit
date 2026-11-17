@@ -971,7 +971,7 @@ export function SalesPortal() {
                     ) : null}
                   </div>
                   <div><span className="text-muted-foreground">מה מעכב: </span>{aiSummary.riskOrObjection ?? "-"}</div>
-                  <div><span className="text-muted-foreground">רמת ביטחון: </span>{aiSummary.confidence}</div>
+                  <div><span className="text-muted-foreground">רמת ביטחון: </span>{{ high: "גבוהה", medium: "בינונית", low: "נמוכה" }[aiSummary.confidence] ?? "לא צוינה"}</div>
                 </div>
               </Card>
             )}

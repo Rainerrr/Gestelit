@@ -119,7 +119,7 @@ export function SalesIntelligenceDashboard({ summary, followUps, onMarkStatus, o
       <Card className="border-border bg-card/70 p-8 text-center">
         <Target className="mx-auto h-8 w-8 text-muted-foreground" />
         <h2 className="mt-3 text-lg font-semibold">אין פעילות לפי הסינון הזה</h2>
-        <p className="mt-1 text-sm text-muted-foreground">נסו תקופה אחרת, איש מכירות אחר או לקוח אחר.</p>
+        <p className="mt-1 text-sm text-muted-foreground">נסו תקופה אחרת, לקוח אחר או סוג פעילות אחר.</p>
       </Card>
     );
   }
