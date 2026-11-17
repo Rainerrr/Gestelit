@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
-import { Menu, Settings, LayoutDashboard, History, Wrench, ChevronLeft, FileText, Briefcase, CalendarClock, Database, Handshake } from "lucide-react";
+import { Menu, Settings, LayoutDashboard, History, Wrench, ChevronLeft, FileText, Briefcase, CalendarClock, Database, Handshake, MessageSquare } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,8 +19,6 @@ import { AdminAiAssistant, type AdminAiScreenContext } from "./admin-ai-assistan
 import { NotificationCenter } from "@/components/notifications/notification-center";
 import { fetchReportsCountsAdminApi } from "@/lib/api/admin-management";
 import { fetchMaintenanceStationsApi } from "@/lib/api/maintenance";
-import { useScrollDirection } from "@/hooks/useScrollDirection";
-import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
 
 type AdminLayoutProps = {
@@ -36,6 +34,7 @@ const navItems = [
   { label: "דשבורד", href: "/admin", disabled: false, icon: LayoutDashboard },
   { label: "עבודות", href: "/admin/jobs", disabled: false, icon: Briefcase },
   { label: "יומן מכירות", href: "/admin/sales-daily-log", disabled: false, icon: Handshake },
+  { label: "הודעות", href: "/admin/messages", disabled: false, icon: MessageSquare },
   { label: "נתוני BINA", href: "/admin/bina", disabled: false, icon: Database },
   { label: "היסטוריה ודוחות", href: "/admin/history", disabled: false, icon: History },
   { label: "דיווחים", href: "/admin/reports", disabled: false, icon: FileText },
@@ -49,7 +48,6 @@ export const AdminLayout = ({ children, header, mobileBottomBar, aiContext }: Ad
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [pendingReportsCount, setPendingReportsCount] = useState(0);
   const [pendingMaintenanceCount, setPendingMaintenanceCount] = useState(0);
-  const { scrollDirection, isAtTop } = useScrollDirection();
 
   useEffect(() => {
     let cancelled = false;
@@ -89,7 +87,7 @@ export const AdminLayout = ({ children, header, mobileBottomBar, aiContext }: Ad
     // For /admin/reports, also highlight when on sub-routes
     const isActive = item.href === "/admin/reports"
       ? pathname.startsWith("/admin/reports")
-      : pathname === item.href;
+      : item.href === "/admin" ? pathname === item.href : pathname.startsWith(item.href);
     const Icon = item.icon;
 
     if (item.disabled) {
@@ -121,7 +119,7 @@ export const AdminLayout = ({ children, header, mobileBottomBar, aiContext }: Ad
         onClick={() => setMobileMenuOpen(false)}
         className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
           isActive
-            ? "bg-primary/10 text-primary border border-primary/20"
+            ? "bg-primary/10 text-primary ring-1 ring-primary/10"
             : "text-muted-foreground hover:bg-accent hover:text-foreground"
         }`}
         aria-current={isActive ? "page" : undefined}
@@ -145,7 +143,7 @@ export const AdminLayout = ({ children, header, mobileBottomBar, aiContext }: Ad
 
       <div className="relative flex min-h-screen">
         {/* Desktop Sidebar */}
-        <aside className="hidden w-56 shrink-0 border-l border-border bg-card/50 backdrop-blur-sm lg:flex lg:flex-col">
+        <aside className="sticky top-0 hidden h-dvh w-[216px] shrink-0 flex-col border-l border-border bg-card lg:flex">
           <div className="flex flex-col p-5 border-b border-border/60">
             <Link href="/" className="flex items-center gap-3 transition-opacity hover:opacity-80">
               <GestelitLogo size="sm" />
@@ -229,24 +227,19 @@ export const AdminLayout = ({ children, header, mobileBottomBar, aiContext }: Ad
         {/* Main Content */}
         <div className="flex min-w-0 flex-1 flex-col">
           <header
-            className={cn(
-              "shrink-0 border-b border-border/60 bg-card/80 backdrop-blur-sm px-4 py-3 sm:px-6 lg:px-8",
-              "sticky top-0 z-40 transform transition-transform duration-300",
-              scrollDirection === "down" && !isAtTop
-                ? "-translate-y-full lg:translate-y-0"
-                : "translate-y-0"
-            )}
+            className="sticky top-0 z-40 shrink-0 border-b border-border bg-card/95 px-4 py-4 backdrop-blur sm:px-6 lg:px-8"
           >
             <div className="flex items-start justify-between gap-4">
-              <div className="flex-1 pr-12 lg:pr-0">{header}</div>
+              <div className="min-w-0 flex-1 pr-12 lg:pr-0">{header}</div>
               <div className="flex items-center shrink-0">
                 <NotificationCenter />
               </div>
             </div>
           </header>
 
+          {mobileBottomBar}
           <div className="flex min-h-0 flex-1 flex-col">
-            <div className="flex-1 p-4 sm:p-6 lg:p-8">
+            <div className="mx-auto w-full max-w-[1680px] flex-1 p-4 pb-28 sm:p-6 sm:pb-28 lg:p-8">
               {children}
             </div>
           </div>
@@ -260,8 +253,14 @@ export const AdminLayout = ({ children, header, mobileBottomBar, aiContext }: Ad
 
       <AdminAiAssistant context={aiContext} />
 
-      {/* Mobile bottom navigation - rendered outside header context */}
-      {mobileBottomBar}
+      <nav aria-label="ניווט ראשי" className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-border bg-card px-2 pb-[env(safe-area-inset-bottom)] lg:hidden">
+        {navItems.filter(item => ["/admin", "/admin/jobs", "/admin/bina", "/admin/messages"].includes(item.href)).map(item => {
+          const active = item.href === "/admin" ? pathname === item.href : pathname.startsWith(item.href);
+          const Icon = item.icon;
+          return <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined} className={`flex min-h-16 flex-col items-center justify-center gap-1 text-[11px] ${active ? "font-semibold text-primary" : "text-muted-foreground"}`}><Icon className="h-5 w-5" />{item.label}</Link>;
+        })}
+        <button type="button" onClick={() => setMobileMenuOpen(true)} className="flex min-h-16 flex-col items-center justify-center gap-1 text-[11px] text-muted-foreground"><Menu className="h-5 w-5" />עוד</button>
+      </nav>
     </section>
   );
 };

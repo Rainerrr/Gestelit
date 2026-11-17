@@ -17,7 +17,6 @@ import {
   PackageCheck,
   ReceiptText,
   RefreshCcw,
-  Send,
   Ship,
   ShoppingCart,
   Sparkles,
@@ -57,7 +56,6 @@ import {
   fetchBinaWorkOrderDetailApi,
   fetchBinaWorkOrdersApi,
   importBinaWorkOrderApi,
-  sendBinaAiChatApi,
 } from "@/lib/api/bina";
 import type { PipelinePresetWithSteps, Station } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -337,26 +335,10 @@ function syncFailureDetails(results: unknown) {
     .map(([table, result]) => `${table}: ${String(result.error)}`);
 }
 
-function citationLabels(meta?: AnyRow) {
-  if (!meta || !Array.isArray(meta.citations)) return [];
-  return meta.citations
-    .slice(0, 4)
-    .map((citation) => {
-      if (!citation || typeof citation !== "object") return null;
-      const row = citation as AnyRow;
-      const view = String(row.source_view ?? "source");
-      const label = String(row.label ?? row.key ?? row.grain ?? "");
-      const confidence = String(row.confidence ?? "");
-      return [view, label, confidence].filter(Boolean).join(" · ");
-    })
-    .filter(Boolean) as string[];
-}
 
 async function readAdminJson(response: Response, fallbackError: string) {
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(typeof payload.error === "string" ? payload.error : fallbackError);
-  }
+  if (!response.ok) throw new Error(typeof payload.error === "string" ? payload.error : fallbackError);
   return payload;
 }
 
@@ -541,7 +523,8 @@ function BinaCommandCenter({
   const atRisk = numberValue(productionMetrics.at_risk_count) || numberValue(overviewData?.workOrders?.atRisk);
   const missingRoutes = numberValue(productionMetrics.missing_route_count);
   const materialBlocked = numberValue(productionMetrics.material_blocked_count);
-  const supplierExposure = numberValue(overviewData?.suppliers?.openBalance);
+  const supplierBalances = overviewData?.suppliers?.balancesByCurrency;
+  const supplierExposure = Array.isArray(supplierBalances) && supplierBalances.length === 1 ? `${formatNumber(supplierBalances[0].openBalance)} ${String(supplierBalances[0].currency)}` : "לפי מטבע";
   const openPurchasing = numberValue(overviewData?.purchasing?.openRequestLines);
 
   const focusTiles = [
@@ -563,8 +546,8 @@ function BinaCommandCenter({
     },
     {
       label: "חשיפה כספית",
-      value: formatCompactMoney(supplierExposure, "ILS"),
-      hint: "יתרות ספקים פתוחות לפי BINA",
+      value: supplierExposure,
+      hint: "יתרות במדגם בלבד · פירוט לפי מטבע בכספים",
       icon: CircleDollarSign,
       tone: "from-violet-500/20 to-blue-500/10 border-violet-400/25",
       tab: "finance" as TabId,
@@ -687,12 +670,12 @@ function DataQualityBanner({
   if (!shouldShow) return null;
 
   return (
-    <Card className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
+    <Card className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-950 dark:text-amber-100">
       <div className="flex items-start gap-2">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
         <div>
           <div className="font-semibold">אמינות נתונים: יש להתייחס לנתוני BINA כמדגם/חלון אחרון עד להוכחת כיסוי מלא</div>
-          <div className="mt-1 text-amber-100/80">
+          <div className="mt-1 text-amber-800 dark:text-amber-100/80">
             {partialTables > 0 && `${formatNumber(partialTables)} טבלאות מסומנות כסנכרון חלקי. `}
             {staleTables > 0 && `${formatNumber(staleTables)} טבלאות מיושנות. `}
             {emptyTables > 0 && `${formatNumber(emptyTables)} טבלאות ריקות. `}
@@ -1199,11 +1182,6 @@ export const BinaDashboard = () => {
   const [importError, setImportError] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [importResult, setImportResult] = useState<AnyRow | null>(null);
-  const [aiMessages, setAiMessages] = useState<Array<{ role: "user" | "assistant"; content: string; meta?: AnyRow }>>([]);
-  const [aiInput, setAiInput] = useState("איזה פק״עות בסיכון לאיחור היום ולמה?");
-  const [aiSessionId, setAiSessionId] = useState<string | null>(null);
-  const [isAiLoading, setIsAiLoading] = useState(false);
-  const [aiError, setAiError] = useState<string | null>(null);
   const [savedQuestions, setSavedQuestions] = useState<Array<{ id: string; title_he: string; prompt_he: string; domain: string }>>([]);
 
   const capsules = useMemo(() => ({
@@ -1388,37 +1366,8 @@ export const BinaDashboard = () => {
     }
   };
 
-  const sendAi = async (prompt?: string) => {
-    const message = (prompt ?? aiInput).trim();
-    if (!message) return;
-    setActiveTab("ai");
-    setAiError(null);
-    setAiMessages((current) => [...current, { role: "user", content: message }]);
-    setIsAiLoading(true);
-    try {
-      const response = await sendBinaAiChatApi({
-        message,
-        sessionId: aiSessionId,
-        context: { activeTab },
-      }) as AnyRow;
-      setAiSessionId(String(response.sessionId));
-      setAiMessages((current) => [
-        ...current,
-        {
-          role: "assistant",
-          content: String(response.answer ?? ""),
-          meta: response,
-        },
-      ]);
-    } catch (error) {
-      setAiError(error instanceof Error ? error.message : "AI_CHAT_FAILED");
-      setAiMessages((current) => [
-        ...current,
-        { role: "assistant", content: "לא הצלחתי להריץ את השאלה כרגע. בדוק שה-OpenAI key וה-migrations פעילים ואז נסה שוב." },
-      ]);
-    } finally {
-      setIsAiLoading(false);
-    }
+  const sendAi = (prompt?: string) => {
+    window.dispatchEvent(new CustomEvent("gestelit:admin-ai-open", { detail: { prompt } }));
   };
 
   if (hasAccess === null) {
@@ -1591,7 +1540,7 @@ export const BinaDashboard = () => {
               <KpiCard label="פק״עות שלא יובאו" value={formatNumber(overviewData?.workOrders?.notImported)} icon={FileSearch} tone="amber" />
               <KpiCard label="פק״עות בסיכון" value={formatNumber(overviewData?.workOrders?.atRisk)} icon={AlertTriangle} tone="red" />
               <KpiCard label="בקשות רכש פתוחות" value={formatNumber(overviewData?.purchasing?.openRequestLines)} icon={ShoppingCart} tone="amber" />
-              <KpiCard label="יתרת ספקים פתוחה" value={formatCompactMoney(overviewData?.suppliers?.openBalance, "ILS")} icon={WalletCards} tone="blue" hint="לפי מטבע מרכזי" />
+              <KpiCard label="יתרת ספקים פתוחה" value="לפי מטבע" icon={WalletCards} tone="blue" hint="מדגם בלבד · פירוט בכספים" />
               <KpiCard label="משלוחים פתוחים" value={formatNumber(overviewData?.deliveries?.sentOpen)} icon={Ship} tone="red" />
             </div>
             <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
@@ -1623,8 +1572,8 @@ export const BinaDashboard = () => {
             <Card className="rounded-xl border border-border bg-card/50 p-4">
               <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <h2 className="text-base font-semibold">פק״עות אחרונות לדרילדאון</h2>
-                  <p className="text-sm text-muted-foreground">הטבלה היא שכבת חקירה בלבד. ה-KPI מעליה מסומן כחלקי אם הסנכרון חלקי.</p>
+                  <h2 className="text-base font-semibold">פק״עות אחרונות</h2>
+                  <p className="text-sm text-muted-foreground">ממוינות לפי מספר פק״ע, מהחדש לישן. הספירות מתייחסות לעותק המסונכרן בלבד; יתרות וסכומים הם מדגם חלקי.</p>
                 </div>
                 <Button onClick={() => void sendAi("סכם לי את מצב הייצור, הרכש, הכספים והמשלוחים ותציע מה לבדוק עכשיו")} className="gap-2">
                   <Bot className="h-4 w-4" />
@@ -1920,71 +1869,11 @@ export const BinaDashboard = () => {
         )}
 
         {activeTab === "ai" && (
-          <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
-            <Card className="rounded-xl border border-border bg-card/50 p-4">
-              <h2 className="mb-3 text-base font-semibold">שאלות מהירות</h2>
-              {(savedQuestions.length > 0 ? savedQuestions.map((question) => question.prompt_he) : [
-                "איזה פק״עות בסיכון לאיחור היום ולמה?",
-                "מה מצב הרכש השבוע ומה כדאי לבדוק?",
-                "מי הספקים עם חוב פתוח או איחורים משמעותיים?",
-                "איזה משלוחים יצאו ועדיין לא חזרו או נסגרו?",
-                "סכם לי דוח מנהלים יומי בעברית",
-              ]).map((prompt) => (
-                <button
-                  key={prompt}
-                  type="button"
-                  onClick={() => void sendAi(prompt)}
-                  className="mb-2 w-full rounded-lg border border-border bg-background/70 p-2 text-right text-sm transition hover:bg-accent"
-                >
-                  {prompt}
-                </button>
-              ))}
-            </Card>
-            <Card className="flex min-h-[560px] flex-col rounded-xl border border-border bg-card/50">
-              <div className="border-b border-border p-4">
-                <h2 className="flex items-center gap-2 text-base font-semibold">
-                  <BrainCircuit className="h-5 w-5 text-primary" />
-                  AI / שאל את הנתונים
-                </h2>
-                <p className="text-sm text-muted-foreground">ה-AI קורא רק כלים מאושרים, מצטט מקורות, ותמיד מציע בדיקה הבאה.</p>
-                {aiError && (
-                  <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2 text-sm text-amber-200">
-                    {aiError}
-                  </div>
-                )}
-              </div>
-              <div className="flex-1 space-y-3 overflow-auto p-4">
-                {aiMessages.length === 0 && (
-                  <div className="rounded-xl border border-dashed border-border p-8 text-center text-muted-foreground">
-                    שאל על פק״עות, רכש, ספקים, כספים, מכירות, משלוחים או סנכרון.
-                  </div>
-                )}
-                {aiMessages.map((message, index) => (
-                  <div key={index} className={cn("rounded-xl p-3", message.role === "user" ? "mr-auto max-w-[80%] bg-primary/10" : "ml-auto max-w-[90%] bg-background")}>
-                    <div className="whitespace-pre-wrap text-sm">{message.content}</div>
-	                    {message.meta && (
-	                      <div className="mt-3 space-y-1 border-t border-border pt-2 text-xs text-muted-foreground">
-	                        <div>מקורות: {Array.isArray(message.meta.sources) ? message.meta.sources.join(", ") : "-"}</div>
-	                        {citationLabels(message.meta).length > 0 && (
-	                          <div>ראיות: {citationLabels(message.meta).map((label) => <Bdi key={label}>{label}</Bdi>).reduce<ReactNode[]>((parts, item, itemIndex) => itemIndex === 0 ? [item] : [...parts, " / ", item], [])}</div>
-	                        )}
-	                        <div>עדכניות: {formatDate(message.meta.freshness)}</div>
-	                        {Boolean(message.meta.suggestedNextAction) && <div>המשך מומלץ: {String(message.meta.suggestedNextAction)}</div>}
-	                      </div>
-	                    )}
-                  </div>
-                ))}
-                {isAiLoading && <div className="text-sm text-muted-foreground">מנתח נתונים...</div>}
-              </div>
-              <div className="flex gap-2 border-t border-border p-4">
-                <Input value={aiInput} onChange={(event) => setAiInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void sendAi(); }} />
-                <Button onClick={() => void sendAi()} disabled={isAiLoading} className="gap-2">
-                  <Send className="h-4 w-4" />
-                  שלח
-                </Button>
-              </div>
-            </Card>
-          </div>
+          <Card className="mx-auto max-w-3xl space-y-5 rounded-2xl border-border p-6 lg:p-8">
+            <div className="flex items-start gap-3"><span className="rounded-xl bg-primary/10 p-3 text-primary"><BrainCircuit className="h-6 w-6" /></span><div><h2 className="text-xl font-semibold">שיחה עם הנתונים שלכם</h2><p className="mt-2 text-sm leading-7 text-muted-foreground">שאלו על ייצור, רכש, ספקים, כספים ומשלוחים. העוזר נפתח לצד המסך, זוכר את השיחה ומציג מקורות ומגבלות כיסוי בכל תשובה.</p></div></div>
+            <Button type="button" onClick={() => sendAi()} className="gap-2"><Sparkles className="h-4 w-4" />פתיחת העוזר</Button>
+            <div className="grid gap-2 sm:grid-cols-2">{(savedQuestions.length ? savedQuestions.map((question) => question.prompt_he) : ["איזה פק״עות בסיכון לאיחור היום ולמה?", "מה מצב הרכש השבוע ומה כדאי לבדוק?", "מי הספקים עם חוב פתוח או איחורים משמעותיים?", "סכם לי דוח מנהלים יומי בעברית"]).map((prompt) => <button key={prompt} type="button" onClick={() => sendAi(prompt)} className="rounded-xl border border-border p-4 text-right text-sm leading-6 transition hover:border-primary/40 hover:bg-primary/5">{prompt}</button>)}</div>
+          </Card>
         )}
 
         {activeTab === "sync" && (

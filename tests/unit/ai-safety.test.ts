@@ -14,6 +14,7 @@ describe("AI safety boundaries", () => {
 
   it("allows broad operational analysis prompts", () => {
     expect(checkAiPromptSafety("איזה פקעות בסיכון ומה כדאי לבדוק עכשיו?").allowed).toBe(true);
+    expect(checkAiPromptSafety("תן סקירה מסודרת על הרכש").allowed).toBe(true);
   });
 
   it("sanitizes HTML and long tool text before it reaches the model", () => {

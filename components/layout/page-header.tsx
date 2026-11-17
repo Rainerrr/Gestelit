@@ -17,14 +17,14 @@ export function PageHeader({
   showThemeToggle = true,
 }: PageHeaderProps) {
   return (
-    <header className="rounded-xl border border-border bg-card/50 p-6 backdrop-blur-sm">
+    <header className="border-b border-border bg-card px-5 py-5 sm:px-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div className="space-y-2 text-right">
           {eyebrow ? (
             <p className="text-xs font-semibold text-primary">{eyebrow}</p>
           ) : null}
           <div className="space-y-1">
-            <h1 className="text-3xl font-semibold leading-tight text-foreground">
+            <h1 className="text-2xl font-semibold leading-tight text-foreground">
               {title}
             </h1>
             {subtitle ? (
@@ -32,7 +32,7 @@ export function PageHeader({
             ) : null}
           </div>
         </div>
-        <div className="flex items-center justify-end gap-2 text-right">
+        <div className="flex flex-wrap items-center justify-end gap-2 text-right">
           {actions}
           {showThemeToggle ? <ThemeToggle /> : null}
         </div>

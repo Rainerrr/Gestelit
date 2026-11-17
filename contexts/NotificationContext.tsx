@@ -99,10 +99,11 @@ export const NotificationProvider = ({ children }: NotificationProviderProps) =>
   const backoffTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const initialLoadDoneRef = useRef(false);
+  const connectRef = useRef<() => void>(() => {});
 
   // Enable portal rendering after hydration
   useEffect(() => {
-    setPortalMounted(true);
+    queueMicrotask(() => setPortalMounted(true));
   }, []);
 
   // Toast trigger for a notification
@@ -239,7 +240,7 @@ export const NotificationProvider = ({ children }: NotificationProviderProps) =>
           const delay = Math.min(MAX_BACKOFF_MS, 1000 * 2 ** retryRef.current);
           retryRef.current += 1;
           backoffTimeoutRef.current = setTimeout(() => {
-            if (mountedRef.current) connect();
+            if (mountedRef.current) connectRef.current();
           }, delay);
         }
       }
@@ -260,10 +261,14 @@ export const NotificationProvider = ({ children }: NotificationProviderProps) =>
       retryRef.current += 1;
 
       backoffTimeoutRef.current = setTimeout(() => {
-        if (mountedRef.current) connect();
+        if (mountedRef.current) connectRef.current();
       }, delay);
     };
   }, [showNotificationToast, stopPolling, startPolling]);
+
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   // Main connection effect
   useEffect(() => {

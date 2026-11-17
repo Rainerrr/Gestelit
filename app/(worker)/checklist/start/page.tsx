@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import { useRouter } from "next/navigation";
+import { canCompleteChecklist } from "@/lib/utils/checklist-validation";
 import { ChecklistItemsList } from "@/components/checklists/checklist-items";
 import { FormSection } from "@/components/forms/form-section";
 import { PageHeader } from "@/components/layout/page-header";
@@ -73,6 +74,7 @@ export default function OpeningChecklistPage() {
 
   type ChecklistState = {
     loading: boolean;
+    failed: boolean;
     checklist: StationChecklist | null;
   };
 
@@ -81,18 +83,21 @@ export default function OpeningChecklistPage() {
       prev: ChecklistState,
       action:
         | { type: "start" }
+        | { type: "fail" }
         | { type: "resolve"; payload: StationChecklist | null },
     ) => {
       switch (action.type) {
         case "start":
-          return { ...prev, loading: true };
+          return { ...prev, loading: true, failed: false };
+        case "fail":
+          return { loading: false, failed: true, checklist: null };
         case "resolve":
-          return { loading: false, checklist: action.payload };
+          return { loading: false, failed: false, checklist: action.payload };
         default:
           return prev;
       }
     },
-    { loading: true, checklist: null },
+    { loading: true, failed: false, checklist: null },
   );
 
   useEffect(() => {
@@ -121,7 +126,7 @@ export default function OpeningChecklistPage() {
       })
       .catch(() => {
         if (!active) return;
-        dispatch({ type: "resolve", payload: null });
+        dispatch({ type: "fail" });
       });
     return () => {
       active = false;
@@ -220,9 +225,7 @@ export default function OpeningChecklistPage() {
     language === "he" ? item.label_he : item.label_ru;
 
   const isValid =
-    checklist?.items.every(
-      (item) => !item.is_required || responses[item.id],
-    ) ?? false;
+    canCompleteChecklist(state, responses);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -285,6 +288,13 @@ export default function OpeningChecklistPage() {
           {state.loading ? (
             <div className="flex justify-center py-8">
               <Spinner size="md" label={t("checklist.loading")} />
+            </div>
+          ) : state.failed ? (
+            <div role="alert" className="space-y-3 rounded-xl border border-destructive/30 p-4 text-sm text-destructive">
+              <p>{language === "he" ? "לא ניתן לטעון את הצ׳ק-ליסט. יש לנסות שוב לפני המשך העבודה." : "Не удалось загрузить список проверок. Повторите попытку перед продолжением."}</p>
+              <Button type="button" variant="outline" onClick={() => window.location.reload()}>
+                {language === "he" ? "נסה שוב" : "Повторить"}
+              </Button>
             </div>
           ) : !checklist ? (
             <p className="rounded-xl border border-dashed border-border bg-muted/30 p-4 text-right text-sm text-muted-foreground">

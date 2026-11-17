@@ -80,7 +80,6 @@ const getDueDateStyle = (dueDate: string | null | undefined) => {
 export const JobsManagement = ({
   jobs,
   isLoading,
-  onAdd,
   onEdit,
   onDelete,
   onRefresh,
@@ -364,6 +363,14 @@ export const JobsManagement = ({
               ? "bg-secondary/40"
               : "hover:bg-secondary/20"
           }`}
+          role="button"
+          tabIndex={0}
+          aria-expanded={isExpanded}
+          aria-label={`פרטי עבודה ${jobWithStats.job.job_number}`}
+          onKeyDown={(event) => {
+            if (event.target !== event.currentTarget) return;
+            if (event.key === "Enter" || event.key === " ") { event.preventDefault(); handleExpand(jobWithStats.job.id); }
+          }}
           onClick={() => handleExpand(jobWithStats.job.id)}
         >
           {/* Expand Toggle */}
@@ -1019,8 +1026,7 @@ export const JobsManagement = ({
       <JobCreationWizard
         open={showWizard}
         onOpenChange={setShowWizard}
-        onComplete={async (job) => {
-          await onAdd(job);
+        onComplete={async () => {
           if (onRefresh) await onRefresh();
         }}
       />

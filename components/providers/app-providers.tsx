@@ -14,7 +14,8 @@ export function AppProviders({ children }: AppProvidersProps) {
   return (
     <ThemeProvider
       attribute="class"
-      defaultTheme="dark"
+      defaultTheme="light"
+      storageKey="gestelit-operations-theme"
       enableSystem={false}
       disableTransitionOnChange
     >

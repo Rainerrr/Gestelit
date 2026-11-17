@@ -195,7 +195,7 @@ const StatusChartsComponent = ({
   return (
     <div className="space-y-4 lg:space-y-6">
       {/* Top row: Side widget first on mobile (for visibility), then pie chart */}
-      <div className="grid grid-cols-1 gap-4 lg:gap-6 xl:grid-cols-2">
+      <div className={`grid grid-cols-1 gap-4 lg:gap-6 ${sideWidget ? "xl:grid-cols-2" : ""}`}>
         {/* On mobile: widget shows first. On desktop: shown second (order-last) */}
         {sideWidget && (
           <div className="xl:order-last">

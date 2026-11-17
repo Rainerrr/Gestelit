@@ -2,7 +2,6 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import crypto from "node:crypto";
 import { createServiceSupabase } from "@/lib/supabase/client";
-import { addAdminSessionCookie } from "@/lib/auth/admin-session";
 
 export const SALES_SESSION_COOKIE = "sales_session";
 const SALES_SESSION_MAX_AGE = 60 * 60 * 12;
@@ -14,18 +13,28 @@ export type SalesUser = {
   phone: string | null;
   is_active: boolean;
   is_admin: boolean;
+  roles: SalesRole[];
+  scopes: SalesScope[];
 };
 
-const DEFAULT_SALES_ADMIN_EMAILS = ["maty@gestelit.co.il"];
+export type SalesRole = "sales_rep" | "sales_manager" | "sales_admin";
+export type SalesScope =
+  | "sales_activity_write"
+  | "sales_personal_view"
+  | "sales_team_view"
+  | "sales_export"
+  | "sales_ai_query"
+  | "sales_client_manage";
 
-export function isSalesAdminEmail(email: string) {
-  const configured = process.env.SALES_ADMIN_EMAILS
-    ?.split(",")
-    .map((value) => value.trim().toLowerCase())
-    .filter(Boolean);
-  return new Set(configured?.length ? configured : DEFAULT_SALES_ADMIN_EMAILS)
-    .has(email.trim().toLowerCase());
-}
+const SALES_ROLES = new Set<SalesRole>(["sales_rep", "sales_manager", "sales_admin"]);
+const SALES_SCOPES = new Set<SalesScope>([
+  "sales_activity_write",
+  "sales_personal_view",
+  "sales_team_view",
+  "sales_export",
+  "sales_ai_query",
+  "sales_client_manage",
+]);
 
 type SalesSessionPayload = {
   v: 1;
@@ -111,6 +120,46 @@ export function verifySalesSessionToken(token: string | null | undefined): Sales
   }
 }
 
+export function parseSalesAuthorizationRows(
+  roleRows: Array<{ role_key: unknown }>,
+  scopeRows: Array<{ scope_key: unknown }>,
+) {
+  const roles = Array.from(new Set(roleRows.map((row) => row.role_key)))
+    .filter((role): role is SalesRole => SALES_ROLES.has(role as SalesRole));
+  if (roles.length === 0) throw new Error("SALES_FORBIDDEN");
+  const scopes = Array.from(new Set(scopeRows.map((row) => row.scope_key)))
+    .filter((scope): scope is SalesScope => SALES_SCOPES.has(scope as SalesScope));
+  if (scopes.length === 0) throw new Error("SALES_FORBIDDEN");
+  return { roles, scopes };
+}
+
+export async function loadSalesAuthorization(
+  salesUserId: string,
+  supabase = createServiceSupabase(),
+): Promise<{ roles: SalesRole[]; scopes: SalesScope[] }> {
+  const now = new Date().toISOString();
+  const rolesResult = await supabase
+    .from("sales_user_roles")
+    .select("role_key")
+    .eq("sales_user_id", salesUserId)
+    .lte("valid_from", now)
+    .or(`valid_to.is.null,valid_to.gt.${now}`);
+
+  if (rolesResult.error) throw new Error("SALES_AUTHORIZATION_UNAVAILABLE");
+  const roleRows = rolesResult.data ?? [];
+  const roles = Array.from(new Set(roleRows.map((row) => row.role_key)))
+    .filter((role): role is SalesRole => SALES_ROLES.has(role as SalesRole));
+  if (roles.length === 0) throw new Error("SALES_FORBIDDEN");
+
+  const scopesResult = await supabase
+    .from("sales_role_scopes")
+    .select("scope_key")
+    .in("role_key", roles);
+  if (scopesResult.error) throw new Error("SALES_AUTHORIZATION_UNAVAILABLE");
+
+  return parseSalesAuthorizationRows(roleRows, scopesResult.data ?? []);
+}
+
 export function createSalesResponseWithSession<T>(data: T, user: SalesUser, status = 200) {
   const response = NextResponse.json(data, { status });
   response.cookies.set(SALES_SESSION_COOKIE, createSalesSessionToken(user), {
@@ -120,7 +169,7 @@ export function createSalesResponseWithSession<T>(data: T, user: SalesUser, stat
     maxAge: SALES_SESSION_MAX_AGE,
     path: "/",
   });
-  return user.is_admin ? addAdminSessionCookie(response) : response;
+  return response;
 }
 
 export async function clearSalesSessionCookie() {
@@ -141,9 +190,12 @@ export async function getSalesSessionUser(): Promise<SalesUser | null> {
     .maybeSingle();
 
   if (error || !data || data.is_active !== true) return null;
+  const { roles, scopes } = await loadSalesAuthorization(data.id, supabase);
   return {
     ...data,
-    is_admin: isSalesAdminEmail(data.email),
+    roles,
+    scopes,
+    is_admin: scopes.includes("sales_team_view"),
   } as SalesUser;
 }
 
@@ -151,6 +203,14 @@ export async function requireSalesSessionUser() {
   const user = await getSalesSessionUser();
   if (!user) {
     throw new Error("SALES_UNAUTHORIZED");
+  }
+  return user;
+}
+
+export async function requireSalesScope(scope: SalesScope) {
+  const user = await requireSalesSessionUser();
+  if (!user.scopes.includes(scope)) {
+    throw new Error("SALES_FORBIDDEN");
   }
   return user;
 }

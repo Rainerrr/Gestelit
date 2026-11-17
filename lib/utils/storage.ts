@@ -7,8 +7,8 @@ type UploadResult = {
 };
 
 const IMAGE_MAX_BYTES = 5 * 1024 * 1024; // 5MB
-const SALES_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024; // 10MB
-const SALES_ATTACHMENT_TYPES = new Set([
+export const SALES_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024; // 10MB
+export const SALES_ATTACHMENT_TYPES = new Set([
   "image/jpeg",
   "image/png",
   "image/webp",
@@ -17,6 +17,11 @@ const SALES_ATTACHMENT_TYPES = new Set([
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 ]);
+
+export function validateSalesAttachment(file: File) {
+  if (!SALES_ATTACHMENT_TYPES.has(file.type)) throw new Error("INVALID_FILE_TYPE");
+  if (file.size > SALES_ATTACHMENT_MAX_BYTES) throw new Error("FILE_TOO_LARGE");
+}
 
 export async function uploadImageToStorage(
   file: File,
@@ -59,13 +64,7 @@ export async function uploadSalesAttachmentToStorage(
   file: File,
   options: { pathPrefix: string },
 ): Promise<UploadResult> {
-  if (!SALES_ATTACHMENT_TYPES.has(file.type)) {
-    throw new Error("INVALID_FILE_TYPE");
-  }
-
-  if (file.size > SALES_ATTACHMENT_MAX_BYTES) {
-    throw new Error("FILE_TOO_LARGE");
-  }
+  validateSalesAttachment(file);
 
   const supabase = createServiceSupabase();
   const buffer = Buffer.from(await file.arrayBuffer());
@@ -86,11 +85,7 @@ export async function uploadSalesAttachmentToStorage(
     throw new Error(`UPLOAD_FAILED:${uploadError.message}`);
   }
 
-  const {
-    data: { publicUrl },
-  } = supabase.storage.from(bucket).getPublicUrl(objectPath);
-
-  return { path: objectPath, publicUrl };
+  // Sales evidence is private. The API returns an authenticated download URL
+  // after the attachment row has been created; never expose a storage URL here.
+  return { path: objectPath, publicUrl: "" };
 }
-
-

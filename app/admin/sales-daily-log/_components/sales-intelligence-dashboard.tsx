@@ -40,6 +40,7 @@ type Props = {
   onMarkStatus: (activity: SalesActivityLog, status: SalesStatus) => Promise<void> | void;
   onEventMixSelect?: (eventType: SalesEventType) => void;
   personal?: boolean;
+  canEditFollowUps?: boolean;
 };
 
 const eventLabels: Record<string, string> = {
@@ -87,7 +88,7 @@ function relativeDays(value: number) {
   return `לפני ${value} ימים`;
 }
 
-export function SalesIntelligenceDashboard({ summary, followUps, onMarkStatus, onEventMixSelect, personal = false }: Props) {
+export function SalesIntelligenceDashboard({ summary, followUps, onMarkStatus, onEventMixSelect, personal = false, canEditFollowUps = true }: Props) {
   const analytics = summary?.analytics;
   const currencyOptions = analytics?.currencies.map((row) => row.currency) ?? ["ILS"];
   const [selectedCurrency, setSelectedCurrency] = useState("ILS");
@@ -118,7 +119,7 @@ export function SalesIntelligenceDashboard({ summary, followUps, onMarkStatus, o
       <Card className="border-border bg-card/70 p-8 text-center">
         <Target className="mx-auto h-8 w-8 text-muted-foreground" />
         <h2 className="mt-3 text-lg font-semibold">אין פעילות לפי הסינון הזה</h2>
-        <p className="mt-1 text-sm text-muted-foreground">נסו תקופה אחרת, איש מכירות אחר או לקוח אחר.</p>
+        <p className="mt-1 text-sm text-muted-foreground">נסו תקופה אחרת, לקוח אחר או סוג פעילות אחר.</p>
       </Card>
     );
   }
@@ -219,7 +220,10 @@ export function SalesIntelligenceDashboard({ summary, followUps, onMarkStatus, o
             <FunnelStat label="לא נסגר" value={funnel.lost} color="bg-rose-500" />
           </div>
           <div className="mt-6 border-t border-border pt-4">
-            <p className="mb-3 text-xs font-medium text-muted-foreground">סוגי הפעילות</p>
+            <div className="mb-3 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+              <p className="font-medium">סוגי הפעילות</p>
+              {onEventMixSelect ? <span>לחצו כדי לראות את הדיווחים</span> : null}
+            </div>
             <div className="space-y-3">
               {analytics.eventMix.map((row) => {
                 const content = (
@@ -394,11 +398,13 @@ export function SalesIntelligenceDashboard({ summary, followUps, onMarkStatus, o
                   <Badge className="bg-amber-500/10 text-amber-400">צריך לחזור</Badge>
                 </div>
                 <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{activity.ai_next_action || activity.ai_summary || activity.raw_note}</p>
-                <div className="mt-3 grid grid-cols-3 gap-2">
-                  <Button size="sm" variant="outline" onClick={() => void onMarkStatus(activity, "done")}>בוצע</Button>
-                  <Button size="sm" variant="outline" onClick={() => void onMarkStatus(activity, "won")}>נסגר</Button>
-                  <Button size="sm" variant="outline" onClick={() => void onMarkStatus(activity, "lost")}>לא נסגר</Button>
-                </div>
+                {canEditFollowUps ? (
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    <Button size="sm" variant="outline" onClick={() => void onMarkStatus(activity, "done")}>בוצע</Button>
+                    <Button size="sm" variant="outline" onClick={() => void onMarkStatus(activity, "won")}>נסגר</Button>
+                    <Button size="sm" variant="outline" onClick={() => void onMarkStatus(activity, "lost")}>לא נסגר</Button>
+                  </div>
+                ) : null}
               </div>
             ))}
           </div>

@@ -5,47 +5,47 @@
 @layer base {
   :root {
     /* Light mode - professional with strong contrast */
-    --background: 210 20% 98%;
-    --foreground: 224 47% 11%;
+    --background: 240 20% 97%;
+    --foreground: 250 18% 15%;
 
     /* Cards - clean white with definition */
     --card: 0 0% 100%;
-    --card-foreground: 224 47% 11%;
+    --card-foreground: 250 18% 15%;
 
     /* Popovers/tooltips */
     --popover: 0 0% 100%;
-    --popover-foreground: 224 47% 11%;
+    --popover-foreground: 250 18% 15%;
 
     /* Blue primary - rich and accessible */
-    --primary: 213 94% 42%;
+    --primary: 271 53% 37%;
     --primary-foreground: 0 0% 100%;
 
     /* Secondary - warm off-white, NOT gray */
-    --secondary: 210 20% 96%;
-    --secondary-foreground: 224 47% 11%;
+    --secondary: 250 20% 96%;
+    --secondary-foreground: 250 18% 15%;
 
     /* Muted - subtle but visible */
-    --muted: 210 15% 93%;
+    --muted: 250 12% 94%;
     --muted-foreground: 220 9% 40%;
 
     /* Accent - visible hover states */
-    --accent: 213 30% 92%;
-    --accent-foreground: 224 47% 11%;
+    --accent: 271 30% 94%;
+    --accent-foreground: 250 18% 15%;
 
     /* Destructive */
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
 
     /* Border - visible and defined */
-    --border: 220 13% 83%;
-    --input: 220 13% 83%;
+    --border: 250 14% 89%;
+    --input: 250 14% 89%;
 
     /* Ring for focus states */
-    --ring: 213 94% 42%;
+    --ring: 271 53% 37%;
     --radius: 0.75rem;
 
     /* Chart colors - vibrant for light backgrounds */
-    --chart-1: 213 94% 42%;
+    --chart-1: 271 53% 37%;
     --chart-2: 160 60% 35%;
     --chart-3: 12 80% 50%;
     --chart-4: 43 80% 48%;
@@ -56,7 +56,7 @@
     --chart-axis: 220 9% 50%;
     --tooltip-bg: 0 0% 100%;
     --tooltip-border: 220 13% 80%;
-    --tooltip-text: 224 47% 11%;
+    --tooltip-text: 250 18% 15%;
     --tooltip-text-muted: 220 9% 40%;
   }
 
@@ -71,7 +71,7 @@
     --popover: 224 40% 10%;
     --popover-foreground: 210 40% 98%;
 
-    --primary: 213 94% 55%;
+    --primary: 271 65% 70%;
     --primary-foreground: 0 0% 100%;
 
     --secondary: 215 27% 16%;
@@ -88,10 +88,10 @@
 
     --border: 215 27% 20%;
     --input: 215 27% 24%;
-    --ring: 213 94% 55%;
+    --ring: 271 65% 70%;
 
     /* Chart colors - brighter for dark backgrounds */
-    --chart-1: 213 94% 55%;
+    --chart-1: 271 65% 70%;
     --chart-2: 160 58% 49%;
     --chart-3: 12 78% 60%;
     --chart-4: 43 74% 62%;

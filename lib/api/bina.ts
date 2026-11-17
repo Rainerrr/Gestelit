@@ -111,9 +111,10 @@ export async function fetchBinaSavedQuestionsApi() {
   return handleResponse(await fetch("/api/admin/ai/saved-questions", adminInit()));
 }
 
-export async function sendBinaAiChatApi(payload: { message: string; sessionId?: string | null; context?: Record<string, unknown> }) {
+export async function sendBinaAiChatApi(payload: { message: string; sessionId?: string | null; context?: Record<string, unknown> }, signal?: AbortSignal) {
   return handleResponse(await fetch("/api/admin/ai/chat", adminInit({
     method: "POST",
+    signal,
     body: JSON.stringify(payload),
   })));
 }

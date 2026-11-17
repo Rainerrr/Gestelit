@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireSalesSessionUser } from "@/lib/auth/sales-session";
+import { requireSalesScope } from "@/lib/auth/sales-session";
 import { updateSalesActivityForUser } from "@/lib/data/sales-log";
 import type { SalesActivityInput } from "@/lib/data/sales-log";
 
@@ -11,7 +11,7 @@ type RouteContext = {
 
 export async function PATCH(request: Request, context: RouteContext) {
   try {
-    const user = await requireSalesSessionUser();
+    const user = await requireSalesScope("sales_activity_write");
     const { id } = await context.params;
     const body = await request.json().catch(() => null) as Partial<SalesActivityInput> | null;
     if (!body) {

@@ -31,8 +31,8 @@ type AdminPageHeaderProps = {
 /** Mobile bottom bar component - must be rendered via AdminLayout's mobileBottomBar prop */
 export const MobileBottomBar = ({ capsules }: { capsules: CapsuleConfig }) => {
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 sm:hidden">
-      <div className="border-t border-border/80 bg-card/95 backdrop-blur-md px-2 py-1.5 safe-area-pb">
+    <div className="sm:hidden">
+      <div className="border-b border-border bg-card px-2 py-2">
         <div className="flex items-center justify-start gap-1 overflow-x-auto">
           {capsules.options.map((option) => {
             const isActive = capsules.activeId === option.id;
@@ -43,9 +43,9 @@ export const MobileBottomBar = ({ capsules }: { capsules: CapsuleConfig }) => {
                 type="button"
                 onClick={() => capsules.onChange(option.id)}
                 className={cn(
-                  "flex min-w-[4.25rem] shrink-0 flex-col items-center gap-0.5 rounded-lg px-3 py-1.5 transition-colors",
+                  "flex min-w-[4.25rem] shrink-0 items-center gap-2 rounded-lg px-3 py-1.5 transition-colors",
                   isActive
-                    ? "text-primary"
+                    ? "bg-primary/10 text-primary"
                     : "text-muted-foreground active:bg-accent"
                 )}
               >
@@ -79,9 +79,9 @@ export const AdminPageHeader = ({
   actions,
 }: AdminPageHeaderProps) => {
   return (
-    <div className="flex items-center justify-between gap-4">
+    <div className="flex flex-wrap items-center justify-between gap-3">
       {/* Left: Title group */}
-      <div className="flex items-center gap-2.5 shrink-0">
+      <div className="flex min-w-0 flex-wrap items-center gap-2.5">
         <Icon className="h-5 w-5 text-primary shrink-0" />
         <h1 className="text-lg font-semibold text-foreground sm:text-xl">{title}</h1>
         {statusElement}

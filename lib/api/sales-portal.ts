@@ -86,6 +86,38 @@ export async function fetchSalesPortalClientsApi(params?: { search?: string; lim
   }));
 }
 
+export async function fetchSalesClientProfileApi(
+  clientRef: string,
+  params?: { limit?: number; offset?: number },
+) {
+  return handleResponse(await fetch(withParams(
+    `/api/sales/clients/${encodeURIComponent(clientRef)}`,
+    params,
+  ), {
+    credentials: "include",
+  }));
+}
+
+export async function fetchSalesDormantClientsApi(params?: {
+  bucket?: "attention" | "dormant" | "unknown";
+  limit?: number;
+  offset?: number;
+}) {
+  return handleResponse(await fetch(withParams("/api/sales/dormant", params), {
+    credentials: "include",
+  }));
+}
+
+export async function fetchSalesPortfolioApi(params?: {
+  search?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  return handleResponse(await fetch(withParams("/api/sales/portfolio", params), {
+    credentials: "include",
+  }));
+}
+
 export async function fetchSalesClientIndexApi(params?: {
   search?: string;
   mine?: boolean;
@@ -117,6 +149,72 @@ export async function summarizeSalesPortalNoteApi(payload: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   }));
+}
+
+export async function askSalesAssistantApi(payload: {
+  message: string;
+  history?: Array<{ role: "user" | "assistant"; content: string }>;
+  context?: Record<string, unknown>;
+  scope?: "personal" | "team";
+  dateFrom?: string;
+  dateTo?: string;
+}, signal?: AbortSignal) {
+  return handleResponse(await fetch("/api/sales/ai/chat", {
+    method: "POST",
+    signal,
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  }));
+}
+
+export async function fetchSalesTeamDashboardApi(params?: {
+  dateFrom?: string;
+  dateTo?: string;
+  salesperson?: string;
+  client?: string;
+  eventType?: string;
+  status?: string;
+  accountManager?: string;
+  customerGroup?: string;
+  area?: string;
+  dormancyBucket?: string;
+  coverage?: string;
+}) {
+  return handleResponse(await fetch(withParams("/api/sales/team/dashboard", params), {
+    credentials: "include",
+  }));
+}
+
+export async function fetchSalesTeamActivitiesApi(params?: {
+  dateFrom?: string;
+  dateTo?: string;
+  salesperson?: string;
+  client?: string;
+  eventType?: string;
+  status?: string;
+  accountManager?: string;
+  customerGroup?: string;
+  area?: string;
+  dormancyBucket?: string;
+  coverage?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  return handleResponse(await fetch(withParams("/api/sales/team/activities", params), {
+    credentials: "include",
+  }));
+}
+
+export async function exportSalesTeamWorkbookApi(params?: Record<string, string | undefined>) {
+  const response = await fetch(withParams("/api/sales/team/export", params), {
+    credentials: "include",
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(typeof payload.error === "string" ? payload.error : "SALES_EXPORT_FAILED");
+  }
+  return response.blob();
 }
 
 export async function createSalesPortalActivityApi(

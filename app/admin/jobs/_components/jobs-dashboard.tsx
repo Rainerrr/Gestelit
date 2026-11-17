@@ -71,10 +71,13 @@ export const JobsDashboard = () => {
         job_number: payload.job_number ?? "",
         customer_name: payload.customer_name ?? null,
         description: payload.description ?? null,
+        due_date: payload.due_date ?? null,
       });
       await loadJobs();
     } catch (error) {
       friendlyError(error);
+      const code = error instanceof Error ? error.message : "";
+      throw new Error(errorCopy[code] ?? "שמירת העבודה נכשלה. נסו שוב.");
     }
   };
 
@@ -85,8 +88,11 @@ export const JobsDashboard = () => {
         description: payload.description,
         due_date: payload.due_date,
       });
+      await loadJobs();
     } catch (error) {
       friendlyError(error);
+      const code = error instanceof Error ? error.message : "";
+      throw new Error(errorCopy[code] ?? "שמירת העבודה נכשלה. נסו שוב.");
     }
   };
 
@@ -129,6 +135,7 @@ export const JobsDashboard = () => {
 
   return (
     <AdminLayout
+      aiContext={{ screen: "ניהול עבודות", activeTab, visibleSummary: isLoadingJobs ? "העבודות נטענות" : `נטענו ${jobs.length} עבודות` }}
       header={
         <AdminPageHeader
           icon={Briefcase}
@@ -138,7 +145,8 @@ export const JobsDashboard = () => {
       }
       mobileBottomBar={<MobileBottomBar capsules={capsuleConfig} />}
     >
-      <div className="space-y-4 pb-mobile-nav">
+      <div className="space-y-5 pb-mobile-nav">
+        <div><p className="mb-2 text-xs font-medium text-muted-foreground">תכנון ומעקב</p><h2 className="text-2xl font-semibold">מההזמנה עד המוצר המוגמר</h2><p className="mt-2 text-sm text-muted-foreground">פתחו עבודה כדי לראות מוצרים, יעדים ורצף תחנות, ולעדכן את תוכנית הייצור.</p></div>
         {activeTab === "active" && (
           <JobsManagement
             jobs={jobs}

@@ -58,7 +58,7 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
   const mountedRef = useRef(true);
 
   useEffect(() => {
-    setPortalMounted(true);
+    queueMicrotask(() => setPortalMounted(true));
     return () => {
       mountedRef.current = false;
     };

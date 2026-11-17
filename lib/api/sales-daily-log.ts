@@ -42,6 +42,11 @@ export async function fetchSalesActivitiesApi(params?: {
   status?: string;
   nextActionFrom?: string;
   nextActionTo?: string;
+  accountManager?: string;
+  customerGroup?: string;
+  area?: string;
+  dormancyBucket?: string;
+  coverage?: string;
 }) {
   return handleResponse(await fetch(withParams("/api/admin/sales-daily-log", params), adminInit()));
 }
@@ -67,6 +72,11 @@ export async function fetchSalesSummaryApi(params?: {
   client?: string;
   eventType?: string;
   status?: string;
+  accountManager?: string;
+  customerGroup?: string;
+  area?: string;
+  dormancyBucket?: string;
+  coverage?: string;
 }) {
   return handleResponse(await fetch(withParams("/api/admin/sales-daily-log/summary", params), adminInit()));
 }
@@ -78,6 +88,11 @@ export async function exportSalesManagementWorkbookApi(params?: {
   client?: string;
   eventType?: string;
   status?: string;
+  accountManager?: string;
+  customerGroup?: string;
+  area?: string;
+  dormancyBucket?: string;
+  coverage?: string;
 }) {
   const response = await fetch(withParams("/api/admin/sales-daily-log/export", params), adminInit());
   if (!response.ok) {

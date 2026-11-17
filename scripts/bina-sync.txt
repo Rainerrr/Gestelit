@@ -8,18 +8,23 @@ param(
     "SR-BINASQL,30030",
     "SR-BINASQL\BINA"
   ),
-  [string]$Database = "BinaW18",
+  [string]$Database = "BinaW1",
   [string]$SqlUser = "readonly",
   [string]$SqlPassword = "REPLACE_WITH_SQL_PASSWORD",
-  [int]$MaxRecentOrders = 2000,
-  [int]$BatchSize = 400,
+  [ValidateRange(1,5000)][int]$MaxRecentOrders = 2000,
+  [ValidateRange(1,400)][int]$BatchSize = 200,
   [string]$StartAtTable = "",
-  [string]$ExtractorVersion = "bina-sync-utf8-20260615"
+  [string[]]$OnlyTables = @(),
+  [string]$ConfigPath = "",
+  [ValidateRange(5,120)][int]$QueryTimeoutSeconds = 30,
+  [ValidateRange(0,5000)][int]$BatchDelayMilliseconds = 250,
+  [string]$ExtractorVersion = "bina-sync-utf8-20261117"
 )
 
 $ErrorActionPreference = "Stop"
 
-$BaseDir = "C:\bina-sync"
+$BaseDir = $PSScriptRoot
+if (-not $BaseDir) { $BaseDir = "C:\bina-sync" }
 $LogFile = Join-Path $BaseDir "bina-sync.log"
 $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 $script:TableOrder = @(
@@ -49,13 +54,33 @@ $script:TableOrder = @(
   "SqlLogins"
 )
 $script:StartTableIndex = 0
+$script:TableErrors = @()
 
 New-Item -ItemType Directory -Force -Path $BaseDir | Out-Null
+if (-not $ConfigPath) { $ConfigPath = Join-Path $BaseDir "bina-sync-config.json" }
+if (Test-Path $ConfigPath) {
+  $config = Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+  foreach ($name in @("Endpoint", "SyncKey", "SqlServer", "Database", "SqlUser", "SqlPassword")) {
+    if (-not $PSBoundParameters.ContainsKey($name) -and $config.$name) {
+      Set-Variable -Name $name -Value ([string]$config.$name)
+    }
+  }
+}
+if ($Endpoint -match "YOUR-GESTELIT" -or $SyncKey -eq "REPLACE_WITH_BINA_SYNC_KEY" -or $SqlPassword -eq "REPLACE_WITH_SQL_PASSWORD") {
+  throw "Configure the endpoint and credentials before running the sync."
+}
+foreach ($table in $OnlyTables) {
+  if ($script:TableOrder -notcontains $table) { throw "Unknown OnlyTables entry: $table" }
+}
+# Exclusive file handle prevents manual and scheduled runs from overlapping.
+try {
+  $runLock = [System.IO.File]::Open((Join-Path $BaseDir "bina-sync.lock"), 'OpenOrCreate', 'ReadWrite', 'None')
+} catch { throw "Another BINA sync is running, or the lock file cannot be opened." }
 
 function Write-Log {
   param([string]$Message)
   $line = "$(Get-Date -Format o) $Message"
-  Add-Content -Path $LogFile -Value $line
+  Add-Content -Path $LogFile -Value $line -Encoding UTF8
   Write-Host $line
 }
 
@@ -82,7 +107,7 @@ function Should-SyncTable {
     throw "Unknown table '$TableName' in sync script"
   }
 
-  return ($index -ge $script:StartTableIndex)
+  return ($index -ge $script:StartTableIndex -and ($OnlyTables.Count -eq 0 -or $OnlyTables -contains $TableName))
 }
 
 function Write-SkipTable {
@@ -99,8 +124,8 @@ function Invoke-BinaQuery {
   $connectionString = "Server=$Server;Database=$Database;User ID=$SqlUser;Password=$SqlPassword;TrustServerCertificate=True;Encrypt=False;Connection Timeout=30;"
   $connection = New-Object System.Data.SqlClient.SqlConnection $connectionString
   $command = $connection.CreateCommand()
-  $command.CommandText = $Query
-  $command.CommandTimeout = 120
+  $command.CommandText = "SET LOCK_TIMEOUT 3000; SET DEADLOCK_PRIORITY LOW; " + $Query.Trim().TrimEnd(';') + " OPTION (MAXDOP 1);"
+  $command.CommandTimeout = $QueryTimeoutSeconds
   $adapter = New-Object System.Data.SqlClient.SqlDataAdapter $command
   $table = New-Object System.Data.DataTable
 
@@ -196,6 +221,7 @@ function Convert-BinaRows {
       bina_id = $binaId
       data = $data
       source_updated_at = $null
+      synced_at = (Get-Date).ToUniversalTime().ToString("o")
     }
 
     if ($SourceUpdatedColumn -and $data.Contains($SourceUpdatedColumn) -and $null -ne $data[$SourceUpdatedColumn]) {
@@ -252,6 +278,7 @@ function Send-BinaRows {
     }
 
     Write-Log "${TableName}: sent $count rows at offset $offset"
+    if ($BatchDelayMilliseconds -gt 0) { Start-Sleep -Milliseconds $BatchDelayMilliseconds }
   }
 }
 
@@ -349,13 +376,14 @@ ORDER BY RecordId DESC;
   }
   catch {
     Write-Log "WARN: skipped DFMlay: $($_.Exception.Message)"
+    $script:TableErrors += "DFMlay"
   }
 
   try {
     if (Should-SyncTable "TnuotMlay") {
-      $tnuotMlayQuery = "SELECT TOP ($MaxRecentOrders) * FROM dbo.TnuotMlay ORDER BY 1 DESC;"
+      $tnuotMlayQuery = "SELECT TOP ($MaxRecentOrders) * FROM dbo.TnuotMlay ORDER BY RecordId DESC;"
       $tnuotMlayRows = Invoke-BinaQuery -Query $tnuotMlayQuery
-      $tnuotMlaySyncRows = Convert-BinaRows -Rows $tnuotMlayRows -KeyColumns @("MisparTnua")
+      $tnuotMlaySyncRows = Convert-BinaRows -Rows $tnuotMlayRows -KeyColumns @("RecordId") -SourceUpdatedColumn "Tarik"
       Send-BinaRows -TableName "TnuotMlay" -Rows $tnuotMlaySyncRows
     }
     else {
@@ -364,6 +392,7 @@ ORDER BY RecordId DESC;
   }
   catch {
     Write-Log "WARN: skipped TnuotMlay: $($_.Exception.Message)"
+    $script:TableErrors += "TnuotMlay"
   }
 
   if (Should-SyncTable "HeshSapakRashi") {
@@ -496,9 +525,15 @@ ORDER BY RecordId DESC;
     Write-SkipTable "SqlLogins"
   }
 
+  if ($script:TableErrors.Count -gt 0) {
+    throw "BINA sync incomplete; failed tables: $($script:TableErrors -join ', ')"
+  }
   Write-Log "BINA sync completed"
 }
 catch {
   Write-Log "ERROR: $($_.Exception.Message)"
   exit 1
+}
+finally {
+  if ($runLock) { $runLock.Dispose() }
 }

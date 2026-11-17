@@ -1,3 +1,6 @@
+import { analyticsQueryTool } from "@/lib/ai/query/plan";
+import { runAnalyticsQuery } from "@/lib/ai/query/execute";
+import { selectMetricTrust } from "@/lib/ai/metric-trust";
 import {
   fetchSalesActivities,
   fetchSalesClients,
@@ -58,14 +61,14 @@ function stringArg(args: ToolArgs, key: string) {
 }
 
 function citationFromRow(source: string, row: Record<string, unknown>, index: number): AiToolCitation {
-  const key = String(row.bina_id ?? row.risk_id ?? row.document_no ?? row.work_order_id ?? row.supplier_code ?? row.delivery_no ?? row.invoice_no ?? index);
+  const key = String(row.bina_id ?? row.id ?? row.risk_id ?? row.document_no ?? row.work_order_id ?? row.supplier_code ?? row.delivery_no ?? row.invoice_no ?? index);
   const confidence = row.confidence ?? row.balance_confidence ?? row.material_confidence ?? row.route_confidence ?? row.relationship_confidence;
   return {
     source_view: source,
     grain: String(row.kind ?? row.entity_type ?? row.flow_type ?? row.domain ?? (row.work_order_id ? "work_order" : "row")),
     key,
     label: String(row.entity_label ?? row.party_name ?? row.customer_name ?? row.supplier_name ?? row.item_name ?? row.title ?? row.current_station_label ?? row.next_station_label ?? row.document_no ?? row.work_order_id ?? key),
-    synced_at: typeof row.synced_at === "string" ? row.synced_at : typeof row.last_synced_at === "string" ? row.last_synced_at : null,
+    synced_at: typeof row.synced_at === "string" ? row.synced_at : typeof row.last_synced_at === "string" ? row.last_synced_at : typeof row.updated_at === "string" ? row.updated_at : null,
     confidence: confidence === "exact"
       ? "exact"
       : confidence === "missing_data"
@@ -83,17 +86,20 @@ function citationsFromRows(source: string, rows: unknown[]): AiToolCitation[] {
 }
 
 function rowsResult(name: string, rows: unknown[], sources: string[], freshness?: string | null): AiToolResult {
+  const citations = citationsFromRows(sources[0] ?? name, rows);
   return {
     name,
     data: sanitizeToolText(rows),
     rowCount: rows.length,
     sources,
-    citations: citationsFromRows(sources[0] ?? name, rows),
-    freshness,
+    citations,
+    freshness: freshness ?? citations.reduce<string | null>((latest, row) =>
+      row.synced_at && (!latest || row.synced_at > latest) ? row.synced_at : latest, null),
   };
 }
 
 export const aiToolDefinitions = [
+  analyticsQueryTool,
   {
     type: "function" as const,
     name: "get_bina_dashboard_summary",
@@ -144,7 +150,7 @@ export const aiToolDefinitions = [
     parameters: {
       type: "object",
       properties: {
-        domain: { type: "string" },
+        domain: { type: "string", enum: ["overview", "production", "purchasing", "suppliers", "finance", "sales", "deliveries", "sync"] },
       },
       additionalProperties: false,
     },
@@ -222,7 +228,7 @@ export const aiToolDefinitions = [
   {
     type: "function" as const,
     name: "search_bina_work_orders",
-    description: "Search BINA work orders by customer, title, or order reference.",
+    description: "Search BINA work orders by customer, title, or order reference, newest work-order number first.",
     parameters: {
       type: "object",
       properties: {
@@ -353,11 +359,12 @@ export const aiToolDefinitions = [
   {
     type: "function" as const,
     name: "get_supplier_aging",
-    description: "Get suppliers with open and overdue balances.",
+    description: "Get supplier balances. Use sort_by=open_balance for largest total open balances; use overdue_balance for largest overdue balances. Missing currencies must remain unknown.",
     parameters: {
       type: "object",
       properties: {
         search: { type: "string" },
+        sort_by: { type: "string", enum: ["open_balance", "overdue_balance"] },
         limit: { type: "number" },
       },
       additionalProperties: false,
@@ -418,11 +425,12 @@ export const aiToolDefinitions = [
   {
     type: "function" as const,
     name: "get_delivery_status",
-    description: "Get shipment/delivery rows, including sent-open deliveries.",
+    description: "Get delivery rows. For deliveries actually sent but still open, pass delivery_state=sent_open. draft_or_unknown is NOT evidence of dispatch or an open shipment. Empty results describe only the partial cache.",
     parameters: {
       type: "object",
       properties: {
         search: { type: "string" },
+        delivery_state: { type: "string", enum: ["sent_open", "draft_or_unknown", "returned_or_received"] },
         limit: { type: "number" },
       },
       additionalProperties: false,
@@ -536,9 +544,10 @@ export const aiToolDefinitions = [
 ];
 
 export async function runAiTool(name: string, args: ToolArgs): Promise<AiToolResult> {
-  const limit = Math.min(numberArg(args, "limit", 20), Number(process.env.AI_MAX_ROWS ?? 50));
+  const limit = Math.max(1, Math.min(Math.floor(numberArg(args, "limit", 20)), Number(process.env.AI_MAX_ROWS ?? 50)));
 
   switch (name) {
+    case "query_analytics": return runAnalyticsQuery(args);
     case "get_bina_dashboard_summary": {
       const summary = await fetchBinaDashboardSummary();
       return {
@@ -587,16 +596,21 @@ export async function runAiTool(name: string, args: ToolArgs): Promise<AiToolRes
     }
     case "get_cross_domain_risk_map": {
       const search = stringArg(args, "search");
+      const unavailableSources: string[] = [];
+      const optional = <T>(source: string, query: Promise<T>, fallback: T) => query.catch(() => {
+        unavailableSources.push(source);
+        return fallback;
+      });
       const [overview, sync, riskQueue, workOrders, purchasing, suppliers, finance, sales, deliveries] = await Promise.all([
-        fetchBinaOverview(),
-        fetchBinaSyncStatus(),
-        fetchBinaCrossDomainRisks({ search, limit }),
-        fetchBinaWorkOrders({ search, limit: 200 }),
-        fetchBinaPurchasing({ search, limit: 200 }),
-        fetchBinaSuppliers({ search, limit: 100 }),
-        fetchBinaFinance({ search, limit: 100 }),
-        fetchBinaSales({ search, limit: 100 }),
-        fetchBinaDeliveries({ search, limit: 100 }),
+        optional("mart_bina_overview_kpis", fetchBinaOverview(), null),
+        optional("mart_bina_sync_health", fetchBinaSyncStatus(), { tables: [], logs: [] }),
+        optional("mart_bina_cross_domain_risk", fetchBinaCrossDomainRisks({ search, limit }), []),
+        optional("mart_bina_work_order_status", fetchBinaWorkOrders({ search, limit: 200 }), { rows: [], count: 0 }),
+        optional("mart_bina_purchase_flow", fetchBinaPurchasing({ search, limit: 200 }), { rows: [], count: 0 }),
+        optional("mart_bina_supplier_aging", fetchBinaSuppliers({ search, limit: 100 }), { rows: [], count: 0 }),
+        optional("mart_bina_finance", fetchBinaFinance({ search, limit: 100 }), { rows: [], count: 0 }),
+        optional("mart_bina_sales_status", fetchBinaSales({ search, limit: 100 }), { rows: [], count: 0 }),
+        optional("mart_bina_delivery_status", fetchBinaDeliveries({ search, limit: 100 }), { rows: [], count: 0 }),
       ]);
       const riskyWorkOrders = workOrders.rows
         .filter((row) => row.link_status !== "linked")
@@ -622,6 +636,9 @@ export async function runAiTool(name: string, args: ToolArgs): Promise<AiToolRes
         name,
         data: sanitizeToolText({
           overview,
+          coverage: "partial_sample",
+          unavailableSources,
+          evidenceNote: unavailableSources.length ? "Listed sources are unavailable; missing rows do not establish absence of risks. Other domains are sampled." : "Domains are sampled; links require matching keys.",
           syncFreshness: sync.tables.slice(0, 25),
           evidenceBackedRiskQueue: riskQueue,
           riskyWorkOrders,
@@ -645,13 +662,13 @@ export async function runAiTool(name: string, args: ToolArgs): Promise<AiToolRes
           "mart_bina_finance",
           "mart_bina_sales_status",
           "mart_bina_delivery_status",
-        ],
+        ].filter((source) => !unavailableSources.includes(source)),
         citations: [
           ...citationsFromRows("mart_bina_cross_domain_risk", riskQueue),
           ...citationsFromRows("mart_bina_work_order_status", riskyWorkOrders),
           ...citationsFromRows("mart_bina_finance_transactions", openFinance),
         ],
-        freshness: overview.sync.lastSyncedAt,
+        freshness: overview?.sync.lastSyncedAt ?? null,
       };
     }
     case "get_bina_sync_health": {
@@ -670,15 +687,13 @@ export async function runAiTool(name: string, args: ToolArgs): Promise<AiToolRes
     case "get_metric_trust": {
       const domain = stringArg(args, "domain");
       const status = await fetchBinaSyncStatus();
-      const rows = (status.coverage ?? []).filter((row) => !domain || row.domain === domain);
+      const trust = selectMetricTrust(status.coverage ?? [], domain);
+      const { rows } = trust;
       return {
         name,
         data: sanitizeToolText({
-          coverageStatus: rows.some((row) => row.coverage_status === "blocked_partial_sample")
-            ? "blocked_partial_sample"
-            : rows.some((row) => row.coverage_status !== "complete")
-            ? "partial_sample"
-            : "complete",
+          domain: trust.domain,
+          coverageStatus: trust.coverageStatus,
           rows,
         }),
         rowCount: rows.length,
@@ -791,6 +806,7 @@ export async function runAiTool(name: string, args: ToolArgs): Promise<AiToolRes
         data: sanitizeToolText(detail),
         rowCount: detail.productionRows.length + (detail.order ? 1 : 0),
         sources: ["mart_bina_work_order_status", "stg_bina_production_rows"],
+        citations: [...citationsFromRows("mart_bina_work_order_status", detail.order ? [detail.order] : []), ...citationsFromRows("stg_bina_production_rows", detail.productionRows)],
         freshness: detail.order?.synced_at ?? null,
       };
     }
@@ -798,7 +814,10 @@ export async function runAiTool(name: string, args: ToolArgs): Promise<AiToolRes
       const overview = await fetchBinaOverview();
       return {
         name,
-        data: sanitizeToolText({ purchasing: overview.purchasing, suppliers: overview.suppliers, sync: overview.sync }),
+        data: sanitizeToolText({
+          purchasing: { openRequestLines: overview.purchasing.openRequestLines, sampledAmount: { value: overview.purchasing.openRequestAmount, currency: null, scope: "sample_only", usableAsCompanyTotal: false } },
+          suppliers: overview.suppliers, sync: overview.sync, scope: overview.scope,
+        }),
         rowCount: 1,
         sources: ["mart_bina_purchase_flow", "mart_bina_supplier_aging", "mart_bina_sync_health"],
         freshness: overview.sync.lastSyncedAt,
@@ -884,27 +903,30 @@ export async function runAiTool(name: string, args: ToolArgs): Promise<AiToolRes
         fetchBinaPurchasing({ search: String(workOrderId), limit }),
         fetchBinaDeliveries({ search: String(workOrderId), limit }),
       ]);
+      const matchedOrders = orders.rows.filter((row) => row.work_order_id === workOrderId);
+      const matchedPurchasing = purchasing.rows.filter((row) => row.work_order_id === workOrderId);
+      const matchedDeliveries = deliveries.rows.filter((row) => row.work_order_id === workOrderId);
       return {
         name,
-        data: sanitizeToolText({ orders: orders.rows, purchasing: purchasing.rows, deliveries: deliveries.rows }),
-        rowCount: orders.rows.length + purchasing.rows.length + deliveries.rows.length,
+        data: sanitizeToolText({ orders: matchedOrders, purchasing: matchedPurchasing, deliveries: matchedDeliveries, coverage: "partial_sample" }),
+        rowCount: matchedOrders.length + matchedPurchasing.length + matchedDeliveries.length,
         sources: ["mart_bina_work_order_status", "mart_bina_purchase_flow", "mart_bina_delivery_status"],
+        citations: [...citationsFromRows("mart_bina_work_order_status", matchedOrders), ...citationsFromRows("mart_bina_purchase_flow", matchedPurchasing), ...citationsFromRows("mart_bina_delivery_status", matchedDeliveries)],
+        freshness: matchedOrders[0]?.synced_at ?? matchedPurchasing[0]?.synced_at ?? null,
       };
     }
     case "get_open_purchase_requests": {
-      const { rows } = await fetchBinaPurchasing({ search: stringArg(args, "search"), limit: 200 });
-      return rowsResult(
-        name,
-        rows.filter((row) => row.flow_type === "purchase_request" && ((row.remaining_quantity ?? 0) > 0 || row.remaining_quantity === null)).slice(0, limit),
-        ["mart_bina_purchase_flow"],
-      );
+      const { rows, count } = await fetchBinaPurchasing({ search: stringArg(args, "search"), limit, openRequestsOnly: true });
+      const result = rowsResult(name, rows, ["mart_bina_purchase_flow"]);
+      return { ...result, data: sanitizeToolText({ rows, totalMatchingCachedRows: count, coverage: "partial_sample" }) };
     }
     case "search_purchase_lines": {
       const { rows } = await fetchBinaPurchasing({ search: stringArg(args, "search"), limit });
       return rowsResult(name, rows, ["mart_bina_purchase_flow"]);
     }
     case "get_supplier_aging": {
-      const { rows } = await fetchBinaSuppliers({ search: stringArg(args, "search"), limit });
+      const sortBy = args.sort_by === "open_balance" ? "open_balance" : "overdue_balance";
+      const { rows } = await fetchBinaSuppliers({ search: stringArg(args, "search"), limit, sortBy });
       return rowsResult(name, rows, ["mart_bina_supplier_aging"]);
     }
     case "get_supplier_summary": {
@@ -957,12 +979,14 @@ export async function runAiTool(name: string, args: ToolArgs): Promise<AiToolRes
       );
     }
     case "get_open_debts": {
-      const { rows } = await fetchBinaFinance({ search: stringArg(args, "search"), limit });
-      return rowsResult(name, rows.filter((row) => (row.open_amount ?? 0) > 0), ["mart_bina_finance"]);
+      const { rows } = await fetchBinaFinance({ search: stringArg(args, "search"), limit, openOnly: true });
+      return rowsResult(name, rows, ["mart_bina_finance_transactions"]);
     }
     case "get_delivery_status": {
-      const { rows } = await fetchBinaDeliveries({ search: stringArg(args, "search"), limit });
-      return rowsResult(name, rows, ["mart_bina_delivery_status"]);
+      const deliveryState = stringArg(args, "delivery_state");
+      const { rows, count } = await fetchBinaDeliveries({ search: stringArg(args, "search"), limit, deliveryState });
+      const result = rowsResult(name, rows, ["mart_bina_delivery_status"]);
+      return { ...result, data: sanitizeToolText({ rows, totalMatchingCachedRows: count, coverage: "partial_sample", requestedState: deliveryState ?? null, interpretation: "Only sent_open is evidence of a dispatched open delivery. draft_or_unknown is not evidence of dispatch. Empty cache results do not prove none exist in BINA." }) };
     }
     case "get_sales_invoice_summary": {
       const { rows } = await fetchBinaSales({ search: stringArg(args, "search"), limit });
@@ -977,13 +1001,14 @@ export async function runAiTool(name: string, args: ToolArgs): Promise<AiToolRes
       return rowsResult(name, rows, ["sales_activity_logs"]);
     }
     case "get_sales_followups_due": {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jerusalem", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
       const { rows } = await fetchSalesActivities({
         status: "follow_up",
         nextActionTo: today,
         limit,
       });
-      return rowsResult(name, rows, ["sales_activity_logs"]);
+      const result = rowsResult(name, rows, ["sales_activity_logs"]);
+      return { ...result, data: sanitizeToolText({ asOfDate: today, timeZone: "Asia/Jerusalem", scope: "follow_up status with next_action_date on or before asOfDate; limited rows, not a full task count", rows: rows.map((row) => ({ ...row, dueState: String(row.next_action_date).slice(0, 10) < today ? "overdue" : "due_today" })) }) };
     }
     case "get_sales_client_activity": {
       const [summary, clients] = await Promise.all([
@@ -1007,6 +1032,13 @@ export async function runAiTool(name: string, args: ToolArgs): Promise<AiToolRes
         fetchBinaSales({ search: String(workOrderId), limit }),
         fetchBinaDeliveries({ search: String(workOrderId), limit }),
       ]);
+      // Search can match a title/document number belonging to another order.
+      // Only explicit relationship keys establish evidence for the requested order.
+      orders.rows = orders.rows.filter((row) => row.work_order_id === workOrderId);
+      purchasing.rows = purchasing.rows.filter((row) => row.work_order_id === workOrderId);
+      finance.rows = finance.rows.filter((row) => row.related_work_order_id === workOrderId);
+      sales.rows = sales.rows.filter((row) => row.work_order_id === workOrderId);
+      deliveries.rows = deliveries.rows.filter((row) => row.work_order_id === workOrderId);
       const detail = orders.rows[0]?.bina_id ? await fetchBinaWorkOrderDetail(String(orders.rows[0].bina_id)) : null;
       const citations = [
         ...citationsFromRows("mart_bina_work_order_status", orders.rows),
@@ -1042,11 +1074,12 @@ export async function runAiTool(name: string, args: ToolArgs): Promise<AiToolRes
     }
     case "get_supplier_evidence": {
       const supplierCode = numberArg(args, "supplier_code", -1);
-      const search = stringArg(args, "search") ?? (supplierCode > -1 ? String(supplierCode) : undefined);
+      const search = supplierCode > -1 ? undefined : stringArg(args, "search");
+      const exactCode = supplierCode > -1 ? supplierCode : undefined;
       const [suppliers, purchasing, finance] = await Promise.all([
-        fetchBinaSuppliers({ search, limit }),
-        fetchBinaPurchasing({ search, limit }),
-        fetchBinaFinance({ search, partyType: "supplier", limit }),
+        fetchBinaSuppliers({ search, supplierCode: exactCode, limit }),
+        fetchBinaPurchasing({ search, supplierCode: exactCode, limit }),
+        fetchBinaFinance({ search, partyCode: exactCode, partyType: "supplier", limit }),
       ]);
       const supplierRows = supplierCode > -1 ? suppliers.rows.filter((row) => row.supplier_code === supplierCode) : suppliers.rows;
       const purchasingRows = supplierCode > -1 ? purchasing.rows.filter((row) => row.supplier_code === supplierCode) : purchasing.rows;

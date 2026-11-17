@@ -28,7 +28,7 @@ describe("sales log utilities", () => {
 
   it("normalizes invalid dates to a valid ISO string", () => {
     expect(normalizeSalesDateTime("2026-05-14T08:30:00.000Z")).toBe("2026-05-14T08:30:00.000Z");
-    expect(new Date(normalizeSalesDateTime("not-a-date")).toString()).not.toBe("Invalid Date");
+    expect(() => normalizeSalesDateTime("not-a-date")).toThrow("INVALID_EVENT_AT");
     expect(normalizeSalesDate("2026-05-14")).toBe("2026-05-14");
     expect(normalizeSalesDate("14/05/2026")).toBeNull();
   });

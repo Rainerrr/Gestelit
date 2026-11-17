@@ -50,9 +50,12 @@ export const JobProgressProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   useEffect(() => {
-    void fetchData();
+    const initialFetch = setTimeout(() => void fetchData(), 0);
     const interval = setInterval(fetchData, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
+    return () => {
+      clearTimeout(initialFetch);
+      clearInterval(interval);
+    };
   }, [fetchData]);
 
   // Build lookup maps for efficient queries

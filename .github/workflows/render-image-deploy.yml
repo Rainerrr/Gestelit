@@ -2,6 +2,11 @@ name: Render Image Deploy
 
 on:
   workflow_dispatch:
+    inputs:
+      deploy:
+        description: 'Deploy after production schema and RPC checks pass'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -33,14 +38,17 @@ jobs:
           context: .
           platforms: linux/amd64
           push: true
+          build-args: |
+            NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+            NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
           tags: |
             ${{ env.IMAGE_NAME }}:${{ github.sha }}
-            ${{ env.IMAGE_NAME }}:latest
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
 
       - name: Switch Render service to prebuilt image
+        if: ${{ inputs.deploy }}
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
@@ -69,6 +77,7 @@ jobs:
               }')"
 
       - name: Trigger Render image deploy
+        if: ${{ inputs.deploy }}
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}

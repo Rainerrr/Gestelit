@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireSalesSessionUser } from "@/lib/auth/sales-session";
+import { requireSalesScope } from "@/lib/auth/sales-session";
 import {
   createSalesActivityAttachment,
   createSalesActivityForUser,
@@ -7,7 +7,7 @@ import {
   fetchSalesUserSummary,
   type SalesActivityInput,
 } from "@/lib/data/sales-log";
-import { uploadSalesAttachmentToStorage } from "@/lib/utils/storage";
+import { uploadSalesAttachmentToStorage, validateSalesAttachment } from "@/lib/utils/storage";
 import { normalizeSalesInteger, normalizeSalesText } from "@/lib/data/sales-log-utils";
 import { salesListParams } from "@/app/api/admin/sales-daily-log/_route-utils";
 
@@ -21,6 +21,13 @@ function formText(formData: FormData, key: string) {
 function formNumberOrNull(formData: FormData, key: string) {
   const value = formText(formData, key);
   return value ? value : null;
+}
+
+function formBooleanOrNull(formData: FormData, key: string) {
+  const value = formText(formData, key);
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return null;
 }
 
 function formJsonRecord(formData: FormData, key: string) {
@@ -44,6 +51,7 @@ function formPayload(formData: FormData): Omit<SalesActivityInput, "salesperson"
     customer_code: normalizeSalesInteger(formText(formData, "customer_code")),
     local_client_id: formText(formData, "local_client_id") || null,
     contact_person: formText(formData, "contact_person"),
+    contact_occurred: formBooleanOrNull(formData, "contact_occurred"),
     raw_note: formText(formData, "raw_note"),
     ai_summary: formText(formData, "ai_summary"),
     ai_next_action: formText(formData, "ai_next_action"),
@@ -62,7 +70,7 @@ function formPayload(formData: FormData): Omit<SalesActivityInput, "salesperson"
 
 export async function GET(request: Request) {
   try {
-    const user = await requireSalesSessionUser();
+    const user = await requireSalesScope("sales_personal_view");
     const [activities, summary] = await Promise.all([
       fetchSalesUserActivities(user.id, salesListParams(request)),
       fetchSalesUserSummary(user.id),
@@ -75,16 +83,24 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const user = await requireSalesSessionUser();
+    const user = await requireSalesScope("sales_activity_write");
     const formData = await request.formData().catch(() => null);
     if (!formData) {
       return NextResponse.json({ error: "INVALID_PAYLOAD" }, { status: 400 });
     }
 
-    const files = formData
+    const allFiles = formData
       .getAll("attachments")
-      .filter((item): item is File => item instanceof File && item.size > 0)
-      .slice(0, 5);
+      .filter((item): item is File => item instanceof File && item.size > 0);
+    if (allFiles.length > 5) {
+      return NextResponse.json({ error: "TOO_MANY_ATTACHMENTS" }, { status: 400 });
+    }
+    allFiles.forEach(validateSalesAttachment);
+    const totalBytes = allFiles.reduce((sum, file) => sum + file.size, 0);
+    if (totalBytes > 25 * 1024 * 1024) {
+      return NextResponse.json({ error: "ATTACHMENTS_TOTAL_TOO_LARGE" }, { status: 400 });
+    }
+    const files = allFiles;
 
     const activity = await createSalesActivityForUser(user, formPayload(formData));
     const attachments = [];

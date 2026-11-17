@@ -52,5 +52,10 @@ export function salesListParams(request: Request) {
     status: url.searchParams.get("status"),
     nextActionFrom: url.searchParams.get("nextActionFrom"),
     nextActionTo: url.searchParams.get("nextActionTo"),
+    accountManager: url.searchParams.get("accountManager"),
+    customerGroup: url.searchParams.get("customerGroup"),
+    area: url.searchParams.get("area"),
+    dormancyBucket: url.searchParams.get("dormancyBucket"),
+    coverage: url.searchParams.get("coverage"),
   };
 }

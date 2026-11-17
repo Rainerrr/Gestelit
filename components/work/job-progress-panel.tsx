@@ -455,19 +455,25 @@ function PipelineFlowDisplay({
   // Trigger pulse animation when values change
   useEffect(() => {
     if (prevUpstreamRef.current !== upstreamWip) {
-      setAnimatingUpstream(true);
+      const frame = requestAnimationFrame(() => setAnimatingUpstream(true));
       const timer = setTimeout(() => setAnimatingUpstream(false), 600);
       prevUpstreamRef.current = upstreamWip;
-      return () => clearTimeout(timer);
+      return () => {
+        cancelAnimationFrame(frame);
+        clearTimeout(timer);
+      };
     }
   }, [upstreamWip]);
 
   useEffect(() => {
     if (prevDownstreamRef.current !== waitingOutput) {
-      setAnimatingDownstream(true);
+      const frame = requestAnimationFrame(() => setAnimatingDownstream(true));
       const timer = setTimeout(() => setAnimatingDownstream(false), 600);
       prevDownstreamRef.current = waitingOutput;
-      return () => clearTimeout(timer);
+      return () => {
+        cancelAnimationFrame(frame);
+        clearTimeout(timer);
+      };
     }
   }, [waitingOutput]);
 
