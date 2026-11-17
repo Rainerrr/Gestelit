@@ -97,3 +97,19 @@ describe("optional station checklists", () => {
     expect(canCompleteChecklist(state, { required: true })).toBe(true);
   });
 });
+
+import { selectMetricTrust } from "@/lib/ai/metric-trust";
+import type { BinaSyncCoverageRow } from "@/lib/data/bina";
+describe("metric coverage claims", () => {
+  const rows = [
+    { source_table: "TMSapakNigrar", domain: "suppliers", coverage_status: "partial_sample" },
+    { source_table: "Hovot", domain: "finance", coverage_status: "partial_sample" },
+  ] as BinaSyncCoverageRow[];
+  it("never labels absent evidence complete", () => {
+    expect(selectMetricTrust([], "suppliers").coverageStatus).toBe("missing_data");
+    expect(selectMetricTrust(rows, "unknown").coverageStatus).toBe("missing_data");
+  });
+  it("accepts singular supplier and includes debt data coverage", () => {
+    expect(selectMetricTrust(rows, "supplier")).toMatchObject({ domain: "suppliers", coverageStatus: "partial_sample", rows });
+  });
+});

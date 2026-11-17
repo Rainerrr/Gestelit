@@ -1,3 +1,4 @@
+import { selectMetricTrust } from "@/lib/ai/metric-trust";
 import {
   fetchSalesActivities,
   fetchSalesClients,
@@ -144,7 +145,7 @@ export const aiToolDefinitions = [
     parameters: {
       type: "object",
       properties: {
-        domain: { type: "string" },
+        domain: { type: "string", enum: ["overview", "production", "purchasing", "suppliers", "finance", "sales", "deliveries", "sync"] },
       },
       additionalProperties: false,
     },
@@ -670,15 +671,13 @@ export async function runAiTool(name: string, args: ToolArgs): Promise<AiToolRes
     case "get_metric_trust": {
       const domain = stringArg(args, "domain");
       const status = await fetchBinaSyncStatus();
-      const rows = (status.coverage ?? []).filter((row) => !domain || row.domain === domain);
+      const trust = selectMetricTrust(status.coverage ?? [], domain);
+      const { rows } = trust;
       return {
         name,
         data: sanitizeToolText({
-          coverageStatus: rows.some((row) => row.coverage_status === "blocked_partial_sample")
-            ? "blocked_partial_sample"
-            : rows.some((row) => row.coverage_status !== "complete")
-            ? "partial_sample"
-            : "complete",
+          domain: trust.domain,
+          coverageStatus: trust.coverageStatus,
           rows,
         }),
         rowCount: rows.length,
