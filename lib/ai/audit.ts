@@ -1,4 +1,5 @@
 import { createServiceSupabase } from "@/lib/supabase/client";
+import { NotFoundError } from "@/lib/auth/permissions";
 
 export async function createAiSession(params: {
   sessionId?: string | null;
@@ -7,6 +8,10 @@ export async function createAiSession(params: {
   metadata?: Record<string, unknown>;
 }) {
   if (params.sessionId) {
+    const { data, error } = await createServiceSupabase().from("ai_chat_sessions")
+      .select("id").eq("id", params.sessionId).maybeSingle();
+    if (error) throw new Error("AI_SESSION_READ_FAILED");
+    if (!data) throw new NotFoundError("AI session not found");
     return params.sessionId;
   }
 
@@ -23,6 +28,17 @@ export async function createAiSession(params: {
 
   if (error) throw new Error(`AI_SESSION_CREATE_FAILED: ${error.message}`);
   return String(data.id);
+}
+
+export async function getAiConversationHistory(sessionId: string) {
+  const { data, error } = await createServiceSupabase().from("ai_chat_messages")
+    .select("role,content").eq("session_id", sessionId)
+    .in("role", ["user", "assistant"]).order("created_at", { ascending: false }).limit(8);
+  if (error) throw new Error("AI_HISTORY_READ_FAILED");
+  return (data ?? []).reverse().map((row) => ({
+    role: row.role as "user" | "assistant",
+    content: String(row.content).slice(0, 4000),
+  }));
 }
 
 export async function logAiMessage(params: {

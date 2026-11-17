@@ -541,7 +541,8 @@ function BinaCommandCenter({
   const atRisk = numberValue(productionMetrics.at_risk_count) || numberValue(overviewData?.workOrders?.atRisk);
   const missingRoutes = numberValue(productionMetrics.missing_route_count);
   const materialBlocked = numberValue(productionMetrics.material_blocked_count);
-  const supplierExposure = numberValue(overviewData?.suppliers?.openBalance);
+  const supplierBalances = overviewData?.suppliers?.balancesByCurrency;
+  const supplierExposure = Array.isArray(supplierBalances) && supplierBalances.length === 1 ? `${formatNumber(supplierBalances[0].openBalance)} ${String(supplierBalances[0].currency)}` : "לפי מטבע";
   const openPurchasing = numberValue(overviewData?.purchasing?.openRequestLines);
 
   const focusTiles = [
@@ -563,8 +564,8 @@ function BinaCommandCenter({
     },
     {
       label: "חשיפה כספית",
-      value: formatCompactMoney(supplierExposure, "ILS"),
-      hint: "יתרות ספקים פתוחות לפי BINA",
+      value: supplierExposure,
+      hint: "יתרות במדגם בלבד · פירוט לפי מטבע בכספים",
       icon: CircleDollarSign,
       tone: "from-violet-500/20 to-blue-500/10 border-violet-400/25",
       tab: "finance" as TabId,
@@ -687,12 +688,12 @@ function DataQualityBanner({
   if (!shouldShow) return null;
 
   return (
-    <Card className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
+    <Card className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-950 dark:text-amber-100">
       <div className="flex items-start gap-2">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
         <div>
           <div className="font-semibold">אמינות נתונים: יש להתייחס לנתוני BINA כמדגם/חלון אחרון עד להוכחת כיסוי מלא</div>
-          <div className="mt-1 text-amber-100/80">
+          <div className="mt-1 text-amber-800 dark:text-amber-100/80">
             {partialTables > 0 && `${formatNumber(partialTables)} טבלאות מסומנות כסנכרון חלקי. `}
             {staleTables > 0 && `${formatNumber(staleTables)} טבלאות מיושנות. `}
             {emptyTables > 0 && `${formatNumber(emptyTables)} טבלאות ריקות. `}
@@ -1591,7 +1592,7 @@ export const BinaDashboard = () => {
               <KpiCard label="פק״עות שלא יובאו" value={formatNumber(overviewData?.workOrders?.notImported)} icon={FileSearch} tone="amber" />
               <KpiCard label="פק״עות בסיכון" value={formatNumber(overviewData?.workOrders?.atRisk)} icon={AlertTriangle} tone="red" />
               <KpiCard label="בקשות רכש פתוחות" value={formatNumber(overviewData?.purchasing?.openRequestLines)} icon={ShoppingCart} tone="amber" />
-              <KpiCard label="יתרת ספקים פתוחה" value={formatCompactMoney(overviewData?.suppliers?.openBalance, "ILS")} icon={WalletCards} tone="blue" hint="לפי מטבע מרכזי" />
+              <KpiCard label="יתרת ספקים פתוחה" value="לפי מטבע" icon={WalletCards} tone="blue" hint="מדגם בלבד · פירוט בכספים" />
               <KpiCard label="משלוחים פתוחים" value={formatNumber(overviewData?.deliveries?.sentOpen)} icon={Ship} tone="red" />
             </div>
             <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
@@ -1623,8 +1624,8 @@ export const BinaDashboard = () => {
             <Card className="rounded-xl border border-border bg-card/50 p-4">
               <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <h2 className="text-base font-semibold">פק״עות אחרונות לדרילדאון</h2>
-                  <p className="text-sm text-muted-foreground">הטבלה היא שכבת חקירה בלבד. ה-KPI מעליה מסומן כחלקי אם הסנכרון חלקי.</p>
+                  <h2 className="text-base font-semibold">פק״עות אחרונות</h2>
+                  <p className="text-sm text-muted-foreground">ממוינות לפי מספר פק״ע, מהחדש לישן. הספירות מתייחסות לעותק המסונכרן בלבד; יתרות וסכומים הם מדגם חלקי.</p>
                 </div>
                 <Button onClick={() => void sendAi("סכם לי את מצב הייצור, הרכש, הכספים והמשלוחים ותציע מה לבדוק עכשיו")} className="gap-2">
                   <Bot className="h-4 w-4" />

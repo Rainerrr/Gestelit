@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { createErrorResponse, requireAdminPassword } from "@/lib/auth/permissions";
+import { requireAdminPassword } from "@/lib/auth/permissions";
+import { aiErrorResponse, isAiSessionId } from "@/lib/ai/http";
 import { createServiceSupabase } from "@/lib/supabase/client";
 
 export const dynamic = "force-dynamic";
@@ -8,6 +9,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   try {
     await requireAdminPassword(request, { allowQueryPassword: false });
     const { id } = await context.params;
+    if (!isAiSessionId(id)) return NextResponse.json({ error: "INVALID_SESSION_ID" }, { status: 400 });
     const supabase = createServiceSupabase();
 
     const [sessionResult, messagesResult, toolsResult] = await Promise.all([
@@ -27,6 +29,6 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       toolCalls: toolsResult.data ?? [],
     });
   } catch (error) {
-    return createErrorResponse(error, "AI_SESSION_FAILED");
+    return aiErrorResponse(error, "AI_SESSION_FAILED");
   }
 }
