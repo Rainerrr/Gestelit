@@ -50,6 +50,11 @@ describe("AI evidence retrieval", () => {
     await runAiTool("get_open_debts", { limit: 3 });
     expect(mocks.fetchBinaFinance).toHaveBeenCalledWith({ search: undefined, limit: 3, openOnly: true });
   });
+  it("looks up supplier codes as keys rather than searching names for digits", async () => {
+    await runAiTool("get_supplier_evidence", { supplier_code: 60305, limit: 3 });
+    expect(mocks.fetchBinaSuppliers).toHaveBeenCalledWith({ search: undefined, supplierCode: 60305, limit: 3 });
+    expect(mocks.fetchBinaFinance).toHaveBeenCalledWith({ search: undefined, partyCode: 60305, partyType: "supplier", limit: 3 });
+  });
   it("bounds negative and oversized tool limits", async () => {
     await runAiTool("search_bina_work_orders", { limit: -10 });expect(mocks.fetchBinaWorkOrders).toHaveBeenLastCalledWith({ search: undefined, limit: 1 });
     await runAiTool("search_bina_work_orders", { limit: 100000 });expect(mocks.fetchBinaWorkOrders).toHaveBeenLastCalledWith({ search: undefined, limit: 50 });

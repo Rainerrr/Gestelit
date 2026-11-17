@@ -1070,11 +1070,12 @@ export async function runAiTool(name: string, args: ToolArgs): Promise<AiToolRes
     }
     case "get_supplier_evidence": {
       const supplierCode = numberArg(args, "supplier_code", -1);
-      const search = stringArg(args, "search") ?? (supplierCode > -1 ? String(supplierCode) : undefined);
+      const search = supplierCode > -1 ? undefined : stringArg(args, "search");
+      const exactCode = supplierCode > -1 ? supplierCode : undefined;
       const [suppliers, purchasing, finance] = await Promise.all([
-        fetchBinaSuppliers({ search, limit }),
-        fetchBinaPurchasing({ search, limit }),
-        fetchBinaFinance({ search, partyType: "supplier", limit }),
+        fetchBinaSuppliers({ search, supplierCode: exactCode, limit }),
+        fetchBinaPurchasing({ search, supplierCode: exactCode, limit }),
+        fetchBinaFinance({ search, partyCode: exactCode, partyType: "supplier", limit }),
       ]);
       const supplierRows = supplierCode > -1 ? suppliers.rows.filter((row) => row.supplier_code === supplierCode) : suppliers.rows;
       const purchasingRows = supplierCode > -1 ? purchasing.rows.filter((row) => row.supplier_code === supplierCode) : purchasing.rows;

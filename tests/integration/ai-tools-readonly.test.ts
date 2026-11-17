@@ -5,6 +5,10 @@ import { aiToolDefinitions, runAiTool } from "@/lib/ai/tools/bina-tools";
 const enabled = process.env.AI_RUN_LIVE_TOOLS === "1";
 const results: unknown[] = [];
 describe.skipIf(!enabled)("Approved AI tools against production read models (no writes)", () => {
+  it("supplier numeric identity", async () => {
+    const result = await runAiTool("get_supplier_evidence", { supplier_code: 60305, limit: 3 });
+    expect(result.data).toMatchObject({ supplierCode: 60305, supplierRows: [expect.objectContaining({ supplier_code: 60305 })] });
+  });
   for (const definition of aiToolDefinitions) {
     it(definition.name, async () => {
       const started = Date.now();

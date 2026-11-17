@@ -461,6 +461,7 @@ type PageParams = {
 type AnyRecord = Record<string, unknown>;
 
 export type BinaFinanceParams = PageParams & {
+  partyCode?: number;
   kind?: string | null;
   partyType?: string | null;
   dateFrom?: string | null;
@@ -1496,7 +1497,7 @@ export async function fetchBinaWorkOrderOperationalProfile(params: {
   };
 }
 
-export async function fetchBinaPurchasing(params: PageParams & { openRequestsOnly?: boolean } = {}) {
+export async function fetchBinaPurchasing(params: PageParams & { openRequestsOnly?: boolean; supplierCode?: number } = {}) {
   const supabase = createServiceSupabase();
   const limit = clampLimit(params.limit);
   const offset = Math.max(0, params.offset ?? 0);
@@ -1511,6 +1512,7 @@ export async function fetchBinaPurchasing(params: PageParams & { openRequestsOnl
   if (params.openRequestsOnly) {
     query = query.eq("flow_type", "purchase_request").or("remaining_quantity.gt.0,remaining_quantity.is.null");
   }
+  if (params.supplierCode !== undefined) query = query.eq("supplier_code", params.supplierCode);
 
   if (pattern) {
     query = query.or(
@@ -1529,7 +1531,7 @@ export async function fetchBinaPurchasing(params: PageParams & { openRequestsOnl
   return { rows: (data ?? []) as unknown as BinaPurchasingRow[], count: count ?? 0 };
 }
 
-export async function fetchBinaSuppliers(params: PageParams & { sortBy?: "open_balance" | "overdue_balance" } = {}) {
+export async function fetchBinaSuppliers(params: PageParams & { sortBy?: "open_balance" | "overdue_balance"; supplierCode?: number } = {}) {
   const supabase = createServiceSupabase();
   const limit = clampLimit(params.limit);
   const offset = Math.max(0, params.offset ?? 0);
@@ -1540,6 +1542,8 @@ export async function fetchBinaSuppliers(params: PageParams & { sortBy?: "open_b
     .select(SUPPLIER_COLUMNS, { count: "exact" })
     .order(params.sortBy ?? "overdue_balance", { ascending: false, nullsFirst: false })
     .range(offset, offset + limit - 1);
+
+  if (params.supplierCode !== undefined) query = query.eq("supplier_code", params.supplierCode);
 
   if (pattern) {
     query = query.ilike("supplier_name", pattern);
@@ -1572,6 +1576,7 @@ export async function fetchBinaFinance(params: BinaFinanceParams = {}) {
   if (financeParams.partyType && financeParams.partyType !== "all") {
     query = query.eq("party_type", financeParams.partyType);
   }
+  if (financeParams.partyCode !== undefined) query = query.eq("party_code", financeParams.partyCode);
 
   if (financeParams.currency && financeParams.currency !== "all") {
     query = query.eq("currency_group", financeParams.currency);
