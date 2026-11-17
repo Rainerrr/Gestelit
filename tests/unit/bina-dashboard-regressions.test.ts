@@ -77,3 +77,23 @@ describe("BINA dashboard regressions", () => {
     log.mockRestore();
   });
 });
+
+import { canCompleteChecklist } from "@/lib/utils/checklist-validation";
+describe("optional station checklists", () => {
+  const empty = { loading: false, failed: false, checklist: null };
+  it("permits a successfully loaded absent checklist", () => {
+    expect(canCompleteChecklist(empty, {})).toBe(true);
+  });
+  it("never treats an in-flight or failed request as an absent checklist", () => {
+    expect(canCompleteChecklist({ ...empty, loading: true }, {})).toBe(false);
+    expect(canCompleteChecklist({ ...empty, failed: true }, {})).toBe(false);
+  });
+  it("still requires every mandatory item", () => {
+    const state = { ...empty, checklist: { kind: "start" as const, items: [
+      { id: "required", is_required: true, label_he: "בדיקה", label_ru: "Проверка", order_index: 0 },
+      { id: "optional", is_required: false, label_he: "רשות", label_ru: "Необязательно", order_index: 1 },
+    ] } };
+    expect(canCompleteChecklist(state, {})).toBe(false);
+    expect(canCompleteChecklist(state, { required: true })).toBe(true);
+  });
+});
