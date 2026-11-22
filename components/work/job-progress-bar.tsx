@@ -400,8 +400,7 @@ export function JobProgressBar({
                 "absolute inset-0 flex items-center justify-center gap-1.5 z-10 pointer-events-none",
                 sizeConfig.font,
                 "font-bold font-mono tabular-nums tracking-tight",
-                "drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]",
-                isFullyProduced ? "text-emerald-100" : totalFilledPct > 50 ? "text-white" : "text-foreground"
+                isFullyProduced ? "text-emerald-100 drop-shadow-sm" : totalFilledPct > 50 ? "text-white drop-shadow-sm" : "text-foreground"
               )}
             >
               <span>{overlayText}</span>
@@ -444,7 +443,7 @@ export function JobProgressBar({
           className="absolute top-0 flex flex-col items-center"
           style={isOverflow
             ? { right: `${tickPosition}%`, transform: "translateX(50%)" }
-            : { left: 0, transform: "translateX(-50%)" }
+            : { left: 0 }
           }
         >
           <div
