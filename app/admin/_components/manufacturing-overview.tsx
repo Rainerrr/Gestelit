@@ -242,7 +242,7 @@ export function ManufacturingOverview({
         {statusesError && (
           <p role="alert" className="text-sm text-amber-700">
             הגדרות מצבי התחנות לא זמינות כרגע. בדקו את פירוט המשמרות לפני קבלת
-            החלטה.
+            החלטה. <button className="underline" onClick={() => window.location.reload()}>טעינה מחדש</button>
           </p>
         )}
         <section

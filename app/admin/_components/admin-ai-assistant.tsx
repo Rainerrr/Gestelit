@@ -13,7 +13,7 @@ export type AdminAiScreenContext = {
 };
 
 function routeLabel(pathname: string) {
-  if (pathname === "/admin") return "דשבורד";
+  if (pathname === "/admin") return "סקירת ייצור";
   if (pathname.startsWith("/admin/sales-daily-log")) return "יומן מכירות";
   if (pathname.startsWith("/admin/bina")) return "נתוני BINA";
   if (pathname.startsWith("/admin/jobs")) return "עבודות";
@@ -98,6 +98,7 @@ function suggestedPrompts(pathname: string, context?: AdminAiScreenContext) {
 }
 
 const tabLabels: Record<string, string> = {
+  all: "כל העבודות", overdue: "באיחור", waiting: "ללא משמרת", setup: "להשלמת הגדרה",
   active: "עבודות פעילות", completed: "עבודות שהושלמו",
   overview: "סקירה", production: "פק״עות", purchasing: "רכש", suppliers: "ספקים",
   finance: "כספים", sales: "מכירות", deliveries: "משלוחים", ai: "עוזר הנתונים", sync: "סנכרון",
