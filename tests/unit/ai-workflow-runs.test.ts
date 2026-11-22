@@ -56,7 +56,7 @@ beforeEach(() => {
   m.from.mockImplementation((table: string) => {
     m.calls.push(["from", table]);
     const q: Record<string, unknown> = {};
-    for (const method of ["select", "eq", "insert", "update"])
+    for (const method of ["select", "eq", "insert", "update", "order"])
       q[method] = (...args: unknown[]) => {
         m.calls.push([method, ...args]);
         return q;
@@ -109,6 +109,8 @@ describe("persisted workflow agents", () => {
     ).toBe(200);
     const context = m.generate.mock.calls[0][1];
     expect(context).not.toHaveProperty("job");
+    expect(context).not.toHaveProperty("route");
+    expect(context).not.toHaveProperty("nextStation");
     expect(context).not.toHaveProperty("stationProgress");
     expect(JSON.stringify(context)).not.toMatch(
       /private customer|secret product|forged/,
@@ -126,6 +128,7 @@ describe("persisted workflow agents", () => {
     m.queue = [
       ok(null),
       ok(step({ ...defaultWorkflowAgent(), includeProgress: true })),
+      ok([{ id, position: 1, stations: { name: "דפוס" } }, { id: "next", position: 2, stations: { name: "חיתוך" } }]),
       ok({ good_reported: 17, scrap_reported: 2 }),
       ok({ id: rid }),
       ok({ id: rid }),
@@ -133,12 +136,14 @@ describe("persisted workflow agents", () => {
     expect((await POST(req({ stepId: id, requestId: rid }))).status).toBe(200);
     expect(m.generate.mock.calls[0][1]).toMatchObject({
       job: { plannedQuantity: 100 },
+      nextStation: { name: "חיתוך" },
       stationProgress: { good_reported: 17, scrap_reported: 2 },
     });
     expect(m.calls).toContainEqual(["eq", "job_item_step_id", id]);
+    expect(m.calls).toContainEqual(["eq", "job_item_id", "item"]);
   });
   it("marks provider failure without exposing internals", async () => {
-    m.queue = [ok(null), ok(step()), ok({ id: rid }), ok(null)];
+    m.queue = [ok(null), ok(step()), ok([]), ok({ id: rid }), ok(null)];
     m.generate.mockRejectedValue(new Error("secret provider details"));
     const r = await POST(req({ stepId: id, requestId: rid }));
     expect(r.status).toBe(500);

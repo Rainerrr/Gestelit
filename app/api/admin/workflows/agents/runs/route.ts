@@ -60,12 +60,21 @@ export async function POST(request: Request) {
       requiresFirstProductApproval: step.requires_first_product_approval,
       capturedAt: new Date().toISOString(),
     };
-    if (config.includeJobContext)
+    if (config.includeJobContext) {
+      const { data: route, error: routeError } = await db
+        .from("job_item_steps")
+        .select("id,position,is_terminal,requires_first_product_approval,stations(name,code)")
+        .eq("job_item_id", item.id)
+        .order("position", { ascending: true });
+      if (routeError) throw routeError;
+      snapshot.route = route;
+      snapshot.nextStation = route?.find((entry) => entry.position > step.position)?.stations ?? null;
       snapshot.job = {
         product: item.name,
         plannedQuantity: item.planned_quantity,
         details: item.jobs,
       };
+    }
     if (config.includeProgress) {
       const { data: progress, error: progressError } = await db
         .from("wip_balances")
