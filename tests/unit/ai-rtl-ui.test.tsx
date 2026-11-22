@@ -29,6 +29,12 @@ describe("Hebrew operational answers", () => {
     expect(screen.getByRole("group", { name: "נתוני ההשוואה" }).textContent).toContain("H08");
     expect(container.querySelector("img")).toBeNull();
   });
+  it("keeps supplier names with literal asterisks inside bold text and reads Hebrew date ranges in order", () => {
+    const { container } = render(<AnswerText text={'**אינפיניה שיווק וסחר בעמ *נייר חדרה (8)** בתקופה 15–21 בנובמבר 2026'}/>);
+    expect(container.querySelector("strong")?.textContent).toBe("אינפיניה שיווק וסחר בעמ *נייר חדרה (8)");
+    expect(container.textContent).not.toContain("**");
+    expect(container.textContent).toContain("15 עד 21 בנובמבר 2026");
+  });
   it("normalizes unambiguous dates while preserving invalid dates and business numbers", () => {
     expect(readableHebrewDates("15–21.11.2026; 2026-11-24; 31.02.2026; 100,000")).toBe("15 עד 21 בנובמבר 2026; 24 בנובמבר 2026; 31.02.2026; 100,000");
     expect(hebrewTimestamp("2026-11-22T07:21:00Z")).toBe("22 בנובמבר 2026 בשעה 09:21");

@@ -25,6 +25,7 @@ export function hebrewTimestamp(value?: string | null): string | null {
 /** Display-only normalization; never modifies stored answers or business values. */
 export function readableHebrewDates(text: string): string {
   return text
+    .replace(new RegExp(`\\b(\\d{1,2})[–—-](\\d{1,2})(?=\\s+ב(?:${months.join("|")}))`, "g"), (original, from, to) => Number(from) <= Number(to) ? `${Number(from)} עד ${Number(to)}` : original)
     .replace(/\b(\d{1,2})[–—-](\d{1,2})\.(\d{1,2})\.(\d{4})\b/g, (original, from, to, month, year) => {
       const a = `${year}-${month.padStart(2, "0")}-${from.padStart(2, "0")}`;
       const b = `${year}-${month.padStart(2, "0")}-${to.padStart(2, "0")}`;

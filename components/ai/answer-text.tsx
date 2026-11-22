@@ -8,7 +8,7 @@ export function BidiText({ text }: { text: string }) {
 }
 
 function Inline({ text }: { text: string }) {
-  return <>{readableHebrewDates(text).split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((part, i) =>
+  return <>{readableHebrewDates(text).split(/(\*\*[\s\S]+?\*\*|`[^`]+`)/g).map((part, i) =>
     part.startsWith("**") && part.endsWith("**") ? <strong key={i} className="font-semibold text-foreground"><BidiText text={part.slice(2, -2)}/></strong> :
     part.startsWith("`") && part.endsWith("`") ? <code key={i} className="rounded bg-muted px-1 text-[0.9em]"><BidiText text={part.slice(1, -1)}/></code> : <BidiText key={i} text={part}/>)}</>;
 }
