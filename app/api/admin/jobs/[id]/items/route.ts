@@ -72,6 +72,7 @@ export async function GET(request: Request, { params }: RouteParams) {
  * - station_ids array (custom pipeline)
  */
 type CreateJobItemPayload = {
+  agent_configs?: Record<string, import("@/lib/workflows/agent").WorkflowAgentConfig>;
   name: string;  // Required product name
   pipeline_preset_id?: string;
   station_ids?: string[];  // Custom station order for pipelines (alternative to preset)
@@ -170,6 +171,7 @@ export async function POST(request: Request, { params }: RouteParams) {
       pipeline_preset_id: body.pipeline_preset_id ?? null,
       station_ids: body.station_ids,
       first_product_approval_flags: body.first_product_approval_flags,
+      agent_configs: body.agent_configs,
       planned_quantity: body.planned_quantity,
       is_active: body.is_active ?? true,
     });

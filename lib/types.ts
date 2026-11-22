@@ -291,6 +291,7 @@ export interface PipelinePreset {
 }
 
 export interface PipelinePresetStep {
+  agent_config?: import("@/lib/workflows/agent").WorkflowAgentConfig | null;
   id: string;
   pipeline_preset_id: string;
   station_id: string;
@@ -332,6 +333,7 @@ export interface JobItem {
 
 /** Pipeline step for a job item (renamed from JobItemStation) */
 export interface JobItemStep {
+  agent_config?: import("@/lib/workflows/agent").WorkflowAgentConfig | null;
   id: string;
   job_item_id: string;
   station_id: string;

@@ -50,6 +50,7 @@ export async function fetchAllPipelinePresets(options?: {
         station_id: pps.station_id,
         position: pps.position,
         requires_first_product_approval: pps.requires_first_product_approval ?? false,
+        agent_config: pps.agent_config ?? null,
         created_at: pps.created_at,
         station: pps.stations ?? undefined,
       }));
@@ -98,6 +99,7 @@ export async function getPipelinePresetById(
       station_id: pps.station_id,
       position: pps.position,
       requires_first_product_approval: pps.requires_first_product_approval ?? false,
+        agent_config: pps.agent_config ?? null,
       created_at: pps.created_at,
       station: pps.stations ?? undefined,
     }));
@@ -171,6 +173,7 @@ export async function createPipelinePreset(
       station_id: pps.station_id,
       position: pps.position,
       requires_first_product_approval: pps.requires_first_product_approval ?? false,
+        agent_config: pps.agent_config ?? null,
       created_at: pps.created_at,
       station: (pps as PipelinePresetStepRow).stations ?? undefined,
     }));
@@ -281,51 +284,12 @@ export async function updatePipelinePresetSteps(
   firstProductApprovalFlags?: Record<string, boolean>,
 ): Promise<PipelinePresetStep[]> {
   const supabase = createServiceSupabase();
-
-  // Delete existing steps
-  const { error: deleteError } = await supabase
-    .from("pipeline_preset_steps")
-    .delete()
-    .eq("pipeline_preset_id", presetId);
-
-  if (deleteError) {
-    throw new Error(`Failed to clear pipeline steps: ${deleteError.message}`);
-  }
-
-  // Insert new steps
-  if (stationIds.length === 0) {
-    return [];
-  }
-
-  const stepsToInsert = stationIds.map((stationId, index) => ({
-    pipeline_preset_id: presetId,
-    station_id: stationId,
-    position: index + 1,
-    requires_first_product_approval: firstProductApprovalFlags?.[stationId] ?? false,
-  }));
-
-  const { data, error } = await supabase
-    .from("pipeline_preset_steps")
-    .insert(stepsToInsert)
-    .select("*, stations(*)")
-    .order("position", { ascending: true });
-
-  if (error) {
-    if (error.code === "23505") {
-      throw new Error("DUPLICATE_STATION_IN_PRESET");
-    }
-    throw new Error(`Failed to update pipeline steps: ${error.message}`);
-  }
-
-  return (data ?? []).map((pps) => ({
-    id: pps.id,
-    pipeline_preset_id: pps.pipeline_preset_id,
-    station_id: pps.station_id,
-    position: pps.position,
-    requires_first_product_approval: pps.requires_first_product_approval ?? false,
-    created_at: pps.created_at,
-    station: (pps as PipelinePresetStepRow).stations ?? undefined,
-  }));
+  const { error } = await supabase.rpc("save_workflow_preset", {
+    p_id: presetId, p_name: null, p_station_ids: stationIds,
+    p_flags: firstProductApprovalFlags ?? {}, p_agents: null,
+  });
+  if (error) throw new Error("PIPELINE_STEPS_UPDATE_FAILED");
+  return (await getPipelinePresetById(presetId))?.steps ?? [];
 }
 
 /**

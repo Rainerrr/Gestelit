@@ -1,3 +1,4 @@
+import { validateAgentMap, type WorkflowAgentConfig } from "@/lib/workflows/agent";
 import { createServiceSupabase } from "@/lib/supabase/client";
 import { SESSION_GRACE_MS } from "@/lib/constants";
 import type {
@@ -92,6 +93,7 @@ export async function fetchJobItemsForJob(
         position: jis.position,
         is_terminal: jis.is_terminal,
         requires_first_product_approval: jis.requires_first_product_approval ?? false,
+        agent_config: jis.agent_config ?? null,
         created_at: jis.created_at,
         station: jis.stations ?? undefined,
       }));
@@ -154,6 +156,7 @@ export async function getJobItemById(
       position: jis.position,
       is_terminal: jis.is_terminal,
       requires_first_product_approval: jis.requires_first_product_approval ?? false,
+        agent_config: jis.agent_config ?? null,
       created_at: jis.created_at,
       station: jis.stations ?? undefined,
     }));
@@ -202,6 +205,7 @@ export async function getJobItemStations(
       position: jis.position,
       is_terminal: jis.is_terminal,
       requires_first_product_approval: jis.requires_first_product_approval ?? false,
+        agent_config: jis.agent_config ?? null,
       created_at: jis.created_at,
       station: jis.stations ?? undefined,
     };
@@ -262,6 +266,7 @@ export async function jobHasJobItems(jobId: string): Promise<boolean> {
  * - station_ids array (custom pipeline)
  */
 export type CreateJobItemPayload = {
+  agent_configs?: Record<string, WorkflowAgentConfig>;
   job_id: string;
   name: string;  // Required product name
   pipeline_preset_id?: string | null;
@@ -275,8 +280,9 @@ export type CreateJobItemPayload = {
 /**
  * Create a new job item and initialize its stations/WIP.
  * Post Phase 5: All items are pipeline-based. Supports:
- * - preset-only: Uses pipeline_preset_id, calls rebuild_job_item_steps RPC
- * - custom stations: Uses station_ids array, manually creates job_item_steps and wip_balances
+ * - preset-only: Snapshots station order, approval flags, and agent configuration
+ * - custom stations: Uses explicit station_ids, flags, and agent configuration
+ * Both paths create the same job_item_steps and WIP records.
  */
 export async function createJobItem(
   payload: CreateJobItemPayload,
@@ -289,7 +295,7 @@ export async function createJobItem(
   }
 
   // Either station_ids or pipeline_preset_id must be provided
-  const hasCustomStations = payload.station_ids && payload.station_ids.length > 0;
+  let hasCustomStations = payload.station_ids && payload.station_ids.length > 0;
   if (!payload.pipeline_preset_id && !hasCustomStations) {
     throw new Error("JOB_ITEM_PIPELINE_STATIONS_REQUIRED");
   }
@@ -298,7 +304,7 @@ export async function createJobItem(
   if (payload.pipeline_preset_id && !hasCustomStations) {
     const { data: preset, error: presetError } = await supabase
       .from("pipeline_presets")
-      .select("id, is_active, pipeline_preset_steps(id, station_id, position)")
+      .select("id, is_active, pipeline_preset_steps(id, station_id, position, requires_first_product_approval, agent_config)")
       .eq("id", payload.pipeline_preset_id)
       .maybeSingle();
 
@@ -310,11 +316,24 @@ export async function createJobItem(
       throw new Error("PRESET_NOT_FOUND");
     }
 
-    const steps = (preset as unknown as { pipeline_preset_steps: { id: string; station_id: string; position: number }[] }).pipeline_preset_steps;
+    const steps = (preset as unknown as { pipeline_preset_steps: { id: string; station_id: string; position: number; requires_first_product_approval: boolean; agent_config: WorkflowAgentConfig | null }[] }).pipeline_preset_steps;
     if (!steps || steps.length === 0) {
       throw new Error("PRESET_HAS_NO_STEPS");
     }
+
+    // Snapshot the same fields as the visual wizard. The legacy rebuild RPC
+    // does not copy first-product approval flags, so use the unified insert path.
+    const ordered = [...steps].sort((a, b) => a.position - b.position);
+    payload = {
+      ...payload,
+      station_ids: ordered.map(step => step.station_id),
+      first_product_approval_flags: Object.fromEntries(ordered.map(step => [step.station_id, step.requires_first_product_approval ?? false])),
+      agent_configs: Object.fromEntries(ordered.filter(step => step.agent_config).map(step => [step.station_id, step.agent_config!])),
+    };
+    hasCustomStations = true;
   }
+
+  const agentConfigs = validateAgentMap(payload.agent_configs, payload.station_ids ?? []);
 
   // Insert the job item (Post Phase 5: no kind, station_id, or production_line_id columns)
   const { data: insertedItem, error: insertError } = await supabase
@@ -350,6 +369,7 @@ export async function createJobItem(
         position: index + 1,
         is_terminal: index === totalStations - 1,
         requires_first_product_approval: approvalFlags[stationId] ?? false,
+        agent_config: agentConfigs[stationId] ?? null,
       }));
 
       const { data: insertedSteps, error: stepsError } = await supabase
@@ -399,18 +419,6 @@ export async function createJobItem(
       // Clean up on any error
       await supabase.from("job_items").delete().eq("id", jobItem.id);
       throw err;
-    }
-  } else {
-    // Standard flow - call RPC to set up job_item_steps and wip_balances
-    // The RPC will use either production_line_id or pipeline_preset_id to get station list
-    const { error: rpcError } = await supabase.rpc("rebuild_job_item_steps", {
-      p_job_item_id: jobItem.id,
-    });
-
-    if (rpcError) {
-      // Clean up the job item if RPC fails
-      await supabase.from("job_items").delete().eq("id", jobItem.id);
-      throw new Error(`Failed to initialize job item stations: ${rpcError.message}`);
     }
   }
 

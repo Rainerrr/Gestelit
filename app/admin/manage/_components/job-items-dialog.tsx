@@ -122,6 +122,7 @@ export const JobItemsDialog = ({
         id: presetStep.station_id,
         station: presetStep.station!,
         position: presetStep.position,
+        agent_config: presetStep.agent_config,
       }))
       .filter((item) => item.station);
 
@@ -199,6 +200,7 @@ export const JobItemsDialog = ({
       await createJobItemAdminApi(job.id, {
         name: newProductName.trim(),
         station_ids: pipelineStations.map((ps) => ps.id),
+        agent_configs: Object.fromEntries(pipelineStations.filter(s => s.agent_config).map(s => [s.id, s.agent_config!])),
         planned_quantity: parseInt(newProductQuantity),
         first_product_approval_flags: firstProductFlags,
       });
