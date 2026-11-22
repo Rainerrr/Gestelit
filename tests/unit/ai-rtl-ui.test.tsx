@@ -15,6 +15,14 @@ describe("Hebrew operational answers", () => {
     expect(container.textContent).toContain("10 בדצמבר 2026");
     expect([...container.querySelectorAll('bdi[dir="ltr"]')].map(el => el.textContent)).toEqual(expect.arrayContaining(["28518", "2,000", "PIX ELINIR", "12,000"]));
   });
+  it("separates a live model's mixed pipe and em-dash job format into labeled cards", () => {
+    const { container } = render(<AnswerText text={'**עבודות להכנה**\n- **28516 | ישפאר מוצרי צריכה בעמ** — כמות BINA: **100,000** — תאריך אספקה: **24 בנובמבר 2026**\n- **28504 | PIX ELINIR** — כמות BINA: **5,000** — תאריך אספקה: **30 בנובמבר 2026**'}/>);
+    expect(container.querySelectorAll("dl")).toHaveLength(2);
+    expect(container.textContent).not.toMatch(/[|—]/);
+    expect(screen.getAllByText("תאריך אספקה")).toHaveLength(2);
+    expect(container.textContent).toContain("100,000");
+    expect(container.textContent).toContain("24 בנובמבר 2026");
+  });
   it("renders a list after an introductory line and keeps untrusted HTML inert", () => {
     const { container } = render(<AnswerText text={'מומלץ לבדוק:\n- תחנה CD5\n- <img src=x onerror=alert(1)>\n\n| תחנה | עבודות |\n| --- | --- |\n| H08 | 5 |'}/>);
     expect(screen.getAllByRole("listitem")).toHaveLength(2);

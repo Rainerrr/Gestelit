@@ -16,6 +16,11 @@ const listLine = /^\s*(?:[-•*]|\d+[.)])\s+/;
 const stripList = (line: string) => line.replace(listLine, "");
 const cells = (line: string) => stripList(line).trim().replace(/^\|\s*|\s*\|$/g, "").split(/\s*\|\s*/);
 const separator = (line: string) => cells(line).every((cell) => /^:?-{3,}:?$/.test(cell));
+// Models sometimes combine a job/customer pipe with labeled em-dash fields.
+// Normalize only those record rows; ordinary prose and date ranges stay intact.
+const recordFields = (line: string) => cells(line.includes("|")
+  ? line.replace(/\*\*/g, "").replace(/\s+[—–]\s+(?=[^:—–|\n]{1,40}:)/g, " | ")
+  : line);
 
 function RecordCard({ fields, headers }: { fields: string[]; headers?: string[] }) {
   return <div className="min-w-0 rounded-xl border border-border bg-card p-3.5">
@@ -44,9 +49,9 @@ export function AnswerText({ text }: { text: string }) {
       blocks.push(<div key={blocks.length} className="grid gap-2" role="group" aria-label="נתוני ההשוואה">{rows.map((row, index) => <RecordCard key={index} fields={row} headers={headers}/>)}</div>);
       continue;
     }
-    if (cells(line).length >= 3) {
+    if (recordFields(line).length >= 3) {
       const rows: string[][] = [];
-      while (i < lines.length && cells(lines[i]).length >= 3) rows.push(cells(lines[i++]));
+      while (i < lines.length && recordFields(lines[i]).length >= 3) rows.push(recordFields(lines[i++]));
       blocks.push(<div key={blocks.length} className="grid gap-2">{rows.map((row, index) => <RecordCard key={index} fields={row}/>)}</div>);
       continue;
     }
@@ -54,13 +59,13 @@ export function AnswerText({ text }: { text: string }) {
     if (listLine.test(line)) {
       const rows: string[] = [];
       const ordered = /^\d+[.)]/.test(line);
-      while (i < lines.length && listLine.test(lines[i]) && cells(lines[i]).length < 3) rows.push(stripList(lines[i++]));
+      while (i < lines.length && listLine.test(lines[i]) && recordFields(lines[i]).length < 3) rows.push(stripList(lines[i++]));
       const items = rows.map((row, index) => <li key={index} className="ps-1"><Inline text={row}/></li>);
       blocks.push(ordered ? <ol key={blocks.length} className="list-decimal space-y-2 ps-5 marker:text-muted-foreground">{items}</ol> : <ul key={blocks.length} className="list-disc space-y-2 ps-5 marker:text-primary/60">{items}</ul>);
       continue;
     }
     const paragraph = [line]; i++;
-    while (i < lines.length && lines[i].trim() && !listLine.test(lines[i]) && !/^#{1,4}\s/.test(lines[i]) && cells(lines[i]).length < 3) paragraph.push(lines[i++]);
+    while (i < lines.length && lines[i].trim() && !listLine.test(lines[i]) && !/^#{1,4}\s/.test(lines[i]) && recordFields(lines[i]).length < 3) paragraph.push(lines[i++]);
     blocks.push(<p key={blocks.length} className="whitespace-pre-wrap"><Inline text={paragraph.join("\n")}/></p>);
   }
   return <div dir="rtl" className="min-w-0 space-y-4 text-start text-[14px] leading-[1.85] [overflow-wrap:anywhere]">{blocks}</div>;
