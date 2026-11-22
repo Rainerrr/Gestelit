@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import Link from "next/link";
 import {
   AlertTriangle,
   BarChart3,
@@ -1386,10 +1387,13 @@ export const BinaDashboard = () => {
   } | null;
 
   const headerActions = (
+    <div className="flex items-center gap-2">
+    <Link href="/admin/bina/weekly" className="rounded-lg border px-3 py-2 text-sm font-medium">סקירה שבועית</Link>
     <Button variant="outline" onClick={() => setActiveTab("ai")} className="gap-2">
       <Sparkles className="h-4 w-4" />
       שאל את BINA
     </Button>
+    </div>
   );
   const drawerOrder = ((orderDetail?.order as AnyRow | undefined) ?? selectedOrder) as AnyRow | null;
   const drawerDecision = ((orderDetail?.decision as AnyRow | undefined) ?? selectedOrder) as AnyRow | null;

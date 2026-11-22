@@ -1,4 +1,5 @@
 import { fetchActiveJobsWithProgress } from "@/lib/data/admin-dashboard";
+import { fetchBinaWeekly } from "@/lib/data/bina-weekly";
 import { buildOverview, israelDate } from "@/lib/manufacturing/overview";
 import { analyticsQueryTool } from "@/lib/ai/query/plan";
 import { runAnalyticsQuery } from "@/lib/ai/query/execute";
@@ -101,6 +102,12 @@ function rowsResult(name: string, rows: unknown[], sources: string[], freshness?
 }
 
 export const aiToolDefinitions = [
+  {
+    type: "function" as const,
+    name: "get_bina_weekly_snapshot",
+    description: "Read a seven-day BINA snapshot for incoming work orders (receipt date TarikKabala, NOT the often-null created_at), purchasing by document date, and station routes for those incoming orders. Default previous Sunday-Saturday in Israel. Fully paginated synced cache for the week, source coverage still partial. Station rows/unique jobs are route evidence, NOT total weekly output, current station occupancy, or bottlenecks. datedCompleteRows counts route rows with a recorded end date in the period, not produced units. reportedCompleteRows counts current status code 2, not necessarily completed during that week. No monetary totals or stock availability inference. Use first for BINA weekly/incoming-order and associated station questions.",
+    parameters: { type: "object", properties: { start: { type: "string", description: "Inclusive first business date YYYY-MM-DD; range is exactly 7 days." } }, additionalProperties: false },
+  },
   analyticsQueryTool,
   {
     type: "function" as const,
@@ -555,6 +562,10 @@ export async function runAiTool(name: string, args: ToolArgs): Promise<AiToolRes
   const limit = Math.max(1, Math.min(Math.floor(numberArg(args, "limit", 20)), Number(process.env.AI_MAX_ROWS ?? 50)));
 
   switch (name) {
+    case "get_bina_weekly_snapshot": {
+      const snapshot = await fetchBinaWeekly(stringArg(args, "start"));
+      return { name, data: sanitizeToolText({ ...snapshot, orders: snapshot.orders.slice(0, 100), purchases: snapshot.purchases.slice(0, 100), detailTruncated: snapshot.orders.length > 100 || snapshot.purchases.length > 100 }), rowCount: snapshot.orderCount + snapshot.purchaseCount, sources: ["bina_dfhazmrashi", "bina_dfshelita", "mart_bina_purchase_flow"], freshness: snapshot.latestSync };
+    }
     case "get_gestelit_manufacturing_overview": {
       const snapshot = buildOverview(await fetchActiveJobsWithProgress({ includeWaiting: true }), israelDate());
       const search = (stringArg(args, "search") ?? "").trim().toLocaleLowerCase();
