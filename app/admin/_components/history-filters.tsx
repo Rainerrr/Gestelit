@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo } from "react";
-import { format, isSameDay } from "date-fns";
-import { he } from "date-fns/locale";
+import { isSameDay } from "date-fns";
+import { hebrewDate } from "@/lib/format/hebrew";
+import { dateKey } from "@/components/ui/hebrew-calendar";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -75,12 +76,12 @@ export const HistoryFilters = ({
 
   const getDateRangeLabel = () => {
     if (!value.dateRange?.from) return null;
-    const fromStr = format(value.dateRange.from, "d/M/yy", { locale: he });
+    const fromStr = hebrewDate(dateKey(value.dateRange.from));
     if (!value.dateRange.to || isSameDay(value.dateRange.from, value.dateRange.to)) {
       return fromStr;
     }
-    const toStr = format(value.dateRange.to, "d/M/yy", { locale: he });
-    return `${fromStr} - ${toStr}`;
+    const toStr = hebrewDate(dateKey(value.dateRange.to));
+    return `${fromStr} עד ${toStr}`;
   };
 
   return (
