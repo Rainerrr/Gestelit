@@ -1,3 +1,5 @@
+import { fetchActiveJobsWithProgress } from "@/lib/data/admin-dashboard";
+import { buildOverview, israelDate } from "@/lib/manufacturing/overview";
 import { analyticsQueryTool } from "@/lib/ai/query/plan";
 import { runAnalyticsQuery } from "@/lib/ai/query/execute";
 import { selectMetricTrust } from "@/lib/ai/metric-trust";
@@ -100,6 +102,12 @@ function rowsResult(name: string, rows: unknown[], sources: string[], freshness?
 
 export const aiToolDefinitions = [
   analyticsQueryTool,
+  {
+    type: "function" as const,
+    name: "get_gestelit_manufacturing_overview",
+    description: "Read the actual Gestelit manufacturing overview: open jobs including those without active worker sessions, due dates, missing setup, cumulative terminal good/scrap, and per-product station routes. Use FIRST for Gestelit manufacturing overview/job queue questions; this is distinct from the partial BINA ERP cache. Active-session counts do not establish production or stoppage. Old demo/test records may be present.",
+    parameters: { type: "object", properties: { search: { type: "string" }, limit: { type: "number" } }, additionalProperties: false },
+  },
   {
     type: "function" as const,
     name: "get_bina_dashboard_summary",
@@ -547,6 +555,35 @@ export async function runAiTool(name: string, args: ToolArgs): Promise<AiToolRes
   const limit = Math.max(1, Math.min(Math.floor(numberArg(args, "limit", 20)), Number(process.env.AI_MAX_ROWS ?? 50)));
 
   switch (name) {
+    case "get_gestelit_manufacturing_overview": {
+      const snapshot = buildOverview(await fetchActiveJobsWithProgress({ includeWaiting: true }), israelDate());
+      const search = (stringArg(args, "search") ?? "").trim().toLocaleLowerCase();
+      const matching = snapshot.rows.filter(row => `${row.job.job_number} ${row.job.customer_name ?? ""}`.toLocaleLowerCase().includes(search));
+      const selected = matching.slice(0, limit);
+      const fetchedAt = new Date().toISOString();
+      const rows = selected.map(row => ({
+        id: row.job.id, job_number: row.job.job_number, customer_name: row.job.customer_name,
+        due_date: row.job.due_date, overdue: row.overdue, due_today: row.dueToday,
+        needs_setup: row.needsSetup, active_sessions: row.activeSessionCount,
+        planned: row.planned, terminal_good: row.good, terminal_scrap: row.scrap,
+        completion_percent: row.percent,
+        products: row.jobItems.map(item => ({ name: item.jobItem.name, planned: item.plannedQuantity,
+          terminal_good: item.completedGood, terminal_scrap: item.completedScrap,
+          stations: item.wipDistribution.map(step => ({ name: step.stationName, position: step.position,
+            terminal: step.isTerminal, good_reported: step.goodReported, scrap_reported: step.scrapReported })) })),
+      }));
+      return {
+        name, rowCount: rows.length, freshness: fetchedAt,
+        sources: ["jobs", "job_items", "job_item_steps", "job_item_progress", "wip_balances", "sessions"],
+        data: sanitizeToolText({ rows, totalMatching: matching.length, truncated: matching.length > rows.length,
+          summary: { openJobs: snapshot.rows.length, overdue: snapshot.overdue, dueToday: snapshot.dueToday, needsSetup: snapshot.needsSetup, withoutSession: snapshot.waiting },
+          observedAt: fetchedAt,
+          scope: "Saved Gestelit jobs, not all BINA orders. Counts may include historical demo/test records. Completion includes terminal scrap and is capped per product. Quantities span each job lifetime, not today. No active session does not mean a malfunction. Stoppage status, capacity and material availability are not established by this tool." }),
+        citations: selected.map(row => ({ source_view: "jobs + job_item_progress", grain: "job", key: row.job.id,
+          label: `עבודה ${row.job.job_number}`, synced_at: fetchedAt, confidence: "exact" as const,
+          fields_used: ["job_number", "due_date", "planned_quantity", "completed_good", "completed_scrap"] })),
+      };
+    }
     case "query_analytics": return runAnalyticsQuery(args);
     case "get_bina_dashboard_summary": {
       const summary = await fetchBinaDashboardSummary();
