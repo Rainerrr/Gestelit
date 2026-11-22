@@ -22,7 +22,7 @@ const day = (v: unknown) => /^\d{4}-\d{2}-\d{2}/.test(str(v)) ? str(v).slice(0, 
 export async function fetchBinaWeekly(start?: string): Promise<WeeklySnapshot> {
   const range = weeklyRange(start);
   const db = createServiceSupabase();
-  const [raw, purchasing, missing] = await Promise.all([
+  const [raw, purchasing, missing, missingPurchase] = await Promise.all([
     allPages<RawOrder>((from, to) => db.from("bina_dfhazmrashi").select("bina_id,data,synced_at")
       .gte("data->>TarikKabala", range.start).lt("data->>TarikKabala", range.end).order("bina_id").range(from, to)),
     allPages<Purchase>((from, to) => db.from("mart_bina_purchase_flow")
@@ -30,8 +30,9 @@ export async function fetchBinaWeekly(start?: string): Promise<WeeklySnapshot> {
       .gte("document_at", `${range.start}T00:00:00Z`).lt("document_at", `${range.end}T00:00:00Z`)
       .order("flow_type").order("bina_id").range(from, to)),
     db.from("bina_dfhazmrashi").select("bina_id", { count: "exact", head: true }).is("data->>TarikKabala", null),
+    db.from("mart_bina_purchase_flow").select("bina_id", { count: "exact", head: true }).is("document_at", null),
   ]);
-  if (missing.error) throw new Error("WEEKLY_SOURCE_UNAVAILABLE");
+  if (missing.error || missingPurchase.error) throw new Error("WEEKLY_SOURCE_UNAVAILABLE");
   const orders: WeeklyOrder[] = raw.map(({ bina_id, data: d, synced_at }) => ({
     id: Number(d.MisparDFHazmana ?? bina_id), customer: str(d.ShemLako), title: str(d.Koteret),
     received: day(d.TarikKabala)!, due: day(d.TarikAspaka),
@@ -69,5 +70,5 @@ export async function fetchBinaWeekly(start?: string): Promise<WeeklySnapshot> {
     orders, purchases, stations: [...stations.values()].sort((a, b) => b.orderIds.length - a.orderIds.length || a.name.localeCompare(b.name)), daily,
     orderCount: orders.length, customerCount: new Set(raw.map((r) => String(r.data.Kodlako ?? r.data.ShemLako))).size,
     purchaseCount: purchases.length, supplierCount: new Set(purchasing.map((p) => p.supplier_code ?? p.supplier_name)).size,
-    ordersWithRoutes: routedOrders.size, missingReceivedDateCount: missing.count ?? 0, scope: weeklyScope };
+    ordersWithRoutes: routedOrders.size, missingReceivedDateCount: missing.count ?? 0, missingPurchaseDateCount: missingPurchase.count ?? 0, scope: weeklyScope };
 }

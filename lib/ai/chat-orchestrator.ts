@@ -276,6 +276,7 @@ export async function runBinaAiChat(request: AiChatRequest): Promise<AiChatRespo
         if (call.name === "query_analytics" && result.data && typeof result.data === "object" && "sourceTruncated" in result.data && result.data.sourceTruncated === true) {
           queryWarnings.add("הדירוג או הרשומות האחרונות מתייחסים למדגם מוגבל שאינו מדורג מראש; אי אפשר להסיק ממנו דירוג או עדכניות בכלל הנתונים.");
         }
+        if (call.name === "get_bina_weekly_snapshot") queryWarnings.add("הנתונים אומתו בעותק המסונכרן בלבד; הכיסוי מול BINA חלקי. רשומות ללא תאריך עסקי אינן משויכות לשבוע.");
         result.sources.forEach((source) => sources.add(source));
         result.citations?.forEach((citation) => sources.add(citation.source_view));
         citations.push(...(result.citations ?? []));

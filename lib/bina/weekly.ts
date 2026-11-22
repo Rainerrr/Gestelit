@@ -24,7 +24,7 @@ export type WeeklySnapshot = {
   orders: WeeklyOrder[]; purchases: WeeklyPurchase[]; stations: WeeklyStation[];
   daily: Array<{ date: string; orders: number }>;
   orderCount: number; customerCount: number; purchaseCount: number; supplierCount: number;
-  ordersWithRoutes: number; missingReceivedDateCount: number;
+  ordersWithRoutes: number; missingReceivedDateCount: number; missingPurchaseDateCount: number;
   scope: string;
 };
 
