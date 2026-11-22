@@ -1,4 +1,5 @@
 import { createServiceSupabase } from "@/lib/supabase/client";
+import { fetchAllJobsWithStats } from "./jobs";
 import { subDays } from "date-fns";
 import type {
   Job,
@@ -1300,7 +1301,7 @@ type JobItemRow = {
  * Fetch active jobs with progress data for the live dashboard.
  * Returns jobs that have at least one active session, sorted by session count (descending).
  */
-export async function fetchActiveJobsWithProgress(): Promise<LiveJobProgress[]> {
+export async function fetchActiveJobsWithProgress(options: { includeWaiting?: boolean } = {}): Promise<LiveJobProgress[]> {
   const supabase = createServiceSupabase();
 
   // Step 1: Get all active sessions grouped by job_id
@@ -1312,12 +1313,13 @@ export async function fetchActiveJobsWithProgress(): Promise<LiveJobProgress[]> 
 
   if (sessionsError) {
     console.error("[admin-dashboard] Failed to fetch active sessions for jobs", sessionsError);
+    if (options.includeWaiting) throw new Error("OVERVIEW_SESSIONS_FAILED");
     return [];
   }
 
   const sessions = (activeSessions ?? []) as unknown as ActiveJobSessionRow[];
 
-  if (sessions.length === 0) {
+  if (sessions.length === 0 && !options.includeWaiting) {
     return [];
   }
 
@@ -1349,6 +1351,17 @@ export async function fetchActiveJobsWithProgress(): Promise<LiveJobProgress[]> 
     }
   });
 
+  if (options.includeWaiting) {
+    const allJobs = await fetchAllJobsWithStats();
+    if (allJobs.length >= 1000 || sessions.length >= 1000) throw new Error("OVERVIEW_RESULT_LIMIT");
+    for (const entry of allJobs) {
+      if (!jobSessionMap.has(entry.job.id)) {
+        jobSessionMap.set(entry.job.id, { job: entry.job, sessionCount: 0, activeStationIds: new Set() });
+      }
+    }
+  }
+  if (!jobSessionMap.size) return [];
+
   // Step 3: For each job, fetch the first active job item with details
   const jobIds = Array.from(jobSessionMap.keys());
 
@@ -1367,10 +1380,12 @@ export async function fetchActiveJobsWithProgress(): Promise<LiveJobProgress[]> 
 
   if (itemsError) {
     console.error("[admin-dashboard] Failed to fetch job items", itemsError);
+    if (options.includeWaiting) throw new Error("OVERVIEW_ITEMS_FAILED");
     return [];
   }
 
   const jobItems = (jobItemsData ?? []) as unknown as JobItemRow[];
+  if (options.includeWaiting && jobItems.length >= 1000) throw new Error("OVERVIEW_RESULT_LIMIT");
 
   // Use job_item_progress for completed totals - it only tracks terminal station quantities
   const jobItemIds = jobItems.map((item) => item.id);
@@ -1384,6 +1399,7 @@ export async function fetchActiveJobsWithProgress(): Promise<LiveJobProgress[]> 
 
     if (progressError) {
       console.error("[admin-dashboard] Failed to fetch job item progress", progressError);
+      if (options.includeWaiting) throw new Error("OVERVIEW_PROGRESS_FAILED");
     } else {
       for (const row of progressData ?? []) {
         if (row.job_item_id) {
@@ -1507,6 +1523,9 @@ export async function fetchActiveJobsWithProgress(): Promise<LiveJobProgress[]> 
   // Sort by session count descending (most active first)
   results.sort((a, b) => b.activeSessionCount - a.activeSessionCount);
 
+  if (options.includeWaiting) {
+    return results.filter(entry => entry.activeSessionCount > 0 || !entry.jobItems.length || entry.jobItems.some(item => item.plannedQuantity <= 0 || item.completedGood + item.completedScrap < item.plannedQuantity));
+  }
   return results;
 }
 

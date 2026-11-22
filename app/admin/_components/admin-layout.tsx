@@ -31,7 +31,7 @@ type AdminLayoutProps = {
 };
 
 const navItems = [
-  { label: "דשבורד", href: "/admin", disabled: false, icon: LayoutDashboard },
+  { label: "סקירת ייצור", href: "/admin", disabled: false, icon: LayoutDashboard },
   { label: "עבודות", href: "/admin/jobs", disabled: false, icon: Briefcase },
   { label: "תהליכי ייצור", href: "/admin/workflows", disabled: false, icon: Workflow },
   { label: "יומן מכירות", href: "/admin/sales-daily-log", disabled: false, icon: Handshake },
