@@ -65,6 +65,37 @@ describe("workflow editor", () => {
     fireEvent.click(screen.getByRole("button", { name: "הסרת הסוכן" }));
     expect(screen.queryByRole("textbox", { name: "הוראות לסוכן" })).toBeNull();
   });
+  it("keeps configured agents on stations retained by an AI route", async () => {
+    const plan = {
+      name: "טיוטה",
+      summary: "הצעה חדשה",
+      steps: [
+        { stationId: "a", reason: "דפוס", requiresFirstProductApproval: false },
+      ],
+      warnings: [],
+      handoff: [],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, json: async () => ({ plan }) }),
+    );
+    render(<Editor />);
+    fireEvent.click(screen.getByRole("button", { name: "בחירת תחנה דפוס" }));
+    fireEvent.click(screen.getByRole("button", { name: "הוספת סוכן AI" }));
+    fireEvent.click(screen.getByRole("button", { name: /עוזר תכנון AI/ }));
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "מה מייצרים ואילו דרישות יש?" }),
+      { target: { value: "דפוס" } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "הצע תהליך" }));
+    await waitFor(() => expect(screen.getByText("הצעה חדשה")).toBeTruthy());
+    fireEvent.click(
+      screen.getByRole("button", { name: "החלף את הרצף בטיוטה המוצעת" }),
+    );
+    expect(
+      screen.getByRole("button", { name: "בחירת תחנה דפוס" }).textContent,
+    ).toContain("עוזר תחנה");
+  });
   it("locks station, approval, and agent mutations once production starts", () => {
     render(<Editor locked />);
     expect(

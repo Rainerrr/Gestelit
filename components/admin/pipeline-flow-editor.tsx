@@ -330,6 +330,8 @@ export const PipelineFlowEditor = ({
     const next = plan.steps.map((s, i) => ({
       id: s.stationId,
       station: availableStations.find((a) => a.id === s.stationId)!,
+      agent_config: stations.find((current) => current.id === s.stationId)
+        ?.agent_config,
       position: i + 1,
     }));
     if (next.some((s) => !s.station?.is_active)) {
