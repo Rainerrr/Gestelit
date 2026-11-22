@@ -21,7 +21,7 @@ export type WeeklyPurchase = { id: string; type: string; document: string; suppl
 export type WeeklyStation = { name: string; rows: number; orderIds: number[]; reportedCompleteRows: number; datedCompleteRows: number };
 export type WeeklySnapshot = {
   start: string; end: string; fetchedAt: string; latestSync: string | null;
-  orders: WeeklyOrder[]; purchases: WeeklyPurchase[]; stations: WeeklyStation[];
+  orders: WeeklyOrder[]; purchases: WeeklyPurchase[]; purchaseSuppliers: Array<{ name: string; documents: number; workOrderIds: number[] }>; stations: WeeklyStation[];
   daily: Array<{ date: string; orders: number }>;
   orderCount: number; customerCount: number; purchaseCount: number; supplierCount: number;
   ordersWithRoutes: number; missingReceivedDateCount: number; missingPurchaseDateCount: number;

@@ -60,6 +60,15 @@ export async function fetchBinaWeekly(start?: string): Promise<WeeklySnapshot> {
     routedOrders.add(id);
   }
   const purchases: WeeklyPurchase[] = purchasing.map((p) => ({ id: p.bina_id, type: p.flow_type, document: p.document_no, supplier: str(p.supplier_name), workOrder: p.work_order_id || null, date: p.document_at.slice(0, 10), syncedAt: p.synced_at }));
+  const supplierGroups = new Map<string, { name: string; documents: number; workOrderIds: number[] }>();
+  for (const p of purchasing) {
+    const key = String(p.supplier_code ?? str(p.supplier_name));
+    const supplier = supplierGroups.get(key) ?? { name: str(p.supplier_name), documents: 0, workOrderIds: [] };
+    supplier.documents++;
+    if (p.work_order_id && !supplier.workOrderIds.includes(p.work_order_id)) supplier.workOrderIds.push(p.work_order_id);
+    supplierGroups.set(key, supplier);
+  }
+  const purchaseSuppliers = [...supplierGroups.values()].sort((a, b) => b.documents - a.documents || a.name.localeCompare(b.name));
   const timestamps = [...raw, ...routes, ...purchasing].map((r) => r.synced_at).filter(Boolean).sort();
   const daily = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(`${range.start}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + i);
@@ -67,7 +76,7 @@ export async function fetchBinaWeekly(start?: string): Promise<WeeklySnapshot> {
     return { date, orders: orders.filter((o) => o.received === date).length };
   });
   return { ...range, fetchedAt: new Date().toISOString(), latestSync: timestamps.at(-1) ?? null,
-    orders, purchases, stations: [...stations.values()].sort((a, b) => b.orderIds.length - a.orderIds.length || a.name.localeCompare(b.name)), daily,
+    orders, purchases, purchaseSuppliers, stations: [...stations.values()].sort((a, b) => b.orderIds.length - a.orderIds.length || a.name.localeCompare(b.name)), daily,
     orderCount: orders.length, customerCount: new Set(raw.map((r) => String(r.data.Kodlako ?? r.data.ShemLako))).size,
     purchaseCount: purchases.length, supplierCount: new Set(purchasing.map((p) => p.supplier_code ?? p.supplier_name)).size,
     ordersWithRoutes: routedOrders.size, missingReceivedDateCount: missing.count ?? 0, missingPurchaseDateCount: missingPurchase.count ?? 0, scope: weeklyScope };

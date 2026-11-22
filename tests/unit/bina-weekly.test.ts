@@ -37,6 +37,7 @@ describe("weekly BINA evidence", () => {
     expect(result.orderCount).toBe(1);
     expect(result.orders[0].received).toBe("2026-11-15");
     expect(result.purchaseCount).toBe(501);
+    expect(result.purchaseSuppliers).toEqual([{ name: "ספק", documents: 501, workOrderIds: [] }]);
     expect(result.stations[0]).toMatchObject({ name: "CD5", rows: 2, orderIds: [1], reportedCompleteRows: 2, datedCompleteRows: 1 });
     expect(result.missingReceivedDateCount).toBe(3);
     expect(source.calls).toContainEqual(["data->>TarikKabala", "2026-11-15"]);
