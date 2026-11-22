@@ -1,3 +1,4 @@
+import { validateAgentMap, type WorkflowAgentConfig } from "@/lib/workflows/agent";
 import { createServiceSupabase } from "@/lib/supabase/client";
 import { SESSION_GRACE_MS } from "@/lib/constants";
 import type {
@@ -92,6 +93,7 @@ export async function fetchJobItemsForJob(
         position: jis.position,
         is_terminal: jis.is_terminal,
         requires_first_product_approval: jis.requires_first_product_approval ?? false,
+        agent_config: jis.agent_config ?? null,
         created_at: jis.created_at,
         station: jis.stations ?? undefined,
       }));
@@ -154,6 +156,7 @@ export async function getJobItemById(
       position: jis.position,
       is_terminal: jis.is_terminal,
       requires_first_product_approval: jis.requires_first_product_approval ?? false,
+        agent_config: jis.agent_config ?? null,
       created_at: jis.created_at,
       station: jis.stations ?? undefined,
     }));
@@ -202,6 +205,7 @@ export async function getJobItemStations(
       position: jis.position,
       is_terminal: jis.is_terminal,
       requires_first_product_approval: jis.requires_first_product_approval ?? false,
+        agent_config: jis.agent_config ?? null,
       created_at: jis.created_at,
       station: jis.stations ?? undefined,
     };
@@ -262,6 +266,7 @@ export async function jobHasJobItems(jobId: string): Promise<boolean> {
  * - station_ids array (custom pipeline)
  */
 export type CreateJobItemPayload = {
+  agent_configs?: Record<string, WorkflowAgentConfig>;
   job_id: string;
   name: string;  // Required product name
   pipeline_preset_id?: string | null;
@@ -316,6 +321,8 @@ export async function createJobItem(
     }
   }
 
+  const agentConfigs = validateAgentMap(payload.agent_configs, payload.station_ids ?? []);
+
   // Insert the job item (Post Phase 5: no kind, station_id, or production_line_id columns)
   const { data: insertedItem, error: insertError } = await supabase
     .from("job_items")
@@ -350,6 +357,7 @@ export async function createJobItem(
         position: index + 1,
         is_terminal: index === totalStations - 1,
         requires_first_product_approval: approvalFlags[stationId] ?? false,
+        agent_config: agentConfigs[stationId] ?? null,
       }));
 
       const { data: insertedSteps, error: stepsError } = await supabase

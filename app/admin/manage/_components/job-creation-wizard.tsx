@@ -146,6 +146,7 @@ export const JobCreationWizard = ({
         id: presetStep.station_id,
         station: presetStep.station!,
         position: presetStep.position,
+        agent_config: presetStep.agent_config,
       }))
       .filter((item) => item.station);
 
@@ -289,6 +290,7 @@ export const JobCreationWizard = ({
         await createJobItemAdminApi(job.id, {
           name: product.name,
           station_ids: product.stations.map((s) => s.id),
+          agent_configs: Object.fromEntries(product.stations.filter(s => s.agent_config).map(s => [s.id, s.agent_config!])),
           planned_quantity: product.planned_quantity,
           first_product_approval_flags: product.firstProductApprovalFlags,
         });
@@ -316,7 +318,7 @@ export const JobCreationWizard = ({
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => { if (!isSubmitting) onOpenChange(nextOpen); }}>
-      <DialogContent className="text-right sm:max-w-2xl border-border bg-card max-h-[90vh] overflow-hidden flex flex-col">
+      <DialogContent className="text-right sm:max-w-5xl border-border bg-card max-h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader className="flex-shrink-0">
           <DialogTitle className="text-foreground flex items-center gap-2">
             <Briefcase className="h-5 w-5 text-primary" />
@@ -514,6 +516,7 @@ export const JobCreationWizard = ({
                       </Label>
                       <Input
                         placeholder="הזן שם מוצר"
+                        aria-label="שם המוצר"
                         value={newProductName}
                         onChange={(e) => setNewProductName(e.target.value)}
                         className="mt-2 text-lg font-medium border-input bg-secondary text-foreground placeholder:text-muted-foreground"
@@ -527,6 +530,7 @@ export const JobCreationWizard = ({
                         תהליך הייצור *
                       </Label>
                       <PipelineFlowEditor
+                        aiContext={[description, newProductName, newProductQuantity ? `כמות: ${newProductQuantity}` : ""].filter(Boolean).join("\n")}
                         stations={pipelineStations}
                         onStationsChange={setPipelineStations}
                         availableStations={stations}
@@ -553,7 +557,8 @@ export const JobCreationWizard = ({
                           type="number"
                           min="1"
                           placeholder="הזן כמות"
-                          value={newProductQuantity}
+                          aria-label="כמות מתוכננת"
+                        value={newProductQuantity}
                           onChange={(e) => setNewProductQuantity(e.target.value)}
                           className="flex-1 border-input bg-secondary text-foreground placeholder:text-muted-foreground"
                         />

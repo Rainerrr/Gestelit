@@ -761,6 +761,7 @@ import type {
  * Provide either pipeline_preset_id or station_ids.
  */
 type JobItemPayload = {
+  agent_configs?: Record<string, import("@/lib/workflows/agent").WorkflowAgentConfig>;
   name: string;  // Required product name
   pipeline_preset_id?: string | null;
   station_ids?: string[];  // Pipeline stations (required if no preset)

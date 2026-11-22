@@ -87,6 +87,7 @@ export const PipelinePresetEditDialog = ({
               id: step.station_id,
               station: step.station!,
               position: step.position,
+        agent_config: step.agent_config,
             }))
             .filter((item) => item.station);
           setStations(initialStations);
@@ -211,7 +212,7 @@ export const PipelinePresetEditDialog = ({
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent
         dir="rtl"
-        className="sm:max-w-2xl max-h-[90vh] overflow-y-auto border-border bg-card"
+        className="sm:max-w-5xl max-h-[90vh] overflow-y-auto border-border bg-card"
       >
         <DialogHeader>
           <DialogTitle className="text-foreground">{dialogTitle}</DialogTitle>
@@ -261,7 +262,8 @@ export const PipelinePresetEditDialog = ({
               {/* Pipeline Flow Editor */}
               <div className="space-y-1.5">
                 <Label className="text-foreground/80 text-sm">תחנות בתהליך</Label>
-                <PipelineFlowEditor
+                <PipelineFlowEditor showAgentSetup={false}
+                  aiContext={name}
                   stations={stations}
                   onStationsChange={setStations}
                   availableStations={availableStations}
