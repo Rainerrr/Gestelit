@@ -14,6 +14,11 @@ export type AnalyticsPlan = {
   orderBy?: { column: string; direction: "asc" | "desc" };
   limit?: number;
 };
+export const workOrderQuantityMeanings = {
+  bina_quantity: "BINA ERP planned/order quantity (כמות מתוכננת ב-BINA). Use for BINA work-order quantity questions.",
+  gestelit_planned_quantity: "Gestelit local linked product targets only. NOT the BINA planned quantity. Missing linkage can yield null/zero; this says nothing about BINA quantity.",
+  gestelit_completed_good: "Gestelit local completed good units only. NOT BINA ERP output or planned quantity.",
+} as const;
 function invalid(): never { throw new Error("AI_QUERY_PLAN_INVALID"); }
 function object(value: unknown): value is Record<string, unknown> { return Boolean(value && typeof value === "object" && !Array.isArray(value)); }
 function keys(value: Record<string, unknown>, allowed: string[]) { if (Object.keys(value).some((key) => !allowed.includes(key))) invalid(); }
@@ -71,7 +76,7 @@ function validateClosedPlan(input: unknown, datasets: Record<string, Dataset>) {
 export const analyticsQueryTool = {
   type: "function" as const,
   name: "query_analytics",
-  description: `Answer ad hoc natural-language comparisons with a validated query plan compiled to bounded read-only SELECT. Admin only. Datasets and columns: ${JSON.stringify(analyticsDatasets)}. Measures get output names m0,m1,... . When measures are present, omit columns; list grouping dimensions only in groupBy. count takes no column. Other measures require numeric columns. Finance amounts MUST group by currency, kind, balance_confidence. Source scan is limited to 20000 unranked rows; results are cache/sample facts, never company totals. If sourceTruncated is true, requested top/latest/ranking applies only within that unranked sample and cannot establish a global top or latest. No joins, expressions, custom SQL, functions or writes. Call metric trust too when interpreting coverage.`,
+  description: `Answer ad hoc natural-language comparisons with a validated query plan compiled to bounded read-only SELECT. Admin only. Datasets and columns: ${JSON.stringify(analyticsDatasets)}. Work-order quantity meanings: ${JSON.stringify(workOrderQuantityMeanings)}. Measures get output names m0,m1,... . When measures are present, omit columns; list grouping dimensions only in groupBy. count takes no column. Other measures require numeric columns. Finance amounts MUST group by currency, kind, balance_confidence. Source scan is limited to 20000 unranked rows; results are cache/sample facts, never company totals. If sourceTruncated is true, requested top/latest/ranking applies only within that unranked sample and cannot establish a global top or latest. No joins, expressions, custom SQL, functions or writes. Call metric trust too when interpreting coverage.`,
   parameters: { type: "object", properties: {
     dataset: { type: "string", enum: Object.keys(analyticsDatasets) },
     columns: { type: "array", items: { type: "string" }, maxItems: 8 },
