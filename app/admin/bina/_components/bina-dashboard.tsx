@@ -167,6 +167,10 @@ function statusLabel(status: string | null | undefined) {
 
 function valueLabel(value: unknown) {
   switch (String(value ?? "")) {
+    case "new_candidate":
+      return "לבחירה ולהכנת עבודה";
+    case "not_imported":
+      return "טרם נפתחה עבודה";
     case "purchase_request":
       return "בקשת רכש";
     case "goods_receipt":
@@ -1274,7 +1278,7 @@ export const BinaDashboard = () => {
               <SimpleTable rows={rows} isLoading={isLoading} onRowClick={openOrder} columns={[
                 { key: "work_order_id", label: "פק״ע", render: (row) => <Bdi>{String(row.work_order_id ?? "-")}</Bdi> },
                 { key: "customer_name", label: "לקוח" },
-                { key: "title", label: "תיאור העבודה", render: (row) => <span className="block max-w-72 line-clamp-2" title={String(row.title ?? "")}>{String(row.title ?? "—")}</span> },
+                { key: "title", label: "תיאור העבודה", render: (row) => <span className="max-w-72 line-clamp-2" title={String(row.title ?? "")}>{String(row.title ?? "—")}</span> },
                 { key: "bina_quantity", label: "כמות", render: (row) => formatNumber(row.bina_quantity) },
                 { key: "received_at", label: "התקבלה", render: (row) => <span className="whitespace-nowrap">{formatDate(row.received_at)}</span> },
                 { key: "due_at", label: "אספקה", render: (row) => <span className="whitespace-nowrap">{formatDate(row.due_at)}</span> },
