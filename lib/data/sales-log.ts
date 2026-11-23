@@ -1,3 +1,4 @@
+import { resolveSalesActivityCustomer } from "@/lib/data/sales-customer-ownership";
 import { createServiceSupabase } from "@/lib/supabase/client";
 import {
   isSalesEventType,
@@ -379,7 +380,7 @@ function clampLimit(value?: number | null) {
 }
 
 function likePattern(value?: string | null) {
-  const text = normalizeSalesText(value, 120).replaceAll("%", "\\%").replaceAll("_", "\\_");
+  const text = normalizeSalesText(value, 120).replace(/[(),]/g, " ").replaceAll("%", "\\%").replaceAll("_", "\\_");
   return text ? `%${text}%` : null;
 }
 
@@ -603,8 +604,9 @@ export async function createSalesActivityForUser(
   salesUser: { id: string; full_name: string },
   input: Omit<SalesActivityInput, "salesperson" | "sales_user_id" | "portal_submitted_at">,
 ) {
+  const client = await resolveSalesActivityCustomer(salesUser.id, input);
   return createSalesActivity({
-    ...input,
+    ...input, ...client,
     salesperson: salesUser.full_name,
     sales_user_id: salesUser.id,
     portal_submitted_at: new Date().toISOString(),
@@ -630,7 +632,9 @@ export async function updateSalesActivityForUser(
 
   if (existingError) throw new Error(existingError.message);
   if (!existing) throw new Error("SALES_ACTIVITY_NOT_FOUND");
-  return updateSalesActivity(id, input, salesUserId);
+  const changesCustomer = ["customer_code", "local_client_id", "customer_name"].some((key) => key in input);
+  const client = changesCustomer ? await resolveSalesActivityCustomer(salesUserId, input) : {};
+  return updateSalesActivity(id, { ...input, ...client }, salesUserId);
 }
 
 export async function createSalesActivityAttachment(input: {
@@ -670,56 +674,12 @@ export async function fetchSalesUserClients(
   salesUserId: string,
   params: { search?: string | null; limit?: number | null } = {},
 ) {
-  const supabase = createServiceSupabase();
-  const limit = clampLimit(params.limit ?? 12);
-  const pattern = likePattern(params.search);
-
-  const ownQuery = supabase.rpc("get_sales_user_clients", {
-    p_sales_user_id: salesUserId,
-    p_search: params.search?.trim() || null,
-    p_limit: limit,
-  });
-
-  const suggestedQuery = pattern
-    ? supabase.rpc("search_sales_client_activity_scoped", {
-      p_search: params.search?.trim() ?? "",
-      p_limit: limit,
-    })
-    : supabase
-      .from("mart_sales_client_activity_scoped")
-      .select("*")
-      .order("combined_score", { ascending: false })
-      .limit(limit);
-
-  const [ownResult, initialSuggestedResult] = await Promise.all([ownQuery, suggestedQuery]);
-  if (ownResult.error) throw new Error(ownResult.error.message);
-  let suggestedResult = initialSuggestedResult;
-  if (
-    pattern
-    && suggestedResult.error
-    && ["PGRST202", "42883"].includes(suggestedResult.error.code ?? "")
-  ) {
-    suggestedResult = await supabase
-      .from("mart_sales_client_activity_scoped")
-      .select("*")
-      .or(`customer_name.ilike.${pattern},salesperson.ilike.${pattern}`)
-      .order("combined_score", { ascending: false })
-      .limit(limit);
-  }
-  if (suggestedResult.error) throw new Error(suggestedResult.error.message);
-
-  const cleanSuggestedClients = ((suggestedResult.data ?? []) as SalesClientActivity[])
-    .filter((client) => !/[?]{2,}/.test(String(client.customer_name ?? "")))
-    .slice(0, limit);
-
+  const result = await fetchBinaClientIndex({ ...params, salesUserId });
   return {
-    ownClients: ((ownResult.data ?? []) as Array<Record<string, unknown>>).map((client) => ({
-      ...client,
-      activity_count: Number(client.activity_count ?? 0),
-      estimated_pipeline: Number(client.estimated_pipeline ?? 0),
-      actual_revenue: Number(client.actual_revenue ?? 0),
+    ownClients: result.rows.map((client) => ({
+      ...client, owner_name: client.salesperson,
     })),
-    suggestedClients: cleanSuggestedClients,
+    suggestedClients: [],
   };
 }
 
@@ -785,60 +745,25 @@ export async function fetchSalesClients(params: { search?: string | null; limit?
 }
 
 export async function fetchBinaClientIndex(params: {
-  search?: string | null;
-  salesUserId?: string | null;
-  limit?: number | null;
-  offset?: number | null;
+  search?: string | null; salesUserId?: string | null;
+  limit?: number | null; offset?: number | null;
 } = {}) {
   const supabase = createServiceSupabase();
   const limit = clampLimit(params.limit ?? 30);
-  const offset = Math.max(0, Number(params.offset ?? 0));
+  const offset = Number.isFinite(params.offset) ? Math.max(0, Number(params.offset)) : 0;
   const pattern = likePattern(params.search);
-  let query = supabase
-    .from("mart_sales_client_profile")
-    .select("client_ref,local_client_id,customer_code,customer_name,customer_group,customer_status,area,bookkeeping_no,tax_id,contact_person,phone,mobile,email,account_manager,opened_at,directory_source,data_freshness_at,account_manager_sales_user_id", { count: "exact" })
-    .order("customer_name", { ascending: true })
+  let query = supabase.from("sales_customer_directory").select("*", { count: "exact" })
+    .order("customer_name", { ascending: true }).order("client_ref", { ascending: true })
     .range(offset, offset + limit - 1);
-
-  if (pattern) {
-    query = query.or([
-      `customer_code.eq.${normalizeSalesInteger(params.search) ?? -1}`,
-      `customer_name.ilike.${pattern}`,
-      `customer_group.ilike.${pattern}`,
-      `bookkeeping_no.ilike.${pattern}`,
-      `account_manager.ilike.${pattern}`,
-    ].join(","));
-  }
+  if (pattern) query = query.or([
+    `customer_code.eq.${normalizeSalesInteger(params.search) ?? -1}`,
+    `customer_name.ilike.${pattern}`, `customer_group.ilike.${pattern}`,
+    `bookkeeping_no.ilike.${pattern}`, `account_manager.ilike.${pattern}`,
+  ].join(","));
   if (params.salesUserId) query = query.eq("account_manager_sales_user_id", params.salesUserId);
-
   const { data, count, error } = await query;
   if (error) throw new Error(error.message);
-  return {
-    rows: (data ?? []).map((row) => ({
-      client_ref: row.client_ref,
-      local_client_id: row.local_client_id,
-      customer_code: row.customer_code,
-      customer_code_text: row.customer_code == null ? null : String(row.customer_code),
-      customer_name: row.customer_name,
-      customer_group: row.customer_group,
-      status: row.customer_status,
-      area: row.area,
-      bookkeeping_no: row.bookkeeping_no,
-      tax_id: row.tax_id,
-      contact_person: row.contact_person,
-      phone: row.phone,
-      mobile: row.mobile,
-      email: row.email,
-      salesperson: row.account_manager,
-      opened_at: row.opened_at,
-      source_filename: "",
-      source_updated_at: row.data_freshness_at,
-      imported_at: row.data_freshness_at ?? new Date(0).toISOString(),
-      source: row.directory_source === "approved_local" ? "local_pending" : "bina_index",
-      sync_status: row.directory_source === "approved_local" ? "pending" : "synced",
-    })) as BinaClientIndexRow[],
-    count: count ?? 0,
-  };
+  return { rows: (data ?? []).map((row) => ({ ...row, salesperson: row.account_manager })) as BinaClientIndexRow[], count: count ?? 0 };
 }
 
 function applyClientIdentityFilter<T extends {
@@ -910,17 +835,7 @@ export async function fetchSalesClientProfile(input: {
   if (canonicalError) throw new Error(canonicalError.message);
 
   const isOwner = canonicalProfile?.account_manager_sales_user_id === input.salesUserId;
-  if (!input.canViewTeam && !isOwner) {
-    let visibilityQuery = supabase
-      .from("sales_activity_logs")
-      .select("id")
-      .eq("sales_user_id", input.salesUserId)
-      .limit(1);
-    visibilityQuery = applyClientIdentityFilter(visibilityQuery, client);
-    const visibility = await visibilityQuery;
-    if (visibility.error) throw new Error(visibility.error.message);
-    if (!visibility.data?.length) throw new Error("SALES_CLIENT_FORBIDDEN");
-  }
+  if (!input.canViewTeam && !isOwner) throw new Error("SALES_CLIENT_FORBIDDEN");
 
   let activityQuery = supabase
     .from("sales_activity_logs")

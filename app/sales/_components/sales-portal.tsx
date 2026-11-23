@@ -83,10 +83,6 @@ type OwnClient = {
   customer_code: number | null;
   customer_name: string;
   contact_person: string | null;
-  activity_count: number;
-  estimated_pipeline: number;
-  actual_revenue: number;
-  last_activity_at: string | null;
   owner_name: string | null;
 };
 
@@ -340,7 +336,7 @@ export function SalesPortal() {
       try {
         await refreshClientSuggestions(form.customer_name, requestId);
       } catch {
-        // Keep the last usable suggestions; the main session loader owns auth errors.
+        if (clientSearchRequestRef.current === requestId) { setOwnClients([]); setSuggestedClients([]); }
       }
     }, 250);
 
@@ -410,7 +406,7 @@ export function SalesPortal() {
     return Boolean(owner && currentUser && owner !== currentUser);
   }, [effectiveClientOwner, user?.full_name]);
   const canManageClients = user?.scopes.includes("sales_client_manage") ?? false;
-  const isFormReady = isBaseFormReady && !unresolvedKnownClient;
+  const isFormReady = isBaseFormReady && Boolean(form.customer_code != null || form.local_client_id) && !unresolvedKnownClient;
 
   const useCreatedClient = (client: PendingBinaClient) => {
     setSelectedClientOwner(user?.full_name ?? null);
@@ -783,9 +779,34 @@ export function SalesPortal() {
                     setSelectedClientOwner(null);
                     setForm((current) => ({ ...current, customer_name: event.target.value, customer_code: null, local_client_id: null }));
                   }}
-                  placeholder="שם לקוח"
+                  placeholder="חיפוש לקוח משויך לפי שם או קוד"
                   className="h-12 min-w-0 rounded-xl text-base lg:h-10 lg:text-sm"
                 />
+            {!form.customer_code && !form.local_client_id && <p className="mt-3 text-sm text-muted-foreground">בחרו לקוח קיים מתוך הלקוחות המשויכים אליכם. אם חסר לקוח, בקשו מהמנהל לשייך אותו.</p>}
+            {clientSuggestions.length > 0 && (
+              <div className="mt-2 grid max-h-64 gap-1 overflow-y-auto rounded-xl border bg-background p-1" role="group" aria-label="לקוחות משויכים התואמים לחיפוש">
+                {clientSuggestions.map((client) => (
+                  <button
+                    key={`${client.source}-${client.customer_code ?? client.local_client_id ?? "manual"}-${client.customer_name}`}
+                    type="button"
+                    onClick={() => selectClient(client)}
+                    className="w-full min-w-0 rounded-lg border border-border bg-secondary/40 p-3 text-right text-sm transition hover:bg-accent"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate font-semibold">{client.customer_name}</span>
+                      <Badge variant="outline">{client.source === "own" ? "לקוח שלי" : client.source === "pending" ? "עדיין לא ב-BINA" : "רשימת לקוחות"}</Badge>
+                    </div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {client.customer_code != null ? <>קוד לקוח: <bdi dir="ltr">{client.customer_code}</bdi></> : "לקוח חדש במערכת"}
+                    </div>
+                    {client.owner_name ? (
+                      <div className="mt-1 truncate text-xs text-muted-foreground">מנהל/ת לקוח: {client.owner_name}</div>
+                    ) : null}
+                  </button>
+                ))}
+              </div>
+            )}
+
               </Field>
               <Field label="איש קשר">
                 <Input
@@ -857,29 +878,6 @@ export function SalesPortal() {
               </Field>
             </div>
 
-            {clientSuggestions.length > 0 && (
-              <div className="-mx-1 mt-3 flex max-w-full snap-x gap-2 overflow-x-auto px-1 pb-1">
-                {clientSuggestions.map((client) => (
-                  <button
-                    key={`${client.source}-${client.customer_code ?? client.local_client_id ?? "manual"}-${client.customer_name}`}
-                    type="button"
-                    onClick={() => selectClient(client)}
-                    className="w-[min(14rem,82vw)] shrink-0 snap-start rounded-xl border border-border bg-secondary/40 p-3 text-right text-sm transition hover:bg-accent"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="truncate font-semibold">{client.customer_name}</span>
-                      <Badge variant="outline">{client.source === "own" ? "לקוח שלי" : client.source === "pending" ? "עדיין לא ב-BINA" : "רשימת לקוחות"}</Badge>
-                    </div>
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      {client.activity_count} פעילויות · {formatMoney(client.estimated_pipeline || client.actual_revenue)}
-                    </div>
-                    {client.owner_name ? (
-                      <div className="mt-1 truncate text-xs text-muted-foreground">מנהל/ת לקוח: {client.owner_name}</div>
-                    ) : null}
-                  </button>
-                ))}
-              </div>
-            )}
 
             {effectiveClientHasDifferentOwner ? (
               <div className="mt-3">

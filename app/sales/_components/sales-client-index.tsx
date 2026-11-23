@@ -53,7 +53,7 @@ export function SalesClientIndex() {
   const [rows, setRows] = useState<BinaClientIndexRow[]>([]);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
-  const [mine, setMine] = useState(false);
+  const [mine, setMine] = useState(true);
   const [offset, setOffset] = useState(0);
   const [count, setCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -61,7 +61,7 @@ export function SalesClientIndex() {
   const [isNewClientOpen, setIsNewClientOpen] = useState(false);
 
   useEffect(() => {
-    setMine(new URLSearchParams(window.location.search).get("mine") === "true");
+    setMine(new URLSearchParams(window.location.search).get("mine") !== "false");
   }, []);
 
   useEffect(() => {

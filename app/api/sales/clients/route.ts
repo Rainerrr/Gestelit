@@ -13,6 +13,7 @@ export async function GET(request: Request) {
       limit: Number(url.searchParams.get("limit") ?? 12),
     }));
   } catch (error) {
+    if (error instanceof Error && error.message === "SALES_FORBIDDEN") return NextResponse.json({ error: "SALES_FORBIDDEN" }, { status: 403 });
     if (!(error instanceof Error) || error.message !== "SALES_UNAUTHORIZED") {
       console.error("SALES_CLIENTS_FAILED", error);
       return NextResponse.json({ error: "SALES_CLIENTS_FAILED" }, { status: 500 });

@@ -176,7 +176,7 @@ export async function createPendingBinaClient(
 ) {
   const normalized = normalizeBinaClientInput({
     ...input,
-    salesperson: input.salesperson || salesUser.full_name,
+    salesperson: salesUser.full_name,
   });
   const errors = validateBinaClientInput(normalized);
   if (errors.length > 0) throw new BinaClientValidationError(errors[0]);

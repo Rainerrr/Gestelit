@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
@@ -496,10 +497,10 @@ export function SalesDailyLogDashboard() {
           title="יומן מכירות"
           statusElement={<Badge variant="outline" className="hidden sm:inline-flex">דיווחי הצוות לצד נתוני BINA</Badge>}
           actions={
-            <Button variant="outline" size="sm" onClick={() => void loadData()} className="gap-2">
+            <><Link href="/admin/sales-customers" className="rounded-lg border px-3 py-2 text-sm">לקוחות ושיוך לצוות</Link><Button variant="outline" size="sm" onClick={() => void loadData()} className="gap-2">
               <RefreshCcw className="h-4 w-4" />
               רענון
-            </Button>
+            </Button></>
           }
         />
       }
