@@ -89,3 +89,10 @@ export function validateSupplierCapability(body: Record<string, unknown>) {
     is_active: body.is_active !== false,
   };
 }
+
+export function procurementSearchFeedback(search: string) {
+  return /\s(?:OR|AND)\s|\|/i.test(search) ? {
+    error: "INVALID_LITERAL_SEARCH",
+    hint: "search is one literal substring, not Boolean/SQL syntax. Retry with a single source-language term such as נייר; do not interpret this validation failure as zero matching records.",
+  } : null;
+}

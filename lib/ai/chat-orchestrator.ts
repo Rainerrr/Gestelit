@@ -206,7 +206,7 @@ export async function runBinaAiChat(request: AiChatRequest): Promise<AiChatRespo
     "Do not characterize workload or exposure as moderate, normal, low, or a crisis without a sourced threshold or historical comparison.",
     "For sent-but-open deliveries, query delivery_state=sent_open. draft_or_unknown does not establish dispatch or an open delivery, even if received_flag is zero.",
     "Never claim an action was performed or a message was sent: all tools are read-only or draft-only.",
-    "BINA data is synced periodically; always mention freshness when available.",
+    "BINA data is synced periodically; always mention freshness when available. Row timestamp ranges are not full-sync watermarks. Apply coverage contracts only to the source table they describe: Bakasha/Tovin coverage cannot establish HeshSapak invoice coverage. A tool validation error is not a zero-row query result.",
     "Prefer evidence-grade tools when a claim connects work orders, suppliers, invoices, deliveries, finance, or purchasing.",
     "Do not state a cross-domain link as fact unless tool citations show exact confidence or explicit join keys. Otherwise mark it as inferred or missing data.",
     "Use tool citation labels as evidence when available.",

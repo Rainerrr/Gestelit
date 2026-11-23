@@ -2,7 +2,7 @@ import {describeRowTimestamps} from "@/lib/ai/query/row-timestamps";
 import {describe,it,expect} from 'vitest';
 import {buildFollowUpCalendar,calendarText} from '@/lib/calendar';
 import {validateSalesAnalyticsPlan,validateSalesBusinessPlan} from '@/lib/ai/query/plan';
-import {validateOperationTask,validateSupplierCapability} from '@/lib/data/operations';
+import {validateOperationTask,validateSupplierCapability,procurementSearchFeedback} from '@/lib/data/operations';
 describe('client requirement boundaries',()=>{
  it('exports Hebrew all-day events with stable IDs, exclusive end date and cancellation',()=>{
   const event={id:'fixture-1',date:'2026-12-31',customerName:'לקוח בדיקה',nextAction:'לחזור ללקוח',updatedAt:'2026-11-23T10:00:00Z'};
@@ -37,4 +37,8 @@ it('does not mislabel row update ranges as conflicting dataset freshness',()=>{
 it('allows authenticated activity details without granting access to identity or private account fields',()=>{
  expect(validateSalesAnalyticsPlan({dataset:'sales_activity',columns:['event_at','customer_name','raw_note','ai_next_action','next_action_date'],orderBy:{column:'event_at',direction:'desc'},limit:20})).toBeTruthy();
  expect(()=>validateSalesAnalyticsPlan({dataset:'sales_activity',columns:['password_hash']})).toThrow();
+});
+
+it('rejects Boolean syntax rather than returning a misleading empty literal-search result',()=>{
+ expect(procurementSearchFeedback('paper OR נייר')?.error).toBe('INVALID_LITERAL_SEARCH');expect(procurementSearchFeedback('נייר')).toBeNull();expect(procurementSearchFeedback('ABC 100%')).toBeNull();
 });
