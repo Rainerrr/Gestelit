@@ -70,6 +70,7 @@ export function JobCompletionDialog({
   isSubmitting = false,
 }: JobCompletionDialogProps) {
   const [selectedJobItemId, setSelectedJobItemId] = useState<string | null>(null);
+  const remainingJobItems = availableJobItems.filter((item) => item.plannedQuantity > item.completedGood + (item.completedScrap ?? 0));
 
   // Reset selection when dialog opens
   useEffect(() => {
@@ -81,7 +82,7 @@ export function JobCompletionDialog({
   const handleSelectJobItem = useCallback(() => {
     if (!selectedJobItemId) return;
     const jobItem = availableJobItems.find((item) => item.id === selectedJobItemId);
-    if (jobItem) {
+    if (jobItem && jobItem.plannedQuantity > jobItem.completedGood + (jobItem.completedScrap ?? 0)) {
       onComplete({ action: "select", jobItem });
     }
   }, [selectedJobItemId, availableJobItems, onComplete]);
@@ -115,10 +116,10 @@ export function JobCompletionDialog({
           </div>
 
           <DialogTitle className="text-2xl font-bold text-emerald-400">
-            פריט עבודה הושלם!
+            השלב בתחנה הושלם
           </DialogTitle>
           <DialogDescription className="text-muted-foreground">
-            <span className="font-semibold">{completedJobItemName}</span> הושלם בהצלחה.
+            הושלם הדיווח בתחנה עבור <span className="font-semibold">{completedJobItemName}</span>. התקדמות המוצר לשלב הבא מופיעה במעקב הייצור.
             <br />
             מה תרצה לעשות עכשיו?
           </DialogDescription>
@@ -133,13 +134,13 @@ export function JobCompletionDialog({
           )}
 
           {/* Available Job Items */}
-          {!isLoading && availableJobItems.length > 0 && (
+          {!isLoading && remainingJobItems.length > 0 && (
             <div className="space-y-2">
               <h4 className="text-sm font-semibold text-muted-foreground text-right">
                 עבודות זמינות בעמדה:
               </h4>
               <div className="max-h-[280px] space-y-2 overflow-y-auto pe-1">
-                {availableJobItems.map((item) => {
+                {remainingJobItems.map((item) => {
                   const totalCompleted = item.completedGood + (item.completedScrap ?? 0);
                   const progress = item.plannedQuantity > 0
                     ? Math.round((totalCompleted / item.plannedQuantity) * 100)
@@ -229,7 +230,7 @@ export function JobCompletionDialog({
           )}
 
           {/* No Available Jobs */}
-          {!isLoading && availableJobItems.length === 0 && (
+          {!isLoading && remainingJobItems.length === 0 && (
             <div className="rounded-lg border-2 border-dashed border-border bg-muted/30 p-6 text-center">
               <div className="text-muted-foreground">
                 אין עבודות נוספות זמינות בעמדה זו

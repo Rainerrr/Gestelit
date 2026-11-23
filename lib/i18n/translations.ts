@@ -416,7 +416,7 @@ export const translations = {
     ru: "Отметьте все обязательные пункты перед запуском.",
   },
   "checklist.end.subtitle": {
-    he: "סיכום ובדיקת סיום לפני סגירת הפק\"ע.",
+    he: "סיכום ובדיקת סיום לפני סיום המשמרת בתחנה.",
     ru: "Проверьте и подтвердите завершение заказа.",
   },
   "checklist.submit": {
@@ -572,7 +572,7 @@ export const translations = {
     ru: "Завершить работу",
   },
   "work.actions.finishWarning": {
-    he: "הלחיצה תעביר אתכם לצ'ק ליסט סגירה ותסגור את הפק\"ע.",
+    he: "הלחיצה תעביר אתכם לצ'ק ליסט סגירה ותסיים את המשמרת בתחנה.",
     ru: "Нажатие переведёт вас к финальному чек-листу и закроет заказ.",
   },
   "work.actions.finishBlockedProduction": {
@@ -978,8 +978,8 @@ export const translations = {
     ru: "Всего требуется:",
   },
   "quantity.completeJobItem": {
-    he: "השלם לסגירת הפק\"ע ({{count}})",
-    ru: "Завершить заказ ({{count}})",
+    he: "השלם את הכמות בתחנה ({{count}})",
+    ru: "Завершить этап ({{count}})",
   },
   "quantity.scrap.totalJob": {
     he: "סה״כ פסול למשמרת",
@@ -1046,8 +1046,8 @@ export const translations = {
     ru: "Сохранение...",
   },
   "quantity.submit.closeItem": {
-    he: "סגור פריט עבודה",
-    ru: "Закрыть элемент заказа",
+    he: "סיום השלב בתחנה",
+    ru: "Завершить этап на станции",
   },
   "quantity.submit.update": {
     he: "עדכן כמות",
