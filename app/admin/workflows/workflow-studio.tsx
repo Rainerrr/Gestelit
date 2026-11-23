@@ -1,6 +1,8 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { fetchBinaWorkOrderDetailApi } from "@/lib/api/bina";
 import {
   Workflow,
   Plus,
@@ -47,7 +49,11 @@ const serialize = (
     name,
     steps.map((s) => [s.id, !!flags[s.id], s.agent_config ?? null]),
   ]);
-export const WorkflowStudio = () => {
+export const WorkflowStudio = ({ binaId }: { binaId?: string }) => {
+  const router = useRouter();
+  const [sourceOrder, setSourceOrder] = useState<Record<string, unknown> | null>(null);
+  const [sourceError, setSourceError] = useState(false);
+  const returnToOrder = (presetId?: string) => router.push(`/admin/bina?${new URLSearchParams({ binaId: binaId!, ...(presetId ? { preset: presetId } : {}) })}`);
   const { hasAccess } = useAdminGuard();
   const { notify } = useNotification();
   const [presets, setPresets] = useState<PipelinePresetWithSteps[]>([]),
@@ -85,6 +91,14 @@ export const WorkflowStudio = () => {
   useEffect(() => {
     if (hasAccess) void load();
   }, [hasAccess, load]);
+  useEffect(() => {
+    if (!hasAccess || !binaId) return;
+    let cancelled = false;
+    void fetchBinaWorkOrderDetailApi(binaId).then((result) => {
+      if (!cancelled) setSourceOrder((result as { order: Record<string, unknown> }).order);
+    }).catch(() => { if (!cancelled) setSourceError(true); });
+    return () => { cancelled = true; };
+  }, [hasAccess, binaId]);
   useEffect(() => {
     if (!dirty) return;
     const handler = (event: BeforeUnloadEvent) => {
@@ -127,7 +141,7 @@ export const WorkflowStudio = () => {
     if (dirty) setPendingSelection(preset);
     else handleSelect(preset);
   };
-  const handleSave = async () => {
+  const handleSave = async (continueToOrder = false) => {
     if (
       !name.trim() ||
       !steps.length ||
@@ -176,6 +190,7 @@ export const WorkflowStudio = () => {
         message: "התבנית זמינה כעת בבחירת תהליך למוצר חדש.",
         variant: "success",
       });
+      if (continueToOrder && binaId) returnToOrder(preset.id);
     } catch {
       setError(
         "לא ניתן לשמור את התהליך. השינויים נשארו במסך; בדקו את ההגדרות ונסו שוב.",
@@ -204,6 +219,16 @@ export const WorkflowStudio = () => {
       }}
     >
       <div className="space-y-6 pb-12">
+        {binaId && <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
+          <p className="text-xs text-muted-foreground">1 · בחירת פק״ע ← 2 · תכנון רצף התחנות ← 3 · בדיקה ופתיחת עבודה</p>
+          <h2 className="font-semibold">תכנון ייצור לפק״ע <bdi>{String(sourceOrder?.work_order_id ?? binaId)}</bdi></h2>
+          <p className="text-sm text-muted-foreground">{sourceOrder ? `${sourceOrder.customer_name ?? ""} · ${sourceOrder.title ?? ""} · ${sourceOrder.bina_quantity ?? ""} יחידות` : sourceError ? "לא ניתן לטעון את פרטי הפק״ע. חזרו לפק״ע ונסו שוב." : "טוען את פרטי הפק״ע…"}</p>
+          <p className="text-sm">בחרו תבנית קיימת או בנו תהליך חדש. בחזרה לפק״ע תוכלו לבדוק את המסלול והכמות לפני פתיחת העבודה לעובד.</p>
+          <div className="flex flex-wrap gap-2">
+            <Button disabled={loading || saving || !sourceOrder || !name.trim() || !steps.length} onClick={() => dirty ? void handleSave(true) : selectedId && returnToOrder(selectedId)}>{dirty ? "שמירה וחזרה להכנת הפק״ע" : "שימוש בתבנית וחזרה לפק״ע"}</Button>
+            <Button variant="outline" disabled={dirty || saving} onClick={() => returnToOrder()}>חזרה לפק״ע</Button>
+          </div>
+        </div>}
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="mb-2 text-xs font-medium text-primary">
@@ -217,7 +242,7 @@ export const WorkflowStudio = () => {
               כתבנית והשתמשו בה בעבודות חדשות.
             </p>
           </div>
-          <Button
+          {!binaId && <Button
             type="button"
             variant="outline"
             onClick={() => setJobOpen(true)}
@@ -225,7 +250,7 @@ export const WorkflowStudio = () => {
           >
             <Briefcase className="ml-2 h-4 w-4" />
             יצירת עבודה
-          </Button>
+          </Button>}
         </div>
         {dirty && (
           <p className="text-xs text-muted-foreground">

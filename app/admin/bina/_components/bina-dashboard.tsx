@@ -867,7 +867,7 @@ function FinanceWorkbench({
   );
 }
 
-export const BinaDashboard = () => {
+export const BinaDashboard = ({ initialBinaId, initialPresetId }: { initialBinaId?: string; initialPresetId?: string }) => {
   const { hasAccess } = useAdminGuard();
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [overview, setOverview] = useState<AnyRow | null>(null);
@@ -1009,6 +1009,8 @@ export const BinaDashboard = () => {
     setImportError(null);
     setDetailError(null);
     setImportResult(null);
+    setSelectedPresetId("none");
+    setSelectedStationIds([]);
     try {
       const detail = await fetchBinaWorkOrderDetailApi(String(row.bina_id)) as AnyRow;
       if (request === orderRequest.current) setOrderDetail(detail);
@@ -1098,6 +1100,38 @@ export const BinaDashboard = () => {
   const sendAi = (prompt?: string) => {
     window.dispatchEvent(new CustomEvent("gestelit:admin-ai-open", { detail: { prompt } }));
   };
+
+  useEffect(() => {
+    if (hasAccess !== true || !initialBinaId) return;
+    let cancelled = false;
+    const request = ++orderRequest.current;
+    setSelectedOrder({ bina_id: initialBinaId });
+    setOrderDetail(null);
+    setImportPreview(null);
+    setReadinessConfirmed(false);
+    setImportResult(null);
+    setImportError(null);
+    setDetailError(null);
+    setSelectedStationIds([]);
+    setSelectedPresetId("none");
+    setShowImportPanel(true);
+    void Promise.all([
+      fetchBinaWorkOrderDetailApi(initialBinaId),
+      fetch("/api/admin/pipeline-presets", { credentials: "include" }).then((r) => readAdminJson(r, "PIPELINE_PRESETS_FAILED")),
+      fetch("/api/admin/pipeline-presets/available-stations", { credentials: "include" }).then((r) => readAdminJson(r, "PIPELINE_STATIONS_FAILED")),
+    ]).then(([detail, presetResponse, stationResponse]) => {
+      if (cancelled || request !== orderRequest.current) return;
+      const presets: PipelinePresetWithSteps[] = presetResponse.presets ?? [];
+      setOrderDetail(detail as AnyRow);
+      setPipelinePresets(presets);
+      setAvailableStations(stationResponse.stations ?? []);
+      if (initialPresetId && presets.some((p) => p.id === initialPresetId)) setSelectedPresetId(initialPresetId);
+      else if (initialPresetId) setImportError("התבנית שנבחרה אינה זמינה. בחרו תבנית פעילה לפני המשך.");
+    }).catch(() => {
+      if (!cancelled && request === orderRequest.current) setDetailError("לא ניתן לטעון את הפק״ע והתבניות. רעננו ונסו שוב.");
+    });
+    return () => { cancelled = true; };
+  }, [hasAccess, initialBinaId, initialPresetId]);
 
   if (hasAccess === null) {
     return <div className="flex min-h-[60vh] items-center justify-center text-muted-foreground">טוען הרשאות...</div>;
@@ -1693,16 +1727,16 @@ export const BinaDashboard = () => {
                     <Badge className={statusVariant(String(drawerDecision?.blocker_type ?? drawerOrder?.link_status))}>{valueLabel(drawerDecision?.blocker_type ?? drawerOrder?.link_status)}</Badge>
                     <Badge className={statusVariant(String(drawerDecision?.relationship_confidence))}>אמינות קשר: {valueLabel(drawerDecision?.relationship_confidence)}</Badge>
                   </div>
-                  <h2 className="text-lg font-semibold">Control Tower · פק״ע <bdi dir="ltr">{String(drawerOrder?.work_order_id ?? selectedOrder.work_order_id ?? "")}</bdi></h2>
+                  <h2 className="text-lg font-semibold">הכנת פק״ע <bdi dir="ltr">{String(drawerOrder?.work_order_id ?? selectedOrder.work_order_id ?? "")}</bdi></h2>
                   <p className="text-sm text-muted-foreground">{String(drawerOrder?.customer_name ?? selectedOrder.customer_name ?? "")}</p>
                 </div>
                 <div className="flex flex-wrap justify-end gap-2">
                   <Button onClick={() => void sendAi(`פתח Control Tower לפק״ע ${String(drawerOrder?.work_order_id ?? selectedOrder.work_order_id)}: סכם חסמים, מסלול, רכש, משלוחים וכספים`)}>
                     שאל על הפק״ע הזו
                   </Button>
-                  <Button variant="outline" onClick={importSelectedOrder} disabled={!binaImportEnabled || !orderDetail || !!detailError}>
-                    {binaImportEnabled ? "ייבוא ל-Gestelit" : "ייבוא נעול"}
-                  </Button>
+                  {drawerOrder?.gestelit_job_id ? <Link className="rounded-lg border px-3 py-2 text-sm font-medium" href={`/admin/jobs?job=${encodeURIComponent(String(drawerOrder.gestelit_job_id))}`}>לניהול העבודה</Link> : <Button variant="outline" onClick={importSelectedOrder} disabled={!binaImportEnabled || !orderDetail || !!detailError}>
+                    {binaImportEnabled ? "בחירת תהליך ופתיחת עבודה" : "ייבוא נעול"}
+                  </Button>}
                   <Button variant="ghost" onClick={() => {
                     orderRequest.current++;
                     setSelectedOrder(null);
@@ -1735,21 +1769,16 @@ export const BinaDashboard = () => {
                   </div>
                 </Card>
               </div>
-              {showImportPanel && (
+              {showImportPanel && !drawerOrder?.gestelit_job_id && !importResult && (
                 <Card className="mb-4 rounded-xl border border-primary/30 bg-primary/5 p-4">
                   <div className="mb-3 flex items-start justify-between gap-3">
                     <div>
-                      <h3 className="font-semibold">ייבוא פק״ע לגסטליט</h3>
+                      <h3 className="font-semibold">מפק״ע לתוכנית ייצור</h3>
+                      <p className="my-2 text-xs text-primary">1 · פרטי פק״ע ← 2 · בחירת תהליך ← 3 · בדיקה ופתיחת עבודה</p>
                       <p className="text-sm text-muted-foreground">
                         תחילה בודקים תצוגה מקדימה. נוצר מוצר מוגמר אחד בכמות כותרת הפק״ע, עם המסלול שתבחרו. יש לאמת קבצים וחומרים לפני יצירה. נתוני BINA נשמרים ללא שינוי.
                       </p>
                     </div>
-                    {importResult && (
-                      <Badge className="border-emerald-500/20 bg-emerald-500/10 text-emerald-400">
-                        <CheckCircle2 className="ml-1 h-3.5 w-3.5" />
-                        יובא
-                      </Badge>
-                    )}
                   </div>
                   <div className="grid gap-4 lg:grid-cols-2">
                     <div className="space-y-2">
@@ -1767,7 +1796,8 @@ export const BinaDashboard = () => {
                           ))}
                         </SelectContent>
                       </Select>
-
+                      <Link href={`/admin/workflows?binaId=${encodeURIComponent(String(selectedOrder.bina_id))}`} className="inline-flex rounded-lg border border-primary/30 px-3 py-2 text-sm font-medium text-primary">בניית תבנית חדשה בבונה התהליכים</Link>
+                      {selectedPresetId !== "none" && <p className="text-xs leading-relaxed text-muted-foreground">{pipelinePresets.find((p) => p.id === selectedPresetId)?.steps.slice().sort((a, b) => a.position - b.position).map((s) => s.station?.name ?? "תחנה").join(" ← ")}</p>}
                     </div>
                     <div className={cn("space-y-2", selectedPresetId !== "none" && "opacity-50")}>
                       <Label>תחנות ידניות</Label>
@@ -1804,11 +1834,6 @@ export const BinaDashboard = () => {
                       {importError}
                     </div>
                   )}
-                  {importResult && (
-                    <div className="mt-3 rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-2 text-sm text-emerald-400">
-                      נוצרה/קושרה עבודה בגסטליט ונוצרו {formatNumber(Array.isArray(importResult.items) ? importResult.items.length : 0)} פריטי עבודה חדשים.
-                    </div>
-                  )}
                   <div className="mt-4 flex justify-end gap-2">
                     <Button variant="ghost" onClick={() => setShowImportPanel(false)} disabled={isImporting}>ביטול</Button>
                     <Button onClick={() => void confirmImport(false)} disabled={isImporting} className="gap-2">
@@ -1818,6 +1843,11 @@ export const BinaDashboard = () => {
                   </div>
                 </Card>
               )}
+              {drawerOrder?.gestelit_job_id && <Card className="mb-4 space-y-3 border-emerald-500/30 bg-emerald-500/5 p-4">
+                <h3 className="font-semibold">הפק״ע מקושרת לעבודה {String(drawerOrder.gestelit_job_number ?? drawerOrder.work_order_id)}</h3>
+                <p className="text-sm text-muted-foreground">{importResult ? "העבודה נוצרה עם המוצר, הכמות ורצף התחנות שבחרתם. " : ""}העובד יבחר אותה בתחנה הראשונה ויתחיל לאחר בדיקות התחנה. דיווחי הייצור יופיעו במעקב.</p>
+                <div className="flex flex-wrap gap-3"><Link className="rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground" href={`/admin/jobs?job=${encodeURIComponent(String(drawerOrder.gestelit_job_id))}`}>למוצרים ולרצף התחנות</Link><Link className="rounded-lg border px-3 py-2 text-sm" href="/admin">למעקב הייצור</Link></div>
+              </Card>}
               <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {detailValue("סטטוס קישור", <Badge className={statusVariant(String(drawerOrder?.link_status))}>{statusLabel(String(drawerOrder?.link_status))}</Badge>)}
                 {drawerOrder?.gestelit_job_id ? detailValue("חסם MES", <Badge className={statusVariant(String(drawerDecision?.blocker_type))}>{valueLabel(drawerDecision?.blocker_type)}</Badge>) : null}
