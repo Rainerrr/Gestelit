@@ -1483,6 +1483,12 @@ export const BinaDashboard = () => {
   const productionLanes = (productionDashboard?.lanes ?? {}) as Record<string, AnyRow[]>;
   const productionRisks = Array.isArray(productionDashboard?.risks) ? productionDashboard.risks as AnyRow[] : [];
   const unmappedOperations = Array.isArray(productionDashboard?.unmappedOperations) ? productionDashboard.unmappedOperations as AnyRow[] : [];
+  const historicalLinkStats = [
+    { label: "לא יובאו", value: numberValue(overviewData?.workOrders?.notImported) },
+    { label: "פער כמות", value: numberValue(overviewData?.workOrders?.quantityMismatch) },
+    { label: "בסיכון", value: numberValue(overviewData?.workOrders?.atRisk) },
+    { label: "מקושרות", value: Math.max(0, numberValue(overviewData?.workOrders?.total) - numberValue(overviewData?.workOrders?.notImported) - numberValue(overviewData?.workOrders?.quantityMismatch) - numberValue(overviewData?.workOrders?.atRisk)) },
+  ];
   const productionStats = [
     { label: "לא יובאו", value: numberValue(productionMetrics.not_imported_count ?? overviewData?.workOrders?.notImported) },
     { label: "פער כמות", value: numberValue(productionMetrics.quantity_mismatch_count ?? overviewData?.workOrders?.quantityMismatch) },
@@ -1578,9 +1584,9 @@ export const BinaDashboard = () => {
                 onAsk={(row) => void sendAi(`נתח את הסיכון הזה ב-BINA: ${String(row.entity_label ?? row.work_order_id ?? row.risk_reason ?? "")}. הצג מקורות, קשרים לרכש/כספים/משלוחים והמשך מומלץ.`)}
               />
               <div className="grid gap-4">
-                <MiniChartCard title="פק״עות לפי מצב" subtitle="קישור BINA מול Gestelit">
-                  <SimpleDonut data={productionStats} />
-                  <div className="mt-2"><MetricBreakdownBar data={productionStats} /></div>
+                <MiniChartCard title="פק״עות לפי מצב קישור" subtitle="כל ההיסטוריה · מוכנות לייצור נבדקת בלשונית פק״עות">
+                  <SimpleDonut data={historicalLinkStats} />
+                  <div className="mt-2"><MetricBreakdownBar data={historicalLinkStats} /></div>
                 </MiniChartCard>
                 <MiniChartCard title="איכות נתונים" subtitle="חריגות שמשפיעות על אמון בדשבורד">
                   {dashboardSummary?.dataQualityStatus !== "complete" && <p className="mb-2 text-sm text-amber-500">בדיקה חלקית — אין להסיק שאין חריגות.</p>}
