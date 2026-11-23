@@ -215,27 +215,36 @@ export async function runSalesChat(input: {
 
   const queryResults: SalesQueryResult[] = [];
   const queryFailures: string[] = [];
-  const calls = response.output?.filter((item) => item.type === "function_call") ?? [];
-  if (calls.length) {
+  const failedTools = new Set<string>();
+  let callCount = 0;
+  for (let round = 0; round < 2; round++) {
+    const calls = response.output?.filter((item) => item.type === "function_call") ?? [];
+    if (!calls.length) break;
     const outputs = [];
-    for (const [index, call] of calls.entries()) {
+    let repairable = false;
+    for (const call of calls) {
       input.signal?.throwIfAborted();
       let result: unknown;
       try {
-        if (index >= 3 || !["query_sales_activity", "query_sales_business"].includes(call.name)) throw new Error("SALES_AI_QUERY_UNAVAILABLE");
+        if (++callCount > 6 || !["query_sales_activity", "query_sales_business"].includes(call.name)) throw new Error("SALES_AI_QUERY_UNAVAILABLE");
         result = await (call.name === "query_sales_business" ? runSalesBusinessQuery : runSalesAnalyticsQuery)(JSON.parse(call.arguments), { id: input.salesUserId, scope }, input.signal);
         queryResults.push(result as SalesQueryResult);
+        failedTools.delete(call.name);
       } catch (error) {
         const reason = error instanceof Error ? error.message : "";
         const code = ["AI_QUERY_PLAN_INVALID", "AI_QUERY_SCOPE_FORBIDDEN", "SALES_AI_QUERY_TIMEOUT", "SALES_AI_QUERY_FORBIDDEN"].includes(reason) ? reason : "SALES_AI_QUERY_UNAVAILABLE";
-        console.warn("SALES_AI_QUERY_FAILED", { code, tool: ["query_sales_activity", "query_sales_business"].includes(call.name) ? call.name : "unapproved", index });
-        queryFailures.push("לא ניתן היה לאמת חלק מהשאילתות המותאמות; הניתוח נשען על הסיכום הזמין.");
-        result = { error: "SALES_AI_QUERY_UNAVAILABLE" };
+        console.warn("SALES_AI_QUERY_FAILED", { code, tool: ["query_sales_activity", "query_sales_business"].includes(call.name) ? call.name : "unapproved", round });
+        failedTools.add(call.name);
+        repairable ||= code === "AI_QUERY_PLAN_INVALID";
+        result = code === "AI_QUERY_PLAN_INVALID" ? { error: code, hint: "Correct the plan using only the documented fields; select at most 8 columns, and order only by selected output columns. Never add identity or scope arguments." } : { error: "SALES_AI_QUERY_UNAVAILABLE" };
       }
       outputs.push({ type: "function_call_output" as const, call_id: call.call_id, output: JSON.stringify(result) });
     }
-    response = await client.responses.create({ model, reasoning: aiReasoning(model), instructions, previous_response_id: response.id, input: outputs, text: { format: SALES_CHAT_FORMAT, verbosity: "medium" } }, { signal: input.signal });
+    response = await client.responses.create({ model, reasoning: aiReasoning(model), instructions, previous_response_id: response.id, input: outputs,
+      ...(round === 0 && repairable ? {tools: [salesAnalyticsQueryTool, salesBusinessQueryTool].map(tool => ({...tool, strict:false}) as OpenAI.Responses.Tool)} : {}),
+      text: { format: SALES_CHAT_FORMAT, verbosity: "medium" } }, { signal: input.signal });
   }
+  if (failedTools.size) queryFailures.push("לא ניתן היה לאמת חלק מהשאילתות המותאמות; הניתוח נשען על הסיכום הזמין.");
 
   let parsed: unknown;
   try {

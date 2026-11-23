@@ -1,7 +1,7 @@
 import {describeRowTimestamps} from "@/lib/ai/query/row-timestamps";
 import {describe,it,expect} from 'vitest';
 import {buildFollowUpCalendar,calendarText} from '@/lib/calendar';
-import {validateSalesBusinessPlan} from '@/lib/ai/query/plan';
+import {validateSalesAnalyticsPlan,validateSalesBusinessPlan} from '@/lib/ai/query/plan';
 import {validateOperationTask,validateSupplierCapability} from '@/lib/data/operations';
 describe('client requirement boundaries',()=>{
  it('exports Hebrew all-day events with stable IDs, exclusive end date and cancellation',()=>{
@@ -32,4 +32,9 @@ describe('client requirement boundaries',()=>{
 it('does not mislabel row update ranges as conflicting dataset freshness',()=>{
  const result=describeRowTimestamps({freshness:'2026-05-04T12:00:00Z',latestSync:'2026-11-23T12:00:00Z',sourceRows:2515});
  expect(result.freshness).toBeNull();expect(result.oldestRecordTimestamp).toBe('2026-05-04T12:00:00Z');expect(result.latestRecordTimestamp).toBe('2026-11-23T12:00:00Z');expect(result).not.toHaveProperty('latestSync');expect(result.sourceRows).toBe(2515);expect(result.timestampSemantics).toContain('Different dates are expected');
+});
+
+it('allows authenticated activity details without granting access to identity or private account fields',()=>{
+ expect(validateSalesAnalyticsPlan({dataset:'sales_activity',columns:['event_at','customer_name','raw_note','ai_next_action','next_action_date'],orderBy:{column:'event_at',direction:'desc'},limit:20})).toBeTruthy();
+ expect(()=>validateSalesAnalyticsPlan({dataset:'sales_activity',columns:['password_hash']})).toThrow();
 });

@@ -45,3 +45,10 @@ describe("sales conversational scoped analytics", () => {
   it.each([{ dataset: "work_orders" }, { dataset: "sales_users" }, { dataset: "sales_activity", viewer_id: "other-user" }, { dataset: "sales_activity", scope: "team" }, { dataset: "sales_activity", columns: ["password_hash"] }, { dataset: "sales_activity", measures: [{ op: "sum", column: "actual_revenue" }] }])("rejects cross-domain/identity/monetary escapes: %j", (plan) => { expect(() => validateSalesAnalyticsPlan(plan)).toThrow("AI_QUERY"); });
   it("allows only separated-currency sales amount aggregates", () => { expect(validateSalesAnalyticsPlan({ dataset: "sales_activity", groupBy: ["currency"], measures: [{ op: "sum", column: "actual_revenue" }] })).toBeTruthy(); });
 });
+
+it("repairs a validation error once without changing the authenticated scope",async()=>{
+ const call=(id:string)=>({id,output:[{type:"function_call",name:"query_sales_activity",call_id:id,arguments:JSON.stringify({dataset:"sales_activity",columns:["raw_note","event_at"],orderBy:{column:"event_at",direction:"desc"}})}]});
+ mocks.query.mockRejectedValueOnce(new Error("AI_QUERY_PLAN_INVALID")).mockResolvedValueOnce({rows:[{raw_note:"1250 catalogs"}],scannedRows:1,sourceTruncated:false,outputTruncated:false,freshness:null});
+ mocks.create.mockResolvedValueOnce(call("bad-plan")).mockResolvedValueOnce(call("repaired-plan")).mockResolvedValueOnce({output_text:JSON.stringify(answer)});
+ const result=await runSalesChat(input);expect(mocks.create).toHaveBeenCalledTimes(3);expect(mocks.create.mock.calls[1][0].tools).toHaveLength(2);expect(mocks.create.mock.calls[2][0].tools).toBeUndefined();expect(result.queryCount).toBe(1);expect(result.couldNotVerify.join()).not.toContain("לא ניתן היה לאמת חלק");expect(mocks.query.mock.calls.every(c=>c[1].id==="authenticated-user"&&c[1].scope==="personal")).toBe(true);
+});
