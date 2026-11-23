@@ -52,8 +52,9 @@ export function summarizeJob(entry: LiveJobProgress, today: string) {
   };
 }
 
-export function buildOverview(jobs: LiveJobProgress[], today: string) {
+export function buildOverview(jobs: LiveJobProgress[], today: string, includeTests = false) {
   const rows = jobs
+    .filter((entry) => includeTests || !entry.job.is_test)
     .map((job) => summarizeJob(job, today))
     .filter((job) => !job.completed || job.activeSessionCount > 0);
   rows.sort(

@@ -18,7 +18,7 @@ export function weeklyRange(start?: string) {
 
 export type WeeklyOrder = { id: number; customer: string; title: string; received: string; due: string | null; quantity: number | null; status: string; syncedAt: string };
 export type WeeklyPurchase = { id: string; type: string; document: string; supplier: string; workOrder: number | null; date: string; syncedAt: string };
-export type WeeklyStation = { name: string; rows: number; orderIds: number[]; reportedCompleteRows: number; datedCompleteRows: number };
+export type WeeklyStation = { name: string; rows: number; distinctOrderCount: number; orderIds: number[]; reportedCompleteRows: number; datedCompleteRows: number };
 export type WeeklySnapshot = {
   start: string; end: string; fetchedAt: string; latestSync: string | null;
   orders: WeeklyOrder[]; purchases: WeeklyPurchase[]; purchaseSuppliers: Array<{ name: string; documents: number; workOrderIds: number[] }>; stations: WeeklyStation[];

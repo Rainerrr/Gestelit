@@ -49,7 +49,9 @@ export async function importBinaWorkOrderApi(
   payload: {
     pipeline_preset_id?: string | null;
     station_ids?: string[];
-    allowQuantityFallback?: boolean;
+    dryRun?: boolean;
+    previewHash?: string;
+    readinessConfirmed?: boolean;
   },
 ) {
   return handleResponse(await fetch(`/api/admin/bina/work-orders/${encodeURIComponent(binaId)}/import`, adminInit({

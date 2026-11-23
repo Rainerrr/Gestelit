@@ -520,8 +520,8 @@ function BinaCommandCenter({
   const coverageStatus = String(dashboard?.coverageStatus ?? "partial_sample");
   const staleTables = syncRows.filter((row) => row.freshness_status === "stale").length;
   const qualityCount = Array.isArray(dashboard?.dataQuality) ? dashboard.dataQuality.length : 0;
-  const notImported = numberValue(productionMetrics.not_imported_count) || numberValue(overviewData?.workOrders?.notImported);
-  const atRisk = numberValue(productionMetrics.at_risk_count) || numberValue(overviewData?.workOrders?.atRisk);
+  const notImported = numberValue(productionMetrics.not_imported_count ?? overviewData?.workOrders?.notImported);
+  const atRisk = numberValue(productionMetrics.at_risk_count ?? overviewData?.workOrders?.atRisk);
   const missingRoutes = numberValue(productionMetrics.missing_route_count);
   const materialBlocked = numberValue(productionMetrics.material_blocked_count);
   const supplierBalances = overviewData?.suppliers?.balancesByCurrency;
@@ -1178,7 +1178,8 @@ export const BinaDashboard = () => {
   const [availableStations, setAvailableStations] = useState<Station[]>([]);
   const [selectedPresetId, setSelectedPresetId] = useState<string>("none");
   const [selectedStationIds, setSelectedStationIds] = useState<string[]>([]);
-  const [allowQuantityFallback, setAllowQuantityFallback] = useState(false);
+  const [readinessConfirmed, setReadinessConfirmed] = useState(false);
+  const [importPreview, setImportPreview] = useState<AnyRow | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -1288,6 +1289,8 @@ export const BinaDashboard = () => {
 
   const openOrder = async (row: AnyRow) => {
     setSelectedOrder(row);
+    setImportPreview(null);
+    setReadinessConfirmed(false);
     setShowImportPanel(false);
     setImportError(null);
     setDetailError(null);
@@ -1336,6 +1339,7 @@ export const BinaDashboard = () => {
   };
 
   const toggleStation = (stationId: string) => {
+    setImportPreview(null); setReadinessConfirmed(false);
     setSelectedStationIds((current) =>
       current.includes(stationId)
         ? current.filter((id) => id !== stationId)
@@ -1343,10 +1347,10 @@ export const BinaDashboard = () => {
     );
   };
 
-  const confirmImport = async () => {
+  const confirmImport = async (commit = false) => {
     if (!selectedOrder) return;
     if (selectedPresetId === "none" && selectedStationIds.length === 0) {
-      setImportError("בחר preset או לפחות תחנה אחת לפני יצירת עבודה בגסטליט.");
+      setImportError("בחר תבנית או לפחות תחנה אחת לפני יצירת עבודה בגסטליט.");
       return;
     }
 
@@ -1356,10 +1360,12 @@ export const BinaDashboard = () => {
       const result = await importBinaWorkOrderApi(String(selectedOrder.bina_id), {
         pipeline_preset_id: selectedPresetId === "none" ? null : selectedPresetId,
         station_ids: selectedPresetId === "none" ? selectedStationIds : [],
-        allowQuantityFallback,
+        dryRun: !commit,
+        previewHash: typeof importPreview?.previewHash === "string" ? importPreview.previewHash : undefined,
+        readinessConfirmed,
       }) as AnyRow;
-      setImportResult(result);
-      await loadCurrent();
+      if (commit) { setImportResult(result); setImportPreview(null); await loadCurrent(); }
+      else { setImportPreview(result); setReadinessConfirmed(false); }
     } catch (error) {
       setImportError(error instanceof Error ? error.message : "IMPORT_FAILED");
     } finally {
@@ -1404,7 +1410,7 @@ export const BinaDashboard = () => {
   const drawerFinanceRows = Array.isArray(orderDetail?.relatedFinance) ? orderDetail.relatedFinance as AnyRow[] : [];
   const drawerSalesRows = Array.isArray(orderDetail?.relatedSales) ? orderDetail.relatedSales as AnyRow[] : [];
   const drawerRouteSummary = ((orderDetail?.routeSummary as AnyRow | undefined) ?? {}) as AnyRow;
-  const binaImportEnabled = process.env.NEXT_PUBLIC_BINA_IMPORT_ENABLED === "true";
+  const binaImportEnabled = true;
   const aiContext = {
     screen: "נתוני BINA",
     activeTab,
@@ -1466,9 +1472,9 @@ export const BinaDashboard = () => {
   const productionRisks = Array.isArray(productionDashboard?.risks) ? productionDashboard.risks as AnyRow[] : [];
   const unmappedOperations = Array.isArray(productionDashboard?.unmappedOperations) ? productionDashboard.unmappedOperations as AnyRow[] : [];
   const productionStats = [
-    { label: "לא יובאו", value: numberValue(productionMetrics.not_imported_count) || numberValue(overviewData?.workOrders?.notImported) },
-    { label: "פער כמות", value: numberValue(productionMetrics.quantity_mismatch_count) || numberValue(overviewData?.workOrders?.quantityMismatch) },
-    { label: "בסיכון", value: numberValue(productionMetrics.at_risk_count) || numberValue(overviewData?.workOrders?.atRisk) },
+    { label: "לא יובאו", value: numberValue(productionMetrics.not_imported_count ?? overviewData?.workOrders?.notImported) },
+    { label: "פער כמות", value: numberValue(productionMetrics.quantity_mismatch_count ?? overviewData?.workOrders?.quantityMismatch) },
+    { label: "בסיכון", value: numberValue(productionMetrics.at_risk_count ?? overviewData?.workOrders?.atRisk) },
     { label: "מוכנות/מקושרות", value: numberValue(productionMetrics.ready_or_linked_count) },
     { label: "חסום רכש", value: numberValue(productionMetrics.material_blocked_count) },
     { label: "חסר מסלול", value: numberValue(productionMetrics.missing_route_count) },
@@ -1515,20 +1521,21 @@ export const BinaDashboard = () => {
       aiContext={aiContext}
     >
       <div className="space-y-4 pb-mobile-nav">
+        {isLoading && <Card className="p-6 text-muted-foreground" role="status">טוען נתונים מאומתים…</Card>}
         {loadError && (
           <Card className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
             <div className="flex items-start gap-2">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               <div>
                 <div className="font-semibold">לא ניתן לטעון את נתוני BINA כרגע</div>
-                <div className="mt-1 text-amber-100/80">{loadError}</div>
-                <div className="mt-1 text-amber-100/70">המסך נשאר זמין, אבל צריך לוודא שה-migrations והחיבור ל-Supabase פעילים בסביבה הזו.</div>
+                <Button variant="outline" className="mt-2" onClick={() => void loadCurrent()}>ניסיון חוזר</Button>
+                <div className="mt-1 text-amber-100/70">הנתונים לא נטענו ולכן לא מוצגות ספירות או מסקנות. ניתן לנסות שוב.</div>
               </div>
             </div>
           </Card>
         )}
 
-        {activeTab === "overview" && (
+        {!loadError && !isLoading && activeTab === "overview" && (
           <div className="space-y-4">
             <DataQualityBanner dashboard={dashboardSummary} syncRows={effectiveSyncRows} />
             <BinaCommandCenter
@@ -1594,7 +1601,7 @@ export const BinaDashboard = () => {
           </div>
         )}
 
-        {["production", "purchasing", "suppliers", "finance", "sales", "deliveries"].includes(activeTab) && (
+        {!loadError && !isLoading && ["production", "purchasing", "suppliers", "finance", "sales", "deliveries"].includes(activeTab) && (
           <div className="space-y-4">
             <SearchBand value={search} onChange={setSearch} onRefresh={() => void loadCurrent()} />
             {activeTab === "production" && (
@@ -1880,7 +1887,7 @@ export const BinaDashboard = () => {
           </Card>
         )}
 
-        {activeTab === "sync" && (
+        {!loadError && !isLoading && activeTab === "sync" && (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               <KpiCard label="טבלאות" value={effectiveSyncRows.length} icon={Database} />
@@ -2105,7 +2112,7 @@ export const BinaDashboard = () => {
                     <div>
                       <h3 className="font-semibold">ייבוא פק״ע לגסטליט</h3>
                       <p className="text-sm text-muted-foreground">
-                        פעולה זו מופרדת מדשבורד ה-BI ונעולה כברירת מחדל עד שתהיה טרנזקציה מלאה, dry-run, audit ו-lock על bina_id. היא לא כותבת ל-BINA.
+                        תחילה בודקים תצוגה מקדימה. נוצר מוצר מוגמר אחד בכמות כותרת הפק״ע, עם המסלול שתבחרו. יש לאמת קבצים וחומרים לפני יצירה. נתוני BINA נשמרים ללא שינוי.
                       </p>
                     </div>
                     {importResult && (
@@ -2118,12 +2125,12 @@ export const BinaDashboard = () => {
                   <div className="grid gap-4 lg:grid-cols-2">
                     <div className="space-y-2">
                       <Label>תבנית תהליך</Label>
-                      <Select value={selectedPresetId} onValueChange={setSelectedPresetId}>
+                      <Select value={selectedPresetId} onValueChange={(value) => { setSelectedPresetId(value); setImportPreview(null); setReadinessConfirmed(false); }}>
                         <SelectTrigger className="bg-background">
-                          <SelectValue placeholder="בחר preset" />
+                          <SelectValue placeholder="בחר תבנית תהליך" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="none">ללא preset - בחירת תחנות ידנית</SelectItem>
+                          <SelectItem value="none">ללא תבנית — בחירת תחנות לפי סדר העבודה</SelectItem>
                           {pipelinePresets.map((preset) => (
                             <SelectItem key={preset.id} value={preset.id}>
                               {preset.name} ({preset.steps?.length ?? 0} תחנות)
@@ -2131,16 +2138,7 @@ export const BinaDashboard = () => {
                           ))}
                         </SelectContent>
                       </Select>
-                      <div className="flex items-center gap-2 pt-2">
-                        <Checkbox
-                          id="allow-quantity-fallback"
-                          checked={allowQuantityFallback}
-                          onCheckedChange={(checked) => setAllowQuantityFallback(checked === true)}
-                        />
-                        <Label htmlFor="allow-quantity-fallback" className="text-sm font-normal">
-                          לאפשר כמות 1 כש-BINA לא מחזירה כמות תקינה
-                        </Label>
-                      </div>
+
                     </div>
                     <div className={cn("space-y-2", selectedPresetId !== "none" && "opacity-50")}>
                       <Label>תחנות ידניות</Label>
@@ -2155,7 +2153,7 @@ export const BinaDashboard = () => {
                                 disabled={selectedPresetId !== "none"}
                                 onCheckedChange={() => toggleStation(station.id)}
                               />
-                              <span>{station.name}</span>
+                              <span>{selectedStationIds.includes(station.id) ? `${selectedStationIds.indexOf(station.id) + 1}. ` : ""}{station.name}</span>
                               <span className="text-xs text-muted-foreground">{station.code}</span>
                             </label>
                           ))
@@ -2163,6 +2161,15 @@ export const BinaDashboard = () => {
                       </div>
                     </div>
                   </div>
+                  {importPreview && <div className="my-4 space-y-3 rounded-xl border p-4">
+                    <h4 className="font-semibold">תצוגה מקדימה — עדיין לא נשמר</h4>
+                    <p>מוצר מוגמר אחד · {formatNumber(importPreview.plannedQuantity)} יחידות בכמות BINA · {Array.isArray(importPreview.route) ? importPreview.route.length : 0} תחנות</p>
+                    {Array.isArray(importPreview.route) && <ol className="list-inside list-decimal text-sm">{importPreview.route.map((step: AnyRow) => <li key={String(step.station_id)}>{availableStations.find(station => station.id === step.station_id)?.name ?? "תחנה מהתבנית"}{step.requires_first_product_approval ? " · אישור מוצר ראשון" : ""}</li>)}</ol>}
+                    {Array.isArray(importPreview.blockers) && importPreview.blockers.map((text) => <p key={String(text)} className="text-destructive">{String(text)}</p>)}
+                    {Array.isArray(importPreview.warnings) && importPreview.warnings.map((text) => <p key={String(text)} className="text-sm text-muted-foreground">{String(text)}</p>)}
+                    <label className="flex items-start gap-2 text-sm"><Checkbox checked={readinessConfirmed} onCheckedChange={(checked) => setReadinessConfirmed(checked === true)} />אימתתי את הכמות, המוצר, סדר התחנות, הקבצים והחומרים הדרושים להתחלת העבודה.</label>
+                    <Button disabled={isImporting || importPreview.canImport !== true || !readinessConfirmed} onClick={() => void confirmImport(true)}>יצירת עבודה מוכנה לעובד</Button>
+                  </div>}
                   {importError && (
                     <div className="mt-3 rounded-lg border border-red-500/20 bg-red-500/10 p-2 text-sm text-red-400">
                       {importError}
@@ -2175,9 +2182,9 @@ export const BinaDashboard = () => {
                   )}
                   <div className="mt-4 flex justify-end gap-2">
                     <Button variant="ghost" onClick={() => setShowImportPanel(false)} disabled={isImporting}>ביטול</Button>
-                    <Button onClick={() => void confirmImport()} disabled={isImporting} className="gap-2">
+                    <Button onClick={() => void confirmImport(false)} disabled={isImporting} className="gap-2">
                       {isImporting && <Loader2 className="h-4 w-4 animate-spin" />}
-                      אשר וייבא
+                      בדיקת תצוגה מקדימה
                     </Button>
                   </div>
                 </Card>
@@ -2185,6 +2192,7 @@ export const BinaDashboard = () => {
               <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {detailValue("סטטוס קישור", <Badge className={statusVariant(String(drawerOrder?.link_status))}>{statusLabel(String(drawerOrder?.link_status))}</Badge>)}
                 {detailValue("חסם MES", <Badge className={statusVariant(String(drawerDecision?.blocker_type))}>{valueLabel(drawerDecision?.blocker_type)}</Badge>)}
+                {detailValue("תאריך קבלה", formatDate(drawerOrder?.received_at))}
                 {detailValue("תאריך אספקה", formatDate(drawerOrder?.due_at))}
                 {detailValue("סנכרון אחרון", formatDate(drawerOrder?.synced_at))}
                 {detailValue("כמות BINA", formatNumber(drawerOrder?.bina_quantity))}

@@ -1,3 +1,4 @@
+import { upsertBinaBatches } from "@/lib/bina/sync-batches";
 import { NextResponse } from "next/server";
 import { createServiceSupabase } from "@/lib/supabase/client";
 
@@ -270,23 +271,21 @@ export async function POST(request: Request) {
     sentCount += rows.length;
     const rowSummary = summarizeRows(rows);
 
-    const { error } = await supabase
+    const { error, upserted } = await upsertBinaBatches(rows, (batch) => supabase
       .from(supabaseTable)
-      .upsert(rows, {
-        onConflict: "bina_id",
-        ignoreDuplicates: false,
-      });
+      .upsert(batch, { onConflict: "bina_id", ignoreDuplicates: false }));
 
     if (error) {
-      results[tableName] = { upserted: 0, error: error.message };
-      failedCount += rows.length;
+      results[tableName] = { upserted, error: error.message };
+      failedCount += rows.length - upserted;
+      upsertedCount += upserted;
       await insertSyncTableRun(supabase, runId, {
         source_table: tableName,
         storage_table: supabaseTable,
         status: "error",
         sent_count: rows.length,
-        upserted_count: 0,
-        failed_count: rows.length,
+        upserted_count: upserted,
+        failed_count: rows.length - upserted,
         ...rowSummary,
         error: error.message,
         metadata: {},

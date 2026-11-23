@@ -98,3 +98,10 @@ describe("manufacturing overview", () => {
     ).toBe(true);
   });
 });
+
+it("excludes explicitly classified test jobs by default while retaining unclassified jobs", () => {
+ const demo = job({ job: { id: "demo", job_number: "QA", is_test: true } });
+ const ordinary = job();
+ expect(buildOverview([demo, ordinary], "2026-11-23").rows.map(r => r.job.id)).toEqual(["j"]);
+ expect(buildOverview([demo, ordinary], "2026-11-23", true).rows).toHaveLength(2);
+});

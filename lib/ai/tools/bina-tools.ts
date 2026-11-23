@@ -564,7 +564,7 @@ export async function runAiTool(name: string, args: ToolArgs): Promise<AiToolRes
   switch (name) {
     case "get_bina_weekly_snapshot": {
       const snapshot = await fetchBinaWeekly(stringArg(args, "start"));
-      return { name, data: sanitizeToolText({ ...snapshot, orders: snapshot.orders.slice(0, 100), purchases: snapshot.purchases.slice(0, 100), detailTruncated: snapshot.orders.length > 100 || snapshot.purchases.length > 100 }), rowCount: snapshot.orderCount + snapshot.purchaseCount, sources: ["bina_dfhazmrashi", "bina_dfshelita", "mart_bina_purchase_flow"], freshness: snapshot.latestSync };
+      return { name, data: sanitizeToolText({ ...snapshot, metricDefinitions: { stations: "distinctOrderCount counts distinct incoming work orders; rows counts route operations, NOT jobs or completed production", preparation: "Never recommend sent/shipped/completed/cancelled orders for preparation. Remaining candidates still need file, material and station checks." }, preparationCandidates: snapshot.orders.filter((order) => !/נשלח|נשלחה|בוטל|בוטלה|הושלם|הושלמה|סגור|סגורה|shipped|sent|complete|cancel/i.test(order.status)).slice(0, 100), orders: snapshot.orders.slice(0, 100), purchases: snapshot.purchases.slice(0, 100), detailTruncated: snapshot.orders.length > 100 || snapshot.purchases.length > 100 }), rowCount: snapshot.orderCount + snapshot.purchaseCount, sources: ["bina_dfhazmrashi", "bina_dfshelita", "mart_bina_purchase_flow"], freshness: snapshot.latestSync };
     }
     case "get_gestelit_manufacturing_overview": {
       const snapshot = buildOverview(await fetchActiveJobsWithProgress({ includeWaiting: true }), israelDate());
@@ -589,7 +589,7 @@ export async function runAiTool(name: string, args: ToolArgs): Promise<AiToolRes
         data: sanitizeToolText({ rows, totalMatching: matching.length, truncated: matching.length > rows.length,
           summary: { openJobs: snapshot.rows.length, overdue: snapshot.overdue, dueToday: snapshot.dueToday, needsSetup: snapshot.needsSetup, withoutSession: snapshot.waiting },
           observedAt: fetchedAt,
-          scope: "Saved Gestelit jobs, not all BINA orders. Counts may include historical demo/test records. Completion includes terminal scrap and is capped per product. Quantities span each job lifetime, not today. No active session does not mean a malfunction. Stoppage status, capacity and material availability are not established by this tool." }),
+          scope: "Saved Gestelit jobs, not all BINA orders. Explicitly classified demo/test records are excluded. Unclassified local records remain and are not necessarily BINA-linked. Completion includes terminal scrap and is capped per product. Quantities span each job lifetime, not today. No active session does not mean a malfunction. Stoppage status, capacity and material availability are not established by this tool." }),
         citations: selected.map(row => ({ source_view: "jobs + job_item_progress", grain: "job", key: row.job.id,
           label: `עבודה ${row.job.job_number}`, synced_at: fetchedAt, confidence: "exact" as const,
           fields_used: ["job_number", "due_date", "planned_quantity", "completed_good", "completed_scrap"] })),

@@ -76,6 +76,18 @@ jobs:
                 }
               }')"
 
+      - name: Configure approved production AI model
+        if: ${{ inputs.deploy }}
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+        run: |
+          set -euo pipefail
+          curl --fail-with-body -sS -X PUT "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/env-vars/OPENAI_MODEL" \
+            -H "Authorization: Bearer ${RENDER_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d '{"value":"gpt-6-luna"}' > /dev/null
+
       - name: Trigger Render image deploy
         if: ${{ inputs.deploy }}
         env:

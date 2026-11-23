@@ -1,3 +1,4 @@
+import { aiReasoning } from "@/lib/ai/model";
 import { salesAnalyticsQueryTool } from "@/lib/ai/query/plan";
 import { runSalesAnalyticsQuery, type SalesQueryResult } from "@/lib/ai/query/sales-execute";
 import { sanitizeScreenContext } from "@/lib/ai/screen-context";
@@ -203,6 +204,7 @@ export async function runSalesChat(input: {
     }) }];
   let response = await client.responses.create({
     model,
+    reasoning: aiReasoning(model),
     instructions,
     tools: [{ ...salesAnalyticsQueryTool, strict: false } as OpenAI.Responses.Tool],
     input: conversationInput,
@@ -230,7 +232,7 @@ export async function runSalesChat(input: {
       }
       outputs.push({ type: "function_call_output" as const, call_id: call.call_id, output: JSON.stringify(result) });
     }
-    response = await client.responses.create({ model, instructions, previous_response_id: response.id, input: outputs, text: { format: SALES_CHAT_FORMAT, verbosity: "medium" } }, { signal: input.signal });
+    response = await client.responses.create({ model, reasoning: aiReasoning(model), instructions, previous_response_id: response.id, input: outputs, text: { format: SALES_CHAT_FORMAT, verbosity: "medium" } }, { signal: input.signal });
   }
 
   let parsed: unknown;

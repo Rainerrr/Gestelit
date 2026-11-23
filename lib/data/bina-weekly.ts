@@ -50,9 +50,10 @@ export async function fetchBinaWeekly(start?: string): Promise<WeeklySnapshot> {
   for (const { data: d } of routes) {
     const id = Number(d.MisparRashi);
     const name = str(d.Mekona) || "תחנה לא מצוינת";
-    const station = stations.get(name) ?? { name, rows: 0, orderIds: [], reportedCompleteRows: 0, datedCompleteRows: 0 };
+    const station = stations.get(name) ?? { name, rows: 0, distinctOrderCount: 0, orderIds: [], reportedCompleteRows: 0, datedCompleteRows: 0 };
     station.rows++;
     if (!station.orderIds.includes(id)) station.orderIds.push(id);
+    station.distinctOrderCount = station.orderIds.length;
     if (String(d.Status) === "2") station.reportedCompleteRows++;
     const ended = day(d.TarikEnd);
     if (ended && ended >= range.start && ended < range.end) station.datedCompleteRows++;

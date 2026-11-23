@@ -49,6 +49,7 @@ export function ManufacturingOverview({
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
+  const [includeTests, setIncludeTests] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const sessionMap = useAdminSessionsSelector((state) => state.sessionsMap);
   const connection = useAdminConnectionState();
@@ -87,8 +88,8 @@ export function ManufacturingOverview({
 
   const today = israelDate();
   const overview = useMemo(
-    () => buildOverview(data?.jobs ?? [], today),
-    [data, today],
+    () => buildOverview(data?.jobs ?? [], today, includeTests),
+    [data, today, includeTests],
   );
   const rows = overview.rows.filter((row) => {
     if (filter === "overdue" && !row.overdue) return false;
@@ -316,6 +317,7 @@ export function ManufacturingOverview({
                   {rows.length} עבודות
                 </span>
               </div>
+              <label className="flex items-center gap-2 text-sm text-muted-foreground"><input type="checkbox" checked={includeTests} onChange={(event) => setIncludeTests(event.target.checked)} />כולל עבודות בדיקה והדגמה</label>
               <label className="flex items-center gap-2 rounded-lg border px-3">
                 <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
                 <input

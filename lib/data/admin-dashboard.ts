@@ -1352,7 +1352,13 @@ export async function fetchActiveJobsWithProgress(options: { includeWaiting?: bo
   });
 
   if (options.includeWaiting) {
-    const allJobs = await fetchAllJobsWithStats();
+    const [allJobs, classifications] = await Promise.all([
+      fetchAllJobsWithStats(),
+      supabase.from("jobs").select("id,is_test").eq("is_test", true),
+    ]);
+    if (classifications.error) throw new Error("OVERVIEW_CLASSIFICATION_FAILED");
+    const testIds = new Set((classifications.data ?? []).map((row) => row.id));
+    for (const entry of allJobs) entry.job.is_test = testIds.has(entry.job.id);
     if (allJobs.length >= 1000 || sessions.length >= 1000) throw new Error("OVERVIEW_RESULT_LIMIT");
     for (const entry of allJobs) {
       if (!jobSessionMap.has(entry.job.id)) {
