@@ -102,6 +102,7 @@ export type BinaDashboardSummary = {
   overview: Record<string, unknown>;
   risks: BinaRiskRow[];
   dataQuality: BinaDataQualityIssue[];
+  dataQualityStatus?: "complete" | "partial";
   financeByConfidence: Array<Record<string, unknown>>;
   purchaseMetrics: Array<Record<string, unknown>>;
   deliveryMetrics: Array<Record<string, unknown>>;
@@ -744,6 +745,7 @@ function fallbackDashboardSummary(
       delivery_sent_open: overview.deliveries.sentOpen,
     },
     risks,
+    dataQualityStatus: "partial",
     dataQuality: tables
       .filter((table) => table.freshness_status !== "ok")
       .map((table) => ({
@@ -953,6 +955,7 @@ export async function fetchBinaDashboardSummary(): Promise<BinaDashboardSummary>
       ...payload,
       risks: Array.isArray(payload.risks) ? payload.risks : [],
       dataQuality: Array.isArray(payload.dataQuality) ? payload.dataQuality : [],
+      dataQualityStatus: Array.isArray(payload.dataQuality) ? "complete" : "partial",
       financeByConfidence: Array.isArray(payload.financeByConfidence) ? payload.financeByConfidence : [],
       purchaseMetrics: Array.isArray(payload.purchaseMetrics) ? payload.purchaseMetrics : [],
       deliveryMetrics: Array.isArray(payload.deliveryMetrics) ? payload.deliveryMetrics : [],

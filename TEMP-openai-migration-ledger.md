@@ -48,4 +48,10 @@ Existing production key successfully completed a strict JSON-schema canary with 
 
 ## Outcome
 
-Implementation in progress. Unit, database, build and live UI acceptance results will be recorded before completion. No follow-up permission is needed for the explicitly authorized migration.
+Deployed GPT-6 Luna on Render using the existing production project. Live admin questions verified exact historical totals, distinct station jobs, purchasing receipt counts and finished-product versus operation quantities. Workflow drafting returned valid ordered stations; the worker station agent ran and was approved through the UI on a disposable QA job. The complete admin import → worker selection → zero-output close flow passed; the QA job and BINA fixture were removed. Sales chat retains its scoped unit coverage but was not newly exercised through an authenticated production sales session.
+
+Release suite: 34 files / 202 tests passed before the final label change; final release evidence is in outputs/gestelit-production-repair-20261123. Both production Docker builds passed. SQL rollback regressions validated atomic import/idempotency and all seven compact projection insert/update/delete triggers. Real production usage records confirm gpt-6-luna. The hourly BINA retry finished with Windows task result 0.
+
+The post-backlog full dashboard query timed out because raw sync-health counts read tens of thousands of heap pages. Compact domain projections, covering sync indexes and VACUUM (ANALYZE) reduced the full summary RPC to 2.88 seconds. Production checks never change BINA source SQL.
+
+Render was deployed through its signed-in dashboard: the existing GitHub RENDER_API_KEY returned HTTP 401 and still requires renewal by the account owner. No credential or permission expansion was made.

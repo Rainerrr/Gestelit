@@ -83,6 +83,7 @@ type DashboardSummary = {
   overview?: AnyRow;
   risks?: AnyRow[];
   dataQuality?: AnyRow[];
+  dataQualityStatus?: "complete" | "partial";
   financeByConfidence?: AnyRow[];
   purchaseMetrics?: AnyRow[];
   deliveryMetrics?: AnyRow[];
@@ -519,20 +520,19 @@ function BinaCommandCenter({
 }) {
   const coverageStatus = String(dashboard?.coverageStatus ?? "partial_sample");
   const staleTables = syncRows.filter((row) => row.freshness_status === "stale").length;
+  const qualityComplete = dashboard?.dataQualityStatus === "complete";
   const qualityCount = Array.isArray(dashboard?.dataQuality) ? dashboard.dataQuality.length : 0;
-  const notImported = numberValue(productionMetrics.not_imported_count ?? overviewData?.workOrders?.notImported);
-  const atRisk = numberValue(productionMetrics.at_risk_count ?? overviewData?.workOrders?.atRisk);
-  const missingRoutes = numberValue(productionMetrics.missing_route_count);
-  const materialBlocked = numberValue(productionMetrics.material_blocked_count);
+  const notImported = numberValue(overviewData?.workOrders?.notImported);
+  const atRisk = numberValue(overviewData?.workOrders?.atRisk);
   const supplierBalances = overviewData?.suppliers?.balancesByCurrency;
   const supplierExposure = Array.isArray(supplierBalances) && supplierBalances.length === 1 ? `${formatNumber(supplierBalances[0].openBalance)} ${String(supplierBalances[0].currency)}` : "לפי מטבע";
   const openPurchasing = numberValue(overviewData?.purchasing?.openRequestLines);
 
   const focusTiles = [
     {
-      label: "שחרור ייצור",
+      label: "פק״עות שלא יובאו",
       value: formatNumber(notImported),
-      hint: `${formatNumber(atRisk)} בסיכון · ${formatNumber(missingRoutes)} חסרי מסלול`,
+      hint: "כל ההיסטוריה · בדיקת מוכנות בלשונית פק״עות",
       icon: FileSearch,
       tone: "from-amber-500/20 to-red-500/10 border-amber-400/25",
       tab: "production" as TabId,
@@ -540,7 +540,7 @@ function BinaCommandCenter({
     {
       label: "רכש וחומרים",
       value: formatNumber(openPurchasing),
-      hint: `${formatNumber(materialBlocked)} פק״עות עם חסם חומרים`,
+      hint: "שורות רכש פתוחות · הקצאת חומרים נבדקת לכל פק״ע",
       icon: ShoppingCart,
       tone: "from-sky-500/20 to-emerald-500/10 border-sky-400/25",
       tab: "purchasing" as TabId,
@@ -590,7 +590,7 @@ function BinaCommandCenter({
             </div>
             <div className="rounded-xl border border-white/10 bg-white/5 p-3">
               <div className="text-slate-400">חריגות איכות</div>
-              <div className="mt-1 font-mono text-sm text-white tabular-nums">{formatNumber(qualityCount)}</div>
+              <div className="mt-1 font-mono text-sm text-white tabular-nums">{qualityComplete ? formatNumber(qualityCount) : "בדיקה חלקית"}</div>
             </div>
             <div className="rounded-xl border border-white/10 bg-white/5 p-3">
               <div className="text-slate-400">פק״עות בסיכון</div>
@@ -680,7 +680,8 @@ function DataQualityBanner({
             {partialTables > 0 && `${formatNumber(partialTables)} טבלאות מסומנות כסנכרון חלקי. `}
             {staleTables > 0 && `${formatNumber(staleTables)} טבלאות מיושנות. `}
             {emptyTables > 0 && `${formatNumber(emptyTables)} טבלאות ריקות. `}
-            {quality.length > 0 && `${formatNumber(quality.length)} סוגי חריגות איכות נתונים נמצאו.`}
+            {quality.length > 0 && `${formatNumber(quality.length)} סוגי חריגות איכות נתונים נמצאו. `}
+            {dashboard?.dataQualityStatus !== "complete" && "בדיקת האיכות המלאה לא נטענה; היעדר חריגות בתצוגה אינו אישור לתקינות."}
           </div>
         </div>
       </div>
@@ -1559,7 +1560,7 @@ export const BinaDashboard = () => {
             />
             <div className="grid grid-cols-2 gap-3 xl:grid-cols-6">
               <KpiCard label="סנכרון אחרון" value={formatDate(overviewData?.sync?.lastSyncedAt, true)} icon={RefreshCcw} tone="emerald" hint={dashboardSummary?.coverageStatus === "complete" ? "כיסוי מלא" : "סנכרון חלקי"} />
-              <KpiCard label="פק״עות שלא יובאו" value={formatNumber(overviewData?.workOrders?.notImported)} icon={FileSearch} tone="amber" />
+              <KpiCard label="פק״עות שלא יובאו" value={formatNumber(overviewData?.workOrders?.notImported)} icon={FileSearch} tone="amber" hint="כל ההיסטוריה · לא תור שחרור לייצור" />
               <KpiCard label="פק״עות בסיכון" value={formatNumber(overviewData?.workOrders?.atRisk)} icon={AlertTriangle} tone="red" />
               <KpiCard label="בקשות רכש פתוחות" value={formatNumber(overviewData?.purchasing?.openRequestLines)} icon={ShoppingCart} tone="amber" />
               <KpiCard label="יתרת ספקים פתוחה" value="לפי מטבע" icon={WalletCards} tone="blue" hint="מדגם בלבד · פירוט בכספים" />
@@ -1582,8 +1583,9 @@ export const BinaDashboard = () => {
                   <div className="mt-2"><MetricBreakdownBar data={productionStats} /></div>
                 </MiniChartCard>
                 <MiniChartCard title="איכות נתונים" subtitle="חריגות שמשפיעות על אמון בדשבורד">
+                  {dashboardSummary?.dataQualityStatus !== "complete" && <p className="mb-2 text-sm text-amber-500">בדיקה חלקית — אין להסיק שאין חריגות.</p>}
                   <MetricBreakdownBar
-                    data={(dataQualityIssues.length > 0 ? dataQualityIssues : [{ issue_label_he: "אין חריגות", affected_count: 0 }]).map((row) => ({
+                    data={(dataQualityIssues.length > 0 ? dataQualityIssues : [{ issue_label_he: dashboardSummary?.dataQualityStatus === "complete" ? "אין חריגות" : "לא נבדק", affected_count: 0 }]).map((row) => ({
                       label: String(row.issue_label_he ?? row.issue_type ?? "-"),
                       value: numberValue(row.affected_count),
                     }))}
