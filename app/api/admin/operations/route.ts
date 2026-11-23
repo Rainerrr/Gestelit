@@ -28,6 +28,7 @@ export async function GET(request: Request) {
       });
       if (p.get("export") === "xlsx") {
         const book = new ExcelJS.Workbook();
+        const labels: Record<string,string> = {quarter:"רבעון",item_code:"קוד פריט",item_name:"תיאור פריט",unit:"יחידה",currency:"מטבע",supplier_code:"קוד ספק",supplier_name:"ספק",line_count:"מספר שורות",quantity:"כמות נטו",line_amount:"סכום שורות",min_unit_price:"מחיר מינימלי",max_unit_price:"מחיר מקסימלי",weighted_unit_price:"מחיר משוקלל",oldest_sync:"חותמת העדכון המוקדמת ברשומות",invoice_count:"מספר חשבוניות",purchased_quantity:"כמות רכישות חיובית",quarterly_baseline:"בסיס תכנון רבעוני",return_lines:"שורות החזרה",supplier_count:"מספר ספקים"};
         for (const [name, key] of [
           ["רכש רבעוני", "quarters"],
           ["ספקים", "suppliers"],
@@ -43,8 +44,11 @@ export async function GET(request: Request) {
           ]);
           const rows = data[key] as Record<string, unknown>[];
           const keys = Object.keys(rows[0] ?? {});
-          sheet.addRow(keys);
-          for (const row of rows) sheet.addRow(keys.map((k) => row[k] ?? ""));
+          sheet.addRow(["שורות מקור תואמות",data.sourceRows,"קבוצות בקובץ",rows.length,data[`${key}Truncated`]?"תוצאה חלקית — יש לצמצם את טווח התאריכים או החיפוש":"כל הקבוצות התואמות לחיפוש"]);
+          sheet.addRow(keys.map(k=>labels[k]??k));
+          for (const row of rows) sheet.addRow(keys.map((k) => row[k]==="UNKNOWN"?"לא ידוע":row[k] ?? ""));
+          sheet.getRow(3).font={bold:true};
+          sheet.views=[{rightToLeft:true,state:"frozen",ySplit:3}];
           sheet.columns.forEach((c) => (c.width = 24));
         }
         return new Response(new Uint8Array(await book.xlsx.writeBuffer()), {
