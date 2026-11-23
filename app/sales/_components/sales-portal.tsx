@@ -772,7 +772,7 @@ export function SalesPortal() {
             </div>
 
             <div className="grid min-w-0 gap-3 lg:grid-cols-2">
-              <Field label="לקוח">
+              <Field label="לקוח" className="lg:col-span-2">
                 <Input
                   value={form.customer_name}
                   onChange={(event) => {
@@ -793,7 +793,7 @@ export function SalesPortal() {
                     className="w-full min-w-0 rounded-lg border border-border bg-secondary/40 p-3 text-right text-sm transition hover:bg-accent"
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="truncate font-semibold">{client.customer_name}</span>
+                      <span className="min-w-0 break-words font-semibold">{client.customer_name}</span>
                       <Badge variant="outline">{client.source === "own" ? "לקוח שלי" : client.source === "pending" ? "עדיין לא ב-BINA" : "רשימת לקוחות"}</Badge>
                     </div>
                     <div className="mt-1 text-xs text-muted-foreground">
