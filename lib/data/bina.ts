@@ -1104,7 +1104,10 @@ export async function fetchBinaWorkOrderDetail(binaId: string): Promise<BinaWork
 
   if (decisionError) throw new Error(decisionError.message);
 
-  const order = decision as unknown as BinaWorkOrderDecisionFact | null;
+  const sourceDecision = decision as unknown as BinaWorkOrderDecisionFact | null;
+  const order = sourceDecision?.blocker_type === "missing_import" && !sourceDecision.gestelit_job_id
+    ? { ...sourceDecision, blocker_type: "new_candidate", priority_score: 0, next_action_reason: "לבחירתכם: בדקו פרטים, קבצים וחומרים ובחרו רצף תחנות לפני פתיחת עבודה. פק״ע שטרם נפתחה אינה חריגה." }
+    : sourceDecision;
   const workOrderId = normalizeNumber(order?.work_order_id);
   const { data: productionRows, error: rowsError } = await supabase
     .from("stg_bina_production_rows")

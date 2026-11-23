@@ -155,7 +155,7 @@ function statusLabel(status: string | null | undefined) {
     case "linked":
       return "מקושר";
     case "not_imported":
-      return "לא יובא";
+      return "טרם נפתחה עבודה";
     case "quantity_mismatch":
       return "פער כמות";
     case "at_risk":
@@ -1724,10 +1724,10 @@ export const BinaDashboard = () => {
                       <div className="text-muted-foreground">בעלים</div>
                       <div className="font-medium">{valueLabel(drawerDecision?.owner_role)}</div>
                     </div>
-                    <div className="rounded-lg border border-border bg-card/60 p-2">
+                    {drawerOrder?.gestelit_job_id ? <div className="rounded-lg border border-border bg-card/60 p-2">
                       <div className="text-muted-foreground">ציון סיכון</div>
                       <div className="font-mono font-medium tabular-nums">{formatNumber(drawerDecision?.priority_score)}</div>
-                    </div>
+                    </div> : null}
                   </div>
                 </Card>
               </div>
@@ -1816,7 +1816,7 @@ export const BinaDashboard = () => {
               )}
               <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {detailValue("סטטוס קישור", <Badge className={statusVariant(String(drawerOrder?.link_status))}>{statusLabel(String(drawerOrder?.link_status))}</Badge>)}
-                {detailValue("חסם MES", <Badge className={statusVariant(String(drawerDecision?.blocker_type))}>{valueLabel(drawerDecision?.blocker_type)}</Badge>)}
+                {drawerOrder?.gestelit_job_id ? detailValue("חסם MES", <Badge className={statusVariant(String(drawerDecision?.blocker_type))}>{valueLabel(drawerDecision?.blocker_type)}</Badge>) : null}
                 {detailValue("תאריך קבלה", formatDate(drawerOrder?.received_at))}
                 {detailValue("תאריך אספקה", formatDate(drawerOrder?.due_at))}
                 {detailValue("סנכרון אחרון", formatDate(drawerOrder?.synced_at, true))}
