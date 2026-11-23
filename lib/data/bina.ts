@@ -1,3 +1,4 @@
+import { BINA_OPERATIONAL_START } from "@/lib/bina/operational-scope";
 import { createServiceSupabase } from "@/lib/supabase/client";
 import type { Job, JobItemWithDetails } from "@/lib/types";
 
@@ -827,10 +828,22 @@ function likePattern(search?: string | null) {
   return trimmed ? `%${trimmed}%` : null;
 }
 
-function isUuid(value: string | null | undefined) {
-  return Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value));
+/** Operational home is intentionally independent of full-history finance/quality marts. */
+export async function fetchBinaManufacturingOverview() {
+  const db = createServiceSupabase();
+  const recentFrom = new Date(Date.now() - 30 * 86400000).toISOString();
+  const [recent, managed, sync] = await Promise.all([
+    db.from("mart_bina_work_order_status").select("bina_id", { count: "exact", head: true }).gte("received_at", recentFrom).lte("received_at", new Date().toISOString()),
+    db.from("mart_bina_work_order_status").select("bina_id", { count: "exact", head: true }).gte("received_at", `${BINA_OPERATIONAL_START}T00:00:00+02:00`).not("gestelit_job_id", "is", null),
+    db.from("mart_bina_metric_trust").select("last_table_sync_at,freshness_status").eq("source_table", "DFHazmRashi").maybeSingle(),
+  ]);
+  for (const result of [recent, managed, sync]) if (result.error) throw new Error(result.error.message);
+  return {
+    scope: { dateFrom: BINA_OPERATIONAL_START, recentFrom, historicalSearchAvailable: true },
+    workOrders: { receivedLast30Days: recent.count ?? 0, managed: managed.count ?? 0 },
+    sync: { lastSyncedAt: sync.data?.last_table_sync_at ?? null, status: sync.data?.freshness_status ?? "unknown" },
+  };
 }
-
 
 export async function fetchBinaOverview(): Promise<BinaOverview> {
   const supabase = createServiceSupabase();
@@ -1015,223 +1028,7 @@ export async function fetchBinaProductionDashboard(): Promise<BinaProductionDash
     };
   }
 
-  const dashboardLimit = 1000;
-
-  const [workOrdersResult, purchasingResult, deliveriesResult, coverageResult, unmappedResult] = await Promise.all([
-    supabase
-      .from("mart_bina_work_order_status")
-      .select(WORK_ORDER_COLUMNS)
-      .order("work_order_id", { ascending: false, nullsFirst: false })
-      .limit(dashboardLimit),
-    supabase
-      .from("mart_bina_purchase_flow")
-      .select(PURCHASING_COLUMNS)
-      .not("work_order_id", "is", null)
-      .limit(5000),
-    supabase
-      .from("mart_bina_delivery_status")
-      .select(DELIVERY_COLUMNS)
-      .not("work_order_id", "is", null)
-      .limit(5000),
-    supabase
-      .from("bina_sync_log")
-      .select("table_name,status,created_at,rows_upserted")
-      .order("created_at", { ascending: false })
-      .limit(50),
-    supabase
-      .from("mart_bina_unmapped_operations")
-      .select("*")
-      .order("row_count", { ascending: false })
-      .limit(12),
-  ]);
-
-  if (workOrdersResult.error) throw new Error(workOrdersResult.error.message);
-
-  const workOrders = (workOrdersResult.data ?? []) as unknown as BinaWorkOrderSummary[];
-  const purchasing = purchasingResult.error ? [] : ((purchasingResult.data ?? []) as unknown as BinaPurchasingRow[]);
-  const deliveries = deliveriesResult.error ? [] : ((deliveriesResult.data ?? []) as unknown as BinaDeliveryRow[]);
-  const coverageRows = coverageResult.error ? [] : ((coverageResult.data ?? []) as AnyRecord[]);
-  const unmappedOperations = unmappedResult.error ? [] : ((unmappedResult.data ?? []) as AnyRecord[]);
-
-  const purchasingByWorkOrder = new Map<number, { requests: number; receipts: number; openQuantity: number; syncedAt: string | null }>();
-  for (const row of purchasing) {
-    if (row.work_order_id == null) continue;
-    const current = purchasingByWorkOrder.get(row.work_order_id) ?? { requests: 0, receipts: 0, openQuantity: 0, syncedAt: null };
-    if (row.flow_type === "purchase_request") {
-      current.requests += 1;
-      current.openQuantity += Number(row.remaining_quantity ?? 0);
-    }
-    if (row.flow_type === "goods_receipt") current.receipts += 1;
-    if (!current.syncedAt || (row.synced_at && row.synced_at > current.syncedAt)) current.syncedAt = row.synced_at;
-    purchasingByWorkOrder.set(row.work_order_id, current);
-  }
-
-  const deliveriesByWorkOrder = new Map<number, { total: number; sentOpen: number; syncedAt: string | null }>();
-  for (const row of deliveries) {
-    if (row.work_order_id == null) continue;
-    const current = deliveriesByWorkOrder.get(row.work_order_id) ?? { total: 0, sentOpen: 0, syncedAt: null };
-    current.total += 1;
-    if (row.delivery_state === "sent_open") current.sentOpen += 1;
-    if (!current.syncedAt || (row.synced_at && row.synced_at > current.syncedAt)) current.syncedAt = row.synced_at;
-    deliveriesByWorkOrder.set(row.work_order_id, current);
-  }
-
-  const makeDecision = (
-    order: BinaWorkOrderSummary,
-    override?: {
-      blocker_type: string;
-      next_action_reason: string;
-      owner_role: string;
-      priority_score: number;
-      purchase_request_count?: number;
-      delivery_count?: number;
-      evidence_synced_at?: string | null;
-    },
-  ): BinaWorkOrderDecisionFact => {
-    let blocker_type = "ready_or_linked";
-    let next_action_reason = "נראה מוכן או מקושר, בכפוף לאמון הנתונים";
-    let owner_role = "production";
-    let priority_score = 10;
-
-    if (order.gestelit_job_id == null) {
-      blocker_type = "missing_import";
-      next_action_reason = "לא יובא לגסטליט";
-      priority_score = 75;
-    } else if (order.link_status === "quantity_mismatch") {
-      blocker_type = "quantity_mismatch";
-      next_action_reason = "פער כמות בין BINA לגסטליט";
-      priority_score = 90;
-    } else if (order.link_status === "at_risk") {
-      blocker_type = "late_or_unfinished";
-      next_action_reason = "תאריך אספקה עבר והייצור לא הושלם";
-      priority_score = 70;
-    } else if (Number(order.bina_production_row_count ?? 0) === 0) {
-      blocker_type = "missing_route_rows";
-      next_action_reason = "אין שורות מסלול/ייצור מ-BINA";
-      owner_role = "system";
-      priority_score = 40;
-    }
-
-    if (override) {
-      blocker_type = override.blocker_type;
-      next_action_reason = override.next_action_reason;
-      owner_role = override.owner_role;
-      priority_score = override.priority_score;
-    }
-
-    return {
-      ...order,
-      route_row_count: Number(order.bina_production_row_count ?? 0),
-      route_source_table_count: null,
-      route_machine_count: null,
-      route_source_tables: null,
-      route_machine_names: null,
-      first_started_at: null,
-      last_ended_at: null,
-      purchase_request_count: override?.purchase_request_count ?? 0,
-      goods_receipt_count: null,
-      open_purchase_quantity: null,
-      open_purchase_amount: null,
-      delivery_count: override?.delivery_count ?? 0,
-      sent_open_delivery_count: null,
-      last_sent_at: null,
-      finance_document_count: 0,
-      receivable_open: null,
-      payable_open: null,
-      overdue_finance_count: null,
-      invoice_count: null,
-      sales_amount: null,
-      unpaid_or_unknown_invoice_count: null,
-      evidence_synced_at: override?.evidence_synced_at ?? order.synced_at,
-      blocker_type,
-      next_action_reason,
-      owner_role,
-      priority_score,
-      relationship_confidence: order.gestelit_job_id ? "exact" : "inferred",
-    };
-  };
-
-  const baseRows = workOrders.map((order) => makeDecision(order));
-  const materialRows = workOrders.flatMap((order) => {
-    if (order.work_order_id == null) return [];
-    const purchase = purchasingByWorkOrder.get(order.work_order_id);
-    if (!purchase || purchase.openQuantity <= 0) return [];
-    return [
-      makeDecision(order, {
-        blocker_type: "material_or_purchase_open",
-        next_action_reason: "יש רכש/כמות פתוחה שיכולה לחסום שיגור",
-        owner_role: "purchasing",
-        priority_score: 65,
-        purchase_request_count: purchase.requests,
-        evidence_synced_at: purchase.syncedAt,
-      }),
-    ];
-  });
-  const deliveryRows = workOrders.flatMap((order) => {
-    if (order.work_order_id == null) return [];
-    const delivery = deliveriesByWorkOrder.get(order.work_order_id);
-    if (!delivery || delivery.sentOpen <= 0) return [];
-    return [
-      makeDecision(order, {
-        blocker_type: "sent_open_delivery",
-        next_action_reason: "משלוח יצא ועדיין פתוח",
-        owner_role: "logistics",
-        priority_score: 55,
-        delivery_count: delivery.total,
-        evidence_synced_at: delivery.syncedAt,
-      }),
-    ];
-  });
-
-  const dashboardRows = [...baseRows, ...materialRows, ...deliveryRows];
-  const sortByPriority = (a: BinaWorkOrderDecisionFact, b: BinaWorkOrderDecisionFact) =>
-    b.priority_score - a.priority_score || String(a.due_at ?? "9999").localeCompare(String(b.due_at ?? "9999"));
-
-  const lane = (blocker: string) =>
-    dashboardRows
-      .filter((row) => row.blocker_type === blocker)
-      .sort(sortByPriority)
-      .slice(0, 8);
-
-  const lastSyncedAt = coverageRows.reduce<string | null>((latest, row) => {
-    const value = normalizeString(row.created_at);
-    if (!value) return latest;
-    return !latest || value > latest ? value : latest;
-  }, null);
-
-  return {
-    coverage: {
-      table_count: coverageRows.length,
-      partial_tables: 1,
-      stale_tables: 0,
-      last_synced_at: lastSyncedAt,
-      all_complete: false,
-    },
-    coverageStatus: "partial_sample",
-    metrics: {
-      work_order_count: workOrders.length,
-      not_imported_count: workOrders.filter((row) => row.gestelit_job_id == null).length,
-      quantity_mismatch_count: workOrders.filter((row) => row.link_status === "quantity_mismatch").length,
-      at_risk_count: workOrders.filter((row) => row.link_status === "at_risk").length,
-      material_blocked_count: materialRows.length,
-      sent_open_delivery_count: deliveryRows.length,
-      ready_or_linked_count: workOrders.filter((row) => row.link_status === "linked" && row.gestelit_job_id != null).length,
-      missing_route_count: workOrders.filter((row) => Number(row.bina_production_row_count ?? 0) === 0).length,
-      last_evidence_synced_at: lastSyncedAt,
-      dashboard_sample_limit: dashboardLimit,
-      dashboard_scope: "recent_work_orders",
-    },
-    lanes: {
-      missing_import: lane("missing_import"),
-      quantity_mismatch: lane("quantity_mismatch"),
-      late_or_unfinished: lane("late_or_unfinished"),
-      material_or_purchase_open: lane("material_or_purchase_open"),
-      sent_open_delivery: lane("sent_open_delivery"),
-      ready_or_linked: lane("ready_or_linked"),
-    },
-    risks: dashboardRows.filter((row) => row.priority_score >= 40).sort(sortByPriority).slice(0, 12),
-    unmappedOperations,
-  };
+  throw new Error(rpcResult.error?.message ?? "BINA_PRODUCTION_DASHBOARD_UNAVAILABLE");
 }
 
 export async function fetchBinaWorkOrderDecisions(params: PageParams = {}) {
@@ -1264,18 +1061,21 @@ export async function fetchBinaWorkOrderDecisions(params: PageParams = {}) {
   return { rows: (data ?? []) as unknown as BinaWorkOrderDecisionFact[], count: count ?? 0 };
 }
 
-export async function fetchBinaWorkOrders(params: PageParams = {}) {
+export async function fetchBinaWorkOrders(params: PageParams & { dateFrom?: string; incomingOnly?: boolean } = {}) {
   const supabase = createServiceSupabase();
   const limit = clampLimit(params.limit);
   const offset = Math.max(0, params.offset ?? 0);
   const pattern = likePattern(params.search);
 
   let query = supabase
-    .from("mart_bina_work_order_status")
+    .from(params.incomingOnly ? "mart_bina_incoming_work_orders" : "mart_bina_work_order_status")
     .select(WORK_ORDER_COLUMNS, { count: "exact" })
+    .order("received_at", { ascending: false, nullsFirst: false })
     .order("work_order_id", { ascending: false, nullsFirst: false })
     .order("bina_id")
     .range(offset, offset + limit - 1);
+
+  if (params.dateFrom) query = query.gte("received_at", `${params.dateFrom}T00:00:00+02:00`);
 
   if (pattern) {
     const numericSearch = normalizeNumber(params.search);

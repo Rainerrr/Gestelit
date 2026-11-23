@@ -1,3 +1,4 @@
+import { BINA_OPERATIONAL_START } from "@/lib/bina/operational-scope";
 import { fetchActiveJobsWithProgress } from "@/lib/data/admin-dashboard";
 import { fetchBinaWeekly } from "@/lib/data/bina-weekly";
 import { buildOverview, israelDate } from "@/lib/manufacturing/overview";
@@ -204,8 +205,14 @@ export const aiToolDefinitions = [
   },
   {
     type: "function" as const,
+    name: "get_new_bina_job_candidates",
+    description: "Use for choosing or suggesting a NEW manufacturing job from BINA. Returns latest open, not-yet-linked orders since November 2024, newest receipt date first. Not being imported is normal during onboarding, never a backlog or risk. Review route, files and materials before starting.",
+    parameters: { type: "object", properties: { limit: { type: "number" } }, additionalProperties: false },
+  },
+  {
+    type: "function" as const,
     name: "get_late_or_risky_work_orders",
-    description: "Get BINA work orders that are late, risky, quantity mismatched, or not imported into Gestelit.",
+    description: "Get linked operational work orders since November 2024 with late or quantity-mismatch issues. Unimported BINA orders are not risks.",
     parameters: {
       type: "object",
       properties: {
@@ -821,9 +828,13 @@ export async function runAiTool(name: string, args: ToolArgs): Promise<AiToolRes
         sources: ["semantic-catalog", "stg_*", "mart_*"],
       };
     }
+    case "get_new_bina_job_candidates": {
+      const { rows } = await fetchBinaWorkOrders({ limit, dateFrom: BINA_OPERATIONAL_START, incomingOnly: true });
+      return rowsResult(name, rows, ["mart_bina_incoming_work_orders"]);
+    }
     case "get_late_or_risky_work_orders": {
-      const { rows } = await fetchBinaWorkOrders({ limit: 200 });
-      const risky = rows.filter((row) => row.link_status !== "linked").slice(0, limit);
+      const { rows } = await fetchBinaWorkOrders({ limit: 200, dateFrom: BINA_OPERATIONAL_START });
+      const risky = rows.filter((row) => row.gestelit_job_id && ["at_risk", "quantity_mismatch"].includes(row.link_status)).slice(0, limit);
       return rowsResult(name, risky, ["mart_bina_work_order_status", "mart_gestelit_bina_reconciliation"]);
     }
     case "compare_bina_order_to_gestelit_job": {

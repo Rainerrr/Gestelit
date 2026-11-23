@@ -48,7 +48,6 @@ import {
   fetchBinaFinanceDetailApi,
   fetchBinaFinanceSummaryApi,
   fetchBinaOverviewApi,
-  fetchBinaProductionDashboardApi,
   fetchBinaPurchasingApi,
   fetchBinaSavedQuestionsApi,
   fetchBinaSalesApi,
@@ -282,10 +281,6 @@ function hasBadEncoding(value: unknown) {
   return typeof value === "string" && /\?{3,}/.test(value);
 }
 
-function hasSignalValue(value: unknown) {
-  return value !== null && value !== undefined && value !== "";
-}
-
 function financeFilterParams(filter: string) {
   switch (filter) {
     case "open":
@@ -497,164 +492,6 @@ function SimpleBarChart({ data, valueKey, labelKey }: { data: AnyRow[]; valueKey
   );
 }
 
-function BinaCommandCenter({
-  overviewData,
-  dashboard,
-  productionMetrics,
-  syncRows,
-  onOpenTab,
-  onAsk,
-}: {
-  overviewData: {
-    sync?: AnyRow;
-    workOrders?: AnyRow;
-    purchasing?: AnyRow;
-    suppliers?: AnyRow;
-    deliveries?: AnyRow;
-  } | null;
-  dashboard: DashboardSummary | null;
-  productionMetrics: AnyRow;
-  syncRows: AnyRow[];
-  onOpenTab: (tab: TabId) => void;
-  onAsk: (prompt: string) => void;
-}) {
-  const coverageStatus = String(dashboard?.coverageStatus ?? "partial_sample");
-  const staleTables = syncRows.filter((row) => row.freshness_status === "stale").length;
-  const qualityComplete = dashboard?.dataQualityStatus === "complete";
-  const qualityCount = Array.isArray(dashboard?.dataQuality) ? dashboard.dataQuality.length : 0;
-  const notImported = numberValue(overviewData?.workOrders?.notImported);
-  const atRisk = numberValue(overviewData?.workOrders?.atRisk);
-  const supplierBalances = overviewData?.suppliers?.balancesByCurrency;
-  const supplierExposure = Array.isArray(supplierBalances) && supplierBalances.length === 1 ? `${formatNumber(supplierBalances[0].openBalance)} ${String(supplierBalances[0].currency)}` : "לפי מטבע";
-  const openPurchasing = numberValue(overviewData?.purchasing?.openRequestLines);
-
-  const focusTiles = [
-    {
-      label: "פק״עות שלא יובאו",
-      value: formatNumber(notImported),
-      hint: "כל ההיסטוריה · בדיקת מוכנות בלשונית פק״עות",
-      icon: FileSearch,
-      tone: "from-amber-500/20 to-red-500/10 border-amber-400/25",
-      tab: "production" as TabId,
-    },
-    {
-      label: "רכש וחומרים",
-      value: formatNumber(openPurchasing),
-      hint: "שורות רכש פתוחות · הקצאת חומרים נבדקת לכל פק״ע",
-      icon: ShoppingCart,
-      tone: "from-sky-500/20 to-emerald-500/10 border-sky-400/25",
-      tab: "purchasing" as TabId,
-    },
-    {
-      label: "חשיפה כספית",
-      value: supplierExposure,
-      hint: "יתרות במדגם בלבד · פירוט לפי מטבע בכספים",
-      icon: CircleDollarSign,
-      tone: "from-violet-500/20 to-blue-500/10 border-violet-400/25",
-      tab: "finance" as TabId,
-    },
-    {
-      label: "משלוחים פתוחים",
-      value: formatNumber(overviewData?.deliveries?.sentOpen),
-      hint: "מה יצא ועדיין דורש סגירה",
-      icon: Ship,
-      tone: "from-cyan-500/20 to-blue-500/10 border-cyan-400/25",
-      tab: "deliveries" as TabId,
-    },
-  ];
-
-  const trustLabel = coverageStatus === "complete" ? "כיסוי מלא" : "מדגם / חלון חלקי";
-
-  return (
-    <Card className="relative overflow-hidden rounded-2xl border border-blue-400/20 bg-[radial-gradient(circle_at_15%_15%,rgba(59,130,246,0.18),transparent_32%),linear-gradient(135deg,rgba(15,23,42,0.96),rgba(2,6,23,0.88))] p-4 shadow-[0_20px_80px_rgba(15,23,42,0.28)] sm:p-5">
-      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-l from-transparent via-blue-300/60 to-transparent" />
-      <div className="grid gap-5 xl:grid-cols-[1.05fr_1.4fr]">
-        <div className="space-y-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge className="border-blue-400/30 bg-blue-500/15 text-blue-100">חמ״ל BINA</Badge>
-            <Badge className={coverageStatus === "complete" ? statusVariant("ok") : statusVariant("open")}>
-              {trustLabel}
-            </Badge>
-            {staleTables > 0 && <Badge className={statusVariant("at_risk")}>{formatNumber(staleTables)} טבלאות מיושנות</Badge>}
-          </div>
-          <div>
-            <h2 className="max-w-2xl text-2xl font-semibold tracking-normal text-white sm:text-3xl">מה דורש החלטה תפעולית עכשיו?</h2>
-            <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">
-              שכבת MES מעל BINA: ייצור, רכש, ספקים, כספים ומשלוחים מחוברים לתור פעולה אחד. הנתונים נשארים לקריאה בלבד ומסומנים לפי אמינות הסנכרון.
-            </p>
-          </div>
-          <div className="grid grid-cols-2 gap-2 text-xs text-slate-300 sm:grid-cols-4">
-            <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-              <div className="text-slate-400">סנכרון אחרון</div>
-              <div className="mt-1 font-mono text-sm text-white tabular-nums">{formatDate(overviewData?.sync?.lastSyncedAt, true)}</div>
-            </div>
-            <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-              <div className="text-slate-400">חריגות איכות</div>
-              <div className="mt-1 font-mono text-sm text-white tabular-nums">{qualityComplete ? formatNumber(qualityCount) : "בדיקה חלקית"}</div>
-            </div>
-            <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-              <div className="text-slate-400">פק״עות בסיכון</div>
-              <div className="mt-1 font-mono text-sm text-white tabular-nums">{formatNumber(atRisk)}</div>
-            </div>
-            <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-              <div className="text-slate-400">בקשות רכש</div>
-              <div className="mt-1 font-mono text-sm text-white tabular-nums">{formatNumber(openPurchasing)}</div>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" onClick={() => onAsk("תן לי תמונת מצב ניהולית: מה דורש טיפול עכשיו בייצור, רכש, כספים ומשלוחים, ומה הפעולה הבאה המומלצת?")} className="gap-2">
-              <Bot className="h-4 w-4" />
-              נתח חמ״ל
-            </Button>
-            <Button type="button" variant="outline" onClick={() => onOpenTab("production")} className="border-white/15 bg-white/5 text-white hover:bg-white/10">
-              פתח פק״עות
-            </Button>
-            <Button type="button" variant="outline" onClick={() => onOpenTab("finance")} className="border-white/15 bg-white/5 text-white hover:bg-white/10">
-              פתח כספים
-            </Button>
-          </div>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          {focusTiles.map((tile) => {
-            const Icon = tile.icon;
-            return (
-              <button
-                key={tile.label}
-                type="button"
-                onClick={() => onOpenTab(tile.tab)}
-                className={cn(
-                  "group rounded-2xl border bg-gradient-to-br p-4 text-right transition hover:-translate-y-0.5 hover:border-white/25 hover:bg-white/10",
-                  tile.tone,
-                )}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-sm text-slate-300">{tile.label}</div>
-                    <div className="mt-2 break-words font-mono text-2xl font-semibold text-white tabular-nums">{tile.value}</div>
-                  </div>
-                  <div className="rounded-xl border border-white/10 bg-white/10 p-2 text-white">
-                    <Icon className="h-5 w-5" />
-                  </div>
-                </div>
-                <div className="mt-3 text-xs leading-5 text-slate-300">{tile.hint}</div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-      <div className="mt-5 grid gap-2 border-t border-white/10 pt-4 text-xs text-slate-300 sm:grid-cols-5">
-        {["BINA ERP", "רכש", "ייצור", "משלוחים", "כספים / AI"].map((step, index) => (
-          <div key={step} className="flex items-center gap-2">
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-blue-300/30 bg-blue-400/10 font-mono text-blue-100">{index + 1}</div>
-            <span>{step}</span>
-            {index < 4 && <div className="hidden h-px flex-1 bg-blue-300/25 sm:block" />}
-          </div>
-        ))}
-      </div>
-    </Card>
-  );
-}
-
 function DataQualityBanner({
   dashboard,
   syncRows,
@@ -730,133 +567,6 @@ function OperationalQueue({
             )}
           </div>
         ))}
-      </div>
-    </Card>
-  );
-}
-
-function DispatchLane({
-  title,
-  rows,
-  tone = "default",
-  onOpen,
-  onAsk,
-}: {
-  title: string;
-  rows: AnyRow[];
-  tone?: "default" | "red" | "amber" | "emerald" | "blue";
-  onOpen: (row: AnyRow) => void;
-  onAsk: (row: AnyRow) => void;
-}) {
-  const toneClass = {
-    default: "border-border bg-card/50",
-    red: "border-red-500/25 bg-red-500/5",
-    amber: "border-amber-500/25 bg-amber-500/5",
-    emerald: "border-emerald-500/25 bg-emerald-500/5",
-    blue: "border-blue-500/25 bg-blue-500/5",
-  }[tone];
-
-  return (
-    <Card className={cn("rounded-xl border p-3", toneClass)}>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold">{title}</h3>
-        <Badge className="border-border bg-background/70 text-muted-foreground">{formatNumber(rows.length)}</Badge>
-      </div>
-      <div className="space-y-2">
-        {rows.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border p-4 text-center text-xs text-muted-foreground">אין פריטים בתור הזה</div>
-        ) : rows.slice(0, 5).map((row, index) => {
-          const hasRouteSignals = [
-            row.current_station_label,
-            row.next_station_label,
-            row.route_confidence,
-            row.mapped_step_count,
-            row.unmapped_step_count,
-          ].some(hasSignalValue);
-          const hasMaterialSignals = [
-            row.material_state,
-            row.material_confidence,
-            row.required_item_count,
-            row.ready_item_count,
-            row.short_or_unknown_item_count,
-          ].some(hasSignalValue);
-          const routeConfidence = row.route_confidence ?? (hasRouteSignals ? "missing_data" : null);
-          const materialConfidence = row.material_confidence ?? (hasMaterialSignals ? "missing_data" : null);
-
-          return (
-            <div key={String(row.bina_id ?? index)} className="rounded-lg border border-border bg-background/70 p-3">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-medium">
-                    פק״ע <bdi dir="ltr">{String(row.work_order_id ?? "-")}</bdi>
-                  </div>
-                  <div className="mt-0.5 truncate text-xs text-muted-foreground">{String(row.customer_name ?? row.title ?? "לקוח לא ידוע")}</div>
-                </div>
-                <Badge className={statusVariant(String(row.blocker_type ?? row.link_status))}>{valueLabel(row.blocker_type ?? row.link_status)}</Badge>
-              </div>
-              <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                <span>יעד: {formatDate(row.due_at)}</span>
-                <span>בעלים: {valueLabel(row.owner_role)}</span>
-                <span>תחנות: {formatNumber(row.route_machine_count ?? row.route_source_table_count ?? 0)}</span>
-                <span>ציון: <bdi dir="ltr">{String(row.priority_score ?? 0)}</bdi></span>
-              </div>
-
-              {(hasRouteSignals || hasMaterialSignals) && (
-                <div className="mt-3 space-y-2 rounded-lg border border-border/70 bg-card/40 p-2">
-                  {hasRouteSignals && (
-                    <div className="space-y-2">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-xs font-medium text-foreground">מסלול</span>
-                        <Badge className={statusVariant(String(routeConfidence))}>אמינות: {valueLabel(routeConfidence)}</Badge>
-                        {(hasSignalValue(row.mapped_step_count) || hasSignalValue(row.unmapped_step_count)) && (
-                          <Badge className="border-border bg-background/70 text-muted-foreground">
-                            מיפוי: {formatNumber(row.mapped_step_count)} / חסר {formatNumber(row.unmapped_step_count)}
-                          </Badge>
-                        )}
-                      </div>
-                      {(hasSignalValue(row.current_station_label) || hasSignalValue(row.next_station_label)) && (
-                        <div className="grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
-                          <span className="min-w-0 truncate">נוכחית: <Bdi>{String(row.current_station_label ?? "-")}</Bdi></span>
-                          <span className="min-w-0 truncate">הבאה: <Bdi>{String(row.next_station_label ?? "-")}</Bdi></span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {hasMaterialSignals && (
-                    <div className="space-y-2">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-xs font-medium text-foreground">חומרים</span>
-                        <Badge className={statusVariant(String(row.material_state ?? "unknown"))}>{valueLabel(row.material_state ?? "unknown")}</Badge>
-                        <Badge className={statusVariant(String(materialConfidence))}>אמינות: {valueLabel(materialConfidence)}</Badge>
-                      </div>
-                      <div className="grid grid-cols-3 gap-1 text-center text-xs">
-                        <div className="rounded-md bg-background/70 px-2 py-1">
-                          <div className="text-muted-foreground">נדרש</div>
-                          <div className="font-mono font-semibold tabular-nums">{formatNumber(row.required_item_count)}</div>
-                        </div>
-                        <div className="rounded-md bg-background/70 px-2 py-1">
-                          <div className="text-muted-foreground">מוכן</div>
-                          <div className="font-mono font-semibold tabular-nums">{formatNumber(row.ready_item_count)}</div>
-                        </div>
-                        <div className="rounded-md bg-background/70 px-2 py-1">
-                          <div className="text-muted-foreground">חסר</div>
-                          <div className="font-mono font-semibold tabular-nums">{formatNumber(row.short_or_unknown_item_count)}</div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <div className="mt-2 line-clamp-2 text-xs text-muted-foreground">{String(row.next_action_reason ?? "-")}</div>
-              <div className="mt-2 flex gap-2">
-                <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => onOpen(row)}>פתח</Button>
-                <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => onAsk(row)}>שאל AI</Button>
-              </div>
-            </div>
-          );
-        })}
       </div>
     </Card>
   );
@@ -1158,7 +868,6 @@ export const BinaDashboard = () => {
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [overview, setOverview] = useState<AnyRow | null>(null);
   const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null);
-  const [productionDashboard, setProductionDashboard] = useState<AnyRow | null>(null);
   const [financeSummary, setFinanceSummary] = useState<AnyRow | null>(null);
   const [financeFilter, setFinanceFilter] = useState("all");
   const [rows, setRows] = useState<AnyRow[]>([]);
@@ -1168,6 +877,7 @@ export const BinaDashboard = () => {
   const [syncLogs, setSyncLogs] = useState<AnyRow[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [includeHistory, setIncludeHistory] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<AnyRow | null>(null);
   const orderRequest = useRef(0);
@@ -1240,14 +950,10 @@ export const BinaDashboard = () => {
     try {
       if (activeTab === "overview") {
         await loadOverview();
-        const data = await fetchBinaWorkOrdersApi({ limit: 12 }) as { rows: AnyRow[] };
+        const data = await fetchBinaWorkOrdersApi({ limit: 12, incoming: true }) as { rows: AnyRow[] };
         setRows(data.rows);
       } else if (activeTab === "production") {
-        const [productionData, data] = await Promise.all([
-          fetchBinaProductionDashboardApi() as Promise<AnyRow>,
-          fetchBinaWorkOrdersApi({ search, limit: 80 }) as Promise<{ rows: AnyRow[] }>,
-        ]);
-        setProductionDashboard(productionData);
+        const data = await fetchBinaWorkOrdersApi({ search, limit: 80, history: includeHistory ? "all" : undefined }) as { rows: AnyRow[] };
         setRows(data.rows);
       } else if (activeTab === "purchasing") {
         const data = await fetchBinaPurchasingApi({ search, limit: 80 }) as { rows: AnyRow[] };
@@ -1283,7 +989,7 @@ export const BinaDashboard = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [activeTab, financeFilter, hasAccess, loadOverview, loadSavedQuestions, savedQuestions.length, search]);
+  }, [activeTab, financeFilter, hasAccess, includeHistory, loadOverview, loadSavedQuestions, savedQuestions.length, search]);
 
   useEffect(() => {
     void loadCurrent();
@@ -1450,13 +1156,11 @@ export const BinaDashboard = () => {
     visibleSummary: [
       `tab=${activeTab}`,
       overviewData?.sync?.lastSyncedAt ? `lastSync=${String(overviewData.sync.lastSyncedAt)}` : null,
-      overviewData?.workOrders ? `notImported=${String(overviewData.workOrders.notImported ?? 0)}, atRisk=${String(overviewData.workOrders.atRisk ?? 0)}` : null,
+      `manufacturingSince=2024-11-01; historicalSearch=${includeHistory}; not-imported is not a backlog or risk; suggest latest open BINA arrivals by received_at`,
       rows.length ? `visibleRows=${rows.length}` : null,
     ].filter(Boolean).join("; "),
   };
 
-  const dashboardRisks = Array.isArray(dashboardSummary?.risks) ? dashboardSummary.risks : [];
-  const dataQualityIssues = Array.isArray(dashboardSummary?.dataQuality) ? dashboardSummary.dataQuality : syncQualityRows;
   const dashboardMetricTrustRows = Array.isArray(dashboardSummary?.overview?.metric_trust)
     ? dashboardSummary.overview.metric_trust as AnyRow[]
     : [];
@@ -1478,25 +1182,6 @@ export const BinaDashboard = () => {
         last_row_synced_at: row.last_table_sync_at,
         coverage_note: row.trust_note,
       }));
-  const productionMetrics = (productionDashboard?.metrics ?? {}) as AnyRow;
-  const productionCoverage = (productionDashboard?.coverage ?? {}) as AnyRow;
-  const productionLanes = (productionDashboard?.lanes ?? {}) as Record<string, AnyRow[]>;
-  const productionRisks = Array.isArray(productionDashboard?.risks) ? productionDashboard.risks as AnyRow[] : [];
-  const unmappedOperations = Array.isArray(productionDashboard?.unmappedOperations) ? productionDashboard.unmappedOperations as AnyRow[] : [];
-  const historicalLinkStats = [
-    { label: "לא יובאו", value: numberValue(overviewData?.workOrders?.notImported) },
-    { label: "פער כמות", value: numberValue(overviewData?.workOrders?.quantityMismatch) },
-    { label: "בסיכון", value: numberValue(overviewData?.workOrders?.atRisk) },
-    { label: "מקושרות", value: Math.max(0, numberValue(overviewData?.workOrders?.total) - numberValue(overviewData?.workOrders?.notImported) - numberValue(overviewData?.workOrders?.quantityMismatch) - numberValue(overviewData?.workOrders?.atRisk)) },
-  ];
-  const productionStats = [
-    { label: "לא יובאו", value: numberValue(productionMetrics.not_imported_count ?? overviewData?.workOrders?.notImported) },
-    { label: "פער כמות", value: numberValue(productionMetrics.quantity_mismatch_count ?? overviewData?.workOrders?.quantityMismatch) },
-    { label: "בסיכון", value: numberValue(productionMetrics.at_risk_count ?? overviewData?.workOrders?.atRisk) },
-    { label: "מוכנות/מקושרות", value: numberValue(productionMetrics.ready_or_linked_count) },
-    { label: "חסום רכש", value: numberValue(productionMetrics.material_blocked_count) },
-    { label: "חסר מסלול", value: numberValue(productionMetrics.missing_route_count) },
-  ];
   const purchasingStats = [
     { label: "בקשות פתוחות", value: rows.filter((row) => row.flow_type === "purchase_request" && numberValue(row.remaining_quantity) > 0).length },
     { label: "קבלות טובין", value: rows.filter((row) => row.flow_type === "goods_receipt").length },
@@ -1555,67 +1240,57 @@ export const BinaDashboard = () => {
 
         {!loadError && !isLoading && activeTab === "overview" && (
           <div className="space-y-4">
-            <DataQualityBanner dashboard={dashboardSummary} syncRows={effectiveSyncRows} />
-            <BinaCommandCenter
-              overviewData={overviewData}
-              dashboard={dashboardSummary}
-              productionMetrics={productionMetrics}
-              syncRows={effectiveSyncRows}
-              onOpenTab={setActiveTab}
-              onAsk={(prompt) => void sendAi(prompt)}
-            />
-            <div className="grid grid-cols-2 gap-3 xl:grid-cols-6">
-              <KpiCard label="סנכרון אחרון" value={formatDate(overviewData?.sync?.lastSyncedAt, true)} icon={RefreshCcw} tone="emerald" hint={dashboardSummary?.coverageStatus === "complete" ? "כיסוי מלא" : "סנכרון חלקי"} />
-              <KpiCard label="פק״עות שלא יובאו" value={formatNumber(overviewData?.workOrders?.notImported)} icon={FileSearch} tone="amber" hint="כל ההיסטוריה · לא תור שחרור לייצור" />
-              <KpiCard label="פק״עות בסיכון" value={formatNumber(overviewData?.workOrders?.atRisk)} icon={AlertTriangle} tone="red" />
-              <KpiCard label="בקשות רכש פתוחות" value={formatNumber(overviewData?.purchasing?.openRequestLines)} icon={ShoppingCart} tone="amber" />
-              <KpiCard label="יתרת ספקים פתוחה" value="לפי מטבע" icon={WalletCards} tone="blue" hint="מדגם בלבד · פירוט בכספים" />
-              <KpiCard label="משלוחים פתוחים" value={formatNumber(overviewData?.deliveries?.sentOpen)} icon={Ship} tone="red" />
-            </div>
-            <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-              <OperationalQueue
-                title="מה דורש טיפול עכשיו"
-                rows={dashboardRisks.length > 0 ? dashboardRisks : rows.map((row) => ({
-                  ...row,
-                  entity_label: row.customer_name ?? row.title,
-                  risk_reason: statusLabel(String(row.link_status)),
-                  severity: row.link_status === "at_risk" || row.link_status === "quantity_mismatch" ? "high" : "medium",
-                }))}
-                onAsk={(row) => void sendAi(`נתח את הסיכון הזה ב-BINA: ${String(row.entity_label ?? row.work_order_id ?? row.risk_reason ?? "")}. הצג מקורות, קשרים לרכש/כספים/משלוחים והמשך מומלץ.`)}
-              />
-              <div className="grid gap-4">
-                <MiniChartCard title="פק״עות לפי מצב קישור" subtitle="כל ההיסטוריה · מוכנות לייצור נבדקת בלשונית פק״עות">
-                  <SimpleDonut data={historicalLinkStats} />
-                  <div className="mt-2"><MetricBreakdownBar data={historicalLinkStats} /></div>
-                </MiniChartCard>
-                <MiniChartCard title="איכות נתונים" subtitle="חריגות שמשפיעות על אמון בדשבורד">
-                  {dashboardSummary?.dataQualityStatus !== "complete" && <p className="mb-2 text-sm text-amber-500">בדיקה חלקית — אין להסיק שאין חריגות.</p>}
-                  <MetricBreakdownBar
-                    data={(dataQualityIssues.length > 0 ? dataQualityIssues : [{ issue_label_he: dashboardSummary?.dataQualityStatus === "complete" ? "אין חריגות" : "לא נבדק", affected_count: 0 }]).map((row) => ({
-                      label: String(row.issue_label_he ?? row.issue_type ?? "-"),
-                      value: numberValue(row.affected_count),
-                    }))}
-                  />
-                </MiniChartCard>
+            <section className="rounded-2xl border border-border bg-card p-5 sm:p-6">
+              <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+                <div className="max-w-2xl">
+                  <p className="text-xs font-medium text-muted-foreground">מ-BINA לרצפת הייצור</p>
+                  <h2 className="mt-2 text-2xl font-semibold">מה פותחים לעבודה הבאה?</h2>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">בחרו פק״ע שהתקבלה לאחרונה, בדקו את הפרטים ובנו את רצף התחנות לפני פתיחת העבודה.</p>
+                  <p className="mt-2 text-xs text-muted-foreground">תצוגת העבודה מתחילה ב-1 בנובמבר 2024. מידע מוקדם יותר זמין בחיפוש ההיסטורי ובשאלות ל-AI.</p>
+                </div>
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  <Button variant="outline" onClick={() => setActiveTab("production")}>חיפוש פק״ע</Button>
+                  <Button variant="outline" onClick={() => void sendAi("הצע שלוש פקעות מהחדשות ביותר שהתקבלו ב-BINA להכנה לעבודה. רק מאז נובמבר 2024, שלא נסגרו ושטרם נפתחו בגסטליט. סדר לפי תאריך קבלה מהחדש לישן. ציין מה דורש בדיקה; אי ייבוא אינו תקלה או חוב לטיפול.")}>עזרו לי לבחור עם AI</Button>
+                </div>
               </div>
-            </div>
+              <div className="mt-5 flex flex-wrap gap-x-8 gap-y-3 border-t border-border pt-4 text-sm">
+                <span><strong className="tabular-nums">{formatNumber(overviewData?.workOrders?.receivedLast30Days)}</strong> פק״עות התקבלו ב-30 הימים האחרונים</span>
+                <span><strong className="tabular-nums">{formatNumber(overviewData?.workOrders?.managed)}</strong> פק״עות מקושרות לעבודות בגסטליט מאז נובמבר 2024</span>
+                <span className="text-xs text-muted-foreground">סנכרון פק״עות: <span className="inline-block">{formatDate(overviewData?.sync?.lastSyncedAt, true)}</span></span>
+              </div>
+            </section>
             <Card className="rounded-xl border border-border bg-card/50 p-4">
               <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <h2 className="text-base font-semibold">פק״עות אחרונות</h2>
-                  <p className="text-sm text-muted-foreground">ממוינות לפי מספר פק״ע, מהחדש לישן. הספירות מתייחסות לעותק המסונכרן בלבד; יתרות וסכומים הם מדגם חלקי.</p>
+                  <h2 className="text-base font-semibold">התקבלו לאחרונה ב-BINA</h2>
+                  <p className="text-sm text-muted-foreground">עד 12 הפק״עות הפתוחות האחרונות שעדיין לא נפתחו כעבודה בגסטליט, לפי תאריך קבלה. בחרו פק״ע לבדיקת הפרטים ולהכנה.</p>
                 </div>
-                <Button onClick={() => void sendAi("סכם לי את מצב הייצור, הרכש, הכספים והמשלוחים ותציע מה לבדוק עכשיו")} className="gap-2">
+                <Button onClick={() => void sendAi("סכם את הפקעות החדשות ביותר שהתקבלו ב-BINA מאז נובמבר 2024 ואת הבדיקות הנדרשות להכנת עבודה. אל תציג את כלל הפקעות שלא יובאו כחריגה.")} className="gap-2">
                   <Bot className="h-4 w-4" />
                   נתח עם AI
                 </Button>
               </div>
+              <div className="hidden md:block">
               <SimpleTable rows={rows} isLoading={isLoading} onRowClick={openOrder} columns={[
                 { key: "work_order_id", label: "פק״ע", render: (row) => <Bdi>{String(row.work_order_id ?? "-")}</Bdi> },
                 { key: "customer_name", label: "לקוח" },
-                { key: "due_at", label: "אספקה", render: (row) => formatDate(row.due_at) },
-                { key: "link_status", label: "סטטוס", render: (row) => <Badge className={statusVariant(String(row.link_status))}>{statusLabel(String(row.link_status))}</Badge> },
+                { key: "title", label: "תיאור העבודה", render: (row) => <span className="block max-w-72 line-clamp-2" title={String(row.title ?? "")}>{String(row.title ?? "—")}</span> },
+                { key: "bina_quantity", label: "כמות", render: (row) => formatNumber(row.bina_quantity) },
+                { key: "received_at", label: "התקבלה", render: (row) => <span className="whitespace-nowrap">{formatDate(row.received_at)}</span> },
+                { key: "due_at", label: "אספקה", render: (row) => <span className="whitespace-nowrap">{formatDate(row.due_at)}</span> },
+                { key: "prepare", label: "", render: (row) => <Button variant="outline" size="sm" onClick={(event) => { event.stopPropagation(); void openOrder(row); }} aria-label={`הכנת פק״ע ${String(row.work_order_id)}`}>הכנת עבודה</Button> },
               ]} />
+              </div>
+              <div className="grid gap-3 md:hidden">
+                {rows.map((row) => <article key={String(row.bina_id)} className="rounded-xl border border-border p-4">
+                  <div className="flex items-center justify-between gap-3"><strong>פק״ע <Bdi>{String(row.work_order_id)}</Bdi></strong><span className="text-sm tabular-nums">{formatNumber(row.bina_quantity)} יח׳</span></div>
+                  <p className="mt-2 text-sm font-medium">{String(row.customer_name ?? "—")}</p>
+                  <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{String(row.title ?? "—")}</p>
+                  <dl className="mt-3 grid grid-cols-2 gap-3 text-xs"><div><dt className="text-muted-foreground">התקבלה</dt><dd className="mt-1">{formatDate(row.received_at)}</dd></div><div><dt className="text-muted-foreground">אספקה</dt><dd className="mt-1">{formatDate(row.due_at)}</dd></div></dl>
+                  <Button variant="outline" className="mt-4 w-full" onClick={() => void openOrder(row)}>הכנת פק״ע {String(row.work_order_id)}</Button>
+                </article>)}
+                {rows.length === 0 && <p className="p-4 text-sm text-muted-foreground">אין פק״עות פתוחות חדשות להצגה כרגע.</p>}
+              </div>
             </Card>
           </div>
         )}
@@ -1625,89 +1300,16 @@ export const BinaDashboard = () => {
             <SearchBand value={search} onChange={setSearch} onRefresh={() => void loadCurrent()} />
             {activeTab === "production" && (
               <>
-                <Card className="rounded-xl border border-border bg-card/50 p-4">
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <Card className="rounded-xl border border-border bg-card p-4">
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <div className="mb-2 flex flex-wrap items-center gap-2">
-                        <Badge className={statusVariant(String(productionDashboard?.coverageStatus))}>
-                          אמון נתונים: {valueLabel(productionDashboard?.coverageStatus)}
-                        </Badge>
-                        <Badge className="border-border bg-background/70 text-muted-foreground">
-                          סנכרון: {formatDate(productionCoverage.last_synced_at, true)}
-                        </Badge>
-                      </div>
-                      <h2 className="text-lg font-semibold">שיגור ייצור</h2>
-                      <p className="text-sm text-muted-foreground">תור להכנת עבודות שטרם נסגרו ב-BINA. המדדים מוגבלים ל-1,000 הפק״עות האחרונות בתור; חיפוש בטבלה אינו משנה אותם.</p>
+                      <h2 className="font-semibold">חיפוש פק״עות ב-BINA</h2>
+                      <p className="mt-1 text-sm text-muted-foreground">{includeHistory ? "חיפוש היסטורי מפורש · כל השנים" : "מ-1 בנובמבר 2024 · לפי תאריך קבלה, מהחדש לישן"}. לפתיחת עבודה חדשה, בחרו מהפק״עות האחרונות בסקירה.</p>
                     </div>
-                    <Button onClick={() => void sendAi("סכם את תור שיגור הייצור: מה מוכן, מה חסום, ומה צריך לעשות קודם")} className="gap-2">
-                      <Bot className="h-4 w-4" />
-                      נתח שיגור
-                    </Button>
-                  </div>
-                </Card>
-
-                <div className="grid grid-cols-2 gap-3 xl:grid-cols-6">
-                  <KpiCard label="לא יובאו" value={formatNumber(productionStats[0].value)} icon={FileSearch} tone="amber" />
-                  <KpiCard label="פערי כמות" value={formatNumber(productionStats[1].value)} icon={AlertTriangle} tone="red" />
-                  <KpiCard label="בסיכון איחור" value={formatNumber(productionStats[2].value)} icon={CalendarClock} tone="red" />
-                  <KpiCard label="מוכנות/מקושרות" value={formatNumber(productionStats[3].value)} icon={CheckCircle2} tone="emerald" />
-                  <KpiCard label="חסום רכש" value={formatNumber(productionStats[4].value)} icon={ShoppingCart} tone="amber" />
-                  <KpiCard label="חסר מסלול" value={formatNumber(productionStats[5].value)} icon={FileWarning} tone="amber" />
-                </div>
-                <div className="grid gap-4 xl:grid-cols-[340px_1fr]">
-                  <MiniChartCard title="פילוח פק״עות" subtitle="מצב חיבור וסיכון">
-                    <SimpleDonut data={productionStats} />
-                  </MiniChartCard>
-                  <OperationalQueue
-                    title="מה דורש טיפול עכשיו"
-                    rows={(productionRisks.length > 0 ? productionRisks : rows
-                      .filter((row) => row.link_status !== "linked")
-                      .map((row) => ({
-                        ...row,
-                        entity_label: `${String(row.work_order_id ?? "-")} · ${String(row.customer_name ?? "")}`,
-                        risk_reason: statusLabel(String(row.link_status)),
-                        severity: row.link_status === "at_risk" || row.link_status === "quantity_mismatch" ? "high" : "medium",
-                      })))}
-                    onAsk={(row) => void sendAi(`למה פק״ע ${String(row.work_order_id ?? row.entity_key ?? "")} בסיכון ומה הקשרים לרכש, ספקים, משלוחים וכספים?`)}
-                  />
-                </div>
-
-                <div className="grid gap-3 xl:grid-cols-3">
-                  <DispatchLane title="לא יובאו לגסטליט" rows={productionLanes.missing_import ?? []} tone="amber" onOpen={openOrder} onAsk={(row) => void sendAi(`בדוק האם כדאי לשחרר את פק״ע ${String(row.work_order_id)} לגסטליט ומה חסר לפני ייבוא`)} />
-                  <DispatchLane title="מאחר / לא הושלם" rows={productionLanes.late_or_unfinished ?? []} tone="red" onOpen={openOrder} onAsk={(row) => void sendAi(`למה פק״ע ${String(row.work_order_id)} מאחרת ומה הפעולה הבאה?`)} />
-                  <DispatchLane title="פערי כמות" rows={productionLanes.quantity_mismatch ?? []} tone="red" onOpen={openOrder} onAsk={(row) => void sendAi(`השווה כמויות BINA מול Gestelit עבור פק״ע ${String(row.work_order_id)}`)} />
-                  <DispatchLane title="חסום רכש / חומרים" rows={productionLanes.material_or_purchase_open ?? []} tone="amber" onOpen={openOrder} onAsk={(row) => void sendAi(`בדוק חסמי רכש וחומרים לפק״ע ${String(row.work_order_id)}`)} />
-                  <DispatchLane title="משלוח פתוח" rows={productionLanes.sent_open_delivery ?? []} tone="blue" onOpen={openOrder} onAsk={(row) => void sendAi(`בדוק משלוחים פתוחים והשפעת לקוח לפק״ע ${String(row.work_order_id)}`)} />
-                  <DispatchLane title="מוכן / מקושר" rows={productionLanes.ready_or_linked ?? []} tone="emerald" onOpen={openOrder} onAsk={(row) => void sendAi(`סכם את מצב פק״ע ${String(row.work_order_id)} והאם אפשר להריץ אותה`)}/>
-                </div>
-
-                {unmappedOperations.length > 0 && (
-                  <Card className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-4">
-                    <div className="mb-3 flex items-center justify-between gap-3">
-                      <div>
-                        <h3 className="font-semibold">מיפוי תחנות / מכונות חסר</h3>
-                        <p className="text-xs text-muted-foreground">אלו פעולות BINA שעדיין צריכות מיפוי לתחנות Gestelit לפני שחרור אוטומטי.</p>
-                      </div>
-                      <Badge className="border-amber-500/20 bg-amber-500/10 text-amber-300">{formatNumber(unmappedOperations.length)} פעולות</Badge>
-                    </div>
-                    <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-                      {unmappedOperations.slice(0, 8).map((row, index) => (
-                        <div key={String(row.operation_key ?? index)} className="rounded-lg border border-border bg-background/70 p-3">
-                          <div className="text-sm font-medium"><Bdi>{String(row.operation_key ?? "-")}</Bdi></div>
-                          <div className="mt-1 text-xs text-muted-foreground">
-                            {formatNumber(row.work_order_count)} פק״עות · {formatNumber(row.row_count)} שורות
-                          </div>
-                          <div className="mt-1 text-xs text-muted-foreground">מקור: <Bdi>{String(row.source_table ?? "-")}</Bdi></div>
-                        </div>
-                      ))}
-                    </div>
-                  </Card>
-                )}
-
-                <Card className="rounded-xl border border-border bg-card/50 p-4">
-                  <div className="mb-3">
-                    <h3 className="font-semibold">חקירת פק״עות</h3>
-                    <p className="text-xs text-muted-foreground">רשימה מדורגת לחיפוש ופתיחת Control Tower. מדדים מתקבלים מה-RPC מעל, לא מהטבלה.</p>
+                    <label className="flex items-center gap-2 text-sm">
+                      <Checkbox checked={includeHistory} onCheckedChange={(checked) => setIncludeHistory(checked === true)} />
+                      לכלול היסטוריה מלפני נובמבר 2024
+                    </label>
                   </div>
                 <SimpleTable
                   rows={rows}
@@ -1717,6 +1319,7 @@ export const BinaDashboard = () => {
                     { key: "work_order_id", label: "פק״ע", render: (row) => <Bdi>{String(row.work_order_id ?? "-")}</Bdi> },
                     { key: "customer_name", label: "לקוח" },
                     { key: "title", label: "כותרת" },
+                    { key: "received_at", label: "התקבלה", render: (row) => formatDate(row.received_at) },
                     { key: "bina_quantity", label: "כמות", render: (row) => formatNumber(row.bina_quantity) },
                     { key: "due_at", label: "אספקה", render: (row) => formatDate(row.due_at) },
                     { key: "link_status", label: "קישור", render: (row) => <Badge className={statusVariant(String(row.link_status))}>{statusLabel(String(row.link_status))}</Badge> },

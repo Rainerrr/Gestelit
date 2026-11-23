@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Briefcase, Archive, ListTodo, BarChart3, CheckCircle2 } from "lucide-react";
 import { useNotification } from "@/contexts/NotificationContext";
@@ -140,6 +141,7 @@ export const JobsDashboard = () => {
         <AdminPageHeader
           icon={Briefcase}
           title="עבודות"
+          actions={<Link href="/admin/bina" className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-sm font-medium text-primary">פתיחת עבודה מ-BINA</Link>}
           capsules={capsuleConfig}
         />
       }

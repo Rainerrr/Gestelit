@@ -32,7 +32,7 @@ export async function fetchBinaOverviewApi() {
   return handleResponse(await fetch("/api/admin/bina/overview", adminInit()));
 }
 
-export async function fetchBinaWorkOrdersApi(params?: { search?: string; limit?: number; offset?: number }) {
+export async function fetchBinaWorkOrdersApi(params?: { search?: string; limit?: number; offset?: number; history?: "all"; incoming?: boolean }) {
   return handleResponse(await fetch(withParams("/api/admin/bina/work-orders", params), adminInit()));
 }
 
