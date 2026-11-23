@@ -39,6 +39,7 @@ export const JobsDashboard = () => {
 
   // Track if initial data has been loaded
   const initialLoadDoneRef = useRef(false);
+  const focusedJobTabApplied = useRef(false);
 
   const friendlyError = useCallback((error: unknown) => {
     const message = error instanceof Error ? error.message : typeof error === "string" ? error : "UNKNOWN_ERROR";
@@ -52,6 +53,14 @@ export const JobsDashboard = () => {
         status: "all",
       });
       setJobs(data);
+      if (!focusedJobTabApplied.current) {
+        const focusedId = new URLSearchParams(window.location.search).get("job");
+        const focusedJob = data.find((entry) => entry.job.id === focusedId);
+        if (focusedJob) {
+          focusedJobTabApplied.current = true;
+          setActiveTab(focusedJob.isCompleted ? "archived" : "active");
+        }
+      }
     } catch (error) {
       friendlyError(error);
     } finally {
