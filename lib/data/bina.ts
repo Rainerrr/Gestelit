@@ -1105,9 +1105,24 @@ export async function fetchBinaWorkOrderDetail(binaId: string): Promise<BinaWork
   if (decisionError) throw new Error(decisionError.message);
 
   const sourceDecision = decision as unknown as BinaWorkOrderDecisionFact | null;
-  const order = sourceDecision?.blocker_type === "missing_import" && !sourceDecision.gestelit_job_id
+  let order = sourceDecision?.blocker_type === "missing_import" && !sourceDecision.gestelit_job_id
     ? { ...sourceDecision, blocker_type: "new_candidate", priority_score: 0, next_action_reason: "לבחירתכם: בדקו פרטים, קבצים וחומרים ובחרו רצף תחנות לפני פתיחת עבודה. פק״ע שטרם נפתחה אינה חריגה." }
     : sourceDecision;
+  // BINA operation rows and the reviewed MES route are different sources.
+  // A manually configured job must not be declared route-less because BINA has no operations.
+  if (order?.gestelit_job_id && order.blocker_type === "missing_route_rows") {
+    const { data: items, error } = await supabase.from("job_items")
+      .select("id,job_item_steps(id,stations(is_active))")
+      .eq("job_id", order.gestelit_job_id).eq("is_active", true);
+    if (error) throw new Error(error.message);
+    const hasReviewedRoute = items?.length && items.every((item) =>
+      item.job_item_steps.length > 0 && item.job_item_steps.every((step) => {
+        const station = Array.isArray(step.stations) ? step.stations[0] : step.stations;
+        return station?.is_active === true;
+      }));
+    if (hasReviewedRoute) order = { ...order, blocker_type: "ready_or_linked", priority_score: 0,
+      next_action_reason: "העבודה מקושרת ורצף התחנות הוגדר בגסטליט. אין שורות פעולות ב-BINA; זה אינו מעיד על מסלול חסר באפליקציה. התחלה כפופה לבדיקות התחנה ולאישורי מוצר ראשון." };
+  }
   const workOrderId = normalizeNumber(order?.work_order_id);
   const { data: productionRows, error: rowsError } = await supabase
     .from("stg_bina_production_rows")

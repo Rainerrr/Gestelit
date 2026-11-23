@@ -244,7 +244,7 @@ function valueLabel(value: unknown) {
     case "finance_attention":
       return "כספים לבדיקה";
     case "missing_route_rows":
-      return "חסר מסלול";
+      return "אין פעולות מסלול ב-BINA";
     case "ready_or_linked":
       return "מוכן / מקושר";
     case "ready_inferred_inventory":
@@ -601,7 +601,7 @@ function RelationshipSummary({
       <div className="grid gap-2 sm:grid-cols-5">
         {[
           ["Gestelit", order?.gestelit_job_number ? `עבודה ${String(order.gestelit_job_number)}` : "לא מקושר"],
-          ["מסלול", `${formatNumber(order?.route_row_count ?? routeSummary.rowCount ?? 0)} שורות`],
+          ["פעולות BINA", `${formatNumber(order?.route_row_count ?? routeSummary.rowCount ?? 0)} שורות`],
           ["רכש", `${formatNumber(relatedPurchasing)} קשרים`],
           ["משלוחים", `${formatNumber(relatedDeliveries)} קשרים`],
           ["כספים", `${formatNumber(relatedFinance + relatedSales)} קשרים`],
