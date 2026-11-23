@@ -945,20 +945,7 @@ export async function fetchSalesDormantClients(input: {
     .order("days_since_last_human_contact", { ascending: false, nullsFirst: false })
     .range(offset, offset + limit - 1);
   if (input.bucket) query = query.eq("dormancy_bucket", input.bucket);
-  let result = await query;
-
-  // Some imported BINA owner names cannot yet be reconciled to a portal UUID.
-  // Exact-name fallback preserves the personal queue without broadening scope.
-  if (!result.error && (result.count ?? 0) === 0 && input.salesperson.trim()) {
-    let fallback = supabase
-      .from("mart_sales_client_dormancy")
-      .select("client_ref,local_client_id,customer_code,customer_name,customer_group,area,account_manager,account_manager_sales_user_id,last_human_contact_at,days_since_last_human_contact,dormancy_bucket,dormancy_label,next_action_date,contact_coverage_scope,data_freshness_at", { count: "exact" })
-      .eq("account_manager", input.salesperson.trim())
-      .order("days_since_last_human_contact", { ascending: false, nullsFirst: false })
-      .range(offset, offset + limit - 1);
-    if (input.bucket) fallback = fallback.eq("dormancy_bucket", input.bucket);
-    result = await fallback;
-  }
+  const result = await query;
 
   if (result.error) throw new Error(result.error.message);
   return {
@@ -982,26 +969,21 @@ export async function fetchSalesPortfolioClients(input: {
   const columns = "client_ref,local_client_id,customer_code,customer_name,customer_group,area,account_manager,account_manager_sales_user_id,last_human_contact_at,days_since_last_human_contact,dormancy_bucket,dormancy_label,next_action_date,contact_coverage_scope,data_freshness_at,last_commercial_activity_at,last_invoice_at,current_invoice_row_count,activity_count,contact_confidence,coverage_note";
   const pattern = likePattern(input.search);
 
-  const buildQuery = (byName = false) => {
+  const buildQuery = () => {
     let query = supabase
       .from("mart_sales_personal_portfolio")
       .select(columns, { count: "exact" })
       .order("next_action_date", { ascending: true, nullsFirst: false })
       .order("days_since_last_human_contact", { ascending: false, nullsFirst: false })
       .range(offset, offset + limit - 1);
-    query = byName
-      ? query.eq("account_manager", input.salesperson.trim())
-      : query.eq("account_manager_sales_user_id", input.salesUserId);
+    query = query.eq("account_manager_sales_user_id", input.salesUserId);
     if (pattern) {
       query = query.or(`customer_name.ilike.${pattern},customer_code.eq.${normalizeSalesInteger(input.search) ?? -1}`);
     }
     return query;
   };
 
-  let result = await buildQuery(false);
-  if (!result.error && (result.count ?? 0) === 0 && input.salesperson.trim()) {
-    result = await buildQuery(true);
-  }
+  const result = await buildQuery();
   if (result.error) throw new Error(result.error.message);
   return {
     rows: (result.data ?? []) as SalesPortfolioClient[],
