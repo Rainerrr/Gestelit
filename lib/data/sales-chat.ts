@@ -1,6 +1,6 @@
 import { aiReasoning } from "@/lib/ai/model";
-import { salesAnalyticsQueryTool } from "@/lib/ai/query/plan";
-import { runSalesAnalyticsQuery, type SalesQueryResult } from "@/lib/ai/query/sales-execute";
+import { salesAnalyticsQueryTool, salesBusinessQueryTool } from "@/lib/ai/query/plan";
+import { runSalesAnalyticsQuery, runSalesBusinessQuery, type SalesQueryResult } from "@/lib/ai/query/sales-execute";
 import { sanitizeScreenContext } from "@/lib/ai/screen-context";
 import OpenAI from "openai";
 import { fetchSalesSummary, fetchSalesUserDashboard, type SalesSummary } from "@/lib/data/sales-log";
@@ -175,13 +175,13 @@ export async function runSalesChat(input: {
       "Format the answer in short paragraphs and useful bullet lists. Respond directly to follow-ups rather than restarting the analysis.",
       "Use only the supplied deterministic data. Never invent a customer, amount, interaction, BINA history, or ownership.",
       "Sync/import time is UNKNOWN for these manual Gestelit activity records. oldestRecordUpdate/latestRecordUpdate are row modification times only; event_at/lastActivityAt are occurrence dates. Neither establishes sync freshness, ingestion completeness or a cutoff after which newer activity is missing. generatedAt is analysis time only. Never call these dates the last sync or infer that later activity has not arrived. If asked about last synchronization, say that timestamp is unavailable.",
-      "The current client universe and historical CRM touches from BINA are not complete.",
+      "The current assigned customer directory is available through query_sales_business. Historical human CRM contacts from BINA are NOT connected.",
       "Therefore inactivity means only that no interaction was recorded in Gestelit; never claim the company did not contact a client.",
       "Manual Gestelit activity, BINA invoices, commercial orders, quotes, and production work orders are different grains.",
       "Do not combine currencies. Do not expose credentials. Do not provide SQL or execute changes.",
       "Always suggest a concrete next action and 2-4 useful next questions or comparisons.",
       "Cite mart_sales_activity_scoped for activity analytics and label confidence inferred where contact completeness matters.",
-      "For each data question, use query_sales_activity with a new question-specific plan to compute the requested filters, groupings or comparisons. The summary is orientation; never claim a query ran unless a tool result was returned.",
+      "For each data question, use query_sales_activity for recorded activity or query_sales_business for assigned customers, BINA invoices and production work orders. Run a fresh question-specific plan. Follow the dates requested in the question. Production work orders are not commercial orders. Open quotes are unavailable; never substitute opportunities or work orders for verified BINA quotes. The summary is orientation only. Never claim a query ran unless its tool returned successfully.",
       "Never treat empty results or a partial synced cache as proof that no customer contact occurred. Show query sample/truncation boundaries.",
       "Return only the required structured response.",
     ].join("\n");
@@ -196,7 +196,9 @@ export async function runSalesChat(input: {
       generatedAt,
       coverage: {
         gestelitActivities: "complete_for_authenticated_scope",
-        binaClientMaster: "partial_index",
+        binaClientMaster: "current_assigned_directory",
+        binaInvoices: "available_via_query_sales_business",
+        binaProductionOrders: "available_via_query_sales_business",
         binaCrmHistory: "not_connected",
         quotesAndCommercialOrders: "not_connected",
       },
@@ -206,7 +208,7 @@ export async function runSalesChat(input: {
     model,
     reasoning: aiReasoning(model),
     instructions,
-    tools: [{ ...salesAnalyticsQueryTool, strict: false } as OpenAI.Responses.Tool],
+    tools: [salesAnalyticsQueryTool, salesBusinessQueryTool].map((tool) => ({...tool, strict: false}) as OpenAI.Responses.Tool),
     input: conversationInput,
     text: { format: SALES_CHAT_FORMAT, verbosity: "medium" },
   }, { signal: input.signal });
@@ -220,13 +222,13 @@ export async function runSalesChat(input: {
       input.signal?.throwIfAborted();
       let result: unknown;
       try {
-        if (index >= 2 || call.name !== "query_sales_activity") throw new Error("SALES_AI_QUERY_UNAVAILABLE");
-        result = await runSalesAnalyticsQuery(JSON.parse(call.arguments), { id: input.salesUserId, scope }, input.signal);
+        if (index >= 3 || !["query_sales_activity", "query_sales_business"].includes(call.name)) throw new Error("SALES_AI_QUERY_UNAVAILABLE");
+        result = await (call.name === "query_sales_business" ? runSalesBusinessQuery : runSalesAnalyticsQuery)(JSON.parse(call.arguments), { id: input.salesUserId, scope }, input.signal);
         queryResults.push(result as SalesQueryResult);
       } catch (error) {
         const reason = error instanceof Error ? error.message : "";
         const code = ["AI_QUERY_PLAN_INVALID", "AI_QUERY_SCOPE_FORBIDDEN", "SALES_AI_QUERY_TIMEOUT", "SALES_AI_QUERY_FORBIDDEN"].includes(reason) ? reason : "SALES_AI_QUERY_UNAVAILABLE";
-        console.warn("SALES_AI_QUERY_FAILED", { code, tool: call.name === "query_sales_activity" ? call.name : "unapproved", index });
+        console.warn("SALES_AI_QUERY_FAILED", { code, tool: ["query_sales_activity", "query_sales_business"].includes(call.name) ? call.name : "unapproved", index });
         queryFailures.push("לא ניתן היה לאמת חלק מהשאילתות המותאמות; הניתוח נשען על הסיכום הזמין.");
         result = { error: "SALES_AI_QUERY_UNAVAILABLE" };
       }
@@ -246,7 +248,7 @@ export async function runSalesChat(input: {
     ...answer,
     confidence: summary.analytics.filteredCount === 0 && !queryResults.some((result) => result.scannedRows > 0) ? "missing_data" as const : answer.confidence,
     couldNotVerify: [...new Set([...answer.couldNotVerify, ...queryFailures, ...(queryResults.some((result) => result.sourceTruncated) ? ["הדירוג או הרשומות האחרונות מתייחסים למדגם מוגבל שאינו מדורג מראש; אי אפשר להסיק ממנו דירוג או עדכניות בכלל הנתונים."] : []), ...(queryResults.some((result) => result.sourceTruncated || result.outputTruncated) ? ["השאילתה המותאמת מוגבלת במדגם או במספר שורות התוצאה."] : []), "היסטוריית קשר מלאה מ-BINA אינה מחוברת; היעדר דיווח בגסטליט אינו הוכחה שלא התקיים קשר.", ...(summary.analytics.isTruncated ? ["חלק מהניתוח מבוסס על מדגם מוגבל של פעילויות."] : [])])],
-    evidence: [{ source: "mart_sales_activity_scoped", label: scope === "team" ? "פעילויות המכירה של הצוות לפי ההרשאה הנוכחית" : "פעילויות המכירה של המשתמש המחובר", freshness: null, confidence: "exact" as const }],
+    evidence: [{ source: "mart_sales_activity_scoped", label: scope === "team" ? "פעילויות המכירה של הצוות לפי ההרשאה הנוכחית" : "פעילויות המכירה של המשתמש המחובר", freshness: null, confidence: "exact" as const }, ...queryResults.filter((result) => result.source && result.source !== "mart_sales_activity_scoped").map((result) => ({source: result.source, label: ({mart_sales_bina_orders: "פקודות ייצור BINA של הלקוחות המשויכים", mart_sales_bina_invoices: "חשבוניות BINA של הלקוחות המשויכים", mart_sales_client_dormancy: "תיק לקוחות והיסטוריית פנייה מתועדת"} as Record<string,string>)[result.source] ?? "שאילתה מאומתת", freshness: result.freshness, confidence: result.sourceTruncated ? "inferred" as const : "exact" as const}))],
     freshness: queryResults.map((result) => result.freshness).filter((value): value is string => Boolean(value)).sort()[0] ?? null,
     filtersUsed: [dateFrom, dateTo, scope, ...Object.entries(appliedFilters).map(([key, value]) => `${key}: ${value}`)],
     scope,

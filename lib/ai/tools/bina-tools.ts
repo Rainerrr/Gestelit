@@ -1,4 +1,7 @@
 import { BINA_OPERATIONAL_START } from "@/lib/bina/operational-scope";
+import {fetchProcurementAnalysis} from "@/lib/data/operations";
+import {fetchMaintenanceStations} from "@/lib/data/maintenance";
+import {createServiceSupabase} from "@/lib/supabase/client";
 import { fetchActiveJobsWithProgress } from "@/lib/data/admin-dashboard";
 import { fetchBinaWeekly } from "@/lib/data/bina-weekly";
 import { buildOverview, israelDate } from "@/lib/manufacturing/overview";
@@ -103,6 +106,8 @@ function rowsResult(name: string, rows: unknown[], sources: string[], freshness?
 }
 
 export const aiToolDefinitions = [
+  {type:"function" as const,name:"get_procurement_analysis",description:"Read verified supplier-invoice lines grouped by quarter, exact item code AND description, unit, currency, and supplier. Default last 24 months. Use for paper/material purchasing history and quarterly supplier-price comparisons. Never compare different items/units/currencies or unknown units/currencies. Weighted unit_price is historical recorded price, not an approved current quote. Quarterly baseline = positive purchased quantity / days * 91.3125; excludes returns, does not account for stock, open orders, seasonality or demand, never an automatic purchase recommendation. sourceRows covers joined invoice lines only; result groups may be truncated. Do not sum currencies or treat supplier invoice lines as receipt headers. Narrow search when output is truncated.",parameters:{type:"object",properties:{from:{type:"string",description:"YYYY-MM-DD"},to:{type:"string",description:"YYYY-MM-DD"},search:{type:"string"}},additionalProperties:false}},
+  {type:"function" as const,name:"get_operations_workspace",description:"Read current management tasks, manually maintained subcontractor capabilities/price lists and station maintenance schedules. No writes or notifications. Price list entries may be expired; check valid_until and currency. Named responsibility is a task assignment label, not authorization. Compressor maintenance appears only if configured in stations. Never infer completed service from a planned date.",parameters:{type:"object",properties:{},additionalProperties:false}},
   {
     type: "function" as const,
     name: "get_bina_weekly_snapshot",
@@ -569,6 +574,16 @@ export async function runAiTool(name: string, args: ToolArgs): Promise<AiToolRes
   const limit = Math.max(1, Math.min(Math.floor(numberArg(args, "limit", 20)), Number(process.env.AI_MAX_ROWS ?? 50)));
 
   switch (name) {
+    case "get_procurement_analysis": {
+      const data=await fetchProcurementAnalysis({from:stringArg(args,"from"),to:stringArg(args,"to"),search:stringArg(args,"search")});
+      return {name,data:sanitizeToolText({...data,quarters:data.quarters.slice(0,60),suppliers:data.suppliers.slice(0,30),forecast:data.forecast.slice(0,60),quartersTruncated:data.quartersTruncated||data.quarters.length>60,suppliersTruncated:data.suppliers.length>30,forecastTruncated:data.forecastTruncated||data.forecast.length>60,toolOutputLimits:{quarters:60,suppliers:30,forecast:60}}),rowCount:data.sourceRows,sources:["mart_procurement_invoice_lines"],freshness:data.freshness};
+    }
+    case "get_operations_workspace": {
+      const db=createServiceSupabase();
+      const [tasks,capabilities,maintenance]=await Promise.all([db.from("operations_tasks").select("title,owner_name,status,due_date,category,description,updated_at").in("status",["open","in_progress"]).order("due_date",{ascending:true,nullsFirst:false}).limit(100),db.from("supplier_capabilities").select("supplier_code,service_name,unit,unit_price,currency,valid_from,valid_until,notes").eq("is_active",true).limit(100),fetchMaintenanceStations()]);
+      if(tasks.error||capabilities.error)throw Error("OPERATIONS_UNAVAILABLE");
+      return {name,data:sanitizeToolText({tasks:tasks.data,capabilities:capabilities.data,maintenance,limit:100,coverage:"current_application_records; task/capability lists limited to 100, not guaranteed complete"}),rowCount:(tasks.data?.length??0)+(capabilities.data?.length??0)+maintenance.length,sources:["operations_tasks","supplier_capabilities","stations"],freshness:null};
+    }
     case "get_bina_weekly_snapshot": {
       const snapshot = await fetchBinaWeekly(stringArg(args, "start"));
       return { name, data: sanitizeToolText({ ...snapshot, metricDefinitions: { stations: "distinctOrderCount counts distinct incoming work orders; rows counts route operations, NOT jobs or completed production", preparation: "Never recommend sent/shipped/completed/cancelled orders for preparation. Remaining candidates still need file, material and station checks." }, preparationCandidates: snapshot.orders.filter((order) => !/נשלח|נשלחה|בוטל|בוטלה|הושלם|הושלמה|סגור|סגורה|shipped|sent|complete|cancel/i.test(order.status)).slice(0, 100), orders: snapshot.orders.slice(0, 100), purchases: snapshot.purchases.slice(0, 100), detailTruncated: snapshot.orders.length > 100 || snapshot.purchases.length > 100 }), rowCount: snapshot.orderCount + snapshot.purchaseCount, sources: ["bina_dfhazmrashi", "bina_dfshelita", "mart_bina_purchase_flow"], freshness: snapshot.latestSync };

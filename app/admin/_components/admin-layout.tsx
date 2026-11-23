@@ -37,6 +37,7 @@ const navItems = [
   { label: "יומן מכירות", href: "/admin/sales-daily-log", disabled: false, icon: Handshake },
   { label: "הודעות", href: "/admin/messages", disabled: false, icon: MessageSquare },
   { label: "נתוני BINA", href: "/admin/bina", disabled: false, icon: Database },
+  { label: "רכש ומשימות", href: "/admin/operations", disabled: false, icon: Briefcase },
   { label: "היסטוריה ודוחות", href: "/admin/history", disabled: false, icon: History },
   { label: "דיווחים", href: "/admin/reports", disabled: false, icon: FileText },
   { label: "טיפולים", href: "/admin/maintenance", disabled: false, icon: CalendarClock },

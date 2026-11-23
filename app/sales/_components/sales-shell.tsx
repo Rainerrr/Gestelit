@@ -13,6 +13,8 @@ const items = [
   {href: "/sales", label: "דיווח פגישה", icon: ListPlus},
   {href: "/sales/clients", label: "לקוחות", icon: UsersRound},
   {href: "/sales/portfolio", label: "תיק הלקוחות", icon: Building2},
+  {href: "/sales/business", label: "מסמכי BINA ודירוג", icon: BarChart3},
+  {href: "/sales/calendar", label: "חיבור ליומן Outlook", icon: Clock3},
   {href: "/sales/dormant", label: "לקוחות לחידוש קשר", icon: Clock3},
   {href: "/sales/ai", label: "שיחה עם העוזר", icon: MessageSquare},
 ];
@@ -28,7 +30,7 @@ export function SalesShell({children}: {children: ReactNode}) {
       })}</nav>
       <div className="flex items-center justify-between border-t border-border p-4 text-xs text-muted-foreground"><span>ערכת נושא</span><ThemeToggle /></div>
     </aside>
-    <div className="min-w-0 flex-1">{children}</div>
+    <div className="min-w-0 flex-1"><nav aria-label="כלי מכירות נוספים" className="flex gap-4 overflow-x-auto border-b px-4 py-3 text-sm lg:hidden"><Link className="whitespace-nowrap" href="/sales/business">מסמכי BINA ודירוג</Link><Link className="whitespace-nowrap" href="/sales/calendar">חיבור Outlook</Link><Link className="whitespace-nowrap" href="/sales/dormant">חידוש קשר</Link><Link className="whitespace-nowrap" href="/sales/dashboard">היום שלי</Link></nav>{children}</div>
     <SalesAiAssistant />
   </div>;
 }

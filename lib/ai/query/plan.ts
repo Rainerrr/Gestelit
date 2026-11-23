@@ -53,7 +53,7 @@ function validateClosedPlan(input: unknown, datasets: Record<string, Dataset>) {
     if (!["count", "sum", "avg", "min", "max"].includes(String(measure.op))) invalid();
     if (measure.op === "count") { if (measure.column !== undefined) invalid(); }
     else if (!(dataset.numeric as readonly string[]).includes(field(measure.column))) invalid();
-    if (value.dataset === "sales_activity" && measure.op !== "count" && !(value.groupBy as string[] | undefined)?.includes("currency")) invalid();
+    if (["sales_activity", "sales_invoices"].includes(String(value.dataset)) && measure.op !== "count" && !(value.groupBy as string[] | undefined)?.includes("currency")) invalid();
     if (value.dataset === "finance" && measure.op !== "count" && !["currency", "kind", "balance_confidence"].every((column) => (value.groupBy as string[] | undefined)?.includes(column))) invalid();
   });
   if (value.columns && value.measures) invalid();
@@ -91,6 +91,20 @@ export const analyticsQueryTool = {
 export const salesAnalyticsDataset = {
   sales_activity: { view: "mart_sales_activity_scoped", columns: ["id", "event_type", "event_at", "salesperson", "customer_name", "customer_code", "next_action_date", "estimated_revenue", "actual_revenue", "currency", "status", "customer_group", "area", "account_manager", "dormancy_bucket", "coverage_scope", "is_complete_contact_history", "updated_at"], numeric: ["estimated_revenue", "actual_revenue"] },
 } as const;
+export const salesBusinessDatasets = {
+  sales_orders: { view: "mart_sales_bina_orders", columns: ["bina_id", "work_order_id", "customer_code", "customer_name", "title", "received_at", "due_at", "status_text", "quantity", "customer_group", "area", "account_manager", "synced_at"], numeric: ["quantity"] },
+  sales_invoices: { view: "mart_sales_bina_invoices", columns: ["bina_id", "invoice_no", "work_year", "customer_code", "customer_name", "invoice_at", "due_at", "total_amount", "currency", "customer_group", "area", "account_manager", "synced_at"], numeric: ["total_amount"] },
+  sales_customers: { view: "mart_sales_client_dormancy", columns: ["client_ref", "customer_code", "customer_name", "customer_group", "area", "account_manager", "last_human_contact_at", "days_since_last_human_contact", "dormancy_bucket", "next_action_date", "contact_coverage_scope", "data_freshness_at"], numeric: [] },
+} as const;
+export function validateSalesBusinessPlan(value: unknown) {
+  return validateClosedPlan(value, salesBusinessDatasets);
+}
+export const salesBusinessQueryTool = {
+  ...analyticsQueryTool,
+  name: "query_sales_business",
+  description: `Query BINA invoices, incoming PRODUCTION work orders (not commercial orders or quotes), or the complete assigned customer directory with recorded-contact coverage. Server enforces current assigned customer ownership for personal scope, with explicit team access for managers. No identity or scope arguments. Fields: ${JSON.stringify(salesBusinessDatasets)}. Dates: received_at for work orders; invoice_at for invoices. Monetary measures MUST group by currency; UNKNOWN currency must never be called ILS. Customer inactivity is only missing recorded contact, not proof no contact occurred. No quote dataset is connected. Use dataset sales_customers for portfolio size and inactivity, never count only activity records. Measure aliases m0,m1. If sourceTruncated, rankings/totals apply only to an unranked 20000-row sample.`,
+  parameters: { ...analyticsQueryTool.parameters, properties: { ...analyticsQueryTool.parameters.properties, dataset: { type: "string", enum: Object.keys(salesBusinessDatasets) } } },
+};
 export type SalesAnalyticsPlan = Omit<AnalyticsPlan, "dataset"> & { dataset: "sales_activity" };
 export function validateSalesAnalyticsPlan(value: unknown): SalesAnalyticsPlan {
   if (!object(value) || value.dataset !== "sales_activity") throw new Error("AI_QUERY_SCOPE_FORBIDDEN");
