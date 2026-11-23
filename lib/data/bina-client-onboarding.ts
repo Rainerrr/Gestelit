@@ -1,22 +1,5 @@
 import { createServiceSupabase } from "@/lib/supabase/client";
 
-export const BINA_CLIENT_GROUP_OPTIONS = [
-  "פרטי",
-  "פרסום",
-  "משרד פרסום",
-  "שיווק ופרסום",
-  "סופר חנויות קימונאות",
-  "סוכנות",
-  "קבלנים",
-  "קניונים",
-  "ציוד רפואי",
-  "ריהוט",
-  "תאורה",
-  "תעשייה",
-  "עיריות ומועצות אזוריות",
-  "עמותה",
-] as const;
-
 export const BINA_CLIENT_AREA_OPTIONS = [
   { code: "02", label: "ירושלים" },
   { code: "03", label: "תל אביב יפו והמרכז" },

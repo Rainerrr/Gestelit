@@ -24,7 +24,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { createSalesClientApi } from "@/lib/api/sales-portal";
 import {
   BINA_CLIENT_AREA_OPTIONS,
-  BINA_CLIENT_GROUP_OPTIONS,
   BINA_CLIENT_STATUS_OPTIONS,
   type PendingBinaClient,
   type PendingBinaClientInput,
@@ -71,6 +70,16 @@ type NewClientDialogProps = {
 };
 
 export function NewClientDialog({ open, onOpenChange, initialName = "", onCreated }: NewClientDialogProps) {
+  const [groups, setGroups] = useState<string[]>([]);
+  useEffect(() => {
+    if (!open) return;
+    const controller = new AbortController();
+    void fetch("/api/sales/client-options", { signal: controller.signal })
+      .then(async (response) => { if (!response.ok) throw new Error(); return response.json(); })
+      .then((data) => setGroups(data.groups))
+      .catch(() => { if (!controller.signal.aborted) setGroups([]); });
+    return () => controller.abort();
+  }, [open]);
   const [form, setForm] = useState<PendingBinaClientInput>({ ...emptyForm });
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -152,7 +161,7 @@ export function NewClientDialog({ open, onOpenChange, initialName = "", onCreate
                 className="h-12 rounded-xl text-base lg:h-10 lg:text-sm"
               />
               <datalist id="bina-client-groups">
-                {BINA_CLIENT_GROUP_OPTIONS.map((option) => <option key={option} value={option} />)}
+                {groups.map((option: string) => <option key={option} value={option} />)}
               </datalist>
             </Field>
             <Field label="אזור">
