@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
@@ -140,13 +140,13 @@ function formatCompactMoney(value: unknown, currency?: unknown) {
   return `${formatted} ${currencyCode}`;
 }
 
-function formatDate(value: unknown) {
+function formatDate(value: unknown, withTime = false) {
   if (!value || typeof value !== "string") return "-";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "-";
   return new Intl.DateTimeFormat("he-IL", {
-    dateStyle: "short",
-    timeStyle: "short",
+    day: "numeric", month: "long", year: "numeric",
+    ...(withTime ? { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jerusalem" } as const : { timeZone: "UTC" }),
   }).format(date);
 }
 
@@ -586,7 +586,7 @@ function BinaCommandCenter({
           <div className="grid grid-cols-2 gap-2 text-xs text-slate-300 sm:grid-cols-4">
             <div className="rounded-xl border border-white/10 bg-white/5 p-3">
               <div className="text-slate-400">סנכרון אחרון</div>
-              <div className="mt-1 font-mono text-sm text-white tabular-nums">{formatDate(overviewData?.sync?.lastSyncedAt)}</div>
+              <div className="mt-1 font-mono text-sm text-white tabular-nums">{formatDate(overviewData?.sync?.lastSyncedAt, true)}</div>
             </div>
             <div className="rounded-xl border border-white/10 bg-white/5 p-3">
               <div className="text-slate-400">חריגות איכות</div>
@@ -1169,6 +1169,7 @@ export const BinaDashboard = () => {
   const [search, setSearch] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<AnyRow | null>(null);
+  const orderRequest = useRef(0);
   const [orderDetail, setOrderDetail] = useState<AnyRow | null>(null);
   const [selectedFinance, setSelectedFinance] = useState<AnyRow | null>(null);
   const [financeDetail, setFinanceDetail] = useState<AnyRow | null>(null);
@@ -1288,7 +1289,9 @@ export const BinaDashboard = () => {
   }, [loadCurrent]);
 
   const openOrder = async (row: AnyRow) => {
+    const request = ++orderRequest.current;
     setSelectedOrder(row);
+    setOrderDetail(null);
     setImportPreview(null);
     setReadinessConfirmed(false);
     setShowImportPanel(false);
@@ -1297,9 +1300,9 @@ export const BinaDashboard = () => {
     setImportResult(null);
     try {
       const detail = await fetchBinaWorkOrderDetailApi(String(row.bina_id)) as AnyRow;
-      setOrderDetail(detail);
+      if (request === orderRequest.current) setOrderDetail(detail);
     } catch (error) {
-      setDetailError(error instanceof Error ? error.message : "BINA_WORK_ORDER_DETAIL_FAILED");
+      if (request === orderRequest.current) setDetailError(error instanceof Error ? error.message : "BINA_WORK_ORDER_DETAIL_FAILED");
     }
   };
 
@@ -1364,7 +1367,15 @@ export const BinaDashboard = () => {
         previewHash: typeof importPreview?.previewHash === "string" ? importPreview.previewHash : undefined,
         readinessConfirmed,
       }) as AnyRow;
-      if (commit) { setImportResult(result); setImportPreview(null); await loadCurrent(); }
+      if (commit) {
+        setImportResult(result); setImportPreview(null);
+        const request = ++orderRequest.current;
+        setOrderDetail(null);
+        await fetchBinaWorkOrderDetailApi(String(selectedOrder.bina_id)).then((detail) => {
+          if (request === orderRequest.current) setOrderDetail(detail as AnyRow);
+        }).catch(() => setDetailError("העבודה נשמרה, אך יש לרענן את הפירוט"));
+        await loadCurrent();
+      }
       else { setImportPreview(result); setReadinessConfirmed(false); }
     } catch (error) {
       setImportError(error instanceof Error ? error.message : "IMPORT_FAILED");
@@ -1547,7 +1558,7 @@ export const BinaDashboard = () => {
               onAsk={(prompt) => void sendAi(prompt)}
             />
             <div className="grid grid-cols-2 gap-3 xl:grid-cols-6">
-              <KpiCard label="סנכרון אחרון" value={formatDate(overviewData?.sync?.lastSyncedAt)} icon={RefreshCcw} tone="emerald" hint={dashboardSummary?.coverageStatus === "complete" ? "כיסוי מלא" : "סנכרון חלקי"} />
+              <KpiCard label="סנכרון אחרון" value={formatDate(overviewData?.sync?.lastSyncedAt, true)} icon={RefreshCcw} tone="emerald" hint={dashboardSummary?.coverageStatus === "complete" ? "כיסוי מלא" : "סנכרון חלקי"} />
               <KpiCard label="פק״עות שלא יובאו" value={formatNumber(overviewData?.workOrders?.notImported)} icon={FileSearch} tone="amber" />
               <KpiCard label="פק״עות בסיכון" value={formatNumber(overviewData?.workOrders?.atRisk)} icon={AlertTriangle} tone="red" />
               <KpiCard label="בקשות רכש פתוחות" value={formatNumber(overviewData?.purchasing?.openRequestLines)} icon={ShoppingCart} tone="amber" />
@@ -1614,11 +1625,11 @@ export const BinaDashboard = () => {
                           אמון נתונים: {valueLabel(productionDashboard?.coverageStatus)}
                         </Badge>
                         <Badge className="border-border bg-background/70 text-muted-foreground">
-                          סנכרון: {formatDate(productionCoverage.last_synced_at)}
+                          סנכרון: {formatDate(productionCoverage.last_synced_at, true)}
                         </Badge>
                       </div>
                       <h2 className="text-lg font-semibold">שיגור ייצור</h2>
-                      <p className="text-sm text-muted-foreground">תור MES לפי חסמים ופעולה הבאה. הטבלה למטה היא חקירה, לא מקור KPI.</p>
+                      <p className="text-sm text-muted-foreground">תור להכנת עבודות שטרם נסגרו ב-BINA. המדדים מוגבלים ל-1,000 הפק״עות האחרונות בתור; חיפוש בטבלה אינו משנה אותם.</p>
                     </div>
                     <Button onClick={() => void sendAi("סכם את תור שיגור הייצור: מה מוכן, מה חסום, ומה צריך לעשות קודם")} className="gap-2">
                       <Bot className="h-4 w-4" />
@@ -1916,7 +1927,7 @@ export const BinaDashboard = () => {
                         <span>שורות: {formatNumber(row.row_count)}</span>
                         <span>{valueLabel(row.coverage_status ?? "partial_sample")}</span>
                       </div>
-                      <div className="mt-1 text-xs text-muted-foreground">{formatDate(row.last_row_synced_at)}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">{formatDate(row.last_row_synced_at, true)}</div>
                       {Boolean(row.trust_note || row.coverage_note || row.sync_scope) && (
                         <div className="mt-2 line-clamp-2 text-xs text-muted-foreground">
                           {valueLabel(row.sync_scope)} · {String(row.trust_note ?? row.coverage_note ?? "")}
@@ -1941,7 +1952,7 @@ export const BinaDashboard = () => {
             <Card className="rounded-xl border border-border bg-card/50 p-4">
               <h2 className="mb-3 text-base font-semibold">לוגים אחרונים</h2>
               <SimpleTable rows={syncLogs} columns={[
-                { key: "synced_at", label: "זמן דיווח", render: (row) => formatDate(row.synced_at) },
+                { key: "synced_at", label: "זמן דיווח", render: (row) => formatDate(row.synced_at, true) },
                 { key: "created_at", label: "נוצר", render: (row) => formatDate(row.created_at) },
                 {
                   key: "results",
@@ -2013,7 +2024,7 @@ export const BinaDashboard = () => {
                 {detailValue("ימי איחור", drawerFinance?.overdue_days == null ? "לא רלוונטי" : formatNumber(drawerFinance.overdue_days))}
                 {detailValue("פק״ע קשורה", drawerFinance?.related_work_order_id ? <bdi dir="ltr">{String(drawerFinance.related_work_order_id)}</bdi> : "לא נמצא")}
                 {detailValue("משלוח קשור", drawerFinance?.related_delivery_no ? <bdi dir="ltr">{String(drawerFinance.related_delivery_no)}</bdi> : "לא נמצא")}
-                {detailValue("סנכרון אחרון", formatDate(drawerFinance?.synced_at))}
+                {detailValue("סנכרון אחרון", formatDate(drawerFinance?.synced_at, true))}
                 {detailValue("מקור BINA", <bdi dir="auto">{String(drawerFinance?.bina_id ?? "-")}</bdi>)}
                 {detailValue("סיבה לתור עבודה", String(drawerFinance?.risk_reason ?? "-"))}
               </div>
@@ -2074,10 +2085,11 @@ export const BinaDashboard = () => {
                   <Button onClick={() => void sendAi(`פתח Control Tower לפק״ע ${String(drawerOrder?.work_order_id ?? selectedOrder.work_order_id)}: סכם חסמים, מסלול, רכש, משלוחים וכספים`)}>
                     שאל על הפק״ע הזו
                   </Button>
-                  <Button variant="outline" onClick={importSelectedOrder} disabled={!binaImportEnabled}>
+                  <Button variant="outline" onClick={importSelectedOrder} disabled={!binaImportEnabled || !orderDetail || !!detailError}>
                     {binaImportEnabled ? "ייבוא ל-Gestelit" : "ייבוא נעול"}
                   </Button>
                   <Button variant="ghost" onClick={() => {
+                    orderRequest.current++;
                     setSelectedOrder(null);
                     setOrderDetail(null);
                     setShowImportPanel(false);
@@ -2089,11 +2101,13 @@ export const BinaDashboard = () => {
                   לא ניתן לטעון את פירוט הפק״ע כרגע: {detailError}
                 </div>
               )}
+              {!orderDetail && !detailError && <p role="status" className="p-4 text-sm text-muted-foreground">טוען את פרטי הפק״ע והקשרים…</p>}
+              {orderDetail && !detailError && <>
               <div className="mb-4 grid gap-4 xl:grid-cols-[1fr_300px]">
                 <RelationshipSummary order={drawerDecision ?? drawerOrder} detail={orderDetail} />
                 <Card className="rounded-xl border border-border bg-background/60 p-4">
                   <h3 className="mb-2 font-semibold">פעולה הבאה</h3>
-                  <div className="text-sm text-muted-foreground">{String(drawerDecision?.next_action_reason ?? "לא זוהה חסם ברור")}</div>
+                  <div className="text-sm text-muted-foreground">{String(drawerDecision?.next_action_reason ?? "לא ניתן לקבוע מוכנות מהנתונים הזמינים")}</div>
                   <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                     <div className="rounded-lg border border-border bg-card/60 p-2">
                       <div className="text-muted-foreground">בעלים</div>
@@ -2194,7 +2208,7 @@ export const BinaDashboard = () => {
                 {detailValue("חסם MES", <Badge className={statusVariant(String(drawerDecision?.blocker_type))}>{valueLabel(drawerDecision?.blocker_type)}</Badge>)}
                 {detailValue("תאריך קבלה", formatDate(drawerOrder?.received_at))}
                 {detailValue("תאריך אספקה", formatDate(drawerOrder?.due_at))}
-                {detailValue("סנכרון אחרון", formatDate(drawerOrder?.synced_at))}
+                {detailValue("סנכרון אחרון", formatDate(drawerOrder?.synced_at, true))}
                 {detailValue("כמות BINA", formatNumber(drawerOrder?.bina_quantity))}
                 {detailValue("כמות מתוכננת בגסטליט", formatNumber(drawerOrder?.gestelit_planned_quantity))}
                 {detailValue("כמות טובה שדווחה", formatNumber(drawerOrder?.gestelit_completed_good))}
@@ -2210,7 +2224,7 @@ export const BinaDashboard = () => {
                 <h3 className="mb-2 font-semibold">בדיקת תפעול לפני ייבוא</h3>
                 <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
                   <div>קישור קיים: {drawerOrder?.gestelit_job_id ? "כן" : "לא"}</div>
-                  <div>שורות מקור: {formatNumber(drawerProductionRows.length || 1)}</div>
+                  <div>שורות מקור: {formatNumber(drawerProductionRows.length)}</div>
                   <div>פער כמות: {drawerOrder?.link_status === "quantity_mismatch" ? "כן - לבדוק לפני הפעלה ברצפה" : "לא זוהה"}</div>
                   <div>סיכון איחור: {drawerOrder?.link_status === "at_risk" ? "כן" : "לא זוהה"}</div>
                 </div>
@@ -2241,7 +2255,8 @@ export const BinaDashboard = () => {
                   </div>
                 </Card>
               </div>
-              <h3 className="mb-2 font-semibold">שורות ייצור</h3>
+              <h3 className="mb-2 font-semibold">פעולות ומרכיבי ייצור</h3>
+              <p className="mb-2 text-xs text-muted-foreground">כמויות הפעולות עשויות להיות בגליונות או ביחידות אחרות. כמות המוצר המוגמר נקבעת בכותרת הפק״ע.</p>
               <SimpleTable rows={drawerProductionRows} columns={[
                 { key: "source_table", label: "מקור" },
                 { key: "work_line_no", label: "שורה" },
@@ -2249,6 +2264,7 @@ export const BinaDashboard = () => {
                 { key: "planned_quantity", label: "כמות", render: (row) => formatNumber(row.planned_quantity) },
                 { key: "machine_name", label: "מכונה" },
               ]} />
+              </>}
             </div>
           </div>
         )}

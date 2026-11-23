@@ -928,7 +928,11 @@ export async function runAiTool(name: string, args: ToolArgs): Promise<AiToolRes
       ];
       return {
         name,
-        data: sanitizeToolText(profile),
+        data: sanitizeToolText({ ...profile, quantityDefinitions: {
+          finishedProduct: "workOrder.bina_quantity is the BINA header finished-product order quantity; import preserves it.",
+          operation: "productionRows.planned_quantity belongs to an operation/material unit (e.g. sheets), not an alternative finished-product quantity. Do not compare quantities across units or sum them as finished products.",
+          material: "material.required_quantity is inferred from operation rows and does not prove allocated stock or readiness.",
+        } }),
         rowCount: citations.length,
         sources: [
           "mart_bina_work_order_status",
