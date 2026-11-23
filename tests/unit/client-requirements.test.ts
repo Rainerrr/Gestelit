@@ -1,3 +1,4 @@
+import {describeRowTimestamps} from "@/lib/ai/query/row-timestamps";
 import {describe,it,expect} from 'vitest';
 import {buildFollowUpCalendar,calendarText} from '@/lib/calendar';
 import {validateSalesBusinessPlan} from '@/lib/ai/query/plan';
@@ -26,4 +27,9 @@ describe('client requirement boundaries',()=>{
   expect(()=>validateSupplierCapability({supplier_code:1,service_name:'הדפסה',unit:'יחידה',currency:'ILS',valid_from:'2026-12-01',valid_until:'2026-11-01'})).toThrow();
   expect(validateOperationTask({title:'בדיקת תחזוקה',status:'in_progress',category:'maintenance'}).status).toBe('in_progress');
  });
+});
+
+it('does not mislabel row update ranges as conflicting dataset freshness',()=>{
+ const result=describeRowTimestamps({freshness:'2026-05-04T12:00:00Z',latestSync:'2026-11-23T12:00:00Z',sourceRows:2515});
+ expect(result.freshness).toBeNull();expect(result.oldestRecordTimestamp).toBe('2026-05-04T12:00:00Z');expect(result.latestRecordTimestamp).toBe('2026-11-23T12:00:00Z');expect(result).not.toHaveProperty('latestSync');expect(result.sourceRows).toBe(2515);expect(result.timestampSemantics).toContain('Different dates are expected');
 });

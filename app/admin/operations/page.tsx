@@ -207,7 +207,7 @@ export default function OperationsPage() {
           }
         />
       }
-      aiContext={{ screen: "רכש ומשימות הנהלה", activeTab: tab, search }}
+      aiContext={{ screen: "רכש ומשימות הנהלה", activeTab: ({procurement:"ניתוח רכש",capabilities:"ספקי משנה ומחירונים",tasks:"משימות הנהלה"} as Record<string,string>)[tab], search }}
     >
       <section dir="rtl" className="min-w-0 max-w-full space-y-6">
         <div className="flex flex-wrap gap-2">

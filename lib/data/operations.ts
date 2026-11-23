@@ -1,3 +1,4 @@
+import {describeRowTimestamps} from "@/lib/ai/query/row-timestamps";
 import { createServiceSupabase } from "@/lib/supabase/client";
 import { compactDate } from "@/lib/calendar";
 export async function fetchProcurementAnalysis(
@@ -22,7 +23,7 @@ export async function fetchProcurementAnalysis(
     })
     .abortSignal(AbortSignal.timeout(20000));
   if (error || !data) throw Error("PROCUREMENT_UNAVAILABLE");
-  return data;
+  return describeRowTimestamps(data);
 }
 export function validateOperationTask(body: Record<string, unknown>) {
   const title = String(body.title ?? "").trim();

@@ -1,3 +1,4 @@
+import {describeRowTimestamps} from "./row-timestamps";
 import { createServiceSupabase } from "@/lib/supabase/client";
 import { sanitizeToolText } from "@/lib/ai/safety";
 import { validateSalesAnalyticsPlan, validateSalesBusinessPlan } from "./plan";
@@ -67,5 +68,5 @@ export async function runSalesBusinessQuery(
     );
   if (error || !data || !Array.isArray(data.rows))
     throw new Error("SALES_AI_QUERY_UNAVAILABLE");
-  return sanitizeToolText(data) as SalesQueryResult;
+  return sanitizeToolText(describeRowTimestamps(data)) as SalesQueryResult;
 }
