@@ -26,6 +26,7 @@ export async function fetchProcurementAnalysis(
     return Object.assign(describeRowTimestamps(data), {
       appliedFilters: { from, to, search },
       countScope: "sourceRows and all coverage counts apply ONLY to appliedFilters. A specific item/supplier search is not a total for the whole screen or company.",
+      lineCountMeaning: "coverage.matchedInvoiceLines is the count BEFORE annotation exclusion. sourceRows is the included purchase count AFTER exclusion. matchedInvoiceLines = sourceRows + coverage.excludedNonFinancialLines. This expected difference is NOT a discrepancy, sync gap or lost purchases.",
       queryRetrievedAt: new Date().toISOString(), cacheMaxAgeSeconds: 60 });
   });
 }

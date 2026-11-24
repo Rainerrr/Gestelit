@@ -13,6 +13,7 @@ it("keeps screen totals and item results in separate explicitly labeled scopes",
   expect(screen.appliedFilters).toEqual({ ...period, search: "" });
   expect(item.sourceRows).toBe(9);
   expect(item.appliedFilters).toEqual({ ...period, search: "500.120.102.72" });
+  expect(screen.lineCountMeaning).toContain("matchedInvoiceLines = sourceRows + coverage.excludedNonFinancialLines");
   expect(item.countScope).toContain("not a total for the whole screen");
   expect((await fetchProcurementAnalysis(period)).sourceRows).toBe(9849);
   expect(mocks.rpc).toHaveBeenCalledTimes(2);
