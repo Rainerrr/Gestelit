@@ -286,7 +286,7 @@ export default function OperationsPage() {
                 </div>
                 {!!report.coverage.excludedNonFinancialLines && (
                   <p className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
-                    {report.coverage.excludedNonFinancialLines.toLocaleString("he-IL")} שורות ללא קוד פריט, כמות או ערך כספי אינן נכללות בניתוח הרכש
+                    {report.coverage.excludedNonFinancialLines.toLocaleString("he-IL")} שורות ללא קוד פריט ממשי, כמות או ערך כספי אינן נכללות בניתוח הרכש
                     (למשל הערות והוראות בחשבונית). הן נשמרות בנתוני המקור.
                   </p>
                 )}
