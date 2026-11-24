@@ -1,3 +1,4 @@
+import { cachedFor } from "@/lib/server/memory-cache";
 import {describeRowTimestamps} from "@/lib/ai/query/row-timestamps";
 import { createServiceSupabase } from "@/lib/supabase/client";
 import { compactDate } from "@/lib/calendar";
@@ -15,15 +16,15 @@ export async function fetchProcurementAnalysis(
     Date.parse(to) - Date.parse(from) > 3660 * 86400000
   )
     throw Error("INVALID_DATE_RANGE");
-  const { data, error } = await createServiceSupabase()
-    .rpc("get_procurement_analysis", {
-      date_from: from,
-      date_to: to,
-      search_text: (input.search ?? "").trim().slice(0, 150),
-    })
-    .abortSignal(AbortSignal.timeout(20000));
-  if (error || !data) throw Error("PROCUREMENT_UNAVAILABLE");
-  return describeRowTimestamps(data);
+  const search = (input.search ?? "").trim().slice(0, 150);
+  // Shared by the admin screen and AI; no user-scoped sales data is cached here.
+  return cachedFor(`bina:procurement:${JSON.stringify([from, to, search])}`, 60_000, async () => {
+    const { data, error } = await createServiceSupabase().rpc("get_procurement_analysis", {
+      date_from: from, date_to: to, search_text: search,
+    }).abortSignal(AbortSignal.timeout(20000));
+    if (error || !data) throw Error("PROCUREMENT_UNAVAILABLE");
+    return Object.assign(describeRowTimestamps(data), { queryRetrievedAt: new Date().toISOString(), cacheMaxAgeSeconds: 60 });
+  });
 }
 export function validateOperationTask(body: Record<string, unknown>) {
   const title = String(body.title ?? "").trim();
