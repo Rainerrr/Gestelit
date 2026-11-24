@@ -23,7 +23,10 @@ export async function fetchProcurementAnalysis(
       date_from: from, date_to: to, search_text: search,
     }).abortSignal(AbortSignal.timeout(20000));
     if (error || !data) throw Error("PROCUREMENT_UNAVAILABLE");
-    return Object.assign(describeRowTimestamps(data), { queryRetrievedAt: new Date().toISOString(), cacheMaxAgeSeconds: 60 });
+    return Object.assign(describeRowTimestamps(data), {
+      appliedFilters: { from, to, search },
+      countScope: "sourceRows and all coverage counts apply ONLY to appliedFilters. A specific item/supplier search is not a total for the whole screen or company.",
+      queryRetrievedAt: new Date().toISOString(), cacheMaxAgeSeconds: 60 });
   });
 }
 export function validateOperationTask(body: Record<string, unknown>) {
