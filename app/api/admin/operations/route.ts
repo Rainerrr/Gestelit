@@ -44,7 +44,7 @@ export async function GET(request: Request) {
           ]);
           const rows = data[key] as Record<string, unknown>[];
           const keys = Object.keys(rows[0] ?? {});
-          sheet.addRow(["שורות מקור תואמות",data.sourceRows,"קבוצות בקובץ",rows.length,data[`${key}Truncated`]?"תוצאה חלקית — יש לצמצם את טווח התאריכים או החיפוש":"כל הקבוצות התואמות לחיפוש"]);
+          sheet.addRow(["שורות רכש תואמות",data.sourceRows,"שורות הערה ללא ערך שהוחרגו",data.coverage.excludedNonFinancialLines??0,"קבוצות בקובץ",rows.length,data[`${key}Truncated`]?"תוצאה חלקית — יש לצמצם את טווח התאריכים או החיפוש":"כל הקבוצות התואמות לחיפוש"]);
           sheet.addRow(keys.map(k=>labels[k]??k));
           for (const row of rows) sheet.addRow(keys.map((k) => row[k]==="UNKNOWN"?"לא ידוע":row[k] ?? ""));
           sheet.getRow(3).font={bold:true};

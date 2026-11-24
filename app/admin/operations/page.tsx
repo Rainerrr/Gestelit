@@ -25,7 +25,7 @@ type Procurement = {
   forecast: Row[];
   quartersTruncated: boolean;
   forecastTruncated: boolean;
-  coverage: { unknownUnitLines: number; unknownCurrencyLines: number };
+  coverage: { unknownUnitLines: number; unknownCurrencyLines: number; excludedNonFinancialLines?: number; matchedInvoiceLines?: number };
 };
 const states: Record<string, string> = {
   open: "פתוח",
@@ -272,7 +272,7 @@ export default function OperationsPage() {
               <>
                 <div className="grid gap-4 sm:grid-cols-3">
                   <Metric
-                    title="שורות חשבוניות בטווח"
+                    title="שורות רכש בטווח"
                     value={report.sourceRows}
                   />
                   <Metric
@@ -284,6 +284,12 @@ export default function OperationsPage() {
                     value={report.coverage.unknownCurrencyLines}
                   />
                 </div>
+                {!!report.coverage.excludedNonFinancialLines && (
+                  <p className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
+                    {report.coverage.excludedNonFinancialLines.toLocaleString("he-IL")} שורות ללא קוד פריט, כמות או ערך כספי אינן נכללות בניתוח הרכש
+                    (למשל הערות והוראות בחשבונית). הן נשמרות בנתוני המקור.
+                  </p>
+                )}
                 <div>
                   <h2 className="text-xl font-semibold">
                     מחירים לפי רבעון וספק
@@ -291,7 +297,8 @@ export default function OperationsPage() {
                   <p className="mt-2 text-sm text-muted-foreground">
                     השוואה מותרת רק לאותו קוד ותיאור פריט, באותה יחידה ובאותו
                     מטבע. מחירים היסטוריים אינם הצעות מחיר תקפות. ללא יחידה או
-                    מטבע מוגדר אין השוואה מאומתת.
+                    מטבע מוגדר אין השוואה מאומתת. הכמויות והמחירים מוצגים כפי
+                    שנרשמו ב-BINA; יחידה או מטבע חסרים אינם מושלמים בהשערה.
                   </p>
                 </div>
                 <DataTable
