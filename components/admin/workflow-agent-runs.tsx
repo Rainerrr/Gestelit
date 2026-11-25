@@ -194,7 +194,7 @@ export function WorkflowAgentRuns({ refreshKey }: { refreshKey?: unknown }) {
                 <p className="text-xs leading-relaxed text-muted-foreground">
                   מקורות: פרטי תחנה
                   {step.agent_config.includeJobContext
-                    ? ", פרטי עבודה ומוצר"
+                    ? ", פרטי עבודה ומוצר ורצף התחנות"
                     : ""}
                   {step.agent_config.includeProgress
                     ? ", דיווחי כמויות בתחנה"

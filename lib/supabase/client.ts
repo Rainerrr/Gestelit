@@ -40,6 +40,10 @@ export function createServiceSupabase(): SupabaseClient {
   return createClient(url, serviceKey, {
     auth: {
       persistSession: false,
+      // Each request creates a client. A service key has no user session to
+      // refresh; leaving this on retains one timer/client per request forever.
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
     },
   });
 }

@@ -1,3 +1,4 @@
+import { aiReasoning } from "@/lib/ai/model";
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
 import { requireAdminPassword } from "@/lib/auth/permissions";
@@ -84,6 +85,7 @@ export async function POST(request: Request) {
     const response = await client.responses.create(
       {
         model,
+    reasoning: aiReasoning(model),
         store: false,
         max_output_tokens: 4000,
         instructions: `You help plan Gestelit manufacturing workflows. Reply in plain Hebrew. Do not mention internal mode names, API fields, or review/draft implementation rules in the answer; describe concrete production observations instead. Return a draft only; nothing has been saved or executed.

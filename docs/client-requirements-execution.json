@@ -1,0 +1,12 @@
+{
+  "sources": ["Hilat 2026-07-14 CRM follow-up", "Maty 2026-08-11 sales checklist", "Yuval 2026-01-12 expansion requests"],
+  "target": "https://gestelit.onrender.com",
+  "phases": [
+    {"id": 1, "name": "Customer and reporting integrity", "deliverables": ["UUID-based customer ownership", "dynamic customer and prospect search", "own/team access isolation", "date and refresh behavior", "editable activity", "3/6 month contact queues", "personal and team Excel exports"]},
+    {"id": 2, "name": "BINA-backed sales AI", "deliverables": ["scoped customer queries", "scoped incoming production order queries", "scoped invoice queries and currency-separated rankings", "deterministic evidence and coverage", "AI answer copying", "quotes source availability explicitly distinguished"]},
+    {"id": 3, "name": "Outlook follow-ups", "deliverables": ["single-event ICS export", "private revocable personal calendar subscription", "stable event IDs and updated dates", "no invitation sending", "one-way Outlook subscription instructions"]},
+    {"id": 4, "name": "Purchasing and operations", "deliverables": ["verified supplier-invoice line relationships", "quarterly price comparisons by same item/unit/currency", "24-month purchasing history", "quarterly planning estimates with assumptions", "subcontractor capability and price records", "management task board", "machine/compressor maintenance reporting"]},
+    {"id": 5, "name": "Acceptance and release", "deliverables": ["database read-back and denial tests", "bounded AI question suite", "admin and two salesperson UI flows", "desktop/mobile RTL review", "production image deployment", "production verification and fixture cleanup"]}
+  ],
+  "constraints": ["Source BINA remains read-only", "No guessing missing prices, currencies, quote status, or historical contacts", "No changes to real salesperson passwords", "No unrequested emails or invitations", "Do not equate invoices, production orders, quotes, and human contact"]
+}

@@ -1,6 +1,7 @@
+"use client";
 import { CalendarPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { buildSalesFollowUpCalendarUrl } from "@/lib/calendar";
+import { buildSalesFollowUpCalendarUrl, buildFollowUpCalendar } from "@/lib/calendar";
 import { cn } from "@/lib/utils";
 
 type AddToCalendarButtonProps = {
@@ -71,8 +72,15 @@ export function AddToCalendarButton({
         href={calendarUrl}
         target="_blank"
         rel="noreferrer"
-        title="הוספה ליומן Google"
-        aria-label="הוספת המשימה ליומן Google"
+        title="הוספת המשימה ליומן Outlook או Apple Calendar"
+        aria-label="הוספת המשימה ליומן Outlook"
+        onClick={(event) => {
+          event.preventDefault();
+          const content = buildFollowUpCalendar([{ id: crypto.randomUUID(), date, customerName, customerCode, nextAction, calendarNote, eventTypeLabel, contactPerson, salesperson, estimatedRevenue, currency }]);
+          const url = URL.createObjectURL(new Blob([content], { type: "text/calendar;charset=utf-8" }));
+          const link = document.createElement("a"); link.href = url; link.download = "gestelit-follow-up.ics"; link.click();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }}
       >
         <CalendarPlus className="h-3.5 w-3.5" />
         הוסף ליומן

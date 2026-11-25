@@ -55,6 +55,21 @@ describe("AI evidence retrieval", () => {
     expect(mocks.fetchBinaSuppliers).toHaveBeenCalledWith({ search: undefined, supplierCode: 60305, limit: 3 });
     expect(mocks.fetchBinaFinance).toHaveBeenCalledWith({ search: undefined, partyCode: 60305, partyType: "supplier", limit: 3 });
   });
+  it("uses the recent open candidate set for new jobs without restricting historical search", async () => {
+    await runAiTool("get_new_bina_job_candidates", { limit: 3 });
+    expect(mocks.fetchBinaWorkOrders).toHaveBeenLastCalledWith({ limit: 3, dateFrom: "2024-11-01", incomingOnly: true });
+    await runAiTool("search_bina_work_orders", { search: "381", limit: 1 });
+    expect(mocks.fetchBinaWorkOrders).toHaveBeenLastCalledWith({ search: "381", limit: 1 });
+  });
+  it("does not turn unimported orders into a risk backlog", async () => {
+    mocks.fetchBinaWorkOrders.mockResolvedValue({ rows: [
+      { bina_id: "new", gestelit_job_id: null, link_status: "not_imported" },
+      { bina_id: "active", gestelit_job_id: "job", link_status: "at_risk" },
+    ], count: 2 });
+    const result = await runAiTool("get_late_or_risky_work_orders", { limit: 3 });
+    expect(result.rowCount).toBe(1);
+    expect(JSON.stringify(result.data)).not.toContain('"new"');
+  });
   it("bounds negative and oversized tool limits", async () => {
     await runAiTool("search_bina_work_orders", { limit: -10 });expect(mocks.fetchBinaWorkOrders).toHaveBeenLastCalledWith({ search: undefined, limit: 1 });
     await runAiTool("search_bina_work_orders", { limit: 100000 });expect(mocks.fetchBinaWorkOrders).toHaveBeenLastCalledWith({ search: undefined, limit: 50 });

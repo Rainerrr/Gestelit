@@ -208,18 +208,14 @@ export function JobProgressBar({
   const sScrapRight = pGoodW + sGoodW + pScrapW;
   const totalFilledPct = pGoodW + sGoodW + pScrapW + sScrapW;
 
-  // Overlay text: RTL order — planned first, then produced (read right-to-left)
-  // Always shows total (good + scrap) as progress
+  // Numeric ratios render LTR: reported units / target units.
   const totalProducedAll = totalGood + totalScrap;
   const overlayText = useMemo(() => {
     if (displayMode === "percentage") {
       return `${totalPct}%`;
     }
-    if (isOverflow) {
-      return `${plannedQuantity.toLocaleString()} / ${totalProducedAll.toLocaleString()}`;
-    }
-    return `${plannedQuantity.toLocaleString()} / ${totalProducedAll.toLocaleString()}`;
-  }, [displayMode, totalPct, totalProducedAll, plannedQuantity, isOverflow]);
+    return `${totalProducedAll.toLocaleString()} / ${plannedQuantity.toLocaleString()}`;
+  }, [displayMode, totalPct, totalProducedAll, plannedQuantity]);
 
   // Resolve tooltip text color per segment key
   const getTooltipTextColor = useCallback((key: string) => {
@@ -320,9 +316,23 @@ export function JobProgressBar({
 
   return (
     <div className={cn("space-y-0", className)}>
+        {(size === "sm" || !showOverlay) && (
+          <div className="mb-1 flex items-center justify-between gap-2 text-xs tabular-nums">
+            <span className="text-muted-foreground">התקדמות</span>
+            <span dir="ltr" className="font-mono font-semibold" aria-label={`התקדמות: ${overlayText}`}>
+              {overlayText}
+            </span>
+          </div>
+        )}
         {/* Bar Container */}
         <div
           ref={barRef}
+          role="progressbar"
+          aria-label="התקדמות ייצור"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.min(100, Math.max(0, totalPct))}
+          aria-valuetext={`${totalGood.toLocaleString()} תקינים, ${totalScrap.toLocaleString()} פסולים, יעד ${plannedQuantity.toLocaleString()}`}
           className={cn(
             "relative w-full overflow-visible rounded-lg",
             "border-2 bg-muted/50",
@@ -390,8 +400,7 @@ export function JobProgressBar({
                 "absolute inset-0 flex items-center justify-center gap-1.5 z-10 pointer-events-none",
                 sizeConfig.font,
                 "font-bold font-mono tabular-nums tracking-tight",
-                "drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]",
-                isFullyProduced ? "text-emerald-100" : totalFilledPct > 50 ? "text-white" : "text-foreground"
+                isFullyProduced ? "text-emerald-100 drop-shadow-sm" : totalFilledPct > 50 ? "text-white drop-shadow-sm" : "text-foreground"
               )}
             >
               <span>{overlayText}</span>
@@ -434,7 +443,7 @@ export function JobProgressBar({
           className="absolute top-0 flex flex-col items-center"
           style={isOverflow
             ? { right: `${tickPosition}%`, transform: "translateX(50%)" }
-            : { left: 0, transform: "translateX(-50%)" }
+            : { left: 0 }
           }
         >
           <div
@@ -449,7 +458,7 @@ export function JobProgressBar({
               isOverflow ? "text-amber-400 font-bold" : "text-amber-500/80"
             )}
           >
-            100%
+            יעד 100%
           </span>
         </div>
       </div>

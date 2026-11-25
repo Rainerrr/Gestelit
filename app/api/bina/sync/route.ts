@@ -1,3 +1,5 @@
+import { clearMemoryCache } from "@/lib/server/memory-cache";
+import { upsertBinaBatches } from "@/lib/bina/sync-batches";
 import { NextResponse } from "next/server";
 import { createServiceSupabase } from "@/lib/supabase/client";
 
@@ -239,7 +241,7 @@ export async function POST(request: Request) {
   const runId = await insertSyncRun(supabase, payload);
   const results: Record<
     string,
-    { upserted: number; error?: string }
+    { upserted: number; changed?: number; unchanged?: number; error?: string }
   > = {};
   let sentCount = 0;
   let upsertedCount = 0;
@@ -270,29 +272,33 @@ export async function POST(request: Request) {
     sentCount += rows.length;
     const rowSummary = summarizeRows(rows);
 
-    const { error } = await supabase
-      .from(supabaseTable)
-      .upsert(rows, {
-        onConflict: "bina_id",
-        ignoreDuplicates: false,
-      });
+    let changed = 0;
+    const { error, upserted } = await upsertBinaBatches(rows, async (batch) => {
+      const result = await supabase.rpc("sync_bina_changed_rows", { p_table: supabaseTable, p_rows: batch });
+      if (!result.error) changed += Number(result.data.changed);
+      return { error: result.error };
+    });
+    // Invalidate even after partial success: the committed prefix is real data.
+    if (changed > 0) clearMemoryCache("bina:");
+    const counts = { changed, unchanged: upserted - changed };
 
     if (error) {
-      results[tableName] = { upserted: 0, error: error.message };
-      failedCount += rows.length;
+      results[tableName] = { upserted, ...counts, error: error.message };
+      failedCount += rows.length - upserted;
+      upsertedCount += upserted;
       await insertSyncTableRun(supabase, runId, {
         source_table: tableName,
         storage_table: supabaseTable,
         status: "error",
         sent_count: rows.length,
-        upserted_count: 0,
-        failed_count: rows.length,
+        upserted_count: upserted,
+        failed_count: rows.length - upserted,
         ...rowSummary,
         error: error.message,
-        metadata: {},
+        metadata: { ...counts, upserted_count_semantics: "accepted source rows, including unchanged" },
       });
     } else {
-      results[tableName] = { upserted: rows.length };
+      results[tableName] = { upserted: rows.length, ...counts };
       upsertedCount += rows.length;
       await insertSyncTableRun(supabase, runId, {
         source_table: tableName,
@@ -303,11 +309,12 @@ export async function POST(request: Request) {
         failed_count: 0,
         ...rowSummary,
         error: null,
-        metadata: {},
+        metadata: { ...counts, upserted_count_semantics: "accepted source rows, including unchanged" },
       });
     }
   }
 
+  clearMemoryCache("bina:sync-status");
   const hasUpsertErrors = Object.values(results).some((result) => result.error);
   if (hasUpsertErrors) {
     await finishSyncRun(supabase, runId, {

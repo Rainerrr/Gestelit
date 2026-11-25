@@ -1,3 +1,10 @@
+import { BINA_OPERATIONAL_START } from "@/lib/bina/operational-scope";
+import {fetchProcurementAnalysis,procurementSearchFeedback} from "@/lib/data/operations";
+import {fetchMaintenanceStations} from "@/lib/data/maintenance";
+import {createServiceSupabase} from "@/lib/supabase/client";
+import { fetchActiveJobsWithProgress } from "@/lib/data/admin-dashboard";
+import { fetchBinaWeekly } from "@/lib/data/bina-weekly";
+import { buildOverview, israelDate } from "@/lib/manufacturing/overview";
 import { analyticsQueryTool } from "@/lib/ai/query/plan";
 import { runAnalyticsQuery } from "@/lib/ai/query/execute";
 import { selectMetricTrust } from "@/lib/ai/metric-trust";
@@ -99,7 +106,21 @@ function rowsResult(name: string, rows: unknown[], sources: string[], freshness?
 }
 
 export const aiToolDefinitions = [
+  {type:"function" as const,name:"get_procurement_analysis",description:"Read verified supplier-invoice lines grouped by quarter, exact item code AND description, unit, currency, and supplier. Default last 24 months. Use for paper/material purchasing history and quarterly supplier-price comparisons. Never compare different items/units/currencies or unknown units/currencies. Weighted unit_price is historical recorded price, not an approved current quote. Quarterly baseline = positive purchased quantity / days * 91.3125; excludes returns, does not account for stock, open orders, seasonality or demand, never an automatic purchase recommendation. For screen-wide totals plus an item example, query the screen filters first and query the item separately if needed. appliedFilters defines the scope of ALL counts; never label item-filtered counts as screen totals. sourceRows covers financial/coded joined invoice lines only; coverage.excludedNonFinancialLines counts blank/underscore-code rows with zero/missing quantity, price and amount, excluded as annotations, not missing purchases; result groups may be truncated. Do not sum currencies or treat supplier invoice lines as receipt headers. Narrow search when output is truncated. search is a SINGLE LITERAL SUBSTRING in the source language, e.g. נייר; never use OR, AND, regex or SQL syntax. Coverage contracts for BakashaNigrar/Tovin do not describe these HeshSapak supplier invoices.",parameters:{type:"object",properties:{from:{type:"string",description:"YYYY-MM-DD"},to:{type:"string",description:"YYYY-MM-DD"},search:{type:"string"}},additionalProperties:false}},
+  {type:"function" as const,name:"get_operations_workspace",description:"Read management tasks including completed tasks, manually maintained subcontractor capabilities/price lists and station maintenance schedules. Optional search filters task title, responsible person or details. No writes or notifications. Price list entries may be expired; check valid_until and currency. Named responsibility is a task assignment label, not authorization. Compressor maintenance appears only if configured in stations. Never infer completed service from a planned date.",parameters:{type:"object",properties:{search:{type:"string",description:"Optional task title, owner or detail search"}},additionalProperties:false}},
+  {
+    type: "function" as const,
+    name: "get_bina_weekly_snapshot",
+    description: "Read a seven-day BINA snapshot for incoming work orders (receipt date TarikKabala, NOT the often-null created_at), purchasing by document date, and station routes for those incoming orders. Default previous Sunday-Saturday in Israel. Fully paginated synced cache for the week, source coverage still partial. Station rows/unique jobs are route evidence, NOT total weekly output, current station occupancy, or bottlenecks. datedCompleteRows counts route rows with a recorded end date in the period, not produced units. reportedCompleteRows counts current status code 2, not necessarily completed during that week. missingPurchaseDateCount counts purchasing rows without document dates across the cache, excluded from weekly totals; do not call their absence zero purchase requests. purchaseSuppliers contains exact precomputed per-supplier document counts and linked job IDs; use these, never manually recount row arrays. No monetary totals or stock availability inference. Use first for BINA weekly/incoming-order and associated station questions.",
+    parameters: { type: "object", properties: { start: { type: "string", description: "Inclusive first business date YYYY-MM-DD; range is exactly 7 days." } }, additionalProperties: false },
+  },
   analyticsQueryTool,
+  {
+    type: "function" as const,
+    name: "get_gestelit_manufacturing_overview",
+    description: "Read the actual Gestelit manufacturing overview: open jobs including those without active worker sessions, due dates, missing setup, cumulative terminal good/scrap, and per-product station routes. Use FIRST for Gestelit manufacturing overview/job queue questions; this is distinct from the partial BINA ERP cache. Active-session counts do not establish production or stoppage. Old demo/test records may be present.",
+    parameters: { type: "object", properties: { search: { type: "string" }, limit: { type: "number" } }, additionalProperties: false },
+  },
   {
     type: "function" as const,
     name: "get_bina_dashboard_summary",
@@ -189,8 +210,14 @@ export const aiToolDefinitions = [
   },
   {
     type: "function" as const,
+    name: "get_new_bina_job_candidates",
+    description: "Use for choosing or suggesting a NEW manufacturing job from BINA. Returns latest open, not-yet-linked orders since November 2024, newest receipt date first. Not being imported is normal during onboarding, never a backlog or risk. Review route, files and materials before starting.",
+    parameters: { type: "object", properties: { limit: { type: "number" } }, additionalProperties: false },
+  },
+  {
+    type: "function" as const,
     name: "get_late_or_risky_work_orders",
-    description: "Get BINA work orders that are late, risky, quantity mismatched, or not imported into Gestelit.",
+    description: "Get linked operational work orders since November 2024 with late or quantity-mismatch issues. Unimported BINA orders are not risks.",
     parameters: {
       type: "object",
       properties: {
@@ -547,6 +574,55 @@ export async function runAiTool(name: string, args: ToolArgs): Promise<AiToolRes
   const limit = Math.max(1, Math.min(Math.floor(numberArg(args, "limit", 20)), Number(process.env.AI_MAX_ROWS ?? 50)));
 
   switch (name) {
+    case "get_procurement_analysis": {
+      const search=stringArg(args,"search")??"";
+      const feedback=procurementSearchFeedback(search);
+      if(feedback)return {name,data:feedback,rowCount:0,sources:[],freshness:null};
+      const data=await fetchProcurementAnalysis({from:stringArg(args,"from"),to:stringArg(args,"to"),search:stringArg(args,"search")});
+      return {name,data:sanitizeToolText({...data,quarters:data.quarters.slice(0,60),suppliers:data.suppliers.slice(0,30),forecast:data.forecast.slice(0,60),quartersTruncated:data.quartersTruncated||data.quarters.length>60,suppliersTruncated:data.suppliers.length>30,forecastTruncated:data.forecastTruncated||data.forecast.length>60,toolOutputLimits:{quarters:60,suppliers:30,forecast:60},sourceTables:["HeshSapakRashi","HeshSapakNigrar"],coverageInterpretation:"Only supplier-invoice lines joined to unambiguous headers, excluding blank/underscore-code annotations with zero/missing quantity, price and amount. The exclusion count is in coverage.excludedNonFinancialLines; these records remain in the raw source. matchedInvoiceLines equals sourceRows plus excludedNonFinancialLines: it is the before-exclusion count, not a conflicting count or missing-data warning. Completeness against BINA is not established by this query. Contracts for purchase requests (BakashaNigrar) or goods receipts (Tovin) do not establish supplier-invoice coverage."}),rowCount:data.sourceRows,sources:["mart_procurement_invoice_lines"],freshness:data.freshness};
+    }
+    case "get_operations_workspace": {
+      const db=createServiceSupabase();
+      const search=(stringArg(args,"search")??"").trim().slice(0,150);
+      const taskQuery=db.from("operations_tasks").select("title,owner_name,status,due_date,category,description,updated_at");
+      // Literal substring matching is applied after a bounded retrieval; never interpolate model text into PostgREST filter syntax.
+      const [tasks,capabilities,maintenance]=await Promise.all([taskQuery.order("updated_at",{ascending:false}).limit(500),db.from("supplier_capabilities").select("supplier_code,service_name,unit,unit_price,currency,valid_from,valid_until,notes").eq("is_active",true).limit(100),fetchMaintenanceStations()]);
+      if(tasks.error||capabilities.error)throw Error("OPERATIONS_UNAVAILABLE");
+      return {name,data:sanitizeToolText({tasks:(tasks.data??[]).filter(task=>!search||`${task.title} ${task.owner_name} ${task.description}`.toLocaleLowerCase().includes(search.toLocaleLowerCase())).slice(0,100).map(task=>({...task,status_label:({open:"פתוח",in_progress:"בטיפול",done:"הושלם",cancelled:"בוטל"} as Record<string,string>)[task.status]})),taskSearch:search,taskSourceTruncated:(tasks.data?.length??0)>=500,capabilities:capabilities.data,maintenance,limit:100,coverage:"current_application_records; tasks searched within latest 500 updated records, output limited to 100; capability list limited to 100; not guaranteed complete"}),rowCount:(tasks.data?.length??0)+(capabilities.data?.length??0)+maintenance.length,sources:["operations_tasks","supplier_capabilities","stations"],freshness:null};
+    }
+    case "get_bina_weekly_snapshot": {
+      const snapshot = await fetchBinaWeekly(stringArg(args, "start"));
+      return { name, data: sanitizeToolText({ ...snapshot, metricDefinitions: { stations: "distinctOrderCount counts distinct incoming work orders; rows counts route operations, NOT jobs or completed production", preparation: "Never recommend sent/shipped/completed/cancelled orders for preparation. Remaining candidates still need file, material and station checks." }, preparationCandidates: snapshot.orders.filter((order) => !/נשלח|נשלחה|בוטל|בוטלה|הושלם|הושלמה|סגור|סגורה|shipped|sent|complete|cancel/i.test(order.status)).slice(0, 100), orders: snapshot.orders.slice(0, 100), purchases: snapshot.purchases.slice(0, 100), detailTruncated: snapshot.orders.length > 100 || snapshot.purchases.length > 100 }), rowCount: snapshot.orderCount + snapshot.purchaseCount, sources: ["bina_dfhazmrashi", "bina_dfshelita", "mart_bina_purchase_flow"], freshness: snapshot.latestSync };
+    }
+    case "get_gestelit_manufacturing_overview": {
+      const snapshot = buildOverview(await fetchActiveJobsWithProgress({ includeWaiting: true }), israelDate());
+      const search = (stringArg(args, "search") ?? "").trim().toLocaleLowerCase();
+      const matching = snapshot.rows.filter(row => `${row.job.job_number} ${row.job.customer_name ?? ""}`.toLocaleLowerCase().includes(search));
+      const selected = matching.slice(0, limit);
+      const fetchedAt = new Date().toISOString();
+      const rows = selected.map(row => ({
+        id: row.job.id, job_number: row.job.job_number, customer_name: row.job.customer_name,
+        due_date: row.job.due_date, overdue: row.overdue, due_today: row.dueToday,
+        needs_setup: row.needsSetup, active_sessions: row.activeSessionCount,
+        planned: row.planned, terminal_good: row.good, terminal_scrap: row.scrap,
+        completion_percent: row.percent,
+        products: row.jobItems.map(item => ({ name: item.jobItem.name, planned: item.plannedQuantity,
+          terminal_good: item.completedGood, terminal_scrap: item.completedScrap,
+          stations: item.wipDistribution.map(step => ({ name: step.stationName, position: step.position,
+            terminal: step.isTerminal, good_reported: step.goodReported, scrap_reported: step.scrapReported })) })),
+      }));
+      return {
+        name, rowCount: rows.length, freshness: fetchedAt,
+        sources: ["jobs", "job_items", "job_item_steps", "job_item_progress", "wip_balances", "sessions"],
+        data: sanitizeToolText({ rows, totalMatching: matching.length, truncated: matching.length > rows.length,
+          summary: { openJobs: snapshot.rows.length, overdue: snapshot.overdue, dueToday: snapshot.dueToday, needsSetup: snapshot.needsSetup, withoutSession: snapshot.waiting },
+          observedAt: fetchedAt,
+          scope: "Saved Gestelit jobs, not all BINA orders. Explicitly classified demo/test records are excluded. Unclassified local records remain and are not necessarily BINA-linked. Completion includes terminal scrap and is capped per product. Quantities span each job lifetime, not today. No active session does not mean a malfunction. Stoppage status, capacity and material availability are not established by this tool." }),
+        citations: selected.map(row => ({ source_view: "jobs + job_item_progress", grain: "job", key: row.job.id,
+          label: `עבודה ${row.job.job_number}`, synced_at: fetchedAt, confidence: "exact" as const,
+          fields_used: ["job_number", "due_date", "planned_quantity", "completed_good", "completed_scrap"] })),
+      };
+    }
     case "query_analytics": return runAnalyticsQuery(args);
     case "get_bina_dashboard_summary": {
       const summary = await fetchBinaDashboardSummary();
@@ -773,9 +849,13 @@ export async function runAiTool(name: string, args: ToolArgs): Promise<AiToolRes
         sources: ["semantic-catalog", "stg_*", "mart_*"],
       };
     }
+    case "get_new_bina_job_candidates": {
+      const { rows } = await fetchBinaWorkOrders({ limit, dateFrom: BINA_OPERATIONAL_START, incomingOnly: true });
+      return rowsResult(name, rows, ["mart_bina_incoming_work_orders"]);
+    }
     case "get_late_or_risky_work_orders": {
-      const { rows } = await fetchBinaWorkOrders({ limit: 200 });
-      const risky = rows.filter((row) => row.link_status !== "linked").slice(0, limit);
+      const { rows } = await fetchBinaWorkOrders({ limit: 200, dateFrom: BINA_OPERATIONAL_START });
+      const risky = rows.filter((row) => row.gestelit_job_id && ["at_risk", "quantity_mismatch"].includes(row.link_status)).slice(0, limit);
       return rowsResult(name, risky, ["mart_bina_work_order_status", "mart_gestelit_bina_reconciliation"]);
     }
     case "compare_bina_order_to_gestelit_job": {
@@ -880,7 +960,11 @@ export async function runAiTool(name: string, args: ToolArgs): Promise<AiToolRes
       ];
       return {
         name,
-        data: sanitizeToolText(profile),
+        data: sanitizeToolText({ ...profile, quantityDefinitions: {
+          finishedProduct: "workOrder.bina_quantity is the BINA header finished-product order quantity; import preserves it.",
+          operation: "productionRows.planned_quantity belongs to an operation/material unit (e.g. sheets), not an alternative finished-product quantity. Do not compare quantities across units or sum them as finished products.",
+          material: "material.required_quantity is inferred from operation rows and does not prove allocated stock or readiness.",
+        } }),
         rowCount: citations.length,
         sources: [
           "mart_bina_work_order_status",

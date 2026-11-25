@@ -1,3 +1,4 @@
+import { aiReasoning } from "@/lib/ai/model";
 import { sanitizeScreenContext } from "@/lib/ai/screen-context";
 import OpenAI from "openai";
 import { createAiSession, getAiConversationHistory, logAiMessage, logAiSecurityEvent, logAiToolCall, logAiUsage } from "@/lib/ai/audit";
@@ -89,20 +90,12 @@ function parseToolArgs(raw: string | null | undefined): Record<string, unknown> 
 }
 
 function extractText(response: OpenAI.Responses.Response): string {
-  const outputText = response.output_text;
-  if (outputText) return outputText;
-
-  const chunks: string[] = [];
-  for (const item of response.output as unknown as Array<Record<string, unknown>>) {
-    const content = item.content;
-    if (!Array.isArray(content)) continue;
-    for (const part of content as Array<Record<string, unknown>>) {
-      if (typeof part.text === "string") {
-        chunks.push(part.text);
-      }
-    }
-  }
-  return chunks.join("\n");
+  if (response.status !== "completed") throw new Error("AI_INCOMPLETE");
+  const messages = response.output.filter((item) => item.type === "message");
+  // A tool-loop commentary preamble is never the final structured answer.
+  if (messages.length) return messages.filter((item) => item.phase !== "commentary")
+    .flatMap((item) => item.content.flatMap((part) => part.type === "output_text" ? [part.text] : [])).join("\n");
+  return response.output_text ?? "";
 }
 
 function getFunctionCalls(response: OpenAI.Responses.Response) {
@@ -191,10 +184,20 @@ export async function runBinaAiChat(request: AiChatRequest): Promise<AiChatRespo
     `Current date in Asia/Jerusalem: ${new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jerusalem", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date())}. Use this date to distinguish past-due, due-today, and future tasks.`,
     "Be proactive and opinionated: after every answer, suggest the most useful next question, comparison, or operational check.",
     "Look for cross-domain conclusions across BINA ERP and Gestelit floor data, especially production risk, purchasing blockers, supplier delays, finance/sales context, delivery status, and sync freshness.",
+    "For questions about Gestelit manufacturing overview, open local jobs, station routes or the screen queue, call get_gestelit_manufacturing_overview FIRST. It reads the actual application data, unlike BINA ERP tools. Keep saved Gestelit job counts distinct from BINA cache coverage. Do not infer stoppage from absence of active sessions.",
     "Use the supplied screen context to tailor the answer to the user's current tab, filters, and selected entity.",
+    "Resolve 'this job', 'this customer', 'this station' and the current date range from selectedEntity and filters; verify IDs with tools. Explicit user requests override screen defaults. If the entity is ambiguous, ask a focused question rather than running a company-wide query.",
+    "Prefer the narrowest relevant tool and indexed entity/date filters. Do not fetch every domain for a screen-specific question or repeat identical successful tool calls. Screen summaries are hints, not verified database facts. Distinguish BINA planned orders/materials from Gestelit actual floor progress.",
+    "For BINA weekly incoming jobs, use get_bina_weekly_snapshot FIRST. It filters the actual receipt date; created_at may be null and must not be used to infer zero incoming orders. Its station evidence covers routes of the received jobs, not all factory output during the week. Preserve the exact selected seven-day period. Source sync time is not the business event date.",
+    "Count station jobs with distinctOrderCount, never rows (operations). For job preparation use preparationCandidates, exclude sent/shipped/closed/cancelled jobs and disclose missing files/materials. A candidate is not confirmed ready to start.",
+    "For incoming/received work-order questions query work_orders.received_at, never purchasing.document_at or created_at. Choose the dataset that measures the requested business entity; screen context must not override the question.",
     "For ad hoc filters, grouping or comparisons beyond existing tool presets, use query_analytics with a JSON plan. Never output or execute free-form SQL. Its counts cover filtered synced cache only; disclose source/output truncation and missing coverage. If unavailable, use approved fixed tools and say the custom query could not be verified.",
-    "Format answer as readable short paragraphs and bullet points. Answer follow-up questions directly in the existing conversation; avoid repeating a full briefing unless asked.",
+    "For BINA work-order planned/order quantities, use bina_quantity. gestelit_planned_quantity and gestelit_completed_good belong to the linked Gestelit job, never BINA. A missing/zero linked Gestelit quantity cannot answer a BINA quantity question. Read measureDefinitions before interpreting m0/m1; re-query the correct field if it does not match the question.",
+    "Manufacturing operational scope starts 2024-11-01. The team is starting to use Gestelit now: historical unimported BINA work orders are NOT a backlog, failure, or obligation to import. When suggesting a NEW job, call get_new_bina_job_candidates and use newest received_at first, excluding closed/shipped/cancelled and already-linked jobs. Do not choose oldest overdue jobs. All earlier history remains accessible through historical search and NLQ when explicitly relevant to the question or correlation; do not silently apply the operational cutoff to historical analysis.",
+    "Finished-product quantity is the BINA work-order header bina_quantity. Production-row planned_quantity and material required_quantity are operation/material quantities (for example sheets), may use different units, and are NOT alternative finished-product quantities. Do not call their numerical difference a mismatch without evidence of identical units and scope. State both separately when relevant; do not ask the user to choose between them. Import uses one finished product with the header quantity and a reviewed route.",
+    "Format Hebrew answers with short paragraphs, clear bold headings and real bullet lists. Never use pipe-delimited rows or ASCII separators. For jobs, put the job number and customer in a bold heading, then separate labeled bullets for BINA quantity, due date and action. Write dates with Hebrew month names (24 בנובמבר 2026), ranges with עד, and avoid ambiguous numeric date ranges. Keep Latin machine identifiers exactly as supplied. Answer follow-up questions directly in the existing conversation; avoid repeating a full briefing unless asked.",
     "When a user asks a broad question, use broad overview/comparison tools before narrow search tools.",
+    "If a question asks both current-screen totals and a specific-item example, these are TWO scopes. First retrieve totals using the screen filters exactly (including empty search), then retrieve item details separately if needed. Never substitute an item-filtered count for the screen total. Check appliedFilters/countScope in every tool result; explicitly label narrower counts. Different filter sets are not duplicate queries.",
     "Use everyday Hebrew business language in answer and suggestedNextAction. Refer to business concepts such as תאריך אספקה, סוג פעילות and מועד פולואפ, never raw schema identifiers such as due_at, event_type or sales_user_id. Technical source/view names belong only in source/evidence metadata.",
     "Never ask the user how the database schema or internal fields work. Explain a coverage gap in business terms and suggest a practical check instead.",
     "Answer in Hebrew unless the user clearly asks otherwise.",
@@ -206,7 +209,7 @@ export async function runBinaAiChat(request: AiChatRequest): Promise<AiChatRespo
     "Do not characterize workload or exposure as moderate, normal, low, or a crisis without a sourced threshold or historical comparison.",
     "For sent-but-open deliveries, query delivery_state=sent_open. draft_or_unknown does not establish dispatch or an open delivery, even if received_flag is zero.",
     "Never claim an action was performed or a message was sent: all tools are read-only or draft-only.",
-    "BINA data is synced periodically; always mention freshness when available.",
+    "BINA data is synced periodically; always mention freshness when available. Row timestamp ranges are not full-sync watermarks. Apply coverage contracts only to the source table they describe: Bakasha/Tovin coverage cannot establish HeshSapak invoice coverage. A tool validation error is not a zero-row query result.",
     "Prefer evidence-grade tools when a claim connects work orders, suppliers, invoices, deliveries, finance, or purchasing.",
     "Do not state a cross-domain link as fact unless tool citations show exact confidence or explicit join keys. Otherwise mark it as inferred or missing data.",
     "Use tool citation labels as evidence when available.",
@@ -227,6 +230,7 @@ export async function runBinaAiChat(request: AiChatRequest): Promise<AiChatRespo
 
   let currentResponse = await client.responses.create({
     model,
+    reasoning: aiReasoning(model),
     instructions: system,
     input: [...history, { role: "user", content: initialInput }],
     tools: openAiTools(),
@@ -273,6 +277,7 @@ export async function runBinaAiChat(request: AiChatRequest): Promise<AiChatRespo
         if (call.name === "query_analytics" && result.data && typeof result.data === "object" && "sourceTruncated" in result.data && result.data.sourceTruncated === true) {
           queryWarnings.add("הדירוג או הרשומות האחרונות מתייחסים למדגם מוגבל שאינו מדורג מראש; אי אפשר להסיק ממנו דירוג או עדכניות בכלל הנתונים.");
         }
+        if (call.name === "get_bina_weekly_snapshot") queryWarnings.add("הנתונים אומתו בעותק המסונכרן בלבד; הכיסוי מול BINA חלקי. רשומות ללא תאריך עסקי אינן משויכות לשבוע.");
         result.sources.forEach((source) => sources.add(source));
         result.citations?.forEach((citation) => sources.add(citation.source_view));
         citations.push(...(result.citations ?? []));
@@ -310,6 +315,7 @@ export async function runBinaAiChat(request: AiChatRequest): Promise<AiChatRespo
 
     currentResponse = await client.responses.create({
       model,
+      reasoning: aiReasoning(model),
       instructions: system,
       previous_response_id: currentResponse.id,
       input: toolOutputs,
@@ -328,9 +334,10 @@ export async function runBinaAiChat(request: AiChatRequest): Promise<AiChatRespo
   if (getFunctionCalls(currentResponse).length > 0) {
     currentResponse = await client.responses.create({
       model,
+      reasoning: aiReasoning(model),
       instructions: system,
       previous_response_id: currentResponse.id,
-      input: "Tool budget is exhausted. Produce the best structured answer from the approved tool results already available.",
+      input: getFunctionCalls(currentResponse).map((call) => ({ type: "function_call_output" as const, call_id: call.call_id, output: JSON.stringify({ error: "TOOL_CALL_LIMIT_REACHED", instruction: "Produce the final answer using verified results already available." }) })),
       text: { format: AI_RESPONSE_FORMAT, verbosity: "medium" },
     }, { signal: request.signal });
     await logAiUsage({

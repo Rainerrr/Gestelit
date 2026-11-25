@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { fetchBinaDashboardSummary, fetchBinaOverview } from "@/lib/data/bina";
+import { fetchBinaManufacturingOverview } from "@/lib/data/bina";
 import { requireBinaAdmin, routeError } from "../_route-utils";
 import { cachedFor } from "@/lib/server/memory-cache";
 
@@ -9,11 +9,8 @@ const CACHE_TTL_MS = 2 * 60 * 1000;
 export async function GET(request: Request) {
   try {
     await requireBinaAdmin(request);
-    const [overview, dashboard] = await Promise.all([
-      cachedFor("bina:overview", CACHE_TTL_MS, fetchBinaOverview),
-      cachedFor("bina:dashboard-summary", CACHE_TTL_MS, fetchBinaDashboardSummary),
-    ]);
-    return NextResponse.json({ overview, dashboard });
+    const overview = await cachedFor("bina:manufacturing-overview:2024-11", CACHE_TTL_MS, fetchBinaManufacturingOverview);
+    return NextResponse.json({ overview });
   } catch (error) {
     return routeError(error, "BINA_OVERVIEW_FAILED");
   }

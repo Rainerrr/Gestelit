@@ -10,7 +10,7 @@ vi.mock("@/lib/ai/tools/bina-tools", () => ({ aiToolDefinitions: [], runAiTool: 
 import { runBinaAiChat } from "@/lib/ai/chat-orchestrator";
 
 function response(answer = "תשובה", overrides = {}) {
-  return { id: "response-id", output: [], output_text: JSON.stringify({ answer, sources: ["invented-source"], freshness: "2099-01-01", confidence: "exact", filtersUsed: {}, suggestedNextAction: "בדוק מקור", couldNotVerify: [], ...overrides }) };
+  return { id: "response-id", status: "completed", output: [], output_text: JSON.stringify({ answer, sources: ["invented-source"], freshness: "2099-01-01", confidence: "exact", filtersUsed: {}, suggestedNextAction: "בדוק מקור", couldNotVerify: [], ...overrides }) };
 }
 function calls(names = ["search_bina_work_orders"]) {
   return { id: "tool-response", output: names.map((name, i) => ({ type: "function_call", name, arguments: '{"limit":3}', call_id: String(i) })) };
@@ -63,7 +63,7 @@ describe("AI conversation and evidence boundaries", () => {
     expect(mocks.create.mock.calls[1][0].input[0].output).toContain("TOOL_FAILED");
   });
   it("returns a clear missing-data response when structured output is invalid", async () => {
-    mocks.create.mockResolvedValue({ id: "x", output: [], output_text: "unvalidated free-form claim" });
+    mocks.create.mockResolvedValue({ id: "x", status: "completed", output: [], output_text: "unvalidated free-form claim" });
     const answer = await runBinaAiChat({ message: "בדיקה" });
     expect(answer.confidence).toBe("missing_data");expect(answer.answer).not.toContain("unvalidated");
   });
@@ -72,5 +72,17 @@ describe("AI conversation and evidence boundaries", () => {
     mocks.create.mockResolvedValueOnce(calls()).mockResolvedValueOnce(response("אין מידע", { confidence: "exact" }));
     const answer = await runBinaAiChat({ message: "פקע שאינה קיימת" });
     expect(answer.confidence).toBe("missing_data");
+  });
+});
+
+describe("Luna response completion", () => {
+  it("rejects incomplete output instead of displaying a partial answer", async () => {
+    mocks.create.mockResolvedValue({ ...response("unfinished"), status: "incomplete", incomplete_details: { reason: "max_output_tokens" } });
+    await expect(runBinaAiChat({ message: "בדוק פקעות" })).rejects.toThrow("AI_INCOMPLETE");
+  });
+  it("sets the selected Luna reasoning effort", async () => {
+    vi.stubEnv("OPENAI_MODEL", "gpt-6-luna");
+    await runBinaAiChat({ message: "שלום" });
+    expect(mocks.create.mock.calls[0][0]).toMatchObject({ model: "gpt-6-luna", reasoning: { effort: "medium" } });
   });
 });

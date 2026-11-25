@@ -14,7 +14,7 @@ export async function GET(request: Request) {
     const user = await requireSalesScope("sales_personal_view");
     const url = new URL(request.url);
     const canViewTeam = user.scopes.includes("sales_team_view");
-    const onlyMine = !canViewTeam || url.searchParams.get("mine") === "true";
+    const onlyMine = !canViewTeam || url.searchParams.get("mine") !== "false";
     return NextResponse.json(await fetchBinaClientIndex({
       search: url.searchParams.get("search"),
       salesUserId: onlyMine ? user.id : undefined,

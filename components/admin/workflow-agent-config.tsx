@@ -99,7 +99,7 @@ export function WorkflowAgentSetup({
                   onChange({ ...value, includeJobContext: e.target.checked })
                 }
               />
-              פרטי העבודה והמוצר, כמות מתוכננת ותאריך יעד
+              פרטי העבודה והמוצר, רצף התחנות, כמות מתוכננת ותאריך יעד
             </label>
             <label className="flex min-h-10 items-center gap-2">
               <input

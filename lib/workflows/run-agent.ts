@@ -1,3 +1,4 @@
+import { aiReasoning } from "@/lib/ai/model";
 import OpenAI from "openai";
 import { validateAgentResult, type WorkflowAgentConfig } from "./agent";
 export async function generateWorkflowAgentResult(
@@ -15,6 +16,7 @@ export async function generateWorkflowAgentResult(
   const response = await client.responses.create(
     {
       model: process.env.OPENAI_MODEL,
+      reasoning: aiReasoning(process.env.OPENAI_MODEL),
       store: false,
       max_output_tokens: 3500,
       instructions: `You are a Gestelit station assistant. Reply in Hebrew. Produce a useful ${config.output} for a HUMAN to review. You cannot change production status, approve quality, send messages, or execute tools.

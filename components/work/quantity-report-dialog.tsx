@@ -547,7 +547,7 @@ export function QuantityReportDialog({
                 onClick={handleFillRemaining}
                 className="w-full h-10 border-2 border-emerald-500/60 bg-emerald-500/10 text-emerald-300 font-bold text-base hover:bg-emerald-500/20 hover:border-emerald-400"
               >
-                {`השלם לסגירת הפק"ע (${fillToCompleteValue.toLocaleString()})`}
+                {`השלם את הכמות בתחנה (${fillToCompleteValue.toLocaleString()})`}
               </Button>
             )}
           </div>
@@ -628,7 +628,7 @@ export function QuantityReportDialog({
                       onClick={handleFillScrapToComplete}
                       className="w-full h-10 border-2 border-rose-500/60 bg-rose-500/10 text-rose-300 font-bold text-base hover:bg-rose-500/20 hover:border-rose-400"
                     >
-                      {`השלם כמות פסולים לסגירת פק"ע (${scrapFillValue.toLocaleString()})`}
+                      {`השלם כמות פסולים בתחנה (${scrapFillValue.toLocaleString()})`}
                     </Button>
                   )}
 
@@ -713,7 +713,7 @@ export function QuantityReportDialog({
             {isSubmitting
               ? "שומר..."
               : previewValues.isComplete
-                ? "סגור פריט עבודה"
+                ? "סיום השלב בתחנה"
                 : "עדכן כמות"}
           </Button>
         </DialogFooter>

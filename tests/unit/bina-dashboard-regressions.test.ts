@@ -13,9 +13,9 @@ beforeEach(() => {
   from.mockImplementation((table: string) => {
     const q: Record<string, any> = { table, filters: {}, orders: [] };
     const chain: any = {};
-    for (const name of ["select", "limit", "range", "order", "eq", "gt", "or"]) {
+    for (const name of ["select", "limit", "range", "order", "eq", "gt", "gte", "or"]) {
       chain[name] = (...args: any[]) => {
-        if (name === "eq" || name === "gt") q.filters[args[0]] = args[1];
+        if (name === "eq" || name === "gt" || name === "gte") q.filters[args[0]] = args[1];
         else if (name === "order") q.orders.push(args);
         else q[name] = args;
         return chain;
@@ -58,10 +58,18 @@ describe("BINA dashboard regressions", () => {
       { currency: "NIS", openBalance: 20, overdueBalance: 2 },
     ]);
   });
-  it("returns newest work-order numbers with stable pagination", async () => {
+  it("orders by business receipt date with deterministic pagination", async () => {
     await fetchBinaWorkOrders({ limit: 12, offset: 12 });
-    expect(queries[0].orders).toEqual([["work_order_id", { ascending: false, nullsFirst: false }], ["bina_id"]]);
+    expect(queries[0].orders).toEqual([["received_at", { ascending: false, nullsFirst: false }], ["work_order_id", { ascending: false, nullsFirst: false }], ["bina_id"]]);
     expect(queries[0].range).toEqual([12, 23]);
+  });
+  it("bounds manufacturing suggestions while keeping explicit historical queries unrestricted", async () => {
+    await fetchBinaWorkOrders({ incomingOnly: true, dateFrom: "2024-11-01" });
+    expect(queries[0].table).toBe("mart_bina_incoming_work_orders");
+    expect(queries[0].filters.received_at).toBe("2024-11-01T00:00:00+02:00");
+    await fetchBinaWorkOrders({ search: "2018" });
+    expect(queries[1].table).toBe("mart_bina_work_order_status");
+    expect(queries[1].filters.received_at).toBeUndefined();
   });
   it.each([[new UnauthorizedError("Login required"), 401], [new ForbiddenError("Denied"), 403], [new NotFoundError("Missing"), 404]])("preserves expected HTTP error status", (error, status) => {
     expect(routeError(error).status).toBe(status);

@@ -18,7 +18,10 @@ param(
   [string]$ConfigPath = "",
   [ValidateRange(5,120)][int]$QueryTimeoutSeconds = 30,
   [ValidateRange(0,5000)][int]$BatchDelayMilliseconds = 250,
-  [string]$ExtractorVersion = "bina-sync-utf8-20261117"
+  [string]$ExtractorVersion = "bina-sync-stable-groups-20261123",
+  [switch]$ValidateOnly,
+  [switch]$MaintenanceBypass,
+  [string]$ValidationOutputDirectory = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -72,6 +75,19 @@ if ($Endpoint -match "YOUR-GESTELIT" -or $SyncKey -eq "REPLACE_WITH_BINA_SYNC_KE
 foreach ($table in $OnlyTables) {
   if ($script:TableOrder -notcontains $table) { throw "Unknown OnlyTables entry: $table" }
 }
+# A bounded maintenance lease pauses hourly writes during reconciliation.
+# It expires automatically even if the maintenance client disconnects.
+$maintenanceLease = Join-Path $BaseDir "backlog-maintenance-until.txt"
+if (-not $MaintenanceBypass -and -not $ValidateOnly -and (Test-Path $maintenanceLease)) {
+  $until = [DateTimeOffset]::Parse((Get-Content $maintenanceLease -Raw).Trim())
+  if ($until -gt [DateTimeOffset]::UtcNow) {
+    $line = "$(Get-Date -Format o) BINA sync deferred during historical reconciliation until $($until.ToString('o'))"
+    Add-Content -Path $LogFile -Value $line -Encoding UTF8
+    Write-Host $line
+    exit 0
+  }
+}
+
 # Exclusive file handle prevents manual and scheduled runs from overlapping.
 try {
   $runLock = [System.IO.File]::Open((Join-Path $BaseDir "bina-sync.lock"), 'OpenOrCreate', 'ReadWrite', 'None')
@@ -115,6 +131,30 @@ function Write-SkipTable {
   Write-Log "Skipping $TableName due to StartAtTable=$StartAtTable"
 }
 
+# Numbered sibling IDs require the same row order in full and recent-window reads.
+# These orders come from the verified BinaW1 schema. They do not alter source data.
+$script:StableSiblingOrders = @{
+  "DFHazmGimur" = "[MisparRashi],[MisparAvoda],[Krika_0],[KrikaKamut_0],[KrikaMekona_0],[Krika_1],[KrikaKamut_1],[KrikaMekona_1],[Krika_2],[KrikaKamut_2],[KrikaMekona_2],[Krika_3],[KrikaKamut_3],[KrikaMekona_3],[Krika_4],[KrikaKamut_4],[KrikaMekona_4],[Krika_5],[KrikaKamut_5],[KrikaMekona_5],[Krika_6],[KrikaKamut_6],[KrikaMekona_6],[Blokim_0],[BlokimKamut_0],[BlokimMeMis_0],[BlokimAdMis_0],[Blokim_1],[BlokimKamut_1],[BlokimMeMis_1],[BlokimAdMis_1],[BlokimSapak],[BlokimMeshalem],[Mishloah],[SugAriza],[Hovala],[BeAriza],[BeMishtah],[Kontrasim_4],[Kontrasim_3],[Kontrasim_2],[Kontrasim_1],[Isuf_4],[Isuf_3],[Isuf_2],[Isuf_1],[Horaot_15],[Horaot_16],[Horaot_17],[TovinKrika],[TovinBlokim],[KirkiaSapak],[KrikaMeshalem],[Blokim_2],[BlokimKamut_2],[BlokimMeMis_2],[BlokimAdMis_2],[Blokim_3],[BlokimKamut_3],[BlokimMeMis_3],[BlokimAdMis_3],[Blokim_4],[BlokimKamut_4],[BlokimMeMis_4],[BlokimAdMis_4],[ButsaBy],[ButsaDate],[ButsaTime],[KamutBitsoa],[HearotBitsoa],[ShaotBitsoa],[GovaKarton],[RohavKarton],[OviKarton],[PhatKrikaKasha],[StatusShlita],[MisparMishtahim],[MisparHavilot],[MisparKartonim],[SahSofi]"
+  "DFHazmGlyonot" = "[MisparRashi],[MisparAvoda],[Glyon],[Zad],[MeAmud],[AdAmud],[Pantone1],[Pantone2],[Pantone3],[Pantone4],[Process],[Hofek],[Pamim],[MisparHadpasot],[HadpasotBePoal],[Hearot],[status],[yeshNeyar],[yeshLoah]"
+  "DFHazmGrafika" = "[MisparRashi],[MisparAvoda],[GrafikaLakoa],[GrafikaAdtarikLesapek],[GrafikaSapakMesapek],[PikoahLakoah_0],[Pikoah_0],[MontageFilm],[MontageDugmaLeLakoa],[MontageKamutLeLakoa],[Horaot_9],[Srikot_0],[KamutSrikot_0],[Srikot_1],[KamutSrikot_1],[GrafikaSapak],[TovinGrafika],[SrikotSapak],[TovinSrikot],[ButsaBy],[ButsaDate],[ButsaTime],[KamutBitsoa],[HearotBitsoa],[ShaotBitsoa],[StatusShlita],[StatusShlitaSrikot_0],[StatusShlitaSrikot_1]"
+  "DFHazmKedam" = "[MisparRashi],[MisparAvoda],[Tahana],[Teor],[Kamut],[Hiuv],[Horaot],[ButsaBy],[ButsaDate],[ButsaTime],[Hadpes],[TovinKedam],[SapakKedam],[Seder],[KamutBitsoa],[HearotBitsoa],[ShaotBitsoa],[StatusShlita],[KotarRecID],[Mahadura],[Mekona],[ZmanAvoda],[RoshemZmanAvoda]"
+  "DFHazmKirkia" = "[RecordID],[MisparRashi],[MisparAvoda],[Teor],[Kamut],[Meshalem],[Mekona],[Horaot],[Sapak],[Tovin],[ButsaBy],[ButsaDate],[ButsaTime],[Seder],[KamutBitsoa],[HearotBitsoa],[ShaotBitsoa],[StatusShlita]"
+  "DFHazmMontage" = "[MisparRashi],[MisparAvoda],[SahGlyonotM],[GlyonHatuk],[Aamudim],[Amekona],[SugNyar],[MishkalNyar],[Akipulim],[Azevaim_0],[Azevaim_1],[Azevaim_2],[Azevaim_3],[AProcess],[Alohot],[Bzevaim_0],[Bzevaim_1],[Bzevaim_2],[Bzevaim_3],[BProcess],[Blohot],[ZevaNyar],[SahGlyonotH],[SugHofek_0],[SugHofek_1],[SugHofek_2],[SugHofek_3],[SugHofek_4],[AmudimHofek_0],[AmudimHofek_1],[AmudimHofek_2],[AmudimHofek_3],[AmudimHofek_4],[ShaotAvoda],[NyarLakoa],[NyarSapakMesapek],[Horaot_11],[TovinNyar],[PikoahLakoah_2],[Pikoah_2],[Horaot_10],[HadpasaNeto],[HadpasaBruto],[HadpasaBepoal],[lblTonage],[lblSahLuhot],[NyarMeshalem],[HadpasaTovin],[LuhotTovin],[LuhotLakoa],[LuhotSapakMesapek],[LuhotKayam],[Kivun],[NyarComputed],[lblAmudimMale],[lblAmudimSherit],[NyarComputedChanged],[lblTonageChanged],[AlohotChanged],[BlohotChanged],[AamudimChanged],[HadpasaNetoChanged],[Horaot_8],[GodelLoah],[HadpasaSapak],[Kontras],[Gryfer],[HofekChanged],[SahKamutM],[PhatM],[SahKamutH],[PhatH],[KamHofek_0],[PhatHofek_0],[KamHofek_1],[PhatHofek_1],[KamHofek_2],[PhatHofek_2],[KamHofek_3],[PhatHofek_3],[KamHofek_4],[PhatHofek_4],[Hofek],[Azevaim_4],[Azevaim_5],[Azevaim_6],[Azevaim_7],[Azevaim_8],[Azevaim_9],[Azevaim_10],[Azevaim_11],[Azevaim_12],[Azevaim_13],[Azevaim_14],[Azevaim_15],[Bzevaim_4],[Bzevaim_5],[Bzevaim_6],[Bzevaim_7],[Bzevaim_8],[Bzevaim_9],[Bzevaim_10],[Bzevaim_11],[Bzevaim_12],[Bzevaim_13],[Bzevaim_14],[Bzevaim_15],[GlyonMale],[ButsaByLoah],[ButsaDateLoah],[ButsaTimeLoah],[ButsaByHadpasa],[ButsaDateHadpasa],[ButsaTimeHadpasa],[ButsaByNyar],[ButsaDateNyar],[ButsaTimeNyar],[KamutBitsoaLoah],[HearotBitsoaLoah],[ShaotBitsoaLoah],[KamutBitsoaHadpasa],[HearotBitsoaHadpasa],[ShaotBitsoaHadpasa],[KamutBitsoaNyar],[HearotBitsoaNyar],[ShaotBitsoaNyar],[Perfector],[SugHofek_5],[AmudimHofek_5],[KamHofek_5],[PhatHofek_5],[SugHofek_6],[AmudimHofek_6],[KamHofek_6],[PhatHofek_6],[StatusShlitaLuhot],[StatusShlitaNyar],[StatusShlitaHadpasa],[KodParitNyar],[KodParitHadpasa],[Digitali],[NyarMlay],[Rotatsia],[Peimot],[JetWithBlid],[JetWithOutBlid]"
+  "DFMlay" = "[RecordID],[MisparRashi],[MisparAvoda],[KodParit],[Kamut],[Mahsan],[SugMismah],[BeHazmana],[BeYetsor],[Hearot],[Mahsanai],[Mekabel],[Tarik],[Sha]"
+  "HeshSapakRashi" = "[MisparHeshSapak],[ShnatAvoda],[BinderId],[KodSapak],[ShemSapak],[KtovetSapak],[IrSapak],[Tarik],[MisparTovin],[Soken],[Hearot],[SahSofi],[HanahaSofi],[SahAfter],[Mam],[SahhacolSofi],[naul],[AhozMam],[ShatHadpasa],[NosafTel1],[NosafTel2],[NosafCel],[NosafFax],[NosafPratim],[TarikPiraon],[AhozHan],[IdkunMlay],[IdkunHan],[Mahsan],[Shar],[MatbeaMismah],[MisparNosaf],[MisparYevu],[OvedSnif],[TarikMam],[SugHotsa],[KolelMam],[SchomShekel],[MatbeaMatah],[TarikNosaf],[AdkenMlaySapak],[PratimForHan],[Email],[PCN874],[MisparOsek],[IDinKavua],[IDTashlumInKavua],[IshurAvorHan],[TarikReshumon],[MisparReshumon],[MisparBina],[Koteret],[IDfromZefi],[HeshbonitAtsmait],[SugHeshbonitAtsmait],[Mispar4Han],[MisHeshAtsmait],[ShnatHeshAtsmait],[SadeEzer],[HotsaMerosh],[LloIdkunMhirParit],[TnuatYoman],[ProjectNo],[taxNumber]"
+  "Hovot" = "[Asmakta],[Sug],[KodSapak],[ShemSapak],[TarikRishum],[TarikPiraon],[Schome],[Ytra],[Soken],[OvedSnif],[Shar],[MatbeaMismah],[Matbea],[CheckHozer],[SadeEzer],[IDinHanKavua]"
+}
+function Get-StableBinaQuery {
+  param([string]$Query)
+  $match = [regex]::Match($Query, '(?i)\bFROM\s+dbo\.(\w+)')
+  if ($match.Success -and $script:StableSiblingOrders.ContainsKey($match.Groups[1].Value)) {
+    $order = $script:StableSiblingOrders[$match.Groups[1].Value]
+    $inner = $Query.Trim().TrimEnd(';')
+    return "SELECT * FROM ($inner) AS stable_source ORDER BY $order"
+  }
+  return $Query
+}
+
 function Invoke-BinaQuery {
   param(
     [string]$Query,
@@ -124,7 +164,8 @@ function Invoke-BinaQuery {
   $connectionString = "Server=$Server;Database=$Database;User ID=$SqlUser;Password=$SqlPassword;TrustServerCertificate=True;Encrypt=False;Connection Timeout=30;"
   $connection = New-Object System.Data.SqlClient.SqlConnection $connectionString
   $command = $connection.CreateCommand()
-  $command.CommandText = "SET LOCK_TIMEOUT 3000; SET DEADLOCK_PRIORITY LOW; " + $Query.Trim().TrimEnd(';') + " OPTION (MAXDOP 1);"
+  $stableQuery = Get-StableBinaQuery -Query $Query
+  $command.CommandText = "SET LOCK_TIMEOUT 3000; SET DEADLOCK_PRIORITY LOW; " + $stableQuery.Trim().TrimEnd(';') + " OPTION (MAXDOP 1);"
   $command.CommandTimeout = $QueryTimeoutSeconds
   $adapter = New-Object System.Data.SqlClient.SqlDataAdapter $command
   $table = New-Object System.Data.DataTable
@@ -239,6 +280,17 @@ function Send-BinaRows {
     [string]$TableName,
     [array]$Rows
   )
+
+  if ($ValidateOnly) {
+    if ($ValidationOutputDirectory) {
+      New-Item -ItemType Directory -Force -Path $ValidationOutputDirectory | Out-Null
+      $json = "[]"
+      if ($Rows.Count -gt 0) { $json = ConvertTo-Json -InputObject @($Rows) -Depth 100 -Compress }
+      [IO.File]::WriteAllText((Join-Path $ValidationOutputDirectory ($TableName + ".json")), $json, $Utf8NoBom)
+    }
+    Write-Log "${TableName}: validated $($Rows.Count) rows; no destination writes"
+    return
+  }
 
   if ($Rows.Count -eq 0) {
     Write-Log "${TableName}: no rows"
@@ -365,7 +417,8 @@ ORDER BY RecordId DESC;
 
   try {
     if (Should-SyncTable "DFMlay") {
-      $dfMlayQuery = "SELECT TOP ($MaxRecentOrders) * FROM dbo.DFMlay ORDER BY 1 DESC;"
+      # Include complete natural-key groups, even when the recent cutoff splits siblings.
+      $dfMlayQuery = "SELECT d.* FROM dbo.DFMlay d WHERE EXISTS (SELECT 1 FROM (SELECT TOP ($MaxRecentOrders) MisparRashi, MisparAvoda FROM dbo.DFMlay ORDER BY RecordID DESC) recent WHERE recent.MisparRashi = d.MisparRashi AND recent.MisparAvoda = d.MisparAvoda);"
       $dfMlayRows = Invoke-BinaQuery -Query $dfMlayQuery
       $dfMlaySyncRows = Convert-BinaRows -Rows $dfMlayRows -KeyColumns @("MisparRashi", "MisparAvoda")
       Send-BinaRows -TableName "DFMlay" -Rows $dfMlaySyncRows
@@ -396,7 +449,7 @@ ORDER BY RecordId DESC;
   }
 
   if (Should-SyncTable "HeshSapakRashi") {
-    $heshSapakRashiQuery = "SELECT TOP ($MaxRecentOrders) * FROM dbo.HeshSapakRashi ORDER BY Tarik DESC, MisparHeshSapak DESC;"
+    $heshSapakRashiQuery = "SELECT d.* FROM dbo.HeshSapakRashi d WHERE EXISTS (SELECT 1 FROM (SELECT TOP ($MaxRecentOrders) MisparHeshSapak, ShnatAvoda FROM dbo.HeshSapakRashi ORDER BY Tarik DESC, MisparHeshSapak DESC) recent WHERE recent.MisparHeshSapak = d.MisparHeshSapak AND recent.ShnatAvoda = d.ShnatAvoda);"
     $heshSapakRashiRows = Invoke-BinaQuery -Query $heshSapakRashiQuery
     $heshSapakRashiSyncRows = Convert-BinaRows -Rows $heshSapakRashiRows -KeyColumns @("MisparHeshSapak", "ShnatAvoda") -SourceUpdatedColumn "Tarik"
     Send-BinaRows -TableName "HeshSapakRashi" -Rows $heshSapakRashiSyncRows
@@ -436,7 +489,7 @@ ORDER BY RecordId DESC;
   }
 
   if (Should-SyncTable "Hovot") {
-    $hovotQuery = "SELECT TOP ($MaxRecentOrders) * FROM dbo.Hovot ORDER BY TarikRishum DESC, Asmakta DESC;"
+    $hovotQuery = "SELECT d.* FROM dbo.Hovot d WHERE EXISTS (SELECT 1 FROM (SELECT TOP ($MaxRecentOrders) Sug, KodSapak, Asmakta, TarikRishum FROM dbo.Hovot ORDER BY TarikRishum DESC, Asmakta DESC) recent WHERE recent.Sug = d.Sug AND recent.KodSapak = d.KodSapak AND recent.Asmakta = d.Asmakta AND recent.TarikRishum = d.TarikRishum);"
     $hovotRows = Invoke-BinaQuery -Query $hovotQuery
     $hovotSyncRows = Convert-BinaRows -Rows $hovotRows -KeyColumns @("Sug", "KodSapak", "Asmakta", "TarikRishum") -SourceUpdatedColumn "TarikRishum"
     Send-BinaRows -TableName "Hovot" -Rows $hovotSyncRows

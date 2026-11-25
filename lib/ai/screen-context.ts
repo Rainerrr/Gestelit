@@ -19,3 +19,12 @@ export function sanitizeScreenContext(value: unknown): Record<string, unknown> {
   };
   return Object.fromEntries(Object.entries(value).filter(([key]) => allowed.includes(key)).map(([key, item]) => [key, clean(item, 0)]));
 }
+
+/** Read live component state at send time. Explicit controls override stale URL filters. */
+export function mergeScreenContext(base: Record<string, unknown>, published: Record<string, unknown>, urlFilters: Record<string, string>) {
+  const record = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  return sanitizeScreenContext({ ...base, ...published,
+    selectedEntity: { ...record(base.selectedEntity), ...record(published.selectedEntity) },
+    filters: { ...urlFilters, ...record(base.filters), ...record(published.filters) },
+  });
+}

@@ -18,7 +18,7 @@ describe("conversation lifecycle", () => {
     send("מה כמות פקעה28505?");
     ui.rerender(<StrictMode><AssistantChat {...base} context={{ search: "B" }} request={second} /></StrictMode>);
     await act(async () => pending.resolve({ answer: "הכמות היא800", sessionId: "persisted-session" }));
-    expect(screen.getByText("הכמות היא800")).toBeTruthy();
+    expect(screen.getByRole("log").textContent).toContain("הכמות היא800");
     expect(screen.queryByRole("status")).toBeNull();
     send("מה הצעד הבא שלה?");
     await waitFor(() => expect(screen.getByText("תשובת המשך")).toBeTruthy());

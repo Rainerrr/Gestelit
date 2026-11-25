@@ -102,6 +102,7 @@ export interface WorkerStation {
 }
 
 export interface Job {
+  is_test?: boolean;
   id: string;
   job_number: string;
   customer_name?: string | null;

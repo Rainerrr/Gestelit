@@ -1,0 +1,20 @@
+import { afterEach, expect, it, vi } from "vitest";
+const mocks = vi.hoisted(() => ({ rpc: vi.fn() }));
+vi.mock("@/lib/supabase/client", () => ({ createServiceSupabase: () => ({ rpc: mocks.rpc }) }));
+import { fetchProcurementAnalysis } from "@/lib/data/operations";
+import { clearMemoryCache } from "@/lib/server/memory-cache";
+afterEach(() => { clearMemoryCache(); vi.clearAllMocks(); });
+it("keeps screen totals and item results in separate explicitly labeled scopes", async () => {
+  mocks.rpc.mockImplementation((_fn, args) => ({ abortSignal: async () => ({ data: { sourceRows: args.search_text ? 9 : 9849 }, error: null }) }));
+  const period = { from: "2024-11-24", to: "2026-11-24" };
+  const screen = await fetchProcurementAnalysis(period);
+  const item = await fetchProcurementAnalysis({ ...period, search: " 500.120.102.72 " });
+  expect(screen.sourceRows).toBe(9849);
+  expect(screen.appliedFilters).toEqual({ ...period, search: "" });
+  expect(item.sourceRows).toBe(9);
+  expect(item.appliedFilters).toEqual({ ...period, search: "500.120.102.72" });
+  expect(screen.lineCountMeaning).toContain("matchedInvoiceLines = sourceRows + coverage.excludedNonFinancialLines");
+  expect(item.countScope).toContain("not a total for the whole screen");
+  expect((await fetchProcurementAnalysis(period)).sourceRows).toBe(9849);
+  expect(mocks.rpc).toHaveBeenCalledTimes(2);
+});

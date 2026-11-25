@@ -6,6 +6,8 @@ import { Bot, Check, Copy, History, Loader2, Maximize2, Plus, RotateCcw, Send, S
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { AnswerText, BidiText } from "./answer-text";
+import { hebrewTimestamp } from "@/lib/format/hebrew";
 import { copyTextToClipboard } from "@/lib/utils/copy-to-clipboard";
 
 export type AssistantAnswer = {
@@ -49,30 +51,18 @@ function safeError(error: unknown) {
   if (/TOO_LONG|413/.test(code)) return "השאלה ארוכה מדי. קצרו אותה ונסו שוב.";
   return "לא הצלחנו להשלים את הבדיקה כרגע. אפשר לנסות שוב; השיחה נשמרה כאן.";
 }
-function dateLabel(value?: string | null) {
-  if (!value || Number.isNaN(Date.parse(value))) return null;
-  return new Intl.DateTimeFormat("he-IL", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
-}
-/** Text only: never render model HTML or executable links. */
-function AnswerText({ text }: { text: string }) {
-  return <div className="space-y-3 text-[14px] leading-7">{text.split(/\n\s*\n/).filter(Boolean).map((paragraph, index) => {
-    const lines = paragraph.split("\n");
-    const list = lines.every((line) => /^\s*(?:[-•*]|\d+[.)])\s+/.test(line));
-    const render = (line: string) => line.split(/(\*\*[^*]+\*\*)/g).map((part, i) => part.startsWith("**") && part.endsWith("**") ? <strong key={i} className="font-semibold">{part.slice(2, -2)}</strong> : part);
-    return list ? <ul key={index} className="list-disc space-y-1 pr-5">{lines.map((line, i) => <li key={i}>{render(line.replace(/^\s*(?:[-•*]|\d+[.)])\s+/, ""))}</li>)}</ul> : <p key={index} className="whitespace-pre-wrap break-words">{render(paragraph.replace(/^#{1,4}\s/gm, ""))}</p>;
-  })}</div>;
-}
+const dateLabel = hebrewTimestamp;
 function AnswerDetails({ answer, ask, disabled }: { answer: AssistantAnswer; ask: (question: string) => void; disabled: boolean }) {
   const [copied, setCopied] = useState(false);
   const freshness = dateLabel(answer.freshness);
   return <>
-    {answer.suggestedNextAction && <div className="mt-4 rounded-xl border border-primary/15 bg-primary/5 px-3 py-2.5"><p className="mb-1 text-[11px] font-semibold text-primary">הצעד הבא</p><p className="text-sm leading-6">{answer.suggestedNextAction}</p></div>}
-    {(answer.couldNotVerify ?? []).length > 0 && <div className="mt-3 space-y-1 rounded-xl bg-amber-500/10 p-3 text-xs leading-5 text-foreground">{answer.couldNotVerify!.map((item, i) => <p key={i}>מידע חסר: {item}</p>)}</div>}
-    <div className="mt-3 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-      <span>{answer.confidence === "exact" ? "מבוסס על הנתונים שנבדקו" : answer.confidence === "missing_data" ? "המידע חלקי או חסר" : "מסקנה מהנתונים"}{freshness ? ` · ${freshness}` : ""}</span>
+    {answer.suggestedNextAction && <div className="mt-4 rounded-xl border border-primary/15 bg-primary/5 px-3 py-2.5"><p className="mb-1 text-[11px] font-semibold text-primary">הצעד הבא</p><AnswerText text={answer.suggestedNextAction} /></div>}
+    {(answer.couldNotVerify ?? []).length > 0 && <div className="mt-3 space-y-1 rounded-xl border border-amber-500/15 bg-amber-500/5 p-3 text-xs leading-5 text-muted-foreground"><p className="font-medium text-foreground">גבולות המידע</p>{answer.couldNotVerify!.map((item, i) => <p key={i}><BidiText text={item}/></p>)}</div>}
+    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+      <span>{answer.confidence === "exact" ? "מבוסס על הנתונים שנבדקו" : answer.confidence === "missing_data" ? "המידע חלקי או חסר" : "מסקנה מהנתונים"}</span>{freshness && <span className="block"><BidiText text={`עודכן: ${freshness}`}/></span>}
       <button type="button" className="rounded-md p-1.5 hover:bg-accent" aria-label={copied ? "התשובה הועתקה" : "העתקת תשובה"} onClick={async () => { setCopied(await copyTextToClipboard(answer.answer)); window.setTimeout(() => setCopied(false), 1800); }}>{copied ? <Check size={14} /> : <Copy size={14} />}</button>
     </div>
-    {((answer.evidence?.length ?? 0) > 0 || (answer.sources?.length ?? 0) > 0) && <details className="mt-1 text-xs text-muted-foreground"><summary className="cursor-pointer py-1.5">מקורות ועדכניות</summary><div className="mt-1 space-y-2 rounded-xl border border-border p-3">{answer.evidence?.map((item, index) => <div key={index}><p className="font-medium text-foreground">{item.label}</p>{item.source && <p className="mt-0.5 break-all" dir="ltr">{item.source}</p>}{dateLabel(item.freshness) && <p>{dateLabel(item.freshness)}</p>}</div>)}{answer.sources?.map((source) => <p key={source} className="break-all" dir="ltr">{source}</p>)}<p className="leading-5">הנתונים משקפים את המידע הזמין במערכת ואת מועד הסנכרון. מגבלות כיסוי מפורטות בתשובה.</p></div></details>}
+    {((answer.evidence?.length ?? 0) > 0 || (answer.sources?.length ?? 0) > 0) && <details className="mt-1 text-xs text-muted-foreground"><summary className="cursor-pointer py-1.5">מקורות ועדכניות</summary><div className="mt-1 space-y-2 rounded-xl border border-border p-3">{answer.evidence?.map((item, index) => <div key={index}><p className="font-medium text-foreground">{item.label}</p>{item.source && <p className="mt-0.5 break-all" dir="ltr">{item.source}</p>}{dateLabel(item.freshness) && <p><BidiText text={dateLabel(item.freshness)!}/></p>}</div>)}{answer.sources?.map((source) => <p key={source} className="break-all" dir="ltr">{source}</p>)}<p className="leading-5">הנתונים משקפים את המידע הזמין במערכת ואת מועד הסנכרון. מגבלות כיסוי מפורטות בתשובה.</p></div></details>}
     {(answer.suggestedQuestions ?? []).length > 0 && <div className="mt-3 flex flex-col gap-2">{answer.suggestedQuestions!.slice(0, 4).map((question) => <button key={question} disabled={disabled} type="button" onClick={() => ask(question)} className="rounded-xl border border-border px-3 py-2 text-right text-xs leading-5 transition hover:border-primary/40 hover:bg-primary/5 disabled:opacity-50">{question}</button>)}</div>}
   </>;
 }
@@ -101,6 +91,7 @@ export function AssistantChat({ title, screen, context, prompts, request, embedd
   const launcher = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLElement>(null);
   const bottom = useRef<HTMLDivElement>(null);
+  const answerStart = useRef<HTMLElement>(null);
   const titleId = useId();
   const active = threads.find((thread) => thread.id === activeId) ?? threads[0];
   const current = useRef({ active, context, request });
@@ -120,7 +111,10 @@ export function AssistantChat({ title, screen, context, prompts, request, embedd
   useEffect(() => { setMounted(true); const query = window.matchMedia("(max-width: 639px)"); setMobile(query.matches); const update = () => setMobile(query.matches); query.addEventListener("change", update); return () => query.removeEventListener("change", update); }, []);
   useEffect(() => { if (embedded) setOpen(true); setEmbedTarget(embeddedTargetId ? document.getElementById(embeddedTargetId) : null); }, [embedded, embeddedTargetId]);
   useEffect(() => { if (open) textarea.current?.focus(); }, [open, embedded]);
-  useEffect(() => { bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [active.messages.length, busy]);
+  useEffect(() => {
+    if (!busy && active.messages.at(-1)?.role === "assistant") answerStart.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    else bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [active.messages, busy]);
   const close = () => { setOpen(false); launcher.current?.focus(); };
   const ask = async (question: string, retry = false) => {
     const clean = question.trim();
@@ -170,8 +164,8 @@ export function AssistantChat({ title, screen, context, prompts, request, embedd
   };
   const newChat = () => { if (busyRef.current) return; const next = freshThread(); setThreads((previous) => [next, ...previous].slice(0, 8)); setActiveId(next.id); setInput(""); setError(null); setFailedQuestion(null); setHistoryOpen(false); textarea.current?.focus(); };
   const content = <>
-    {!embedded && <Button ref={launcher} type="button" aria-label="פתיחת עוזר AI" aria-expanded={open} onClick={() => setOpen((value) => !value)} className={cn("fixed bottom-20 left-4 z-[65] h-12 gap-2 rounded-full border border-primary/20 px-4 shadow-lg lg:bottom-5", open && "hidden")}><Sparkles size={18} /><span>שאלו את הנתונים</span></Button>}
-    {open && <section ref={panel} role={embedded ? undefined : "dialog"} aria-modal={!embedded && mobile ? true : undefined} aria-labelledby={titleId} dir="rtl" className={cn("flex flex-col overflow-hidden border border-border bg-background text-right text-foreground shadow-2xl", embedded ? "h-[calc(100dvh-150px)] min-h-[500px] rounded-2xl" : "fixed inset-0 z-[70] sm:inset-auto sm:bottom-5 sm:left-5 sm:h-[min(680px,calc(100dvh-40px))] sm:max-w-[calc(100vw-40px)] sm:rounded-2xl", !embedded && (expanded ? "sm:w-[720px]" : "sm:w-[430px]"))} onKeyDown={(event) => {
+    {!embedded && <Button ref={launcher} type="button" aria-label="פתיחת עוזר AI" aria-expanded={open} onClick={() => setOpen((value) => !value)} className={cn("fixed bottom-20 left-4 z-40 h-12 gap-2 rounded-full border border-primary/20 px-4 shadow-lg lg:bottom-5", open && "hidden")}><Sparkles size={18} /><span>שאלו את הנתונים</span></Button>}
+    {open && <section ref={panel} role={embedded ? undefined : "dialog"} aria-modal={!embedded && mobile ? true : undefined} aria-labelledby={titleId} dir="rtl" className={cn("flex flex-col overflow-hidden border border-border bg-background text-start text-foreground shadow-2xl", embedded ? "h-[calc(100dvh-150px)] min-h-[500px] rounded-2xl" : "fixed inset-0 z-[70] sm:inset-auto sm:bottom-5 sm:left-5 sm:h-[min(680px,calc(100dvh-40px))] sm:max-w-[calc(100vw-40px)] sm:rounded-2xl", !embedded && (expanded ? "sm:w-[720px]" : "sm:w-[460px]"))} onKeyDown={(event) => {
       if (event.key === "Escape" && !embedded) { event.preventDefault(); close(); }
       if (event.key === "Tab" && mobile && !embedded) { const focusable = panel.current?.querySelectorAll<HTMLElement>('button:not(:disabled), textarea, summary, [tabindex="0"]'); if (!focusable?.length) return; const first = focusable[0], last = focusable[focusable.length - 1]; if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); } else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); } }
     }}>
@@ -183,7 +177,7 @@ export function AssistantChat({ title, screen, context, prompts, request, embedd
 
       <div role="log" aria-label="הודעות בשיחה" aria-busy={busy} className="min-h-0 flex-1 space-y-6 overflow-y-auto overscroll-contain px-4 py-5">
         {!active.messages.length && <div className="space-y-5 py-4"><div><Sparkles className="mb-3 h-6 w-6 text-primary" /><h3 className="text-lg font-semibold">מה נרצה להבין היום?</h3><p className="mt-2 text-sm leading-6 text-muted-foreground">אפשר לשאול, להשוות ולשאול שאלות המשך. המסך והמסננים הנוכחיים מצורפים לשאלה, והנתונים נבדקים לפי ההרשאה שלך.</p></div><div className="space-y-2">{prompts.slice(0, 3).map((prompt) => <button key={prompt} type="button" onClick={() => void ask(prompt)} className="flex w-full items-start justify-between gap-3 rounded-xl border border-border p-3 text-right text-sm leading-6 transition hover:border-primary/40 hover:bg-primary/5"><span>{prompt}</span><span className="mt-1 shrink-0 text-primary">↖</span></button>)}</div></div>}
-        {active.messages.map((turn, index) => <article key={`${active.id}-${index}`} className={turn.role === "user" ? "mr-auto max-w-[92%] rounded-2xl rounded-tl-sm bg-secondary px-4 py-2.5" : "max-w-full"}><p className="mb-1 text-[10px] font-medium text-muted-foreground">{turn.role === "user" ? "אתם" : "Gestelit AI"}</p><AnswerText text={turn.content} />{turn.answer && <AnswerDetails answer={turn.answer} ask={(question) => void ask(question)} disabled={busy} />}</article>)}
+        {active.messages.map((turn, index) => <article ref={turn.role === "assistant" && index === active.messages.length - 1 ? answerStart : undefined} key={`${active.id}-${index}`} className={turn.role === "user" ? "mr-auto max-w-[92%] rounded-2xl rounded-tl-sm bg-secondary px-4 py-2.5" : "max-w-full"}><p className="mb-1 text-[10px] font-medium text-muted-foreground">{turn.role === "user" ? "אתם" : "Gestelit AI"}</p><AnswerText text={turn.content} />{turn.answer && <AnswerDetails answer={turn.answer} ask={(question) => void ask(question)} disabled={busy} />}</article>)}
         {busy && <div role="status" className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin text-primary" />בודק נתונים ומחבר את התמונה…</div>}
         {error && <div role="alert" className="rounded-xl border border-border bg-secondary/50 p-3 text-sm leading-6"><p>{error}</p>{failedQuestion && <Button type="button" variant="outline" size="sm" onClick={() => void ask(failedQuestion, true)} disabled={busy} className="mt-2 gap-2"><RotateCcw size={13} />ניסיון נוסף</Button>}</div>}
         <div ref={bottom} />

@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import Link from "next/link";
 import {
   AlertTriangle,
   BarChart3,
@@ -47,7 +48,6 @@ import {
   fetchBinaFinanceDetailApi,
   fetchBinaFinanceSummaryApi,
   fetchBinaOverviewApi,
-  fetchBinaProductionDashboardApi,
   fetchBinaPurchasingApi,
   fetchBinaSavedQuestionsApi,
   fetchBinaSalesApi,
@@ -82,6 +82,7 @@ type DashboardSummary = {
   overview?: AnyRow;
   risks?: AnyRow[];
   dataQuality?: AnyRow[];
+  dataQualityStatus?: "complete" | "partial";
   financeByConfidence?: AnyRow[];
   purchaseMetrics?: AnyRow[];
   deliveryMetrics?: AnyRow[];
@@ -139,13 +140,13 @@ function formatCompactMoney(value: unknown, currency?: unknown) {
   return `${formatted} ${currencyCode}`;
 }
 
-function formatDate(value: unknown) {
+function formatDate(value: unknown, withTime = false) {
   if (!value || typeof value !== "string") return "-";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "-";
   return new Intl.DateTimeFormat("he-IL", {
-    dateStyle: "short",
-    timeStyle: "short",
+    day: "numeric", month: "long", year: "numeric",
+    ...(withTime ? { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jerusalem" } as const : { timeZone: "UTC" }),
   }).format(date);
 }
 
@@ -154,7 +155,7 @@ function statusLabel(status: string | null | undefined) {
     case "linked":
       return "מקושר";
     case "not_imported":
-      return "לא יובא";
+      return "טרם נפתחה עבודה";
     case "quantity_mismatch":
       return "פער כמות";
     case "at_risk":
@@ -166,6 +167,10 @@ function statusLabel(status: string | null | undefined) {
 
 function valueLabel(value: unknown) {
   switch (String(value ?? "")) {
+    case "new_candidate":
+      return "לבחירה ולהכנת עבודה";
+    case "not_imported":
+      return "טרם נפתחה עבודה";
     case "purchase_request":
       return "בקשת רכש";
     case "goods_receipt":
@@ -239,7 +244,7 @@ function valueLabel(value: unknown) {
     case "finance_attention":
       return "כספים לבדיקה";
     case "missing_route_rows":
-      return "חסר מסלול";
+      return "אין פעולות מסלול ב-BINA";
     case "ready_or_linked":
       return "מוכן / מקושר";
     case "ready_inferred_inventory":
@@ -278,10 +283,6 @@ function statusVariant(status: string | null | undefined) {
 
 function hasBadEncoding(value: unknown) {
   return typeof value === "string" && /\?{3,}/.test(value);
-}
-
-function hasSignalValue(value: unknown) {
-  return value !== null && value !== undefined && value !== "";
 }
 
 function financeFilterParams(filter: string) {
@@ -495,165 +496,6 @@ function SimpleBarChart({ data, valueKey, labelKey }: { data: AnyRow[]; valueKey
   );
 }
 
-function BinaCommandCenter({
-  overviewData,
-  dashboard,
-  productionMetrics,
-  syncRows,
-  onOpenTab,
-  onAsk,
-}: {
-  overviewData: {
-    sync?: AnyRow;
-    workOrders?: AnyRow;
-    purchasing?: AnyRow;
-    suppliers?: AnyRow;
-    deliveries?: AnyRow;
-  } | null;
-  dashboard: DashboardSummary | null;
-  productionMetrics: AnyRow;
-  syncRows: AnyRow[];
-  onOpenTab: (tab: TabId) => void;
-  onAsk: (prompt: string) => void;
-}) {
-  const coverageStatus = String(dashboard?.coverageStatus ?? "partial_sample");
-  const staleTables = syncRows.filter((row) => row.freshness_status === "stale").length;
-  const qualityCount = Array.isArray(dashboard?.dataQuality) ? dashboard.dataQuality.length : 0;
-  const notImported = numberValue(productionMetrics.not_imported_count) || numberValue(overviewData?.workOrders?.notImported);
-  const atRisk = numberValue(productionMetrics.at_risk_count) || numberValue(overviewData?.workOrders?.atRisk);
-  const missingRoutes = numberValue(productionMetrics.missing_route_count);
-  const materialBlocked = numberValue(productionMetrics.material_blocked_count);
-  const supplierBalances = overviewData?.suppliers?.balancesByCurrency;
-  const supplierExposure = Array.isArray(supplierBalances) && supplierBalances.length === 1 ? `${formatNumber(supplierBalances[0].openBalance)} ${String(supplierBalances[0].currency)}` : "לפי מטבע";
-  const openPurchasing = numberValue(overviewData?.purchasing?.openRequestLines);
-
-  const focusTiles = [
-    {
-      label: "שחרור ייצור",
-      value: formatNumber(notImported),
-      hint: `${formatNumber(atRisk)} בסיכון · ${formatNumber(missingRoutes)} חסרי מסלול`,
-      icon: FileSearch,
-      tone: "from-amber-500/20 to-red-500/10 border-amber-400/25",
-      tab: "production" as TabId,
-    },
-    {
-      label: "רכש וחומרים",
-      value: formatNumber(openPurchasing),
-      hint: `${formatNumber(materialBlocked)} פק״עות עם חסם חומרים`,
-      icon: ShoppingCart,
-      tone: "from-sky-500/20 to-emerald-500/10 border-sky-400/25",
-      tab: "purchasing" as TabId,
-    },
-    {
-      label: "חשיפה כספית",
-      value: supplierExposure,
-      hint: "יתרות במדגם בלבד · פירוט לפי מטבע בכספים",
-      icon: CircleDollarSign,
-      tone: "from-violet-500/20 to-blue-500/10 border-violet-400/25",
-      tab: "finance" as TabId,
-    },
-    {
-      label: "משלוחים פתוחים",
-      value: formatNumber(overviewData?.deliveries?.sentOpen),
-      hint: "מה יצא ועדיין דורש סגירה",
-      icon: Ship,
-      tone: "from-cyan-500/20 to-blue-500/10 border-cyan-400/25",
-      tab: "deliveries" as TabId,
-    },
-  ];
-
-  const trustLabel = coverageStatus === "complete" ? "כיסוי מלא" : "מדגם / חלון חלקי";
-
-  return (
-    <Card className="relative overflow-hidden rounded-2xl border border-blue-400/20 bg-[radial-gradient(circle_at_15%_15%,rgba(59,130,246,0.18),transparent_32%),linear-gradient(135deg,rgba(15,23,42,0.96),rgba(2,6,23,0.88))] p-4 shadow-[0_20px_80px_rgba(15,23,42,0.28)] sm:p-5">
-      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-l from-transparent via-blue-300/60 to-transparent" />
-      <div className="grid gap-5 xl:grid-cols-[1.05fr_1.4fr]">
-        <div className="space-y-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge className="border-blue-400/30 bg-blue-500/15 text-blue-100">חמ״ל BINA</Badge>
-            <Badge className={coverageStatus === "complete" ? statusVariant("ok") : statusVariant("open")}>
-              {trustLabel}
-            </Badge>
-            {staleTables > 0 && <Badge className={statusVariant("at_risk")}>{formatNumber(staleTables)} טבלאות מיושנות</Badge>}
-          </div>
-          <div>
-            <h2 className="max-w-2xl text-2xl font-semibold tracking-normal text-white sm:text-3xl">מה דורש החלטה תפעולית עכשיו?</h2>
-            <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">
-              שכבת MES מעל BINA: ייצור, רכש, ספקים, כספים ומשלוחים מחוברים לתור פעולה אחד. הנתונים נשארים לקריאה בלבד ומסומנים לפי אמינות הסנכרון.
-            </p>
-          </div>
-          <div className="grid grid-cols-2 gap-2 text-xs text-slate-300 sm:grid-cols-4">
-            <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-              <div className="text-slate-400">סנכרון אחרון</div>
-              <div className="mt-1 font-mono text-sm text-white tabular-nums">{formatDate(overviewData?.sync?.lastSyncedAt)}</div>
-            </div>
-            <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-              <div className="text-slate-400">חריגות איכות</div>
-              <div className="mt-1 font-mono text-sm text-white tabular-nums">{formatNumber(qualityCount)}</div>
-            </div>
-            <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-              <div className="text-slate-400">פק״עות בסיכון</div>
-              <div className="mt-1 font-mono text-sm text-white tabular-nums">{formatNumber(atRisk)}</div>
-            </div>
-            <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-              <div className="text-slate-400">בקשות רכש</div>
-              <div className="mt-1 font-mono text-sm text-white tabular-nums">{formatNumber(openPurchasing)}</div>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" onClick={() => onAsk("תן לי תמונת מצב ניהולית: מה דורש טיפול עכשיו בייצור, רכש, כספים ומשלוחים, ומה הפעולה הבאה המומלצת?")} className="gap-2">
-              <Bot className="h-4 w-4" />
-              נתח חמ״ל
-            </Button>
-            <Button type="button" variant="outline" onClick={() => onOpenTab("production")} className="border-white/15 bg-white/5 text-white hover:bg-white/10">
-              פתח פק״עות
-            </Button>
-            <Button type="button" variant="outline" onClick={() => onOpenTab("finance")} className="border-white/15 bg-white/5 text-white hover:bg-white/10">
-              פתח כספים
-            </Button>
-          </div>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          {focusTiles.map((tile) => {
-            const Icon = tile.icon;
-            return (
-              <button
-                key={tile.label}
-                type="button"
-                onClick={() => onOpenTab(tile.tab)}
-                className={cn(
-                  "group rounded-2xl border bg-gradient-to-br p-4 text-right transition hover:-translate-y-0.5 hover:border-white/25 hover:bg-white/10",
-                  tile.tone,
-                )}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-sm text-slate-300">{tile.label}</div>
-                    <div className="mt-2 break-words font-mono text-2xl font-semibold text-white tabular-nums">{tile.value}</div>
-                  </div>
-                  <div className="rounded-xl border border-white/10 bg-white/10 p-2 text-white">
-                    <Icon className="h-5 w-5" />
-                  </div>
-                </div>
-                <div className="mt-3 text-xs leading-5 text-slate-300">{tile.hint}</div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-      <div className="mt-5 grid gap-2 border-t border-white/10 pt-4 text-xs text-slate-300 sm:grid-cols-5">
-        {["BINA ERP", "רכש", "ייצור", "משלוחים", "כספים / AI"].map((step, index) => (
-          <div key={step} className="flex items-center gap-2">
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-blue-300/30 bg-blue-400/10 font-mono text-blue-100">{index + 1}</div>
-            <span>{step}</span>
-            {index < 4 && <div className="hidden h-px flex-1 bg-blue-300/25 sm:block" />}
-          </div>
-        ))}
-      </div>
-    </Card>
-  );
-}
-
 function DataQualityBanner({
   dashboard,
   syncRows,
@@ -679,7 +521,8 @@ function DataQualityBanner({
             {partialTables > 0 && `${formatNumber(partialTables)} טבלאות מסומנות כסנכרון חלקי. `}
             {staleTables > 0 && `${formatNumber(staleTables)} טבלאות מיושנות. `}
             {emptyTables > 0 && `${formatNumber(emptyTables)} טבלאות ריקות. `}
-            {quality.length > 0 && `${formatNumber(quality.length)} סוגי חריגות איכות נתונים נמצאו.`}
+            {quality.length > 0 && `${formatNumber(quality.length)} סוגי חריגות איכות נתונים נמצאו. `}
+            {dashboard?.dataQualityStatus !== "complete" && "בדיקת האיכות המלאה לא נטענה; היעדר חריגות בתצוגה אינו אישור לתקינות."}
           </div>
         </div>
       </div>
@@ -733,133 +576,6 @@ function OperationalQueue({
   );
 }
 
-function DispatchLane({
-  title,
-  rows,
-  tone = "default",
-  onOpen,
-  onAsk,
-}: {
-  title: string;
-  rows: AnyRow[];
-  tone?: "default" | "red" | "amber" | "emerald" | "blue";
-  onOpen: (row: AnyRow) => void;
-  onAsk: (row: AnyRow) => void;
-}) {
-  const toneClass = {
-    default: "border-border bg-card/50",
-    red: "border-red-500/25 bg-red-500/5",
-    amber: "border-amber-500/25 bg-amber-500/5",
-    emerald: "border-emerald-500/25 bg-emerald-500/5",
-    blue: "border-blue-500/25 bg-blue-500/5",
-  }[tone];
-
-  return (
-    <Card className={cn("rounded-xl border p-3", toneClass)}>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold">{title}</h3>
-        <Badge className="border-border bg-background/70 text-muted-foreground">{formatNumber(rows.length)}</Badge>
-      </div>
-      <div className="space-y-2">
-        {rows.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border p-4 text-center text-xs text-muted-foreground">אין פריטים בתור הזה</div>
-        ) : rows.slice(0, 5).map((row, index) => {
-          const hasRouteSignals = [
-            row.current_station_label,
-            row.next_station_label,
-            row.route_confidence,
-            row.mapped_step_count,
-            row.unmapped_step_count,
-          ].some(hasSignalValue);
-          const hasMaterialSignals = [
-            row.material_state,
-            row.material_confidence,
-            row.required_item_count,
-            row.ready_item_count,
-            row.short_or_unknown_item_count,
-          ].some(hasSignalValue);
-          const routeConfidence = row.route_confidence ?? (hasRouteSignals ? "missing_data" : null);
-          const materialConfidence = row.material_confidence ?? (hasMaterialSignals ? "missing_data" : null);
-
-          return (
-            <div key={String(row.bina_id ?? index)} className="rounded-lg border border-border bg-background/70 p-3">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-medium">
-                    פק״ע <bdi dir="ltr">{String(row.work_order_id ?? "-")}</bdi>
-                  </div>
-                  <div className="mt-0.5 truncate text-xs text-muted-foreground">{String(row.customer_name ?? row.title ?? "לקוח לא ידוע")}</div>
-                </div>
-                <Badge className={statusVariant(String(row.blocker_type ?? row.link_status))}>{valueLabel(row.blocker_type ?? row.link_status)}</Badge>
-              </div>
-              <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                <span>יעד: {formatDate(row.due_at)}</span>
-                <span>בעלים: {valueLabel(row.owner_role)}</span>
-                <span>תחנות: {formatNumber(row.route_machine_count ?? row.route_source_table_count ?? 0)}</span>
-                <span>ציון: <bdi dir="ltr">{String(row.priority_score ?? 0)}</bdi></span>
-              </div>
-
-              {(hasRouteSignals || hasMaterialSignals) && (
-                <div className="mt-3 space-y-2 rounded-lg border border-border/70 bg-card/40 p-2">
-                  {hasRouteSignals && (
-                    <div className="space-y-2">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-xs font-medium text-foreground">מסלול</span>
-                        <Badge className={statusVariant(String(routeConfidence))}>אמינות: {valueLabel(routeConfidence)}</Badge>
-                        {(hasSignalValue(row.mapped_step_count) || hasSignalValue(row.unmapped_step_count)) && (
-                          <Badge className="border-border bg-background/70 text-muted-foreground">
-                            מיפוי: {formatNumber(row.mapped_step_count)} / חסר {formatNumber(row.unmapped_step_count)}
-                          </Badge>
-                        )}
-                      </div>
-                      {(hasSignalValue(row.current_station_label) || hasSignalValue(row.next_station_label)) && (
-                        <div className="grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
-                          <span className="min-w-0 truncate">נוכחית: <Bdi>{String(row.current_station_label ?? "-")}</Bdi></span>
-                          <span className="min-w-0 truncate">הבאה: <Bdi>{String(row.next_station_label ?? "-")}</Bdi></span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {hasMaterialSignals && (
-                    <div className="space-y-2">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-xs font-medium text-foreground">חומרים</span>
-                        <Badge className={statusVariant(String(row.material_state ?? "unknown"))}>{valueLabel(row.material_state ?? "unknown")}</Badge>
-                        <Badge className={statusVariant(String(materialConfidence))}>אמינות: {valueLabel(materialConfidence)}</Badge>
-                      </div>
-                      <div className="grid grid-cols-3 gap-1 text-center text-xs">
-                        <div className="rounded-md bg-background/70 px-2 py-1">
-                          <div className="text-muted-foreground">נדרש</div>
-                          <div className="font-mono font-semibold tabular-nums">{formatNumber(row.required_item_count)}</div>
-                        </div>
-                        <div className="rounded-md bg-background/70 px-2 py-1">
-                          <div className="text-muted-foreground">מוכן</div>
-                          <div className="font-mono font-semibold tabular-nums">{formatNumber(row.ready_item_count)}</div>
-                        </div>
-                        <div className="rounded-md bg-background/70 px-2 py-1">
-                          <div className="text-muted-foreground">חסר</div>
-                          <div className="font-mono font-semibold tabular-nums">{formatNumber(row.short_or_unknown_item_count)}</div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <div className="mt-2 line-clamp-2 text-xs text-muted-foreground">{String(row.next_action_reason ?? "-")}</div>
-              <div className="mt-2 flex gap-2">
-                <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => onOpen(row)}>פתח</Button>
-                <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => onAsk(row)}>שאל AI</Button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </Card>
-  );
-}
-
 function RelationshipSummary({
   order,
   detail,
@@ -885,7 +601,7 @@ function RelationshipSummary({
       <div className="grid gap-2 sm:grid-cols-5">
         {[
           ["Gestelit", order?.gestelit_job_number ? `עבודה ${String(order.gestelit_job_number)}` : "לא מקושר"],
-          ["מסלול", `${formatNumber(order?.route_row_count ?? routeSummary.rowCount ?? 0)} שורות`],
+          ["פעולות BINA", `${formatNumber(order?.route_row_count ?? routeSummary.rowCount ?? 0)} שורות`],
           ["רכש", `${formatNumber(relatedPurchasing)} קשרים`],
           ["משלוחים", `${formatNumber(relatedDeliveries)} קשרים`],
           ["כספים", `${formatNumber(relatedFinance + relatedSales)} קשרים`],
@@ -1151,12 +867,11 @@ function FinanceWorkbench({
   );
 }
 
-export const BinaDashboard = () => {
+export const BinaDashboard = ({ initialBinaId, initialPresetId }: { initialBinaId?: string; initialPresetId?: string }) => {
   const { hasAccess } = useAdminGuard();
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [overview, setOverview] = useState<AnyRow | null>(null);
   const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null);
-  const [productionDashboard, setProductionDashboard] = useState<AnyRow | null>(null);
   const [financeSummary, setFinanceSummary] = useState<AnyRow | null>(null);
   const [financeFilter, setFinanceFilter] = useState("all");
   const [rows, setRows] = useState<AnyRow[]>([]);
@@ -1166,8 +881,10 @@ export const BinaDashboard = () => {
   const [syncLogs, setSyncLogs] = useState<AnyRow[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [includeHistory, setIncludeHistory] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<AnyRow | null>(null);
+  const orderRequest = useRef(0);
   const [orderDetail, setOrderDetail] = useState<AnyRow | null>(null);
   const [selectedFinance, setSelectedFinance] = useState<AnyRow | null>(null);
   const [financeDetail, setFinanceDetail] = useState<AnyRow | null>(null);
@@ -1177,7 +894,8 @@ export const BinaDashboard = () => {
   const [availableStations, setAvailableStations] = useState<Station[]>([]);
   const [selectedPresetId, setSelectedPresetId] = useState<string>("none");
   const [selectedStationIds, setSelectedStationIds] = useState<string[]>([]);
-  const [allowQuantityFallback, setAllowQuantityFallback] = useState(false);
+  const [readinessConfirmed, setReadinessConfirmed] = useState(false);
+  const [importPreview, setImportPreview] = useState<AnyRow | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -1236,14 +954,10 @@ export const BinaDashboard = () => {
     try {
       if (activeTab === "overview") {
         await loadOverview();
-        const data = await fetchBinaWorkOrdersApi({ limit: 12 }) as { rows: AnyRow[] };
+        const data = await fetchBinaWorkOrdersApi({ limit: 12, incoming: true }) as { rows: AnyRow[] };
         setRows(data.rows);
       } else if (activeTab === "production") {
-        const [productionData, data] = await Promise.all([
-          fetchBinaProductionDashboardApi() as Promise<AnyRow>,
-          fetchBinaWorkOrdersApi({ search, limit: 80 }) as Promise<{ rows: AnyRow[] }>,
-        ]);
-        setProductionDashboard(productionData);
+        const data = await fetchBinaWorkOrdersApi({ search, limit: 80, history: includeHistory ? "all" : undefined }) as { rows: AnyRow[] };
         setRows(data.rows);
       } else if (activeTab === "purchasing") {
         const data = await fetchBinaPurchasingApi({ search, limit: 80 }) as { rows: AnyRow[] };
@@ -1279,23 +993,29 @@ export const BinaDashboard = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [activeTab, financeFilter, hasAccess, loadOverview, loadSavedQuestions, savedQuestions.length, search]);
+  }, [activeTab, financeFilter, hasAccess, includeHistory, loadOverview, loadSavedQuestions, savedQuestions.length, search]);
 
   useEffect(() => {
     void loadCurrent();
   }, [loadCurrent]);
 
   const openOrder = async (row: AnyRow) => {
+    const request = ++orderRequest.current;
     setSelectedOrder(row);
+    setOrderDetail(null);
+    setImportPreview(null);
+    setReadinessConfirmed(false);
     setShowImportPanel(false);
     setImportError(null);
     setDetailError(null);
     setImportResult(null);
+    setSelectedPresetId("none");
+    setSelectedStationIds([]);
     try {
       const detail = await fetchBinaWorkOrderDetailApi(String(row.bina_id)) as AnyRow;
-      setOrderDetail(detail);
+      if (request === orderRequest.current) setOrderDetail(detail);
     } catch (error) {
-      setDetailError(error instanceof Error ? error.message : "BINA_WORK_ORDER_DETAIL_FAILED");
+      if (request === orderRequest.current) setDetailError(error instanceof Error ? error.message : "BINA_WORK_ORDER_DETAIL_FAILED");
     }
   };
 
@@ -1335,6 +1055,7 @@ export const BinaDashboard = () => {
   };
 
   const toggleStation = (stationId: string) => {
+    setImportPreview(null); setReadinessConfirmed(false);
     setSelectedStationIds((current) =>
       current.includes(stationId)
         ? current.filter((id) => id !== stationId)
@@ -1342,10 +1063,10 @@ export const BinaDashboard = () => {
     );
   };
 
-  const confirmImport = async () => {
+  const confirmImport = async (commit = false) => {
     if (!selectedOrder) return;
     if (selectedPresetId === "none" && selectedStationIds.length === 0) {
-      setImportError("בחר preset או לפחות תחנה אחת לפני יצירת עבודה בגסטליט.");
+      setImportError("בחר תבנית או לפחות תחנה אחת לפני יצירת עבודה בגסטליט.");
       return;
     }
 
@@ -1355,10 +1076,20 @@ export const BinaDashboard = () => {
       const result = await importBinaWorkOrderApi(String(selectedOrder.bina_id), {
         pipeline_preset_id: selectedPresetId === "none" ? null : selectedPresetId,
         station_ids: selectedPresetId === "none" ? selectedStationIds : [],
-        allowQuantityFallback,
+        dryRun: !commit,
+        previewHash: typeof importPreview?.previewHash === "string" ? importPreview.previewHash : undefined,
+        readinessConfirmed,
       }) as AnyRow;
-      setImportResult(result);
-      await loadCurrent();
+      if (commit) {
+        setImportResult(result); setImportPreview(null);
+        const request = ++orderRequest.current;
+        setOrderDetail(null);
+        await fetchBinaWorkOrderDetailApi(String(selectedOrder.bina_id)).then((detail) => {
+          if (request === orderRequest.current) setOrderDetail(detail as AnyRow);
+        }).catch(() => setDetailError("העבודה נשמרה, אך יש לרענן את הפירוט"));
+        await loadCurrent();
+      }
+      else { setImportPreview(result); setReadinessConfirmed(false); }
     } catch (error) {
       setImportError(error instanceof Error ? error.message : "IMPORT_FAILED");
     } finally {
@@ -1369,6 +1100,38 @@ export const BinaDashboard = () => {
   const sendAi = (prompt?: string) => {
     window.dispatchEvent(new CustomEvent("gestelit:admin-ai-open", { detail: { prompt } }));
   };
+
+  useEffect(() => {
+    if (hasAccess !== true || !initialBinaId) return;
+    let cancelled = false;
+    const request = ++orderRequest.current;
+    setSelectedOrder({ bina_id: initialBinaId });
+    setOrderDetail(null);
+    setImportPreview(null);
+    setReadinessConfirmed(false);
+    setImportResult(null);
+    setImportError(null);
+    setDetailError(null);
+    setSelectedStationIds([]);
+    setSelectedPresetId("none");
+    setShowImportPanel(true);
+    void Promise.all([
+      fetchBinaWorkOrderDetailApi(initialBinaId),
+      fetch("/api/admin/pipeline-presets", { credentials: "include" }).then((r) => readAdminJson(r, "PIPELINE_PRESETS_FAILED")),
+      fetch("/api/admin/pipeline-presets/available-stations", { credentials: "include" }).then((r) => readAdminJson(r, "PIPELINE_STATIONS_FAILED")),
+    ]).then(([detail, presetResponse, stationResponse]) => {
+      if (cancelled || request !== orderRequest.current) return;
+      const presets: PipelinePresetWithSteps[] = presetResponse.presets ?? [];
+      setOrderDetail(detail as AnyRow);
+      setPipelinePresets(presets);
+      setAvailableStations(stationResponse.stations ?? []);
+      if (initialPresetId && presets.some((p) => p.id === initialPresetId)) setSelectedPresetId(initialPresetId);
+      else if (initialPresetId) setImportError("התבנית שנבחרה אינה זמינה. בחרו תבנית פעילה לפני המשך.");
+    }).catch(() => {
+      if (!cancelled && request === orderRequest.current) setDetailError("לא ניתן לטעון את הפק״ע והתבניות. רעננו ונסו שוב.");
+    });
+    return () => { cancelled = true; };
+  }, [hasAccess, initialBinaId, initialPresetId]);
 
   if (hasAccess === null) {
     return <div className="flex min-h-[60vh] items-center justify-center text-muted-foreground">טוען הרשאות...</div>;
@@ -1386,10 +1149,13 @@ export const BinaDashboard = () => {
   } | null;
 
   const headerActions = (
+    <div className="flex items-center gap-2">
+    <Link href="/admin/bina/weekly" className="rounded-lg border px-3 py-2 text-sm font-medium">סקירה שבועית</Link>
     <Button variant="outline" onClick={() => setActiveTab("ai")} className="gap-2">
       <Sparkles className="h-4 w-4" />
       שאל את BINA
     </Button>
+    </div>
   );
   const drawerOrder = ((orderDetail?.order as AnyRow | undefined) ?? selectedOrder) as AnyRow | null;
   const drawerDecision = ((orderDetail?.decision as AnyRow | undefined) ?? selectedOrder) as AnyRow | null;
@@ -1400,7 +1166,7 @@ export const BinaDashboard = () => {
   const drawerFinanceRows = Array.isArray(orderDetail?.relatedFinance) ? orderDetail.relatedFinance as AnyRow[] : [];
   const drawerSalesRows = Array.isArray(orderDetail?.relatedSales) ? orderDetail.relatedSales as AnyRow[] : [];
   const drawerRouteSummary = ((orderDetail?.routeSummary as AnyRow | undefined) ?? {}) as AnyRow;
-  const binaImportEnabled = process.env.NEXT_PUBLIC_BINA_IMPORT_ENABLED === "true";
+  const binaImportEnabled = true;
   const aiContext = {
     screen: "נתוני BINA",
     activeTab,
@@ -1428,13 +1194,11 @@ export const BinaDashboard = () => {
     visibleSummary: [
       `tab=${activeTab}`,
       overviewData?.sync?.lastSyncedAt ? `lastSync=${String(overviewData.sync.lastSyncedAt)}` : null,
-      overviewData?.workOrders ? `notImported=${String(overviewData.workOrders.notImported ?? 0)}, atRisk=${String(overviewData.workOrders.atRisk ?? 0)}` : null,
+      `manufacturingSince=2024-11-01; historicalSearch=${includeHistory}; not-imported is not a backlog or risk; suggest latest open BINA arrivals by received_at`,
       rows.length ? `visibleRows=${rows.length}` : null,
     ].filter(Boolean).join("; "),
   };
 
-  const dashboardRisks = Array.isArray(dashboardSummary?.risks) ? dashboardSummary.risks : [];
-  const dataQualityIssues = Array.isArray(dashboardSummary?.dataQuality) ? dashboardSummary.dataQuality : syncQualityRows;
   const dashboardMetricTrustRows = Array.isArray(dashboardSummary?.overview?.metric_trust)
     ? dashboardSummary.overview.metric_trust as AnyRow[]
     : [];
@@ -1456,19 +1220,6 @@ export const BinaDashboard = () => {
         last_row_synced_at: row.last_table_sync_at,
         coverage_note: row.trust_note,
       }));
-  const productionMetrics = (productionDashboard?.metrics ?? {}) as AnyRow;
-  const productionCoverage = (productionDashboard?.coverage ?? {}) as AnyRow;
-  const productionLanes = (productionDashboard?.lanes ?? {}) as Record<string, AnyRow[]>;
-  const productionRisks = Array.isArray(productionDashboard?.risks) ? productionDashboard.risks as AnyRow[] : [];
-  const unmappedOperations = Array.isArray(productionDashboard?.unmappedOperations) ? productionDashboard.unmappedOperations as AnyRow[] : [];
-  const productionStats = [
-    { label: "לא יובאו", value: numberValue(productionMetrics.not_imported_count) || numberValue(overviewData?.workOrders?.notImported) },
-    { label: "פער כמות", value: numberValue(productionMetrics.quantity_mismatch_count) || numberValue(overviewData?.workOrders?.quantityMismatch) },
-    { label: "בסיכון", value: numberValue(productionMetrics.at_risk_count) || numberValue(overviewData?.workOrders?.atRisk) },
-    { label: "מוכנות/מקושרות", value: numberValue(productionMetrics.ready_or_linked_count) },
-    { label: "חסום רכש", value: numberValue(productionMetrics.material_blocked_count) },
-    { label: "חסר מסלול", value: numberValue(productionMetrics.missing_route_count) },
-  ];
   const purchasingStats = [
     { label: "בקשות פתוחות", value: rows.filter((row) => row.flow_type === "purchase_request" && numberValue(row.remaining_quantity) > 0).length },
     { label: "קבלות טובין", value: rows.filter((row) => row.flow_type === "goods_receipt").length },
@@ -1511,173 +1262,92 @@ export const BinaDashboard = () => {
       aiContext={aiContext}
     >
       <div className="space-y-4 pb-mobile-nav">
+        {isLoading && <Card className="p-6 text-muted-foreground" role="status">טוען נתונים מאומתים…</Card>}
         {loadError && (
           <Card className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
             <div className="flex items-start gap-2">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               <div>
                 <div className="font-semibold">לא ניתן לטעון את נתוני BINA כרגע</div>
-                <div className="mt-1 text-amber-100/80">{loadError}</div>
-                <div className="mt-1 text-amber-100/70">המסך נשאר זמין, אבל צריך לוודא שה-migrations והחיבור ל-Supabase פעילים בסביבה הזו.</div>
+                <Button variant="outline" className="mt-2" onClick={() => void loadCurrent()}>ניסיון חוזר</Button>
+                <div className="mt-1 text-amber-100/70">הנתונים לא נטענו ולכן לא מוצגות ספירות או מסקנות. ניתן לנסות שוב.</div>
               </div>
             </div>
           </Card>
         )}
 
-        {activeTab === "overview" && (
+        {!loadError && !isLoading && activeTab === "overview" && (
           <div className="space-y-4">
-            <DataQualityBanner dashboard={dashboardSummary} syncRows={effectiveSyncRows} />
-            <BinaCommandCenter
-              overviewData={overviewData}
-              dashboard={dashboardSummary}
-              productionMetrics={productionMetrics}
-              syncRows={effectiveSyncRows}
-              onOpenTab={setActiveTab}
-              onAsk={(prompt) => void sendAi(prompt)}
-            />
-            <div className="grid grid-cols-2 gap-3 xl:grid-cols-6">
-              <KpiCard label="סנכרון אחרון" value={formatDate(overviewData?.sync?.lastSyncedAt)} icon={RefreshCcw} tone="emerald" hint={dashboardSummary?.coverageStatus === "complete" ? "כיסוי מלא" : "סנכרון חלקי"} />
-              <KpiCard label="פק״עות שלא יובאו" value={formatNumber(overviewData?.workOrders?.notImported)} icon={FileSearch} tone="amber" />
-              <KpiCard label="פק״עות בסיכון" value={formatNumber(overviewData?.workOrders?.atRisk)} icon={AlertTriangle} tone="red" />
-              <KpiCard label="בקשות רכש פתוחות" value={formatNumber(overviewData?.purchasing?.openRequestLines)} icon={ShoppingCart} tone="amber" />
-              <KpiCard label="יתרת ספקים פתוחה" value="לפי מטבע" icon={WalletCards} tone="blue" hint="מדגם בלבד · פירוט בכספים" />
-              <KpiCard label="משלוחים פתוחים" value={formatNumber(overviewData?.deliveries?.sentOpen)} icon={Ship} tone="red" />
-            </div>
-            <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-              <OperationalQueue
-                title="מה דורש טיפול עכשיו"
-                rows={dashboardRisks.length > 0 ? dashboardRisks : rows.map((row) => ({
-                  ...row,
-                  entity_label: row.customer_name ?? row.title,
-                  risk_reason: statusLabel(String(row.link_status)),
-                  severity: row.link_status === "at_risk" || row.link_status === "quantity_mismatch" ? "high" : "medium",
-                }))}
-                onAsk={(row) => void sendAi(`נתח את הסיכון הזה ב-BINA: ${String(row.entity_label ?? row.work_order_id ?? row.risk_reason ?? "")}. הצג מקורות, קשרים לרכש/כספים/משלוחים והמשך מומלץ.`)}
-              />
-              <div className="grid gap-4">
-                <MiniChartCard title="פק״עות לפי מצב" subtitle="קישור BINA מול Gestelit">
-                  <SimpleDonut data={productionStats} />
-                  <div className="mt-2"><MetricBreakdownBar data={productionStats} /></div>
-                </MiniChartCard>
-                <MiniChartCard title="איכות נתונים" subtitle="חריגות שמשפיעות על אמון בדשבורד">
-                  <MetricBreakdownBar
-                    data={(dataQualityIssues.length > 0 ? dataQualityIssues : [{ issue_label_he: "אין חריגות", affected_count: 0 }]).map((row) => ({
-                      label: String(row.issue_label_he ?? row.issue_type ?? "-"),
-                      value: numberValue(row.affected_count),
-                    }))}
-                  />
-                </MiniChartCard>
+            <section className="rounded-2xl border border-border bg-card p-5 sm:p-6">
+              <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+                <div className="max-w-2xl">
+                  <p className="text-xs font-medium text-muted-foreground">מ-BINA לרצפת הייצור</p>
+                  <h2 className="mt-2 text-2xl font-semibold">מה פותחים לעבודה הבאה?</h2>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">בחרו פק״ע שהתקבלה לאחרונה, בדקו את הפרטים ובנו את רצף התחנות לפני פתיחת העבודה.</p>
+                  <p className="mt-2 text-xs text-muted-foreground">תצוגת העבודה מתחילה ב-1 בנובמבר 2024. מידע מוקדם יותר זמין בחיפוש ההיסטורי ובשאלות ל-AI.</p>
+                </div>
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  <Button variant="outline" onClick={() => setActiveTab("production")}>חיפוש פק״ע</Button>
+                  <Button variant="outline" onClick={() => void sendAi("הצע שלוש פקעות מהחדשות ביותר שהתקבלו ב-BINA להכנה לעבודה. רק מאז נובמבר 2024, שלא נסגרו ושטרם נפתחו בגסטליט. סדר לפי תאריך קבלה מהחדש לישן. ציין מה דורש בדיקה; אי ייבוא אינו תקלה או חוב לטיפול.")}>עזרו לי לבחור עם AI</Button>
+                </div>
               </div>
-            </div>
+              <div className="mt-5 flex flex-wrap gap-x-8 gap-y-3 border-t border-border pt-4 text-sm">
+                <span><strong className="tabular-nums">{formatNumber(overviewData?.workOrders?.receivedLast30Days)}</strong> פק״עות התקבלו ב-30 הימים האחרונים</span>
+                <span><strong className="tabular-nums">{formatNumber(overviewData?.workOrders?.managed)}</strong> פק״עות מקושרות לעבודות בגסטליט מאז נובמבר 2024</span>
+                <span className="text-xs text-muted-foreground">סנכרון פק״עות: <span className="inline-block">{formatDate(overviewData?.sync?.lastSyncedAt, true)}</span></span>
+              </div>
+            </section>
             <Card className="rounded-xl border border-border bg-card/50 p-4">
               <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <h2 className="text-base font-semibold">פק״עות אחרונות</h2>
-                  <p className="text-sm text-muted-foreground">ממוינות לפי מספר פק״ע, מהחדש לישן. הספירות מתייחסות לעותק המסונכרן בלבד; יתרות וסכומים הם מדגם חלקי.</p>
+                  <h2 className="text-base font-semibold">התקבלו לאחרונה ב-BINA</h2>
+                  <p className="text-sm text-muted-foreground">עד 12 הפק״עות הפתוחות האחרונות שעדיין לא נפתחו כעבודה בגסטליט, לפי תאריך קבלה. בחרו פק״ע לבדיקת הפרטים ולהכנה.</p>
                 </div>
-                <Button onClick={() => void sendAi("סכם לי את מצב הייצור, הרכש, הכספים והמשלוחים ותציע מה לבדוק עכשיו")} className="gap-2">
+                <Button onClick={() => void sendAi("סכם את הפקעות החדשות ביותר שהתקבלו ב-BINA מאז נובמבר 2024 ואת הבדיקות הנדרשות להכנת עבודה. אל תציג את כלל הפקעות שלא יובאו כחריגה.")} className="gap-2">
                   <Bot className="h-4 w-4" />
                   נתח עם AI
                 </Button>
               </div>
+              <div className="hidden md:block">
               <SimpleTable rows={rows} isLoading={isLoading} onRowClick={openOrder} columns={[
                 { key: "work_order_id", label: "פק״ע", render: (row) => <Bdi>{String(row.work_order_id ?? "-")}</Bdi> },
                 { key: "customer_name", label: "לקוח" },
-                { key: "due_at", label: "אספקה", render: (row) => formatDate(row.due_at) },
-                { key: "link_status", label: "סטטוס", render: (row) => <Badge className={statusVariant(String(row.link_status))}>{statusLabel(String(row.link_status))}</Badge> },
+                { key: "title", label: "תיאור העבודה", render: (row) => <span className="max-w-72 line-clamp-2" title={String(row.title ?? "")}>{String(row.title ?? "—")}</span> },
+                { key: "bina_quantity", label: "כמות", render: (row) => formatNumber(row.bina_quantity) },
+                { key: "received_at", label: "התקבלה", render: (row) => <span className="whitespace-nowrap">{formatDate(row.received_at)}</span> },
+                { key: "due_at", label: "אספקה", render: (row) => <span className="whitespace-nowrap">{formatDate(row.due_at)}</span> },
+                { key: "prepare", label: "", render: (row) => <Button variant="outline" size="sm" onClick={(event) => { event.stopPropagation(); void openOrder(row); }} aria-label={`הכנת פק״ע ${String(row.work_order_id)}`}>הכנת עבודה</Button> },
               ]} />
+              </div>
+              <div className="grid gap-3 md:hidden">
+                {rows.map((row) => <article key={String(row.bina_id)} className="rounded-xl border border-border p-4">
+                  <div className="flex items-center justify-between gap-3"><strong>פק״ע <Bdi>{String(row.work_order_id)}</Bdi></strong><span className="text-sm tabular-nums">{formatNumber(row.bina_quantity)} יח׳</span></div>
+                  <p className="mt-2 text-sm font-medium">{String(row.customer_name ?? "—")}</p>
+                  <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{String(row.title ?? "—")}</p>
+                  <dl className="mt-3 grid grid-cols-2 gap-3 text-xs"><div><dt className="text-muted-foreground">התקבלה</dt><dd className="mt-1">{formatDate(row.received_at)}</dd></div><div><dt className="text-muted-foreground">אספקה</dt><dd className="mt-1">{formatDate(row.due_at)}</dd></div></dl>
+                  <Button variant="outline" className="mt-4 w-full" onClick={() => void openOrder(row)}>הכנת פק״ע {String(row.work_order_id)}</Button>
+                </article>)}
+                {rows.length === 0 && <p className="p-4 text-sm text-muted-foreground">אין פק״עות פתוחות חדשות להצגה כרגע.</p>}
+              </div>
             </Card>
           </div>
         )}
 
-        {["production", "purchasing", "suppliers", "finance", "sales", "deliveries"].includes(activeTab) && (
+        {!loadError && !isLoading && ["production", "purchasing", "suppliers", "finance", "sales", "deliveries"].includes(activeTab) && (
           <div className="space-y-4">
             <SearchBand value={search} onChange={setSearch} onRefresh={() => void loadCurrent()} />
             {activeTab === "production" && (
               <>
-                <Card className="rounded-xl border border-border bg-card/50 p-4">
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <Card className="rounded-xl border border-border bg-card p-4">
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <div className="mb-2 flex flex-wrap items-center gap-2">
-                        <Badge className={statusVariant(String(productionDashboard?.coverageStatus))}>
-                          אמון נתונים: {valueLabel(productionDashboard?.coverageStatus)}
-                        </Badge>
-                        <Badge className="border-border bg-background/70 text-muted-foreground">
-                          סנכרון: {formatDate(productionCoverage.last_synced_at)}
-                        </Badge>
-                      </div>
-                      <h2 className="text-lg font-semibold">שיגור ייצור</h2>
-                      <p className="text-sm text-muted-foreground">תור MES לפי חסמים ופעולה הבאה. הטבלה למטה היא חקירה, לא מקור KPI.</p>
+                      <h2 className="font-semibold">חיפוש פק״עות ב-BINA</h2>
+                      <p className="mt-1 text-sm text-muted-foreground">{includeHistory ? "חיפוש היסטורי מפורש · כל השנים" : "מ-1 בנובמבר 2024 · לפי תאריך קבלה, מהחדש לישן"}. לפתיחת עבודה חדשה, בחרו מהפק״עות האחרונות בסקירה.</p>
                     </div>
-                    <Button onClick={() => void sendAi("סכם את תור שיגור הייצור: מה מוכן, מה חסום, ומה צריך לעשות קודם")} className="gap-2">
-                      <Bot className="h-4 w-4" />
-                      נתח שיגור
-                    </Button>
-                  </div>
-                </Card>
-
-                <div className="grid grid-cols-2 gap-3 xl:grid-cols-6">
-                  <KpiCard label="לא יובאו" value={formatNumber(productionStats[0].value)} icon={FileSearch} tone="amber" />
-                  <KpiCard label="פערי כמות" value={formatNumber(productionStats[1].value)} icon={AlertTriangle} tone="red" />
-                  <KpiCard label="בסיכון איחור" value={formatNumber(productionStats[2].value)} icon={CalendarClock} tone="red" />
-                  <KpiCard label="מוכנות/מקושרות" value={formatNumber(productionStats[3].value)} icon={CheckCircle2} tone="emerald" />
-                  <KpiCard label="חסום רכש" value={formatNumber(productionStats[4].value)} icon={ShoppingCart} tone="amber" />
-                  <KpiCard label="חסר מסלול" value={formatNumber(productionStats[5].value)} icon={FileWarning} tone="amber" />
-                </div>
-                <div className="grid gap-4 xl:grid-cols-[340px_1fr]">
-                  <MiniChartCard title="פילוח פק״עות" subtitle="מצב חיבור וסיכון">
-                    <SimpleDonut data={productionStats} />
-                  </MiniChartCard>
-                  <OperationalQueue
-                    title="מה דורש טיפול עכשיו"
-                    rows={(productionRisks.length > 0 ? productionRisks : rows
-                      .filter((row) => row.link_status !== "linked")
-                      .map((row) => ({
-                        ...row,
-                        entity_label: `${String(row.work_order_id ?? "-")} · ${String(row.customer_name ?? "")}`,
-                        risk_reason: statusLabel(String(row.link_status)),
-                        severity: row.link_status === "at_risk" || row.link_status === "quantity_mismatch" ? "high" : "medium",
-                      })))}
-                    onAsk={(row) => void sendAi(`למה פק״ע ${String(row.work_order_id ?? row.entity_key ?? "")} בסיכון ומה הקשרים לרכש, ספקים, משלוחים וכספים?`)}
-                  />
-                </div>
-
-                <div className="grid gap-3 xl:grid-cols-3">
-                  <DispatchLane title="לא יובאו לגסטליט" rows={productionLanes.missing_import ?? []} tone="amber" onOpen={openOrder} onAsk={(row) => void sendAi(`בדוק האם כדאי לשחרר את פק״ע ${String(row.work_order_id)} לגסטליט ומה חסר לפני ייבוא`)} />
-                  <DispatchLane title="מאחר / לא הושלם" rows={productionLanes.late_or_unfinished ?? []} tone="red" onOpen={openOrder} onAsk={(row) => void sendAi(`למה פק״ע ${String(row.work_order_id)} מאחרת ומה הפעולה הבאה?`)} />
-                  <DispatchLane title="פערי כמות" rows={productionLanes.quantity_mismatch ?? []} tone="red" onOpen={openOrder} onAsk={(row) => void sendAi(`השווה כמויות BINA מול Gestelit עבור פק״ע ${String(row.work_order_id)}`)} />
-                  <DispatchLane title="חסום רכש / חומרים" rows={productionLanes.material_or_purchase_open ?? []} tone="amber" onOpen={openOrder} onAsk={(row) => void sendAi(`בדוק חסמי רכש וחומרים לפק״ע ${String(row.work_order_id)}`)} />
-                  <DispatchLane title="משלוח פתוח" rows={productionLanes.sent_open_delivery ?? []} tone="blue" onOpen={openOrder} onAsk={(row) => void sendAi(`בדוק משלוחים פתוחים והשפעת לקוח לפק״ע ${String(row.work_order_id)}`)} />
-                  <DispatchLane title="מוכן / מקושר" rows={productionLanes.ready_or_linked ?? []} tone="emerald" onOpen={openOrder} onAsk={(row) => void sendAi(`סכם את מצב פק״ע ${String(row.work_order_id)} והאם אפשר להריץ אותה`)}/>
-                </div>
-
-                {unmappedOperations.length > 0 && (
-                  <Card className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-4">
-                    <div className="mb-3 flex items-center justify-between gap-3">
-                      <div>
-                        <h3 className="font-semibold">מיפוי תחנות / מכונות חסר</h3>
-                        <p className="text-xs text-muted-foreground">אלו פעולות BINA שעדיין צריכות מיפוי לתחנות Gestelit לפני שחרור אוטומטי.</p>
-                      </div>
-                      <Badge className="border-amber-500/20 bg-amber-500/10 text-amber-300">{formatNumber(unmappedOperations.length)} פעולות</Badge>
-                    </div>
-                    <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-                      {unmappedOperations.slice(0, 8).map((row, index) => (
-                        <div key={String(row.operation_key ?? index)} className="rounded-lg border border-border bg-background/70 p-3">
-                          <div className="text-sm font-medium"><Bdi>{String(row.operation_key ?? "-")}</Bdi></div>
-                          <div className="mt-1 text-xs text-muted-foreground">
-                            {formatNumber(row.work_order_count)} פק״עות · {formatNumber(row.row_count)} שורות
-                          </div>
-                          <div className="mt-1 text-xs text-muted-foreground">מקור: <Bdi>{String(row.source_table ?? "-")}</Bdi></div>
-                        </div>
-                      ))}
-                    </div>
-                  </Card>
-                )}
-
-                <Card className="rounded-xl border border-border bg-card/50 p-4">
-                  <div className="mb-3">
-                    <h3 className="font-semibold">חקירת פק״עות</h3>
-                    <p className="text-xs text-muted-foreground">רשימה מדורגת לחיפוש ופתיחת Control Tower. מדדים מתקבלים מה-RPC מעל, לא מהטבלה.</p>
+                    <label className="flex items-center gap-2 text-sm">
+                      <Checkbox checked={includeHistory} onCheckedChange={(checked) => setIncludeHistory(checked === true)} />
+                      לכלול היסטוריה מלפני נובמבר 2024
+                    </label>
                   </div>
                 <SimpleTable
                   rows={rows}
@@ -1687,6 +1357,7 @@ export const BinaDashboard = () => {
                     { key: "work_order_id", label: "פק״ע", render: (row) => <Bdi>{String(row.work_order_id ?? "-")}</Bdi> },
                     { key: "customer_name", label: "לקוח" },
                     { key: "title", label: "כותרת" },
+                    { key: "received_at", label: "התקבלה", render: (row) => formatDate(row.received_at) },
                     { key: "bina_quantity", label: "כמות", render: (row) => formatNumber(row.bina_quantity) },
                     { key: "due_at", label: "אספקה", render: (row) => formatDate(row.due_at) },
                     { key: "link_status", label: "קישור", render: (row) => <Badge className={statusVariant(String(row.link_status))}>{statusLabel(String(row.link_status))}</Badge> },
@@ -1876,7 +1547,7 @@ export const BinaDashboard = () => {
           </Card>
         )}
 
-        {activeTab === "sync" && (
+        {!loadError && !isLoading && activeTab === "sync" && (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               <KpiCard label="טבלאות" value={effectiveSyncRows.length} icon={Database} />
@@ -1905,7 +1576,7 @@ export const BinaDashboard = () => {
                         <span>שורות: {formatNumber(row.row_count)}</span>
                         <span>{valueLabel(row.coverage_status ?? "partial_sample")}</span>
                       </div>
-                      <div className="mt-1 text-xs text-muted-foreground">{formatDate(row.last_row_synced_at)}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">{formatDate(row.last_row_synced_at, true)}</div>
                       {Boolean(row.trust_note || row.coverage_note || row.sync_scope) && (
                         <div className="mt-2 line-clamp-2 text-xs text-muted-foreground">
                           {valueLabel(row.sync_scope)} · {String(row.trust_note ?? row.coverage_note ?? "")}
@@ -1930,7 +1601,7 @@ export const BinaDashboard = () => {
             <Card className="rounded-xl border border-border bg-card/50 p-4">
               <h2 className="mb-3 text-base font-semibold">לוגים אחרונים</h2>
               <SimpleTable rows={syncLogs} columns={[
-                { key: "synced_at", label: "זמן דיווח", render: (row) => formatDate(row.synced_at) },
+                { key: "synced_at", label: "זמן דיווח", render: (row) => formatDate(row.synced_at, true) },
                 { key: "created_at", label: "נוצר", render: (row) => formatDate(row.created_at) },
                 {
                   key: "results",
@@ -2002,7 +1673,7 @@ export const BinaDashboard = () => {
                 {detailValue("ימי איחור", drawerFinance?.overdue_days == null ? "לא רלוונטי" : formatNumber(drawerFinance.overdue_days))}
                 {detailValue("פק״ע קשורה", drawerFinance?.related_work_order_id ? <bdi dir="ltr">{String(drawerFinance.related_work_order_id)}</bdi> : "לא נמצא")}
                 {detailValue("משלוח קשור", drawerFinance?.related_delivery_no ? <bdi dir="ltr">{String(drawerFinance.related_delivery_no)}</bdi> : "לא נמצא")}
-                {detailValue("סנכרון אחרון", formatDate(drawerFinance?.synced_at))}
+                {detailValue("סנכרון אחרון", formatDate(drawerFinance?.synced_at, true))}
                 {detailValue("מקור BINA", <bdi dir="auto">{String(drawerFinance?.bina_id ?? "-")}</bdi>)}
                 {detailValue("סיבה לתור עבודה", String(drawerFinance?.risk_reason ?? "-"))}
               </div>
@@ -2056,17 +1727,18 @@ export const BinaDashboard = () => {
                     <Badge className={statusVariant(String(drawerDecision?.blocker_type ?? drawerOrder?.link_status))}>{valueLabel(drawerDecision?.blocker_type ?? drawerOrder?.link_status)}</Badge>
                     <Badge className={statusVariant(String(drawerDecision?.relationship_confidence))}>אמינות קשר: {valueLabel(drawerDecision?.relationship_confidence)}</Badge>
                   </div>
-                  <h2 className="text-lg font-semibold">Control Tower · פק״ע <bdi dir="ltr">{String(drawerOrder?.work_order_id ?? selectedOrder.work_order_id ?? "")}</bdi></h2>
+                  <h2 className="text-lg font-semibold">הכנת פק״ע <bdi dir="ltr">{String(drawerOrder?.work_order_id ?? selectedOrder.work_order_id ?? "")}</bdi></h2>
                   <p className="text-sm text-muted-foreground">{String(drawerOrder?.customer_name ?? selectedOrder.customer_name ?? "")}</p>
                 </div>
                 <div className="flex flex-wrap justify-end gap-2">
                   <Button onClick={() => void sendAi(`פתח Control Tower לפק״ע ${String(drawerOrder?.work_order_id ?? selectedOrder.work_order_id)}: סכם חסמים, מסלול, רכש, משלוחים וכספים`)}>
                     שאל על הפק״ע הזו
                   </Button>
-                  <Button variant="outline" onClick={importSelectedOrder} disabled={!binaImportEnabled}>
-                    {binaImportEnabled ? "ייבוא ל-Gestelit" : "ייבוא נעול"}
-                  </Button>
+                  {drawerOrder?.gestelit_job_id ? <Link className="rounded-lg border px-3 py-2 text-sm font-medium" href={`/admin/jobs?job=${encodeURIComponent(String(drawerOrder.gestelit_job_id))}`}>לניהול העבודה</Link> : <Button variant="outline" onClick={importSelectedOrder} disabled={!binaImportEnabled || !orderDetail || !!detailError}>
+                    {binaImportEnabled ? "בחירת תהליך ופתיחת עבודה" : "ייבוא נעול"}
+                  </Button>}
                   <Button variant="ghost" onClick={() => {
+                    orderRequest.current++;
                     setSelectedOrder(null);
                     setOrderDetail(null);
                     setShowImportPanel(false);
@@ -2078,48 +1750,45 @@ export const BinaDashboard = () => {
                   לא ניתן לטעון את פירוט הפק״ע כרגע: {detailError}
                 </div>
               )}
+              {!orderDetail && !detailError && <p role="status" className="p-4 text-sm text-muted-foreground">טוען את פרטי הפק״ע והקשרים…</p>}
+              {orderDetail && !detailError && <>
               <div className="mb-4 grid gap-4 xl:grid-cols-[1fr_300px]">
                 <RelationshipSummary order={drawerDecision ?? drawerOrder} detail={orderDetail} />
                 <Card className="rounded-xl border border-border bg-background/60 p-4">
                   <h3 className="mb-2 font-semibold">פעולה הבאה</h3>
-                  <div className="text-sm text-muted-foreground">{String(drawerDecision?.next_action_reason ?? "לא זוהה חסם ברור")}</div>
+                  <div className="text-sm text-muted-foreground">{String(drawerDecision?.next_action_reason ?? "לא ניתן לקבוע מוכנות מהנתונים הזמינים")}</div>
                   <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                     <div className="rounded-lg border border-border bg-card/60 p-2">
                       <div className="text-muted-foreground">בעלים</div>
                       <div className="font-medium">{valueLabel(drawerDecision?.owner_role)}</div>
                     </div>
-                    <div className="rounded-lg border border-border bg-card/60 p-2">
+                    {drawerOrder?.gestelit_job_id ? <div className="rounded-lg border border-border bg-card/60 p-2">
                       <div className="text-muted-foreground">ציון סיכון</div>
                       <div className="font-mono font-medium tabular-nums">{formatNumber(drawerDecision?.priority_score)}</div>
-                    </div>
+                    </div> : null}
                   </div>
                 </Card>
               </div>
-              {showImportPanel && (
+              {showImportPanel && !drawerOrder?.gestelit_job_id && !importResult && (
                 <Card className="mb-4 rounded-xl border border-primary/30 bg-primary/5 p-4">
                   <div className="mb-3 flex items-start justify-between gap-3">
                     <div>
-                      <h3 className="font-semibold">ייבוא פק״ע לגסטליט</h3>
+                      <h3 className="font-semibold">מפק״ע לתוכנית ייצור</h3>
+                      <p className="my-2 text-xs text-primary">1 · פרטי פק״ע ← 2 · בחירת תהליך ← 3 · בדיקה ופתיחת עבודה</p>
                       <p className="text-sm text-muted-foreground">
-                        פעולה זו מופרדת מדשבורד ה-BI ונעולה כברירת מחדל עד שתהיה טרנזקציה מלאה, dry-run, audit ו-lock על bina_id. היא לא כותבת ל-BINA.
+                        תחילה בודקים תצוגה מקדימה. נוצר מוצר מוגמר אחד בכמות כותרת הפק״ע, עם המסלול שתבחרו. יש לאמת קבצים וחומרים לפני יצירה. נתוני BINA נשמרים ללא שינוי.
                       </p>
                     </div>
-                    {importResult && (
-                      <Badge className="border-emerald-500/20 bg-emerald-500/10 text-emerald-400">
-                        <CheckCircle2 className="ml-1 h-3.5 w-3.5" />
-                        יובא
-                      </Badge>
-                    )}
                   </div>
                   <div className="grid gap-4 lg:grid-cols-2">
                     <div className="space-y-2">
                       <Label>תבנית תהליך</Label>
-                      <Select value={selectedPresetId} onValueChange={setSelectedPresetId}>
+                      <Select value={selectedPresetId} onValueChange={(value) => { setSelectedPresetId(value); setImportPreview(null); setReadinessConfirmed(false); }}>
                         <SelectTrigger className="bg-background">
-                          <SelectValue placeholder="בחר preset" />
+                          <SelectValue placeholder="בחר תבנית תהליך" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="none">ללא preset - בחירת תחנות ידנית</SelectItem>
+                          <SelectItem value="none">ללא תבנית — בחירת תחנות לפי סדר העבודה</SelectItem>
                           {pipelinePresets.map((preset) => (
                             <SelectItem key={preset.id} value={preset.id}>
                               {preset.name} ({preset.steps?.length ?? 0} תחנות)
@@ -2127,16 +1796,8 @@ export const BinaDashboard = () => {
                           ))}
                         </SelectContent>
                       </Select>
-                      <div className="flex items-center gap-2 pt-2">
-                        <Checkbox
-                          id="allow-quantity-fallback"
-                          checked={allowQuantityFallback}
-                          onCheckedChange={(checked) => setAllowQuantityFallback(checked === true)}
-                        />
-                        <Label htmlFor="allow-quantity-fallback" className="text-sm font-normal">
-                          לאפשר כמות 1 כש-BINA לא מחזירה כמות תקינה
-                        </Label>
-                      </div>
+                      <Link href={`/admin/workflows?binaId=${encodeURIComponent(String(selectedOrder.bina_id))}`} className="inline-flex rounded-lg border border-primary/30 px-3 py-2 text-sm font-medium text-primary">בניית תבנית חדשה בבונה התהליכים</Link>
+                      {selectedPresetId !== "none" && <p className="text-xs leading-relaxed text-muted-foreground">{pipelinePresets.find((p) => p.id === selectedPresetId)?.steps.slice().sort((a, b) => a.position - b.position).map((s) => s.station?.name ?? "תחנה").join(" ← ")}</p>}
                     </div>
                     <div className={cn("space-y-2", selectedPresetId !== "none" && "opacity-50")}>
                       <Label>תחנות ידניות</Label>
@@ -2151,7 +1812,7 @@ export const BinaDashboard = () => {
                                 disabled={selectedPresetId !== "none"}
                                 onCheckedChange={() => toggleStation(station.id)}
                               />
-                              <span>{station.name}</span>
+                              <span>{selectedStationIds.includes(station.id) ? `${selectedStationIds.indexOf(station.id) + 1}. ` : ""}{station.name}</span>
                               <span className="text-xs text-muted-foreground">{station.code}</span>
                             </label>
                           ))
@@ -2159,30 +1820,40 @@ export const BinaDashboard = () => {
                       </div>
                     </div>
                   </div>
+                  {importPreview && <div className="my-4 space-y-3 rounded-xl border p-4">
+                    <h4 className="font-semibold">תצוגה מקדימה — עדיין לא נשמר</h4>
+                    <p>מוצר מוגמר אחד · {formatNumber(importPreview.plannedQuantity)} יחידות בכמות BINA · {Array.isArray(importPreview.route) ? importPreview.route.length : 0} תחנות</p>
+                    {Array.isArray(importPreview.route) && <ol className="list-inside list-decimal text-sm">{importPreview.route.map((step: AnyRow) => <li key={String(step.station_id)}>{availableStations.find(station => station.id === step.station_id)?.name ?? "תחנה מהתבנית"}{step.requires_first_product_approval ? " · אישור מוצר ראשון" : ""}</li>)}</ol>}
+                    {Array.isArray(importPreview.blockers) && importPreview.blockers.map((text) => <p key={String(text)} className="text-destructive">{String(text)}</p>)}
+                    {Array.isArray(importPreview.warnings) && importPreview.warnings.map((text) => <p key={String(text)} className="text-sm text-muted-foreground">{String(text)}</p>)}
+                    <label className="flex items-start gap-2 text-sm"><Checkbox checked={readinessConfirmed} onCheckedChange={(checked) => setReadinessConfirmed(checked === true)} />אימתתי את הכמות, המוצר, סדר התחנות, הקבצים והחומרים הדרושים להתחלת העבודה.</label>
+                    <Button disabled={isImporting || importPreview.canImport !== true || !readinessConfirmed} onClick={() => void confirmImport(true)}>יצירת עבודה מוכנה לעובד</Button>
+                  </div>}
                   {importError && (
                     <div className="mt-3 rounded-lg border border-red-500/20 bg-red-500/10 p-2 text-sm text-red-400">
                       {importError}
                     </div>
                   )}
-                  {importResult && (
-                    <div className="mt-3 rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-2 text-sm text-emerald-400">
-                      נוצרה/קושרה עבודה בגסטליט ונוצרו {formatNumber(Array.isArray(importResult.items) ? importResult.items.length : 0)} פריטי עבודה חדשים.
-                    </div>
-                  )}
                   <div className="mt-4 flex justify-end gap-2">
                     <Button variant="ghost" onClick={() => setShowImportPanel(false)} disabled={isImporting}>ביטול</Button>
-                    <Button onClick={() => void confirmImport()} disabled={isImporting} className="gap-2">
+                    <Button onClick={() => void confirmImport(false)} disabled={isImporting} className="gap-2">
                       {isImporting && <Loader2 className="h-4 w-4 animate-spin" />}
-                      אשר וייבא
+                      בדיקת תצוגה מקדימה
                     </Button>
                   </div>
                 </Card>
               )}
+              {drawerOrder?.gestelit_job_id && <Card className="mb-4 space-y-3 border-emerald-500/30 bg-emerald-500/5 p-4">
+                <h3 className="font-semibold">הפק״ע מקושרת לעבודה {String(drawerOrder.gestelit_job_number ?? drawerOrder.work_order_id)}</h3>
+                <p className="text-sm text-muted-foreground">{importResult ? "העבודה נוצרה עם המוצר, הכמות ורצף התחנות שבחרתם. " : ""}העובד יבחר אותה בתחנה הראשונה ויתחיל לאחר בדיקות התחנה. דיווחי הייצור יופיעו במעקב.</p>
+                <div className="flex flex-wrap gap-3"><Link className="rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground" href={`/admin/jobs?job=${encodeURIComponent(String(drawerOrder.gestelit_job_id))}`}>למוצרים ולרצף התחנות</Link><Link className="rounded-lg border px-3 py-2 text-sm" href="/admin">למעקב הייצור</Link></div>
+              </Card>}
               <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {detailValue("סטטוס קישור", <Badge className={statusVariant(String(drawerOrder?.link_status))}>{statusLabel(String(drawerOrder?.link_status))}</Badge>)}
-                {detailValue("חסם MES", <Badge className={statusVariant(String(drawerDecision?.blocker_type))}>{valueLabel(drawerDecision?.blocker_type)}</Badge>)}
+                {drawerOrder?.gestelit_job_id ? detailValue("חסם MES", <Badge className={statusVariant(String(drawerDecision?.blocker_type))}>{valueLabel(drawerDecision?.blocker_type)}</Badge>) : null}
+                {detailValue("תאריך קבלה", formatDate(drawerOrder?.received_at))}
                 {detailValue("תאריך אספקה", formatDate(drawerOrder?.due_at))}
-                {detailValue("סנכרון אחרון", formatDate(drawerOrder?.synced_at))}
+                {detailValue("סנכרון אחרון", formatDate(drawerOrder?.synced_at, true))}
                 {detailValue("כמות BINA", formatNumber(drawerOrder?.bina_quantity))}
                 {detailValue("כמות מתוכננת בגסטליט", formatNumber(drawerOrder?.gestelit_planned_quantity))}
                 {detailValue("כמות טובה שדווחה", formatNumber(drawerOrder?.gestelit_completed_good))}
@@ -2198,7 +1869,7 @@ export const BinaDashboard = () => {
                 <h3 className="mb-2 font-semibold">בדיקת תפעול לפני ייבוא</h3>
                 <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
                   <div>קישור קיים: {drawerOrder?.gestelit_job_id ? "כן" : "לא"}</div>
-                  <div>שורות מקור: {formatNumber(drawerProductionRows.length || 1)}</div>
+                  <div>שורות מקור: {formatNumber(drawerProductionRows.length)}</div>
                   <div>פער כמות: {drawerOrder?.link_status === "quantity_mismatch" ? "כן - לבדוק לפני הפעלה ברצפה" : "לא זוהה"}</div>
                   <div>סיכון איחור: {drawerOrder?.link_status === "at_risk" ? "כן" : "לא זוהה"}</div>
                 </div>
@@ -2229,7 +1900,8 @@ export const BinaDashboard = () => {
                   </div>
                 </Card>
               </div>
-              <h3 className="mb-2 font-semibold">שורות ייצור</h3>
+              <h3 className="mb-2 font-semibold">פעולות ומרכיבי ייצור</h3>
+              <p className="mb-2 text-xs text-muted-foreground">כמויות הפעולות עשויות להיות בגליונות או ביחידות אחרות. כמות המוצר המוגמר נקבעת בכותרת הפק״ע.</p>
               <SimpleTable rows={drawerProductionRows} columns={[
                 { key: "source_table", label: "מקור" },
                 { key: "work_line_no", label: "שורה" },
@@ -2237,6 +1909,7 @@ export const BinaDashboard = () => {
                 { key: "planned_quantity", label: "כמות", render: (row) => formatNumber(row.planned_quantity) },
                 { key: "machine_name", label: "מכונה" },
               ]} />
+              </>}
             </div>
           </div>
         )}

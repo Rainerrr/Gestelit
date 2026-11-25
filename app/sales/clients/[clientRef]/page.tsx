@@ -1,3 +1,5 @@
+import { notFound } from "next/navigation";
+import { normalizeSalesClientRef } from "@/lib/data/sales-client-reference";
 import { SalesClientProfileView } from "../../_components/sales-client-profile";
 
 type PageProps = {
@@ -6,5 +8,7 @@ type PageProps = {
 
 export default async function SalesClientProfilePage({ params }: PageProps) {
   const { clientRef } = await params;
-  return <SalesClientProfileView clientRef={clientRef} />;
+  const normalized = normalizeSalesClientRef(clientRef);
+  if (!normalized) notFound();
+  return <SalesClientProfileView clientRef={normalized} />;
 }

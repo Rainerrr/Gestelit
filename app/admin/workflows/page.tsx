@@ -1,4 +1,5 @@
 import { WorkflowStudio } from "./workflow-studio";
-export default function WorkflowsPage() {
-  return <WorkflowStudio />;
+export default async function WorkflowsPage({ searchParams }: { searchParams: Promise<{ binaId?: string }> }) {
+  const params = await searchParams;
+  return <WorkflowStudio binaId={typeof params.binaId === "string" ? params.binaId : undefined} />;
 }

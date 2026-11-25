@@ -1,6 +1,5 @@
+import { BINA_OPERATIONAL_START } from "@/lib/bina/operational-scope";
 import { createServiceSupabase } from "@/lib/supabase/client";
-import { createJobAdmin, findJobByNumber, getJobById } from "@/lib/data/jobs";
-import { createJobItem } from "@/lib/data/job-items";
 import type { Job, JobItemWithDetails } from "@/lib/types";
 
 const DEFAULT_LIMIT = 50;
@@ -104,6 +103,7 @@ export type BinaDashboardSummary = {
   overview: Record<string, unknown>;
   risks: BinaRiskRow[];
   dataQuality: BinaDataQualityIssue[];
+  dataQualityStatus?: "complete" | "partial";
   financeByConfidence: Array<Record<string, unknown>>;
   purchaseMetrics: Array<Record<string, unknown>>;
   deliveryMetrics: Array<Record<string, unknown>>;
@@ -117,6 +117,7 @@ export type BinaWorkOrderSummary = {
   status_text: string | null;
   bina_quantity: number | null;
   created_at: string | null;
+  received_at?: string | null;
   due_at: string | null;
   synced_at: string | null;
   gestelit_job_id: string | null;
@@ -442,7 +443,9 @@ export type BinaImportPayload = {
   pipeline_preset_id?: string | null;
   station_ids?: string[];
   first_product_approval_flags?: Record<string, boolean>;
-  allowQuantityFallback?: boolean;
+  dryRun?: boolean;
+  previewHash?: string;
+  readinessConfirmed?: boolean;
   created_by?: string;
 };
 
@@ -488,6 +491,7 @@ const WORK_ORDER_COLUMNS = [
   "status_text",
   "bina_quantity",
   "created_at",
+  "received_at",
   "due_at",
   "synced_at",
   "gestelit_job_id",
@@ -510,6 +514,7 @@ const WORK_ORDER_DECISION_BASE_COLUMNS = [
   "status_text",
   "bina_quantity",
   "created_at",
+  "received_at",
   "due_at",
   "synced_at",
   "gestelit_job_id",
@@ -741,6 +746,7 @@ function fallbackDashboardSummary(
       delivery_sent_open: overview.deliveries.sentOpen,
     },
     risks,
+    dataQualityStatus: "partial",
     dataQuality: tables
       .filter((table) => table.freshness_status !== "ok")
       .map((table) => ({
@@ -822,34 +828,21 @@ function likePattern(search?: string | null) {
   return trimmed ? `%${trimmed}%` : null;
 }
 
-function isUuid(value: string | null | undefined) {
-  return Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value));
-}
-
-async function validateBinaImportPipeline(supabase: ReturnType<typeof createServiceSupabase>, payload: BinaImportPayload) {
-  if (payload.pipeline_preset_id) {
-    if (!isUuid(payload.pipeline_preset_id)) throw new Error("INVALID_PIPELINE_PRESET");
-    const { data, error } = await supabase
-      .from("pipeline_presets")
-      .select("id,is_active,pipeline_preset_steps(id)")
-      .eq("id", payload.pipeline_preset_id)
-      .maybeSingle();
-    if (error) throw new Error(error.message);
-    const steps = (data as unknown as { pipeline_preset_steps?: unknown[] } | null)?.pipeline_preset_steps ?? [];
-    if (!data || data.is_active === false || steps.length === 0) throw new Error("INVALID_PIPELINE_PRESET");
-    return;
-  }
-
-  const stationIds = payload.station_ids ?? [];
-  if (stationIds.length === 0) throw new Error("PIPELINE_REQUIRED");
-  if (stationIds.some((id) => !isUuid(id))) throw new Error("INVALID_STATIONS");
-  const { data, error } = await supabase
-    .from("stations")
-    .select("id")
-    .in("id", stationIds)
-    .eq("is_active", true);
-  if (error) throw new Error(error.message);
-  if ((data ?? []).length !== new Set(stationIds).size) throw new Error("INVALID_STATIONS");
+/** Operational home is intentionally independent of full-history finance/quality marts. */
+export async function fetchBinaManufacturingOverview() {
+  const db = createServiceSupabase();
+  const recentFrom = new Date(Date.now() - 30 * 86400000).toISOString();
+  const [recent, managed, sync] = await Promise.all([
+    db.from("mart_bina_work_order_status").select("bina_id", { count: "exact", head: true }).gte("received_at", recentFrom).lte("received_at", new Date().toISOString()),
+    db.from("mart_bina_work_order_status").select("bina_id", { count: "exact", head: true }).gte("received_at", `${BINA_OPERATIONAL_START}T00:00:00+02:00`).not("gestelit_job_id", "is", null),
+    db.from("mart_bina_metric_trust").select("last_table_sync_at,freshness_status").eq("source_table", "DFHazmRashi").maybeSingle(),
+  ]);
+  for (const result of [recent, managed, sync]) if (result.error) throw new Error(result.error.message);
+  return {
+    scope: { dateFrom: BINA_OPERATIONAL_START, recentFrom, historicalSearchAvailable: true },
+    workOrders: { receivedLast30Days: recent.count ?? 0, managed: managed.count ?? 0 },
+    sync: { lastSyncedAt: sync.data?.last_table_sync_at ?? null, status: sync.data?.freshness_status ?? "unknown" },
+  };
 }
 
 export async function fetchBinaOverview(): Promise<BinaOverview> {
@@ -975,6 +968,7 @@ export async function fetchBinaDashboardSummary(): Promise<BinaDashboardSummary>
       ...payload,
       risks: Array.isArray(payload.risks) ? payload.risks : [],
       dataQuality: Array.isArray(payload.dataQuality) ? payload.dataQuality : [],
+      dataQualityStatus: Array.isArray(payload.dataQuality) ? "complete" : "partial",
       financeByConfidence: Array.isArray(payload.financeByConfidence) ? payload.financeByConfidence : [],
       purchaseMetrics: Array.isArray(payload.purchaseMetrics) ? payload.purchaseMetrics : [],
       deliveryMetrics: Array.isArray(payload.deliveryMetrics) ? payload.deliveryMetrics : [],
@@ -1034,223 +1028,7 @@ export async function fetchBinaProductionDashboard(): Promise<BinaProductionDash
     };
   }
 
-  const dashboardLimit = 1000;
-
-  const [workOrdersResult, purchasingResult, deliveriesResult, coverageResult, unmappedResult] = await Promise.all([
-    supabase
-      .from("mart_bina_work_order_status")
-      .select(WORK_ORDER_COLUMNS)
-      .order("work_order_id", { ascending: false, nullsFirst: false })
-      .limit(dashboardLimit),
-    supabase
-      .from("mart_bina_purchase_flow")
-      .select(PURCHASING_COLUMNS)
-      .not("work_order_id", "is", null)
-      .limit(5000),
-    supabase
-      .from("mart_bina_delivery_status")
-      .select(DELIVERY_COLUMNS)
-      .not("work_order_id", "is", null)
-      .limit(5000),
-    supabase
-      .from("bina_sync_log")
-      .select("table_name,status,created_at,rows_upserted")
-      .order("created_at", { ascending: false })
-      .limit(50),
-    supabase
-      .from("mart_bina_unmapped_operations")
-      .select("*")
-      .order("row_count", { ascending: false })
-      .limit(12),
-  ]);
-
-  if (workOrdersResult.error) throw new Error(workOrdersResult.error.message);
-
-  const workOrders = (workOrdersResult.data ?? []) as unknown as BinaWorkOrderSummary[];
-  const purchasing = purchasingResult.error ? [] : ((purchasingResult.data ?? []) as unknown as BinaPurchasingRow[]);
-  const deliveries = deliveriesResult.error ? [] : ((deliveriesResult.data ?? []) as unknown as BinaDeliveryRow[]);
-  const coverageRows = coverageResult.error ? [] : ((coverageResult.data ?? []) as AnyRecord[]);
-  const unmappedOperations = unmappedResult.error ? [] : ((unmappedResult.data ?? []) as AnyRecord[]);
-
-  const purchasingByWorkOrder = new Map<number, { requests: number; receipts: number; openQuantity: number; syncedAt: string | null }>();
-  for (const row of purchasing) {
-    if (row.work_order_id == null) continue;
-    const current = purchasingByWorkOrder.get(row.work_order_id) ?? { requests: 0, receipts: 0, openQuantity: 0, syncedAt: null };
-    if (row.flow_type === "purchase_request") {
-      current.requests += 1;
-      current.openQuantity += Number(row.remaining_quantity ?? 0);
-    }
-    if (row.flow_type === "goods_receipt") current.receipts += 1;
-    if (!current.syncedAt || (row.synced_at && row.synced_at > current.syncedAt)) current.syncedAt = row.synced_at;
-    purchasingByWorkOrder.set(row.work_order_id, current);
-  }
-
-  const deliveriesByWorkOrder = new Map<number, { total: number; sentOpen: number; syncedAt: string | null }>();
-  for (const row of deliveries) {
-    if (row.work_order_id == null) continue;
-    const current = deliveriesByWorkOrder.get(row.work_order_id) ?? { total: 0, sentOpen: 0, syncedAt: null };
-    current.total += 1;
-    if (row.delivery_state === "sent_open") current.sentOpen += 1;
-    if (!current.syncedAt || (row.synced_at && row.synced_at > current.syncedAt)) current.syncedAt = row.synced_at;
-    deliveriesByWorkOrder.set(row.work_order_id, current);
-  }
-
-  const makeDecision = (
-    order: BinaWorkOrderSummary,
-    override?: {
-      blocker_type: string;
-      next_action_reason: string;
-      owner_role: string;
-      priority_score: number;
-      purchase_request_count?: number;
-      delivery_count?: number;
-      evidence_synced_at?: string | null;
-    },
-  ): BinaWorkOrderDecisionFact => {
-    let blocker_type = "ready_or_linked";
-    let next_action_reason = "נראה מוכן או מקושר, בכפוף לאמון הנתונים";
-    let owner_role = "production";
-    let priority_score = 10;
-
-    if (order.gestelit_job_id == null) {
-      blocker_type = "missing_import";
-      next_action_reason = "לא יובא לגסטליט";
-      priority_score = 75;
-    } else if (order.link_status === "quantity_mismatch") {
-      blocker_type = "quantity_mismatch";
-      next_action_reason = "פער כמות בין BINA לגסטליט";
-      priority_score = 90;
-    } else if (order.link_status === "at_risk") {
-      blocker_type = "late_or_unfinished";
-      next_action_reason = "תאריך אספקה עבר והייצור לא הושלם";
-      priority_score = 70;
-    } else if (Number(order.bina_production_row_count ?? 0) === 0) {
-      blocker_type = "missing_route_rows";
-      next_action_reason = "אין שורות מסלול/ייצור מ-BINA";
-      owner_role = "system";
-      priority_score = 40;
-    }
-
-    if (override) {
-      blocker_type = override.blocker_type;
-      next_action_reason = override.next_action_reason;
-      owner_role = override.owner_role;
-      priority_score = override.priority_score;
-    }
-
-    return {
-      ...order,
-      route_row_count: Number(order.bina_production_row_count ?? 0),
-      route_source_table_count: null,
-      route_machine_count: null,
-      route_source_tables: null,
-      route_machine_names: null,
-      first_started_at: null,
-      last_ended_at: null,
-      purchase_request_count: override?.purchase_request_count ?? 0,
-      goods_receipt_count: null,
-      open_purchase_quantity: null,
-      open_purchase_amount: null,
-      delivery_count: override?.delivery_count ?? 0,
-      sent_open_delivery_count: null,
-      last_sent_at: null,
-      finance_document_count: 0,
-      receivable_open: null,
-      payable_open: null,
-      overdue_finance_count: null,
-      invoice_count: null,
-      sales_amount: null,
-      unpaid_or_unknown_invoice_count: null,
-      evidence_synced_at: override?.evidence_synced_at ?? order.synced_at,
-      blocker_type,
-      next_action_reason,
-      owner_role,
-      priority_score,
-      relationship_confidence: order.gestelit_job_id ? "exact" : "inferred",
-    };
-  };
-
-  const baseRows = workOrders.map((order) => makeDecision(order));
-  const materialRows = workOrders.flatMap((order) => {
-    if (order.work_order_id == null) return [];
-    const purchase = purchasingByWorkOrder.get(order.work_order_id);
-    if (!purchase || purchase.openQuantity <= 0) return [];
-    return [
-      makeDecision(order, {
-        blocker_type: "material_or_purchase_open",
-        next_action_reason: "יש רכש/כמות פתוחה שיכולה לחסום שיגור",
-        owner_role: "purchasing",
-        priority_score: 65,
-        purchase_request_count: purchase.requests,
-        evidence_synced_at: purchase.syncedAt,
-      }),
-    ];
-  });
-  const deliveryRows = workOrders.flatMap((order) => {
-    if (order.work_order_id == null) return [];
-    const delivery = deliveriesByWorkOrder.get(order.work_order_id);
-    if (!delivery || delivery.sentOpen <= 0) return [];
-    return [
-      makeDecision(order, {
-        blocker_type: "sent_open_delivery",
-        next_action_reason: "משלוח יצא ועדיין פתוח",
-        owner_role: "logistics",
-        priority_score: 55,
-        delivery_count: delivery.total,
-        evidence_synced_at: delivery.syncedAt,
-      }),
-    ];
-  });
-
-  const dashboardRows = [...baseRows, ...materialRows, ...deliveryRows];
-  const sortByPriority = (a: BinaWorkOrderDecisionFact, b: BinaWorkOrderDecisionFact) =>
-    b.priority_score - a.priority_score || String(a.due_at ?? "9999").localeCompare(String(b.due_at ?? "9999"));
-
-  const lane = (blocker: string) =>
-    dashboardRows
-      .filter((row) => row.blocker_type === blocker)
-      .sort(sortByPriority)
-      .slice(0, 8);
-
-  const lastSyncedAt = coverageRows.reduce<string | null>((latest, row) => {
-    const value = normalizeString(row.created_at);
-    if (!value) return latest;
-    return !latest || value > latest ? value : latest;
-  }, null);
-
-  return {
-    coverage: {
-      table_count: coverageRows.length,
-      partial_tables: 1,
-      stale_tables: 0,
-      last_synced_at: lastSyncedAt,
-      all_complete: false,
-    },
-    coverageStatus: "partial_sample",
-    metrics: {
-      work_order_count: workOrders.length,
-      not_imported_count: workOrders.filter((row) => row.gestelit_job_id == null).length,
-      quantity_mismatch_count: workOrders.filter((row) => row.link_status === "quantity_mismatch").length,
-      at_risk_count: workOrders.filter((row) => row.link_status === "at_risk").length,
-      material_blocked_count: materialRows.length,
-      sent_open_delivery_count: deliveryRows.length,
-      ready_or_linked_count: workOrders.filter((row) => row.link_status === "linked" && row.gestelit_job_id != null).length,
-      missing_route_count: workOrders.filter((row) => Number(row.bina_production_row_count ?? 0) === 0).length,
-      last_evidence_synced_at: lastSyncedAt,
-      dashboard_sample_limit: dashboardLimit,
-      dashboard_scope: "recent_work_orders",
-    },
-    lanes: {
-      missing_import: lane("missing_import"),
-      quantity_mismatch: lane("quantity_mismatch"),
-      late_or_unfinished: lane("late_or_unfinished"),
-      material_or_purchase_open: lane("material_or_purchase_open"),
-      sent_open_delivery: lane("sent_open_delivery"),
-      ready_or_linked: lane("ready_or_linked"),
-    },
-    risks: dashboardRows.filter((row) => row.priority_score >= 40).sort(sortByPriority).slice(0, 12),
-    unmappedOperations,
-  };
+  throw new Error(rpcResult.error?.message ?? "BINA_PRODUCTION_DASHBOARD_UNAVAILABLE");
 }
 
 export async function fetchBinaWorkOrderDecisions(params: PageParams = {}) {
@@ -1283,18 +1061,21 @@ export async function fetchBinaWorkOrderDecisions(params: PageParams = {}) {
   return { rows: (data ?? []) as unknown as BinaWorkOrderDecisionFact[], count: count ?? 0 };
 }
 
-export async function fetchBinaWorkOrders(params: PageParams = {}) {
+export async function fetchBinaWorkOrders(params: PageParams & { dateFrom?: string; incomingOnly?: boolean } = {}) {
   const supabase = createServiceSupabase();
   const limit = clampLimit(params.limit);
   const offset = Math.max(0, params.offset ?? 0);
   const pattern = likePattern(params.search);
 
   let query = supabase
-    .from("mart_bina_work_order_status")
+    .from(params.incomingOnly ? "mart_bina_incoming_work_orders" : "mart_bina_work_order_status")
     .select(WORK_ORDER_COLUMNS, { count: "exact" })
+    .order("received_at", { ascending: false, nullsFirst: false })
     .order("work_order_id", { ascending: false, nullsFirst: false })
     .order("bina_id")
     .range(offset, offset + limit - 1);
+
+  if (params.dateFrom) query = query.gte("received_at", `${params.dateFrom}T00:00:00+02:00`);
 
   if (pattern) {
     const numericSearch = normalizeNumber(params.search);
@@ -1323,7 +1104,25 @@ export async function fetchBinaWorkOrderDetail(binaId: string): Promise<BinaWork
 
   if (decisionError) throw new Error(decisionError.message);
 
-  const order = decision as unknown as BinaWorkOrderDecisionFact | null;
+  const sourceDecision = decision as unknown as BinaWorkOrderDecisionFact | null;
+  let order = sourceDecision?.blocker_type === "missing_import" && !sourceDecision.gestelit_job_id
+    ? { ...sourceDecision, blocker_type: "new_candidate", priority_score: 0, next_action_reason: "לבחירתכם: בדקו פרטים, קבצים וחומרים ובחרו רצף תחנות לפני פתיחת עבודה. פק״ע שטרם נפתחה אינה חריגה." }
+    : sourceDecision;
+  // BINA operation rows and the reviewed MES route are different sources.
+  // A manually configured job must not be declared route-less because BINA has no operations.
+  if (order?.gestelit_job_id && order.blocker_type === "missing_route_rows") {
+    const { data: items, error } = await supabase.from("job_items")
+      .select("id,job_item_steps(id,stations(is_active))")
+      .eq("job_id", order.gestelit_job_id).eq("is_active", true);
+    if (error) throw new Error(error.message);
+    const hasReviewedRoute = items?.length && items.every((item) =>
+      item.job_item_steps.length > 0 && item.job_item_steps.every((step) => {
+        const station = Array.isArray(step.stations) ? step.stations[0] : step.stations;
+        return station?.is_active === true;
+      }));
+    if (hasReviewedRoute) order = { ...order, blocker_type: "ready_or_linked", priority_score: 0,
+      next_action_reason: "העבודה מקושרת ורצף התחנות הוגדר בגסטליט. אין שורות פעולות ב-BINA; זה אינו מעיד על מסלול חסר באפליקציה. התחלה כפופה לבדיקות התחנה ולאישורי מוצר ראשון." };
+  }
   const workOrderId = normalizeNumber(order?.work_order_id);
   const { data: productionRows, error: rowsError } = await supabase
     .from("stg_bina_production_rows")
@@ -1333,11 +1132,18 @@ export async function fetchBinaWorkOrderDetail(binaId: string): Promise<BinaWork
 
   if (rowsError) throw new Error(rowsError.message);
 
+  // Exact relationships, not free-text searches matching unrelated numbers.
+  async function related<T>(view: string, columns: string, key = "work_order_id") {
+    if (!workOrderId) return { rows: [] as T[] };
+    const result = await supabase.from(view).select(columns).eq(key, workOrderId).order("bina_id").limit(50);
+    if (result.error) throw new Error(result.error.message);
+    return { rows: (result.data ?? []) as unknown as T[] };
+  }
   const [purchasingResult, deliveriesResult, financeResult, salesResult] = await Promise.all([
-    workOrderId ? fetchBinaPurchasing({ search: String(workOrderId), limit: 50 }) : Promise.resolve({ rows: [] as BinaPurchasingRow[], count: 0 }),
-    workOrderId ? fetchBinaDeliveries({ search: String(workOrderId), limit: 50 }) : Promise.resolve({ rows: [] as BinaDeliveryRow[], count: 0 }),
-    workOrderId ? fetchBinaFinance({ search: String(workOrderId), limit: 50 }) : Promise.resolve({ rows: [] as BinaFinanceRow[], count: 0 }),
-    workOrderId ? fetchBinaSales({ search: String(workOrderId), limit: 50 }) : Promise.resolve({ rows: [] as BinaSalesRow[], count: 0 }),
+    related<BinaPurchasingRow>("mart_bina_purchase_flow", PURCHASING_COLUMNS),
+    related<BinaDeliveryRow>("mart_bina_delivery_status", DELIVERY_COLUMNS),
+    related<BinaFinanceRow>("mart_bina_finance_transactions", FINANCE_COLUMNS, "related_work_order_id"),
+    related<BinaSalesRow>("mart_bina_sales_status", SALES_COLUMNS),
   ]);
 
   return {
@@ -1903,135 +1709,17 @@ export async function importBinaWorkOrderToGestelit(
   binaId: string,
   payload: BinaImportPayload,
 ): Promise<BinaImportResult> {
-  const supabase = createServiceSupabase();
-
-  const detail = await fetchBinaWorkOrderDetail(binaId);
-  if (!detail.order?.work_order_id) {
-    throw new Error("BINA_WORK_ORDER_NOT_FOUND");
-  }
-
-  const jobNumber = String(detail.order.work_order_id);
-  const sourceRows = (detail.productionRows.length > 0 ? detail.productionRows : [{
-    source_table: "DFHazmRashi",
-    bina_id: binaId,
-    work_order_id: detail.order.work_order_id,
-    work_line_no: 1,
-    item_code: null,
-    item_name: detail.order.title ?? `פק״ע ${jobNumber}`,
-    planned_quantity: detail.order.bina_quantity,
-    actual_quantity: null,
-    machine_name: null,
-    status_code: detail.order.status_text,
-    started_at: null,
-    ended_at: null,
-    synced_at: detail.order.synced_at,
-  }]).slice(0, 100);
-
-  const existingJobLink = await supabase
-    .from("bina_gestelit_links")
-    .select("gestelit_entity_id")
-    .eq("bina_table", "DFHazmRashi")
-    .eq("bina_id", binaId)
-    .eq("gestelit_entity_type", "job")
-    .maybeSingle();
-
-  if (existingJobLink.error) throw new Error(existingJobLink.error.message);
-
-  const itemLinkResults = await Promise.all(sourceRows.map((row) =>
-    supabase
-      .from("bina_gestelit_links")
-      .select("gestelit_entity_id")
-      .eq("bina_table", row.source_table)
-      .eq("bina_id", row.bina_id)
-      .eq("gestelit_entity_type", "job_item")
-      .maybeSingle(),
-  ));
-
-  const linkedSourceRows = new Set<string>();
-  itemLinkResults.forEach((result, index) => {
-    if (result.error) throw new Error(result.error.message);
-    if (result.data?.gestelit_entity_id) {
-      const row = sourceRows[index];
-      linkedSourceRows.add(`${row.source_table}:${row.bina_id}`);
-    }
+  const { data, error } = await createServiceSupabase().rpc("rpc_prepare_bina_job", {
+    p_bina_id: binaId,
+    p_station_ids: payload.station_ids ?? [],
+    p_preset_id: payload.pipeline_preset_id ?? null,
+    p_approval_flags: payload.first_product_approval_flags ?? {},
+    p_preview_hash: payload.previewHash ?? null,
+    p_commit: payload.dryRun === false,
+    p_readiness_confirmed: payload.readinessConfirmed === true,
   });
-
-  const missingRows = sourceRows.filter((row) => !linkedSourceRows.has(`${row.source_table}:${row.bina_id}`));
-  const linkedJob = existingJobLink.data?.gestelit_entity_id
-    ? await getJobById(String(existingJobLink.data.gestelit_entity_id))
-    : null;
-
-  if (linkedJob && missingRows.length === 0) {
-    return { job: linkedJob, items: [], linkedExistingJob: true };
-  }
-
-  const hasPipeline = Boolean(payload.pipeline_preset_id || payload.station_ids?.length);
-  if (missingRows.length > 0 && !hasPipeline) {
-    throw new Error("PIPELINE_REQUIRED");
-  }
-  if (missingRows.length > 0) {
-    await validateBinaImportPipeline(supabase, payload);
-  }
-
-  for (const row of missingRows) {
-    const quantity = normalizeNumber(row.planned_quantity);
-    if ((!quantity || quantity <= 0) && !payload.allowQuantityFallback) {
-      throw new Error("BINA_QUANTITY_MISSING");
-    }
-  }
-
-  const existingJob = linkedJob ?? await findJobByNumber(jobNumber);
-  const job = existingJob ?? await createJobAdmin({
-    job_number: jobNumber,
-    customer_name: detail.order.customer_name ?? null,
-    description: [detail.order.title, detail.order.status_text, `BINA ${jobNumber}`].filter(Boolean).join(" | "),
-    due_date: detail.order.due_at ?? null,
-  });
-
-  const { error: jobLinkError } = await supabase.from("bina_gestelit_links").upsert({
-    bina_table: "DFHazmRashi",
-    bina_id: binaId,
-    gestelit_entity_type: "job",
-    gestelit_entity_id: job.id,
-    created_by: payload.created_by ?? null,
-    metadata: { work_order_id: detail.order.work_order_id },
-  }, { onConflict: "bina_table,bina_id,gestelit_entity_type" });
-  if (jobLinkError) throw new Error(jobLinkError.message);
-
-  const items: JobItemWithDetails[] = [];
-  for (const row of missingRows) {
-    let quantity = normalizeNumber(row.planned_quantity);
-    if (!quantity || quantity <= 0) quantity = 1;
-
-    const item = await createJobItem({
-      job_id: job.id,
-      name: row.item_name ?? row.item_code ?? `פק״ע ${jobNumber}-${row.work_line_no ?? items.length + 1}`,
-      planned_quantity: quantity,
-      pipeline_preset_id: payload.pipeline_preset_id ?? null,
-      station_ids: payload.station_ids,
-      first_product_approval_flags: payload.first_product_approval_flags,
-      is_active: true,
-    });
-    items.push(item);
-
-    const { error: itemLinkError } = await supabase.from("bina_gestelit_links").upsert({
-      bina_table: row.source_table,
-      bina_id: row.bina_id,
-      gestelit_entity_type: "job_item",
-      gestelit_entity_id: item.id,
-      created_by: payload.created_by ?? null,
-      metadata: {
-        work_order_id: row.work_order_id,
-        work_line_no: row.work_line_no,
-      },
-    }, { onConflict: "bina_table,bina_id,gestelit_entity_type" });
-    if (itemLinkError) {
-      await supabase.from("job_items").delete().eq("id", item.id);
-      throw new Error(itemLinkError.message);
-    }
-  }
-
-  return { job, items, linkedExistingJob: Boolean(existingJob) };
+  if (error) throw new Error(error.message);
+  return data as BinaImportResult;
 }
 
 export function summarizeSyncFreshness(status: BinaSyncStatus) {

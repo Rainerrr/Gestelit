@@ -1,4 +1,6 @@
 "use client";
+import { getAssistantScreenContext } from "@/components/ai/use-assistant-screen-context";
+import { mergeScreenContext } from "@/lib/ai/screen-context";
 import { usePathname } from "next/navigation";
 import { AssistantChat, type AssistantAnswer, type AssistantTurn } from "@/components/ai/assistant-chat";
 import { sendBinaAiChatApi, fetchBinaAiSessionsApi, fetchBinaAiSessionApi } from "@/lib/api/bina";
@@ -13,8 +15,9 @@ export type AdminAiScreenContext = {
 };
 
 function routeLabel(pathname: string) {
-  if (pathname === "/admin") return "דשבורד";
+  if (pathname === "/admin") return "סקירת ייצור";
   if (pathname.startsWith("/admin/sales-daily-log")) return "יומן מכירות";
+  if (pathname.startsWith("/admin/operations")) return "רכש ומשימות הנהלה";
   if (pathname.startsWith("/admin/bina")) return "נתוני BINA";
   if (pathname.startsWith("/admin/jobs")) return "עבודות";
   if (pathname.startsWith("/admin/history")) return "היסטוריה ודוחות";
@@ -82,6 +85,10 @@ function suggestedPrompts(pathname: string, context?: AdminAiScreenContext) {
     ];
   }
 
+  if (pathname.startsWith("/admin/operations")) {
+    return ["נתח את הרכש בטווח התאריכים והחיפוש הנוכחיים — האם אפשר להשוות מחירי יחידה?", "אילו פריטים במסך דורשים בדיקת מלאי לפני הזמנה נוספת?", "אילו משימות הנהלה וספקי חוץ דורשים טיפול כעת?"];
+  }
+
   if (pathname.startsWith("/admin/jobs")) {
     return [
       "איזה עבודות כדאי להשוות מול BINA לפני תכנון הרצפה?",
@@ -98,6 +105,7 @@ function suggestedPrompts(pathname: string, context?: AdminAiScreenContext) {
 }
 
 const tabLabels: Record<string, string> = {
+  all: "כל העבודות", overdue: "באיחור", waiting: "ללא משמרת", setup: "להשלמת הגדרה",
   active: "עבודות פעילות", completed: "עבודות שהושלמו",
   overview: "סקירה", production: "פק״עות", purchasing: "רכש", suppliers: "ספקים",
   finance: "כספים", sales: "מכירות", deliveries: "משלוחים", ai: "עוזר הנתונים", sync: "סנכרון",
@@ -109,7 +117,7 @@ export function AdminAiAssistant({ context }: { context?: AdminAiScreenContext }
   return <AssistantChat
     title="Gestelit AI"
     storageKey="admin-ai"
-    screen={`${screenContext.routeLabel}${context?.activeTab ? ` · ${tabLabels[context.activeTab] ?? context.activeTab}` : ""}${context?.search ? ` · ${context.search}` : ""}`}
+    screen={`${screenContext.screen}${context?.activeTab ? ` · ${tabLabels[context.activeTab] ?? context.activeTab}` : ""}${context?.search ? ` · ${context.search}` : ""}`}
     context={screenContext}
     prompts={suggestedPrompts(pathname, context)}
     openEvent="gestelit:admin-ai-open"
@@ -123,7 +131,7 @@ export function AdminAiAssistant({ context }: { context?: AdminAiScreenContext }
       return { id, sessionId: id, label: response.session.metadata?.title ?? messages[0]?.content.slice(0, 45) ?? "שיחה קודמת", messages };
     }}
     request={async ({ message, sessionId, context: hints, signal }) => {
-      const response = await sendBinaAiChatApi({ message, sessionId, context: { ...hints, filters: currentScreenFilters() } }, signal) as AssistantAnswer & { citations?: Array<{ label: string; source_view: string; synced_at: string | null }> };
+      const response = await sendBinaAiChatApi({ message, sessionId, context: mergeScreenContext(hints, getAssistantScreenContext(pathname), currentScreenFilters()) }, signal) as AssistantAnswer & { citations?: Array<{ label: string; source_view: string; synced_at: string | null }> };
       return { ...response, evidence: response.citations?.map((item) => ({ label: item.label, source: item.source_view, freshness: item.synced_at })) };
     }}
   />;

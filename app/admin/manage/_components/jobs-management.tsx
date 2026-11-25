@@ -146,6 +146,20 @@ export const JobsManagement = ({
     }
   }, []);
 
+  const focusedJobRef = useRef(false);
+  useEffect(() => {
+    if (focusedJobRef.current || !jobs.length) return;
+    const id = new URLSearchParams(window.location.search).get("job");
+    const target = jobs.find(entry => entry.job.id === id);
+    if (!target) return;
+    focusedJobRef.current = true;
+    queueMicrotask(() => {
+      setFilters(previous => ({ ...previous, search: target.job.job_number }));
+      setExpandedJobId(target.job.id);
+      void loadJobItems(target.job.id);
+    });
+  }, [jobs, loadJobItems]);
+
   // Load items for all jobs to enable filtering - runs ONCE when jobs change
   useEffect(() => {
     // Get jobs that haven't been fetched yet
